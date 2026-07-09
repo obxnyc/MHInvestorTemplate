@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile Home Document Generator</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#6b6b6b; --line:#d9d9d9; --bg:#f4f5f7;
+    --accent:#1f5c46; --accent-soft:#e7f0ec; --danger:#b3261e; --field:#fff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+
+  /* ---------- App shell (screen only) ---------- */
+  .app{display:grid;grid-template-columns:minmax(360px,440px) 1fr;min-height:100vh}
+  .panel{background:#fff;border-right:1px solid var(--line);padding:22px 22px 120px;overflow-y:auto;height:100vh}
+  .preview-wrap{padding:28px;overflow-y:auto;height:100vh;background:var(--bg)}
+  h1{font-size:19px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:12.5px;margin:0 0 18px;line-height:1.5}
+  fieldset{border:1px solid var(--line);border-radius:10px;margin:0 0 16px;padding:14px 14px 6px}
+  legend{font-weight:700;font-size:13px;padding:0 6px;color:var(--accent)}
+  label{display:block;font-size:12px;font-weight:600;color:#333;margin:10px 0 4px}
+  .hint{font-weight:400;color:var(--muted);font-size:11px}
+  input[type=text],input[type=number],input[type=date],textarea,select{
+    width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--field);color:var(--ink);font-family:inherit}
+  textarea{resize:vertical;min-height:52px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .check{display:flex;align-items:flex-start;gap:8px;margin:12px 0 4px}
+  .check input{margin-top:2px}
+  .check label{margin:0;font-weight:600}
+  .calc{background:var(--accent-soft);border-radius:7px;padding:9px 11px;font-size:12.5px;margin-top:10px;line-height:1.6}
+  .calc b{font-size:15px}
+  .toolbar{position:fixed;left:0;bottom:0;width:minmax(360px,440px);max-width:440px;background:#fff;border-top:1px solid var(--line);padding:12px 22px;display:flex;gap:10px}
+  button{font:inherit;font-weight:700;font-size:13px;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+  .btn-print{background:var(--accent);color:#fff;flex:1}
+  .btn-ghost{background:#eef0f2;color:#333}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{background:#eef0f2;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;user-select:none}
+  .tab.on{background:var(--accent);color:#fff}
+  details.note{background:#fff8e6;border:1px solid #f0d98a;border-radius:8px;padding:8px 11px;margin:6px 0 14px;font-size:12px}
+  details.note summary{cursor:pointer;font-weight:700}
+
+  /* ---------- The printable document ---------- */
+  .paper{background:#fff;max-width:8.5in;margin:0 auto 26px;padding:0.9in 0.85in;box-shadow:0 2px 14px rgba(0,0,0,.12);
+    font-family:"Times New Roman",Georgia,serif;font-size:12pt;line-height:1.5;color:#000}
+  .paper h2{text-align:center;font-size:14pt;letter-spacing:.5px;margin:0 0 6px}
+  .paper .center{text-align:center}
+  .paper .doc-sec{margin:12px 0}
+  .paper h3{font-size:12pt;margin:16px 0 4px}
+  .paper p{margin:8px 0;text-align:justify}
+  .paper .fill{font-weight:700}
+  .sig{margin-top:34px}
+  .sig .line{border-bottom:1px solid #000;width:320px;height:1.2em;margin-bottom:2px}
+  .sig-block{margin-top:22px}
+  .pagebreak{break-before:page}
+  .witness{letter-spacing:6px;font-weight:700;text-align:center;margin:14px 0}
+  .doc-hidden{display:none}
+  .amort-tbl{width:100%;border-collapse:collapse;font-size:9.5pt;margin-top:6px}
+  .amort-tbl th,.amort-tbl td{border:1px solid #999;padding:3px 6px;text-align:right}
+  .amort-tbl th{background:#eee}
+  .amort-tbl td:first-child,.amort-tbl th:first-child{text-align:center}
+
+  @media (max-width:900px){.app{grid-template-columns:1fr}.panel{height:auto;border-right:0;border-bottom:1px solid var(--line)}.preview-wrap{height:auto}.toolbar{position:static;max-width:none;width:auto}}
+
+  @media print{
+    .app{display:block}
+    .panel,.toolbar,.preview-label{display:none!important}
+    .preview-wrap{padding:0;height:auto;overflow:visible;background:#fff}
+    .paper{box-shadow:none;margin:0;max-width:none;padding:0;width:auto}
+    @page{size:letter;margin:0.8in}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ FORM PANEL ============ -->
+  <div class="panel">
+    <h1>Mobile Home Document Generator</h1>
+    <p class="sub">Fill in the fields once — the Purchase Agreement (seller‑financed Bill of Sale) and the Park Land Lease build themselves, do the loan math for you, then print to PDF. Your entries stay saved in this browser.</p>
+
+    <div class="tabs">
+      <span class="tab on" data-doc="both">Both documents</span>
+      <span class="tab" data-doc="purchase">Purchase only</span>
+      <span class="tab" data-doc="lease">Lease only</span>
+    </div>
+
+    <fieldset>
+      <legend>Parties &amp; Property</legend>
+      <label>Seller entity <span class="hint">(finances &amp; sells the home)</span></label>
+      <input type="text" id="seller" value="Larabee Homes LLC">
+      <label>Park Owner <span class="hint">(lessor of the land)</span></label>
+      <input type="text" id="parkOwner" value="Benjamin Cade Larabee">
+      <label>Purchaser / Homeowner <span class="hint">(your investor)</span></label>
+      <input type="text" id="buyer" placeholder="e.g. Meher Business Ventures">
+      <label>Park name</label>
+      <input type="text" id="parkName" value="the Retreat">
+      <label>Governing‑law state</label>
+      <input type="text" id="state" value="Tennessee">
+    </fieldset>
+
+    <fieldset data-scope="purchase">
+      <legend>Purchase Agreement</legend>
+      <label>Agreement date</label>
+      <input type="date" id="pDate">
+      <label>Property description <span class="hint">(make, model, beds/baths, serial #)</span></label>
+      <textarea id="property" placeholder="e.g. Clayton TruHome Model 3bd/2ba Serial# CWP059255TNAC"></textarea>
+      <div class="row">
+        <div><label>Total price ($)</label><input type="number" id="price" placeholder="100000" step="100"></div>
+        <div><label>Down payment ($)</label><input type="number" id="down" placeholder="30000" step="100"></div>
+      </div>
+
+      <div class="check"><input type="checkbox" id="incFinance" checked><label for="incFinance">Seller-financed <span class="hint">(uncheck for a cash / paid-in-full sale)</span></label></div>
+
+      <div id="financeFields">
+        <div class="row3">
+          <div><label>Interest %/yr</label><input type="number" id="rate" placeholder="4.9" step="0.1"></div>
+          <div><label>Term (yrs)</label><input type="number" id="term" placeholder="20" step="1"></div>
+          <div><label>Payments/yr</label><input type="number" id="freq" value="12" step="1"></div>
+        </div>
+        <label>Payment method</label>
+        <input type="text" id="payMethod" value="wire transfer or in certified funds payable to Seller or designee">
+        <div class="calc" id="calcBox"></div>
+        <div class="check"><input type="checkbox" id="incAmort" checked><label for="incAmort">Attach amortization schedule <span class="hint">(shows the investor how the balance pays down)</span></label></div>
+        <label>Schedule detail</label>
+        <select id="amortDetail">
+          <option value="annual" selected>Annual summary (one row per year)</option>
+          <option value="monthly">Full schedule (one row per payment)</option>
+        </select>
+      </div>
+    </fieldset>
+
+    <fieldset data-scope="lease">
+      <legend>Park Land Lease</legend>
+      <label>Lease effective date</label>
+      <input type="date" id="lDate">
+      <label>Lot number</label>
+      <input type="text" id="lot" placeholder="e.g. 23">
+      <div class="row3">
+        <div><label>Lot rent ($/mo)</label><input type="number" id="rent" value="500" step="25"></div>
+        <div><label>Consulting ($/mo)</label><input type="number" id="consult" value="50" step="25"></div>
+        <div><label>Reserve ($)</label><input type="number" id="reserve" value="750" step="50"></div>
+      </div>
+      <div class="row">
+        <div><label>Notice period (days)</label><input type="number" id="notice" value="60" step="15"></div>
+        <div><label>First‑refusal window (days)</label><input type="number" id="rofr" value="30" step="5"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Optional protective clauses <span class="hint" style="font-weight:400">— recommended</span></legend>
+
+      <div class="check"><input type="checkbox" id="incEscalate" checked><label for="incEscalate">Annual rent escalation (inflation)</label></div>
+      <div class="row" id="escRow">
+        <div><label>Increase %/yr</label><input type="number" id="escPct" value="3" step="0.5"></div>
+        <div><label>Applies to</label>
+          <select id="escApplies">
+            <option value="lot rent">Lot rent only</option>
+            <option value="lot rent and consulting fee" selected>Rent + consulting fee</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="check"><input type="checkbox" id="incLate" checked><label for="incLate">Late fee &amp; default / repossession on the loan</label></div>
+      <div class="row" id="lateRow">
+        <div><label>Grace (days)</label><input type="number" id="graceDays" value="10" step="1"></div>
+        <div><label>Late fee ($)</label><input type="number" id="lateFee" value="50" step="5"></div>
+      </div>
+
+      <div class="check"><input type="checkbox" id="incSecurity" checked><label for="incSecurity">Seller retains security interest / lien until paid in full</label></div>
+      <div class="check"><input type="checkbox" id="incInsure" checked><label for="incInsure">Homeowner must insure the home (Seller as loss payee)</label></div>
+      <div class="check"><input type="checkbox" id="incNotary" checked><label for="incNotary">Include notary acknowledgment block</label></div>
+    </fieldset>
+
+    <details class="note">
+      <summary>⚠ Before you use these — please read</summary>
+      These templates reproduce your existing wording and are a strong starting point, but they are not legal advice. Seller‑financing a home can trigger federal/state rules (SAFE Act, Dodd‑Frank) when the buyer is an individual consumer; investor‑to‑entity deals are usually treated differently. Have a local attorney review once before you reuse. See <b>SUGGESTIONS.md</b> in this project for the full list of gaps I found in the originals.
+    </details>
+  </div>
+
+  <!-- ============ TOOLBAR ============ -->
+  <div class="toolbar">
+    <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+    <button class="btn-ghost" onclick="resetAll()">Reset</button>
+  </div>
+
+  <!-- ============ LIVE DOCUMENT ============ -->
+  <div class="preview-wrap">
+    <div class="paper" id="paper"></div>
+  </div>
+</div>
+
+<script>
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const money = n => (isFinite(n)?n:0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const money0 = n => Math.round(isFinite(n)?n:0).toLocaleString('en-US');
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function longDate(v){
+  if(!v) return '________________';
+  const [y,m,d] = v.split('-').map(Number);
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const ord = d%10==1&&d!=11?'st':d%10==2&&d!=12?'nd':d%10==3&&d!=13?'rd':'th';
+  return `${d}${ord} day of ${months[m-1]}, ${y}`;
+}
+function shortDate(v){ if(!v) return '____/____/______'; const[y,m,d]=v.split('-'); return `${m}/${d}/${y}`; }
+
+/* integer dollars to words e.g. 500 -> "Five Hundred" */
+function words(n){
+  n=Math.round(n);
+  const a=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const b=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function under1000(x){let s='';if(x>=100){s+=a[Math.floor(x/100)]+' Hundred';x%=100;if(x)s+=' ';}if(x>=20){s+=b[Math.floor(x/10)];x%=10;if(x)s+='-'+a[x];}else if(x)s+=a[x];return s;}
+  if(n===0)return 'Zero';
+  let s='';const units=[['Million',1e6],['Thousand',1e3]];
+  for(const[name,val]of units){if(n>=val){s+=under1000(Math.floor(n/val))+' '+name+' ';n%=val;}}
+  s+=under1000(n);
+  return s.trim();
+}
+const dollarsWords = n => words(n)+ (Math.round(n)===1?' Dollar':' Dollars');
+
+/* payment (amortization) */
+function payment(P,apr,yrs,freq){
+  const r=apr/100/freq, n=yrs*freq;
+  if(r===0) return P/n;
+  return P*r/(1-Math.pow(1+r,-n));
+}
+
+/* ---------- state / persistence ---------- */
+const FIELDS=['seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','escPct','escApplies','graceDays','lateFee'];
+const CHECKS=['incFinance','incAmort','incEscalate','incLate','incSecurity','incInsure','incNotary'];
+let docMode='both';
+
+function saveState(){
+  const s={docMode};
+  FIELDS.forEach(f=>s[f]=$(f).value);
+  CHECKS.forEach(c=>s[c]=$(c).checked);
+  try{localStorage.setItem('mhgen',JSON.stringify(s));}catch(e){}
+}
+function loadState(){
+  let s;try{s=JSON.parse(localStorage.getItem('mhgen'));}catch(e){}
+  if(!s)return;
+  docMode=s.docMode||'both';
+  FIELDS.forEach(f=>{if(s[f]!==undefined)$(f).value=s[f];});
+  CHECKS.forEach(c=>{if(s[c]!==undefined)$(c).checked=s[c];});
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.doc===docMode));
+}
+function resetAll(){ if(confirm('Clear all entries?')){localStorage.removeItem('mhgen');location.reload();} }
+
+/* ---------- render ---------- */
+function render(){
+  const v=id=>$(id).value.trim();
+  const num=id=>parseFloat($(id).value)||0;
+  const chk=id=>$(id).checked;
+
+  const seller=esc(v('seller'))||'____________';
+  const parkOwner=esc(v('parkOwner'))||'____________';
+  const buyer=esc(v('buyer'))||'____________________';
+  const parkName=esc(v('parkName'))||'the Park';
+  const state=esc(v('state'))||'[State]';
+  const notice=num('notice')||60;
+  const rofr=num('rofr')||30;
+
+  const financed=chk('incFinance');
+  $('financeFields').style.display=financed?'':'none';
+  const price=num('price'), down=num('down'), balance=price-down;
+  const rate=num('rate'), term=num('term')||20, freq=num('freq')||12;
+  const pay=payment(balance,rate,term,freq);
+
+  // calc box
+  if(financed){
+    $('calcBox').innerHTML = balance>0&&pay>0
+      ? `Financed balance <b>$${money0(balance)}</b> · payment <b>$${money(pay)}</b>/period<br>`+
+        `<span class="hint">${freq*term} payments of $${money(pay)} at ${rate||0}% over ${term} yrs · total paid $${money0(pay*freq*term)} · interest $${money0(pay*freq*term-balance)}</span>`
+      : `<span class="hint">Enter price, down payment, rate &amp; term to see the monthly payment.</span>`;
+  }
+
+  const escOn=chk('incEscalate'), escPct=num('escPct'), escApplies=v('escApplies');
+  $('escRow').style.opacity=escOn?1:.4;
+  $('lateRow').style.opacity=chk('incLate')?1:.4;
+
+  /* ---- PURCHASE AGREEMENT ---- */
+  let amort='';
+  if(financed && chk('incAmort') && balance>0 && pay>0){
+    const r=rate/100/freq, monthly=v('amortDetail')==='monthly';
+    let bal=balance, rows='', totI=0, totP=0;
+    if(monthly){
+      const n=Math.round(term*freq);
+      for(let k=1;k<=n;k++){
+        const i=bal*r; let pr=pay-i;
+        if(k===n||pr>bal){pr=bal;} // final payment clears balance
+        bal-=pr; totI+=i; totP+=pr;
+        rows+=`<tr><td>${k}</td><td>$${money(pay)}</td><td>$${money(pr)}</td><td>$${money(i)}</td><td>$${money(Math.max(bal,0))}</td></tr>`;
+        if(bal<=0.005)break;
+      }
+      amort=`<h3>Schedule A — Amortization Schedule</h3>
+        <p class="hint" style="text-align:left">Balance $${money0(balance)} · ${rate}% per annum · ${freq} payments/yr · payment $${money(pay)}. Illustrative; assumes no prepayment.</p>
+        <table class="amort-tbl"><thead><tr><th>#</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Balance</th></tr></thead><tbody>${rows}
+        <tr><td><b>Tot</b></td><td></td><td><b>$${money0(totP)}</b></td><td><b>$${money0(totI)}</b></td><td></td></tr></tbody></table>`;
+    }else{
+      for(let y=1;y<=term;y++){
+        let iY=0,pY=0;
+        for(let m=0;m<freq&&bal>0.005;m++){const i=bal*r;let pr=pay-i;if(pr>bal)pr=bal;iY+=i;pY+=pr;bal-=pr;}
+        totI+=iY;totP+=pY;
+        rows+=`<tr><td>${y}</td><td>$${money0(pY)}</td><td>$${money0(iY)}</td><td>$${money0(Math.max(bal,0))}</td></tr>`;
+      }
+      amort=`<h3>Schedule A — Amortization Summary (annual)</h3>
+        <p class="hint" style="text-align:left">Balance $${money0(balance)} · ${rate}% per annum · ${freq} payments of $${money(pay)}/yr. Illustrative; assumes no prepayment.</p>
+        <table class="amort-tbl"><thead><tr><th>Year</th><th>Principal paid</th><th>Interest paid</th><th>Balance</th></tr></thead><tbody>${rows}
+        <tr><td><b>Total</b></td><td><b>$${money0(totP)}</b></td><td><b>$${money0(totI)}</b></td><td></td></tr></tbody></table>`;
+    }
+  }
+
+  // Payment paragraph: financed (installments) vs cash (paid in full)
+  const payPara = financed
+    ? `<p>That Purchaser has offered to purchase such personal property and has tendered <span class="fill">$${money(down)}</span> by certified funds payable to Seller as a down payment on such purchase, the receipt of which is hereby acknowledged by Seller. The balance of the purchase price or <span class="fill">$${money0(balance)}</span> shall be paid in installments of <span class="fill">$${money(pay)}</span> by ${esc(v('payMethod'))}, with interest accruing on the remaining unpaid balance at the rate of <span class="fill">${rate||'____'}</span> per cent per annum. This loan is a <span class="fill">${term}-year</span> note. There is no penalty for prepayment to the Seller of the balance remaining due.</p>`
+    : `<p>That Purchaser has offered to purchase such personal property and has tendered the full purchase price of <span class="fill">$${money(price)}</span> by certified funds payable to Seller as payment in full, the receipt of which is hereby acknowledged by Seller. No balance remains owing and no financing is extended by Seller in connection with this purchase.</p>`;
+
+  const lateClause = (financed && chk('incLate')) ? `<p><span class="fill">Late Payment &amp; Default.</span> Any installment not received within ${num('graceDays')||10} days of its due date is subject to a late charge of $${money0(num('lateFee'))}. If any installment remains unpaid for thirty (30) days, Seller may, after written notice, declare the entire unpaid balance immediately due and payable, and Seller shall be entitled to pursue all remedies available at law, including repossession of the personal property described above.</p>`:'';
+
+  const securityClause = (financed && chk('incSecurity')) ? `<p><span class="fill">Security Interest.</span> Until the purchase price is paid in full, Seller retains a purchase‑money security interest in and lien upon the personal property described above. Title and/or the certificate of title shall remain with Seller and shall not pass to Purchaser until all sums due hereunder are paid in full. Purchaser shall not sell, transfer, remove, or further encumber the property without Seller's prior written consent.</p>`:'';
+
+  const insureClause = chk('incInsure') ? `<p><span class="fill">Insurance &amp; Taxes.</span> Purchaser shall keep the property insured against fire and casualty for its full value, naming Seller as loss payee, and shall provide proof upon request. Purchaser shall be responsible for all personal‑property taxes assessed on the home during the term of this Agreement.</p>`:'';
+
+  const purchase = `
+    <h2>PURCHASE AGREEMENT</h2>
+    <p>THIS PURCHASE AGREEMENT, made this the <span class="fill">${longDate(v('pDate'))}</span>, by <span class="fill">${buyer}</span>, Purchaser, and <span class="fill">${seller}</span>, Seller.</p>
+    <p class="witness">W I T N E S S E T H</p>
+    <p>That Seller has offered to sell certain personal property to wit:</p>
+    <p class="fill" style="text-align:left">${esc(v('property'))||'________________________________________________________________'}</p>
+    ${payPara}
+    ${lateClause}
+    ${securityClause}
+    ${insureClause}
+    <p>That the parties agree that if this purchase shall not be completed as contracted due to breach by the Seller, then all funds previously paid hereunder by Purchaser shall be refunded to Purchaser. The parties further agree that if this purchase shall not be completed as contracted due to breach by Purchaser, then all funds previously paid hereunder by Purchaser shall be forfeited to Seller as liquidated damages resulting from such breach.</p>
+    <p>Seller shall provide to Purchaser a fully executed and notarized bill of sale completely detailing the personal property being purchased which shall be delivered upon final payment to Seller, free and clear of all encumbrances, debts, liens, claims, and Seller has no knowledge of any legal impediment to sale of the personal property described above. If ownership of the personal property is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
+    <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
+    <div class="sig">
+      <div class="sig-block"><b>SELLER:</b><div class="line"></div>${seller}</div>
+      <div class="sig-block"><b>BUYER:</b><div class="line"></div>${buyer}</div>
+    </div>
+    ${amort}
+    ${chk('incNotary')?notaryBlock('this Purchase Agreement'):''}
+  `;
+
+  /* ---- LEASE ---- */
+  const escClause = escOn ? `<h3>4A. Annual Rent Escalation</h3>
+    <p>Beginning on the first anniversary of the effective date and on each anniversary thereafter, the ${escApplies} shall automatically increase by <span class="fill">${escPct}%</span> over the amount in effect during the preceding year, to account for inflation and rising operating costs. This automatic adjustment is in addition to, and does not limit, the Park Owner's right to adjust rent under Section 4 upon ${notice} days' written notice.</p>`:'';
+
+  const lease = `
+    <h2>MOBILE HOME PARK LAND LEASE AGREEMENT</h2>
+    <p>This Mobile Home Park Land Lease Agreement (“Agreement”) is made and entered into as of the <span class="fill">${longDate(v('lDate'))}</span>, by and between:</p>
+    <p><b>Park Owner:</b> ${parkOwner} (hereinafter referred to as "Park Owner")<br>
+       <b>Mobile Home Owner:</b> ${buyer} (hereinafter referred to as "Homeowner")<br>
+       <b>Lot Number:</b> <span class="fill">${esc(v('lot'))||'____________'}</span> (hereinafter referred to as "Lot")</p>
+
+    <h3>1. Premises</h3>
+    <p>Park Owner agrees to lease to Homeowner, and Homeowner agrees to lease from Park Owner, the parcel of land identified as Lot <span class="fill">${esc(v('lot'))||'________'}</span> in ${parkName} (the “Park”). This lease entitles the Homeowner to place and maintain a mobile home on the designated Lot within the Park.</p>
+
+    <h3>2. Term</h3>
+    <p>This Agreement shall be effective as of the date above and shall continue in effect on a month‑to‑month basis, unless terminated by either party in accordance with the terms herein.</p>
+
+    <h3>3. Lot Rent</h3>
+    <p>Homeowner agrees to pay to Park Owner monthly rent in the amount of <span class="fill">$${money(num('rent'))}</span> (${dollarsWords(num('rent'))}) for the use of the Lot. This amount is subject to change as specified below.</p>
+
+    <h3>4. Rent Adjustment</h3>
+    <p>The monthly lot rent is <span class="fill">$${money(num('rent'))}</span>. Any increase in rent shall be effective ${notice} days following written notice from Park Owner to Homeowner.</p>
+    ${escClause}
+
+    <h3>5. Monthly Consulting Fee</h3>
+    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(num('consult'))}</span> (${dollarsWords(num('consult'))}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintains an interest in the mobile home park land owned by ${parkOwner} or any of his affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days' written notice to the Homeowner.</p>
+
+    <h3>6. Park Rules and Regulations</h3>
+    <p>Both the Homeowner and the Park Owner agree to comply with all rules and regulations of the Park, as they may be amended from time to time. These rules and regulations will be provided to the Homeowner upon execution of this Agreement and may be updated with reasonable notice. Homeowner is responsible for ensuring that their guests, tenants, and any other occupants of the mobile home also comply with these rules.</p>
+
+    <h3>7. Use of Premises</h3>
+    <p>The Homeowner agrees to use the leased Lot exclusively for the placement and maintenance of a mobile home and related uses consistent with the Park’s rules and regulations. The Homeowner shall not use the Lot for any unlawful or hazardous activities.</p>
+
+    <h3>8. Maintenance and Repairs</h3>
+    <p>The Homeowner is responsible for maintaining the mobile home in a safe and sanitary condition, including all plumbing, electrical, and mechanical systems within the mobile home. The Park Owner shall maintain the common areas of the Park, including roads, utilities, and any shared amenities, unless otherwise agreed.</p>
+
+    <h3>9. Termination</h3>
+    <p>Either party may terminate this Agreement by providing ${notice} days' written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws.</p>
+
+    <h3>10. Indemnification</h3>
+    <p>Homeowner agrees to indemnify and hold harmless the Park Owner from any loss, damage, or liability arising from Homeowner's use of the Lot or any violation of this Agreement or Park rules and regulations.</p>
+
+    <h3>11. Governing Law</h3>
+    <p>This Agreement shall be governed by and construed in accordance with the laws of the state of <span class="fill">${state}</span>, without regard to its conflict of laws principles.</p>
+
+    <h3>12. Entire Agreement</h3>
+    <p>This Agreement constitutes the entire understanding between the parties and supersedes any prior negotiations, understandings, or agreements, whether written or oral, between the parties regarding the subject matter hereof.</p>
+
+    <h3>13. Right of First Refusal, Sale of Mobile Home, and Renter Approval</h3>
+    <p>(a) <b>Right of First Refusal:</b> In the event the Homeowner wishes to sell the mobile home, the Park Owner shall have the first right of refusal to purchase the mobile home. The Homeowner must provide written notice to the Park Owner of the intent to sell, including the terms of the sale, and the Park Owner shall have ${rofr} days to respond with an offer to purchase the mobile home on the same terms. If the Park Owner does not exercise the right of first refusal, the Homeowner may proceed with the sale to a third party.</p>
+    <p>(b) <b>Park Owner’s Right to Block Sale:</b> The Park Owner may block the sale of the mobile home if the potential buyer is deemed unfit to purchase the home or fails to meet the qualifications for residency in the Park, including but not limited to the buyer’s ability to comply with the Park’s rules and regulations. The Park Owner’s decision shall be final and binding.</p>
+    <p>(c) <b>Outstanding Debt on Home:</b> Any sale of the mobile home by the Homeowner is contingent upon the payment in full of any existing debt or financial obligations owed on the mobile home. The Homeowner must ensure that all such debts are satisfied prior to completing the sale.</p>
+    <p>(d) <b>Renter Approval:</b> Any new renter or tenant selected by the Homeowner to occupy the mobile home must be approved by the Park Owner. The Park Owner may approve or reject any potential tenant at their sole discretion unless the Park Owner has expressly granted written consent for an exception.</p>
+    <p>(e) <b>Reserve Fund:</b> The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(num('reserve'))}</span> (${dollarsWords(num('reserve'))}) to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund’s availability upon request.</p>
+
+    <h3>14. Notices</h3>
+    <p>Any notices required to be given under this Agreement shall be delivered in writing. Notices to the Park Owner must be delivered in writing at least ${notice} days prior to any proposed action, such as termination, rent adjustment, or other significant changes. Notices to the Homeowner may be delivered by mail, in person, or by electronic means if agreed upon by both parties.</p>
+
+    <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
+    <div class="sig">
+      <div class="sig-block"><b>Park Owner:</b><div class="line"></div>Name: ${parkOwner}<br>Date: ${shortDate(v('lDate'))}</div>
+      <div class="sig-block"><b>Homeowner:</b><div class="line"></div>Name: ${buyer}<br>Date: ${shortDate(v('lDate'))}</div>
+    </div>
+    ${chk('incNotary')?notaryBlock('this Lease Agreement'):''}
+  `;
+
+  const showP = docMode==='both'||docMode==='purchase';
+  const showL = docMode==='both'||docMode==='lease';
+  $('paper').innerHTML =
+    (showP?`<div class="doc-sec">${purchase}</div>`:'')+
+    (showP&&showL?`<div class="pagebreak"></div>`:'')+
+    (showL?`<div class="doc-sec">${lease}</div>`:'');
+
+  saveState();
+}
+
+function notaryBlock(what){
+  return `<div class="sig" style="margin-top:30px;font-size:11pt">
+    <p><b>ACKNOWLEDGMENT</b></p>
+    <p>State of ____________________ &nbsp;&nbsp; County of ____________________</p>
+    <p>On this ______ day of ____________, 20____, before me personally appeared the above‑named party(ies), known to me (or satisfactorily proven) to be the person(s) whose name(s) is/are subscribed to ${what}, and acknowledged that they executed the same for the purposes therein contained.</p>
+    <div class="sig-block"><div class="line"></div>Notary Public &nbsp;&nbsp; My commission expires: __________</div>
+  </div>`;
+}
+
+/* ---------- wire up ---------- */
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on'); docMode=t.dataset.doc; render();
+}));
+[...FIELDS,...CHECKS].forEach(id=>{$(id).addEventListener('input',render);$(id).addEventListener('change',render);});
+
+loadState();
+render();
+</script>
+</body>
+</html>
