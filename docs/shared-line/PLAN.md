@@ -409,6 +409,21 @@ intensely local. Have a fair-housing attorney read the ruleset and the decline
 copy once, before it sends a single message. It's an hour of their time against a
 category of claim that routinely costs six figures.
 
+## Phase 3 — re-engaging past inquiries
+
+Retaining everyone who inquired and reaching back out at 8 and 11 months, when
+their 12-month lease is coming up for renewal. The timing logic is sound and
+it's the cheapest lead source you'll ever have.
+
+It's also the first thing in this plan that is unambiguously **marketing** rather
+than conversation, which puts it in a different legal category from everything
+above. Design, message copy, consent capture, the reassigned-number trap, and
+the fair-housing constraint on who you market to: **see `NURTURE.md`.**
+
+The one-line version: **send it over email, not text.**
+
+---
+
 ## Compliance — the parts that will actually bite you
 
 **Your brand and campaign are approved — that clears the long pole.** Three

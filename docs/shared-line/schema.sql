@@ -14,6 +14,21 @@ create type msg_direction  as enum ('inbound','outbound');
 create type msg_status     as enum ('queued','sent','delivered','undelivered','failed','received');
 create type wo_status      as enum ('new','assigned','accepted','scheduled','in_progress','needs_parts','done','cancelled');
 create type prequal_outcome as enum ('auto_approve','manual_review','declined','withdrawn');
+create type consent_channel as enum ('sms','email','voice');
+create type consent_purpose as enum ('transactional','marketing');
+create type inquiry_outcome as enum (
+  'open',              -- still in play, no outcome yet
+  'leased_with_us',    -- retention track, not re-acquisition
+  'leased_elsewhere',  -- the core nurture case
+  'wrong_location',
+  'price_mismatch',
+  'bought_home',       -- suppress permanently
+  'relocated_away',    -- suppress permanently
+  'did_not_qualify',
+  'unknown'            -- treat as leased_elsewhere; the safe assumption
+);
+create type touch_channel  as enum ('email','sms');
+create type touch_state    as enum ('scheduled','suppressed','sent','replied','bounced','failed');
 
 -- ---------------------------------------------------------------- people & places
 
@@ -59,16 +74,45 @@ create table contacts (
 create index on contacts (party);
 create index on contacts using gin (tags);
 
--- Texting consent and opt-out. Twilio's Messaging Service keeps its own STOP
--- list; this table is your record of why you were allowed to text in the
+-- Consent and opt-out. Twilio's Messaging Service keeps its own STOP list;
+-- this table is your record of why you were allowed to contact someone in the
 -- first place, which is the part that matters in a dispute.
+--
+-- Transactional and marketing consent are tracked separately and must be
+-- collected separately -- two unticked boxes on the form, never one. Bundling
+-- them is the most common defect in a consent record.
 create table consent (
   id            uuid primary key default gen_random_uuid(),
   contact_id    uuid not null references contacts(id) on delete cascade,
+  channel       consent_channel not null,
+  purpose       consent_purpose not null,
   granted       boolean not null,
-  source        text not null,             -- 'lease', 'web form', 'inbound text', 'STOP'
+  source        text not null,             -- 'web form', 'lease', 'inbound text', 'STOP', 'phone'
+
+  -- The exact sentence shown to them, verbatim, plus where they were. Not a
+  -- boolean: when this is challenged in three years the form will have been
+  -- redesigned twice, and the only thing that matters is what THIS person saw
+  -- on THAT day.
+  disclosure_text text,
+  form_version    text,
+  ip_address      inet,
+  user_agent      text,
+
   occurred_at   timestamptz not null default now()
 );
+
+create index on consent (contact_id, channel, purpose, occurred_at desc);
+
+-- Current state per contact/channel/purpose: the latest record wins.
+-- Revocation rules effective 2025-04-11 require honoring an opt-out made by any
+-- reasonable method, within 10 business days, ACROSS channels -- so a "stop
+-- texting me" spoken on a call must write rows here for every marketing
+-- purpose, not just the one it arrived on.
+create view consent_current as
+select distinct on (contact_id, channel, purpose)
+       contact_id, channel, purpose, granted, occurred_at
+from consent
+order by contact_id, channel, purpose, occurred_at desc;
 
 -- ---------------------------------------------------------------- conversations
 
@@ -241,6 +285,128 @@ create table showings (
   created_at        timestamptz not null default now()
 );
 
+-- ---------------------------------------------------------------- inquiries & nurture
+
+-- Every person who ever asked about housing, with what they wanted and how it
+-- ended. The outcome column is what keeps follow-ups away from people who
+-- bought a house.
+create table inquiries (
+  id            uuid primary key default gen_random_uuid(),
+  contact_id    uuid not null references contacts(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete set null,
+
+  -- the anchor date the whole follow-up schedule is computed from
+  inquired_at   timestamptz not null default now(),
+  source        text,                      -- 'web form', 'sign call', 'zillow', 'referral'
+
+  -- Stated preferences only. Segment on these and nothing else -- never on
+  -- anything inferred, and never on anything proxying for family status,
+  -- national origin, or disability. "Wanted 3+ bedrooms" is a segment;
+  -- "families with kids" is a fair-housing claim.
+  bedrooms_min  smallint,
+  price_ceiling numeric(10,2),
+  area          text,
+  has_pets      boolean,
+  move_in_from  date,
+
+  outcome       inquiry_outcome not null default 'open',
+  outcome_note  text,
+  outcome_at    timestamptz,
+
+  created_at    timestamptz not null default now()
+);
+
+create index on inquiries (outcome, inquired_at);
+create index on inquiries (contact_id, inquired_at desc);
+
+-- One row per planned touch. Written when the inquiry closes, then evaluated
+-- against suppressions at send time rather than at schedule time -- an
+-- opt-out that arrives in month 9 has to stop a touch queued in month 2.
+create table nurture_touches (
+  id            uuid primary key default gen_random_uuid(),
+  inquiry_id    uuid not null references inquiries(id) on delete cascade,
+  channel       touch_channel not null,
+  months_after  smallint not null,         -- 8 and 11 for a 12-month lease cycle
+  scheduled_for date not null,
+  state         touch_state not null default 'scheduled',
+
+  -- why it did not go out; the interesting logic is all in here
+  suppressed_reason text,
+
+  sent_at       timestamptz,
+  message_id    uuid references messages(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+
+create index on nurture_touches (state, scheduled_for);
+create unique index on nurture_touches (inquiry_id, channel, months_after);
+
+-- FCC Reassigned Numbers Database queries. Phone numbers get recycled, so the
+-- number that consented in March may belong to a stranger by February -- and
+-- your consent record then protects nothing. Querying the RND before sending
+-- carries a safe harbor, but ONLY for the first contact after the check, and
+-- only if you can prove the check happened. Hence this table.
+create table reassigned_number_checks (
+  id            uuid primary key default gen_random_uuid(),
+  phone         text not null,
+  -- the date of consent submitted to the RND; it answers "has this number been
+  -- permanently disconnected since then?"
+  consent_date  date not null,
+  is_reassigned boolean,                   -- null = "no data", which is NOT a safe harbor
+  raw_response  jsonb,
+  checked_at    timestamptz not null default now()
+);
+
+create index on reassigned_number_checks (phone, checked_at desc);
+
+-- What is actually safe to send today. Every suppression rule lives here in
+-- one place rather than scattered across application code, so "why didn't this
+-- person get contacted" has exactly one answer to read.
+--
+-- Deliberately does NOT filter on prequalification outcome. Excluding people
+-- your screening declined would build a marketing program that systematically
+-- withholds housing availability from whichever groups those criteria correlate
+-- with -- a discriminatory advertising claim separate from the screening
+-- itself. Market broadly; let the documented ruleset screen on the way in.
+create view nurture_due as
+select t.id            as touch_id,
+       t.channel,
+       t.scheduled_for,
+       i.id            as inquiry_id,
+       c.id            as contact_id,
+       c.phone,
+       c.full_name,
+       i.bedrooms_min,
+       i.price_ceiling,
+       i.area
+from nurture_touches t
+join inquiries i on i.id = t.inquiry_id
+join contacts   c on c.id = i.contact_id
+where t.state = 'scheduled'
+  and t.scheduled_for <= current_date
+  -- people who are out of the market for good
+  and i.outcome not in ('bought_home','relocated_away','leased_with_us')
+  -- marketing consent, on this channel, currently granted
+  and exists (
+        select 1 from consent_current cc
+        where cc.contact_id = c.id
+          and cc.purpose    = 'marketing'
+          and cc.channel    = t.channel::text::consent_channel
+          and cc.granted
+      )
+  -- SMS to a contact whose consent is stale needs a logged RND check that came
+  -- back clean, and the safe harbor covers only the first send after it
+  and (
+        t.channel <> 'sms'
+        or i.inquired_at > now() - interval '90 days'
+        or exists (
+             select 1 from reassigned_number_checks r
+             where r.phone = c.phone
+               and r.is_reassigned is false
+               and r.checked_at > coalesce(t.sent_at, now() - interval '30 days')
+           )
+      );
+
 -- ---------------------------------------------------------------- audit
 
 -- Append-only. Written by trigger rather than application code so a missed
@@ -311,6 +477,10 @@ create trigger audit_showings      after insert or update or delete on showings
 create trigger audit_prequal        after insert or update or delete on prequal_submissions
   for each row execute function log_change();
 create trigger audit_rule_sets      after insert or update or delete on prequal_rule_sets
+  for each row execute function log_change();
+create trigger audit_consent        after insert or update or delete on consent
+  for each row execute function log_change();
+create trigger audit_inquiries      after insert or update or delete on inquiries
   for each row execute function log_change();
 
 -- ---------------------------------------------------------------- row level security
