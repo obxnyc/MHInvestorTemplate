@@ -13,6 +13,7 @@ create type conv_status    as enum ('open','waiting','snoozed','closed');
 create type msg_direction  as enum ('inbound','outbound');
 create type msg_status     as enum ('queued','sent','delivered','undelivered','failed','received');
 create type wo_status      as enum ('new','assigned','accepted','scheduled','in_progress','needs_parts','done','cancelled');
+create type prequal_outcome as enum ('auto_approve','manual_review','declined','withdrawn');
 
 -- ---------------------------------------------------------------- people & places
 
@@ -164,16 +165,76 @@ create table work_orders (
 create index on work_orders (status, urgency);
 create index on work_orders (assigned_tech, status);
 
+-- Screening criteria live here as versioned data rather than in application
+-- code, so a decision can always be replayed against the exact ruleset that
+-- produced it. Never edit a row in place -- insert a new version.
+create table prequal_rule_sets (
+  id            uuid primary key default gen_random_uuid(),
+  version       integer not null unique,
+  criteria      jsonb not null,
+  effective_from date not null,
+  effective_to   date,               -- null while current
+  published_url text,               -- the public criteria page shown to applicants
+  created_by    uuid references staff(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+
+create table prequal_submissions (
+  id            uuid primary key default gen_random_uuid(),
+  contact_id    uuid references contacts(id) on delete set null,
+  unit_id       uuid references units(id) on delete set null,
+
+  -- exactly what the applicant typed, never normalized in place; every
+  -- derived number below must be reproducible from this
+  answers       jsonb not null,
+
+  -- Income test inputs, broken out because this is the field most likely to
+  -- be challenged. tenant_share_rent is the applicant's own portion when
+  -- rental assistance covers part of the rent -- applying the multiplier to
+  -- full rent instead is a disparate-impact problem, and in California it is
+  -- outright non-compliant.
+  gross_monthly_income   numeric(10,2),
+  assistance_monthly     numeric(10,2) not null default 0,
+  tenant_share_rent      numeric(10,2),
+  income_ratio           numeric(6,2) generated always as (
+                           case when coalesce(tenant_share_rent,0) > 0
+                                then gross_monthly_income / tenant_share_rent
+                           end) stored,
+
+  rule_set_id   uuid not null references prequal_rule_sets(id),
+  outcome       prequal_outcome not null,
+
+  -- one entry per criterion: {"key":"credit_score","verdict":"marginal",
+  --                           "value":580,"threshold":">= 620"}
+  -- This is what you show a reviewer, an applicant, or a regulator.
+  criterion_results jsonb not null default '[]'::jsonb,
+  reason_codes  text[] not null default '{}',
+
+  -- set only for the manual-review tier; the tier where bias re-enters if it
+  -- is not documented as carefully as the automated path
+  reviewed_by   uuid references staff(id) on delete set null,
+  review_reason text,
+  reviewed_at   timestamptz,
+
+  -- issued only on auto_approve or an approving review; single-use
+  booking_link  text,
+  decided_at    timestamptz not null default now()
+);
+
+create index on prequal_submissions (outcome, decided_at desc);
+create index on prequal_submissions (unit_id, decided_at desc);
+-- The fair-housing query: everyone scored by one ruleset, and how they fared.
+create index on prequal_submissions (rule_set_id, outcome);
+
 create table showings (
   id                uuid primary key default gen_random_uuid(),
   contact_id        uuid not null references contacts(id) on delete cascade,
   unit_id           uuid references units(id) on delete set null,
   shower_id         uuid references staff(id) on delete set null,
   scheduled_for     timestamptz not null,
-  -- opaque id from Tenant Turner / ShowMojo / Rently
+  -- Cal.com booking uid, from the BOOKING_CREATED webhook
   external_event_id text unique,
-  prequalified      boolean,
-  prequal_detail    jsonb,
+  submission_id     uuid references prequal_submissions(id) on delete set null,
   confirmed_prospect_at timestamptz,
   confirmed_shower_at   timestamptz,
   attended          boolean,
@@ -244,6 +305,12 @@ create trigger audit_contacts      after insert or update or delete on contacts
 create trigger audit_work_orders   after insert or update or delete on work_orders
   for each row execute function log_change();
 create trigger audit_showings      after insert or update or delete on showings
+  for each row execute function log_change();
+-- Screening decisions are the highest-stakes records in the system; audit both
+-- the decisions and any change to the criteria that produced them.
+create trigger audit_prequal        after insert or update or delete on prequal_submissions
+  for each row execute function log_change();
+create trigger audit_rule_sets      after insert or update or delete on prequal_rule_sets
   for each row execute function log_change();
 
 -- ---------------------------------------------------------------- row level security
