@@ -20,6 +20,17 @@ function field(text: string, ...labels: string[]): string | null {
 }
 
 const PHONE = /(\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/;
+
+/** Tyler's eFiling notices lay values out in a table, so after HTML stripping
+ *  the separator is a tab or a run of spaces rather than a colon. */
+function tabField(text: string, ...labels: string[]): string | null {
+  for (const label of labels) {
+    const re = new RegExp(`^[ \\t>]*${label}[ \\t]{1,}(.+)$`, "im");
+    const m = re.exec(text);
+    if (m?.[1]?.trim()) return m[1].trim();
+  }
+  return null;
+}
 const EMAIL = /[\w.+-]+@[\w-]+\.[\w.]+/;
 
 const firstPhone = (t: string) => PHONE.exec(t)?.[0] ?? null;
@@ -247,9 +258,24 @@ export function parseZillow(mail: RawEmail): Intake {
   };
 }
 
-/** Squarespace form submission. NOT yet verified against a real message.
- *  Squarespace form blocks have no webhook — storage is the submitters list,
- *  email, Drive, Mailchimp or Zapier — so email is the free path. */
+/**
+ * Squarespace form submission. Verified against a real message:
+ *
+ *   From:    Squarespace <form-submission@squarespace.info>
+ *   Subject: Form Submission - Inquiry
+ *
+ *   Sent via form submission from Larabee Homes LLC
+ *   Name: Savanna Hyatt
+ *   Email: ...
+ *   Phone: (252) 340-5089
+ *   Message: ...
+ *   SMS Consent: I agree to receive text messages from Larabee Homes LLC, ...
+ *
+ * Fields are blank-line separated "Label: value". The SMS Consent field
+ * carries the full disclosure text, which is captured VERBATIM: when consent
+ * is challenged years later, the only thing that matters is the exact sentence
+ * this person was shown on that day.
+ */
 export function parseSquarespace(mail: RawEmail): Intake {
   const t = mail.text;
   const name = field(t, "Name", "First Name", "Your Name", "Full Name");
@@ -257,7 +283,12 @@ export function parseSquarespace(mail: RawEmail): Intake {
   const phone = field(t, "Phone", "Phone Number", "Cell") ?? firstPhone(t);
   const email = field(t, "Email", "Email Address") ?? EMAIL.exec(t)?.[0] ?? null;
   const message = field(t, "Message", "Comments", "Tell us more", "How can we help");
-  const property = field(t, "Property", "Which home", "Interested in", "Address");
+  const property = field(t, "Property", "Which home", "Interested in");
+
+  // Consent line, verbatim. Presence of this field is the record that the box
+  // was ticked -- see the caveat in the README about verifying that Squarespace
+  // omits the line when it is NOT ticked.
+  const smsConsent = field(t, "SMS Consent", "Text Consent", "SMS");
 
   return {
     source: "website",
@@ -269,7 +300,87 @@ export function parseSquarespace(mail: RawEmail): Intake {
     raw: t,
     category: "prospect",
     externalId: mail.messageId,
+    consent: smsConsent
+      ? {
+          channel: "sms",
+          // The disclosure names service updates, confirmations, reminders and
+          // lease notices -- transactional. It does NOT cover marketing, so a
+          // separate opt-in is still needed before any nurture campaign.
+          purpose: "transactional",
+          disclosureText: smsConsent,
+        }
+      : null,
   };
+}
+
+export type CourtFiling = {
+  kind: "court_filing";
+  plaintiff: string | null;
+  defendant: string | null;
+  caseNumber: string | null;
+  caseStyle: string | null;
+  court: string | null;
+  filingType: string | null;
+  status: string | null;
+  envelopeNumber: string | null;
+  filedBy: string | null;
+  submittedAt: string | null;
+  acceptedAt: string | null;
+  leadFile: string | null;
+  documentUrl: string | null;
+  raw: string;
+};
+
+/**
+ * NC court eFiling notification (Tyler Technologies / Odyssey).
+ * Verified against a real message. Values are tab-separated table cells:
+ *
+ *   Case Number   26CV000973-690
+ *   Case Style    Musgrove Holdings LLC VS Amanda Marie Colemon
+ *   Filing Type   Voluntary Dismissal
+ *
+ * Case Style is "<plaintiff> VS <defendant>", and the plaintiff is whichever
+ * entity filed -- not necessarily Larabee Homes.
+ */
+export function parseCourtFiling(mail: RawEmail): CourtFiling {
+  const t = mail.text;
+  const style = tabField(t, "Case Style") ?? field(t, "Case Style");
+  const vs = style ? /^(.+?)\s+VS\.?\s+(.+)$/i.exec(style) : null;
+
+  const status = /^\s*Filing\s+(Accepted|Rejected|Submitted|Returned)/im.exec(t)?.[1]
+    ?? /Filing\s+(Accepted|Rejected|Submitted|Returned)/i.exec(mail.subject)?.[1]
+    ?? null;
+
+  const toIso = (v: string | null) => {
+    if (!v) return null;
+    const d = new Date(v.replace(/\s+(EST|EDT|CST|CDT|PST|PDT)$/i, ""));
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  };
+
+  return {
+    kind: "court_filing",
+    plaintiff: vs?.[1]?.trim() ?? null,
+    defendant: vs?.[2]?.trim() ?? null,
+    caseNumber: tabField(t, "Case Number") ?? field(t, "Case Number")
+      ?? /Case:\s*([A-Z0-9-]+)/i.exec(mail.subject)?.[1] ?? null,
+    caseStyle: style,
+    court: tabField(t, "Court") ?? field(t, "Court"),
+    filingType: tabField(t, "Filing Type") ?? field(t, "Filing Type"),
+    status,
+    envelopeNumber: tabField(t, "Envelope Number") ?? field(t, "Envelope Number")
+      ?? /Envelope Number:\s*(\d+)/i.exec(mail.subject)?.[1] ?? null,
+    filedBy: tabField(t, "Filed By") ?? field(t, "Filed By"),
+    submittedAt: toIso(tabField(t, "Date/Time Submitted")),
+    acceptedAt: toIso(tabField(t, "Date/Time Accepted")),
+    leadFile: tabField(t, "Lead File"),
+    documentUrl: /(https?:\/\/[^\s<>"]*ViewDocuments[^\s<>"]*)/i.exec(t)?.[1] ?? null,
+    raw: t,
+  };
+}
+
+export function isCourtFilingEmail(mail: RawEmail): boolean {
+  return mail.from.toLowerCase().includes("tylertech")
+    || /efiling|envelope number/i.test(mail.subject);
 }
 
 /**

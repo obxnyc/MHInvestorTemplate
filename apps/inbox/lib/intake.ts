@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { toE164 } from "./twilio";
-import { pushToTeam } from "./push";
+import { pushToTeam, pushToStaff } from "./push";
 
 export type IntakeSource = "zego" | "zillow" | "website" | "voicemail";
 
@@ -19,6 +19,12 @@ export type Intake = {
   /** Provider-side id, so a redelivered webhook cannot duplicate the message. */
   externalId: string;
   unitHint?: string | null;
+  /** Verbatim consent captured on the form, if the submission carried one. */
+  consent?: {
+    channel: "sms" | "email";
+    purpose: "transactional" | "marketing";
+    disclosureText: string;
+  } | null;
 };
 
 /**
@@ -80,6 +86,20 @@ export async function ingest(item: Intake) {
     convo = data!;
   }
 
+  // Record consent before anything else touches this contact. The exact
+  // sentence matters far more than a boolean: by the time it is challenged the
+  // form will have been redesigned twice.
+  if (item.consent) {
+    await db.from("consent").insert({
+      contact_id: contact.id,
+      channel: item.consent.channel,
+      purpose: item.consent.purpose,
+      granted: true,
+      source: `${item.source} form`,
+      disclosure_text: item.consent.disclosureText,
+    });
+  }
+
   await db.from("messages").insert({
     conversation_id: convo.id,
     direction: "inbound",
@@ -108,4 +128,47 @@ export async function ingest(item: Intake) {
   });
 
   return { ok: true, conversationId: convo.id };
+}
+
+/**
+ * Court eFiling notices are stored on their own, never as a conversation.
+ * An eviction filing is not a message to the tenant, and putting it on the
+ * shared timeline would mean whoever picks up a maintenance request also sees
+ * that the household is being evicted. Admins only.
+ */
+export async function ingestCourtFiling(f: import("./parse-email").CourtFiling) {
+  const db = supabaseAdmin();
+
+  if (f.envelopeNumber) {
+    const { data: seen } = await db.from("court_filings")
+      .select("id").eq("envelope_number", f.envelopeNumber).maybeSingle();
+    if (seen) return { ok: true, duplicate: true };
+  }
+
+  // Tyler's stamped-copy links expire, so record the deadline to save the file.
+  const expires = f.acceptedAt
+    ? new Date(new Date(f.acceptedAt).getTime() + 90 * 864e5).toISOString().slice(0, 10)
+    : null;
+
+  const { data: row } = await db.from("court_filings").insert({
+    plaintiff: f.plaintiff, defendant: f.defendant,
+    case_number: f.caseNumber, case_style: f.caseStyle, court: f.court,
+    filing_type: f.filingType, status: f.status,
+    envelope_number: f.envelopeNumber, filed_by: f.filedBy,
+    submitted_at: f.submittedAt, accepted_at: f.acceptedAt,
+    lead_file: f.leadFile, document_url: f.documentUrl,
+    document_expires_on: expires,
+    raw: f.raw,
+  }).select("id").single();
+
+  const { data: admins } = await db.from("staff")
+    .select("id").eq("role", "admin").eq("active", true);
+  await pushToStaff((admins ?? []).map((a) => a.id), {
+    title: `Filing ${f.status ?? "update"} — ${f.caseNumber ?? "case"}`,
+    body: `${f.filingType ?? "Filing"} · ${f.defendant ?? f.caseStyle ?? ""}`,
+    url: "/legal",
+    tag: `filing:${row?.id}`,
+  });
+
+  return { ok: true, filingId: row?.id };
 }

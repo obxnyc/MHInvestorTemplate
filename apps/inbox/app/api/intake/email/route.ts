@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
-import { routeEmail, type RawEmail } from "@/lib/parse-email";
-import { ingest } from "@/lib/intake";
+import { routeEmail, parseCourtFiling, isCourtFilingEmail, type RawEmail } from "@/lib/parse-email";
+import { ingest, ingestCourtFiling } from "@/lib/intake";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +29,11 @@ export async function POST(req: Request) {
   const mail = (await req.json()) as RawEmail;
   if (!mail?.messageId || !mail?.text) {
     return NextResponse.json({ error: "missing messageId or text" }, { status: 400 });
+  }
+
+  // Court filings never become conversations -- see ingestCourtFiling().
+  if (isCourtFilingEmail(mail)) {
+    return NextResponse.json(await ingestCourtFiling(parseCourtFiling(mail)));
   }
 
   const item = routeEmail(mail);

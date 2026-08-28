@@ -76,9 +76,16 @@ create table units (
   id           uuid primary key default gen_random_uuid(),
   property_id  uuid not null references properties(id) on delete cascade,
   label        text not null,              -- lot number / unit number
+  bedrooms     smallint,
+  -- full contract rent; the prequalification income test derives the
+  -- applicant's own share from this and any rental assistance
+  monthly_rent numeric(10,2),
   is_vacant    boolean not null default false,
+  available_on date,
   unique (property_id, label)
 );
+
+create index on units (is_vacant) where is_vacant;
 
 create table contacts (
   id           uuid primary key default gen_random_uuid(),
@@ -135,7 +142,10 @@ create index on consent (contact_id, channel, purpose, occurred_at desc);
 -- purpose, not just the one it arrived on.
 create view consent_current as
 select distinct on (contact_id, channel, purpose)
-       contact_id, channel, purpose, granted, occurred_at
+       contact_id, channel, purpose, granted, occurred_at,
+       -- carried through deliberately: proving consent means producing the
+       -- exact wording shown, not a boolean saying a box was ticked
+       source, disclosure_text, form_version
 from consent
 order by contact_id, channel, purpose, occurred_at desc;
 
@@ -319,7 +329,10 @@ create table prequal_submissions (
   review_reason text,
   reviewed_at   timestamptz,
 
-  -- issued only on auto_approve or an approving review; single-use
+  -- Gate for the booking page. The link does not exist until the ruleset says
+  -- it should, so a prospect cannot reach the calendar by guessing a URL.
+  booking_token text unique,
+  booking_used_at timestamptz,
   booking_link  text,
   decided_at    timestamptz not null default now()
 );
@@ -343,6 +356,50 @@ create table showings (
   attended          boolean,
   created_at        timestamptz not null default now()
 );
+
+-- ---------------------------------------------------------------- court filings
+
+-- eFiling notifications from the NC courts (Tyler Technologies / Odyssey).
+--
+-- Deliberately NOT a conversation. An eviction filing is not a message to the
+-- tenant, and putting it on the shared timeline would mean whoever picks up a
+-- maintenance request also sees that the household is being evicted -- which
+-- invites exactly the inconsistent treatment the rest of this system exists to
+-- prevent. Admins only, on its own page.
+create table court_filings (
+  id             uuid primary key default gen_random_uuid(),
+  -- the LLC that filed; Larabee files under more than one entity
+  plaintiff      text,
+  defendant      text,
+  case_number    text,
+  case_style     text,
+  court          text,
+  filing_type    text,               -- 'Complaint in Summary Ejectment', 'Voluntary Dismissal', ...
+  status         text,               -- 'Accepted', 'Rejected', 'Submitted'
+  envelope_number text unique,       -- Tyler's id; dedupes redelivered mail
+  filed_by       text,
+  submitted_at   timestamptz,
+  accepted_at    timestamptz,
+
+  lead_file      text,
+  -- Tyler's stamped-copy links expire; record when so the file can be pulled
+  -- down before it goes
+  document_url   text,
+  document_expires_on date,
+  document_saved boolean not null default false,
+
+  -- best-effort links; the notification only gives a name, so matching is
+  -- advisory rather than authoritative
+  contact_id     uuid references contacts(id) on delete set null,
+  unit_id        uuid references units(id) on delete set null,
+
+  raw            text,
+  created_at     timestamptz not null default now()
+);
+
+create index on court_filings (case_number);
+create index on court_filings (defendant);
+create index on court_filings (created_at desc);
 
 -- ---------------------------------------------------------------- push
 
@@ -559,6 +616,8 @@ create trigger audit_consent        after insert or update or delete on consent
   for each row execute function log_change();
 create trigger audit_inquiries      after insert or update or delete on inquiries
   for each row execute function log_change();
+create trigger audit_filings        after insert or update or delete on court_filings
+  for each row execute function log_change();
 create trigger audit_notes          after insert or update or delete on notes
   for each row execute function log_change();
 
@@ -659,6 +718,14 @@ create policy read_notes_in_visible_conversations on notes for select
   using (exists (select 1 from conversations c where c.id = notes.conversation_id));
 
 -- Only admins read the audit log, and nobody writes it from the client.
+alter table court_filings enable row level security;
+
+-- Admins only. No team-membership escape hatch: office staff handling a
+-- maintenance request must not be able to see a household's eviction history.
+create policy admin_reads_filings on court_filings for select
+  using (exists (select 1 from staff s
+                 where s.id = auth.uid() and s.role = 'admin' and s.active));
+
 create policy admin_reads_audit on audit_log for select
   using (exists (select 1 from staff s
                  where s.id = auth.uid() and s.role = 'admin' and s.active));

@@ -14,6 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <nav>
           <Link href="/">Inbox</Link>
           <Link href="/calls">Calls</Link>
+          {staff.role === "admin" && <Link href="/legal">Legal</Link>}
           {staff.role === "admin" && <Link href="/audit">Audit</Link>}
         </nav>
         <span className="who" title={staff.full_name}>

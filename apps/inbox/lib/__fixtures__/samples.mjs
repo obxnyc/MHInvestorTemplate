@@ -100,3 +100,58 @@ Renter Name
 RENTER'S MESSAGE
 Hi, I'm still interested in this rental. I pay $1350 per month currently. Not sure of my current credit score but I can pull it. I don't have any pets and I don't have any roommates. I am able to get a co-signer/guarantor if needed.`,
 };
+
+/** Squarespace form submission — real layout, placeholder details. Note the
+ *  blank lines between fields and the verbatim SMS consent disclosure. */
+export const SQUARESPACE = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Inquiry",
+  messageId: "<sq-real-1@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Person
+
+Email: sample@example.com
+
+Phone: (252) 555-0100
+
+Message: Looking for a 3 bedroom 2 bath house around the Elizabeth City area that allows pets, budget 800 to 1000 a month
+
+: Subscribe for news + updates
+
+SMS Consent: I agree to receive text messages from Larabee Homes LLC, including maintenance and service updates, showing confirmations, rent and account reminders, and lease notifications. Message frequency varies. Msg & data rates may apply. Reply STOP to cancel, HELP for help. See our Privacy Policy at larabeehomesllc.com/privacy-policy and Terms of Service at larabeehomesllc.com/terms-of-service.
+
+Manage Submissions
+
+Does this submission look like spam? Report it here.`,
+};
+
+/** NC court eFiling notice (Tyler Technologies). Tab-separated table cells. */
+export const COURT_FILING = {
+  from: "no-reply@efilingmail.tylertech.cloud",
+  to: "larabeehomesllc@gmail.com",
+  subject: "Filing Accepted for Case: 26CV000973-690; Sample Holdings LLC VS Sample Defendant; Envelope Number: 7689456",
+  messageId: "<tyler-1@tylertech.cloud>",
+  text: `Filing Accepted
+Envelope Number: 7689456
+
+The filing below was reviewed and has been accepted by the Clerk's office located in Pasquotank District Court, NC.
+
+Filing Details
+Court\tDistrict Court
+Case Number\t26CV000973-690
+Case Style\tSample Holdings LLC VS Sample Defendant
+Date/Time Submitted\t8/25/2026 9:34 AM EST
+Date/Time Accepted\t8/25/2026 9:38 AM EST
+Accepted Comments\t
+Filing Type\tVoluntary Dismissal
+Activity Requested\tEFile
+Filed By\tSample Filer
+
+Document Details
+Lead File\tcv405.pdf
+Lead File Page Count\t1
+File Stamped Copy\thttps://northcarolina.tylertech.cloud/ViewDocuments.aspx?FID=a4a656b3-8ee2-42aa-84b3-2f523a93bbb4
+This link is active for 90 days.`,
+};

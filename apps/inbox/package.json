@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test:parsers": "node lib/__fixtures__/parsers.test.mjs"
+    "test:parsers": "node lib/__fixtures__/parsers.test.mjs",
+    "test:prequal": "node lib/__fixtures__/prequal.test.mjs",
+    "test": "npm run test:parsers && npm run test:prequal"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
