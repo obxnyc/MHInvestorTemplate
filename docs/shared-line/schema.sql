@@ -44,6 +44,27 @@ create table staff (
   created_at    timestamptz not null default now()
 );
 
+-- A team is the group that owns a kind of work -- maintenance, leasing,
+-- collections. Conversations route to a team, and everyone on that team sees
+-- the thread whether or not they are the one who claimed it. That shared
+-- visibility is the point: anyone can pick up where anyone else left off.
+create table teams (
+  id          uuid primary key default gen_random_uuid(),
+  key         text not null unique,       -- 'maintenance', 'leasing', 'vendors'
+  name        text not null,
+  -- inbound conversations classified into this category land with this team
+  category    conv_category,
+  created_at  timestamptz not null default now()
+);
+
+create table team_members (
+  team_id   uuid not null references teams(id) on delete cascade,
+  staff_id  uuid not null references staff(id) on delete cascade,
+  primary key (team_id, staff_id)
+);
+
+create index on team_members (staff_id);
+
 create table properties (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
@@ -124,7 +145,10 @@ create table conversations (
   -- below your threshold, leave unassigned instead of guessing
   category_confidence numeric(3,2),
   status         conv_status not null default 'open',
+  team_id        uuid references teams(id) on delete set null,
+  -- null means unclaimed: visible to the whole team, nobody has it yet
   assigned_to    uuid references staff(id) on delete set null,
+  claimed_at     timestamptz,
   unit_id        uuid references units(id) on delete set null,
   subject        text,
   last_message_at timestamptz not null default now(),
@@ -135,6 +159,7 @@ create table conversations (
 -- The inbox query: open threads by category, most recent first.
 create index on conversations (status, category, last_message_at desc);
 create index on conversations (assigned_to, status);
+create index on conversations (team_id, status, last_message_at desc);
 -- At most one open conversation per contact, so inbound messages have an
 -- unambiguous home.
 create unique index one_open_conversation_per_contact
@@ -483,6 +508,50 @@ create trigger audit_consent        after insert or update or delete on consent
 create trigger audit_inquiries      after insert or update or delete on inquiries
   for each row execute function log_change();
 
+-- ---------------------------------------------------------------- claiming
+
+-- Two people tap "I've got this" at the same moment. The conditional UPDATE is
+-- what makes that safe: only one transaction can match `assigned_to is null`,
+-- and the loser is told who actually holds it rather than silently stealing it.
+-- Doing this as a read-then-write in application code is the classic way to
+-- end up with two employees replying to the same tenant.
+create or replace function claim_conversation(p_conversation uuid)
+returns table (ok boolean, holder_id uuid, holder_name text)
+language plpgsql security definer as $$
+declare
+  winner uuid;
+begin
+  update conversations
+     set assigned_to = auth.uid(), claimed_at = now()
+   where id = p_conversation
+     and assigned_to is null
+  returning assigned_to into winner;
+
+  if winner is not null then
+    return query select true, winner, s.full_name from staff s where s.id = winner;
+  else
+    -- somebody already has it; say who
+    return query
+      select false, c.assigned_to, s.full_name
+        from conversations c
+        left join staff s on s.id = c.assigned_to
+       where c.id = p_conversation;
+  end if;
+end $$;
+
+-- Handing a thread back to the team pool, or to a specific person.
+create or replace function release_conversation(p_conversation uuid)
+returns void language sql security definer as $$
+  update conversations set assigned_to = null, claimed_at = null
+   where id = p_conversation;
+$$;
+
+create or replace function reassign_conversation(p_conversation uuid, p_to uuid)
+returns void language sql security definer as $$
+  update conversations set assigned_to = p_to, claimed_at = now()
+   where id = p_conversation;
+$$;
+
 -- ---------------------------------------------------------------- row level security
 
 alter table conversations enable row level security;
@@ -491,17 +560,38 @@ alter table notes         enable row level security;
 alter table work_orders   enable row level security;
 alter table audit_log     enable row level security;
 
--- Office staff see the whole inbox. That's the entire point of a shared line:
--- anyone can pick up where anyone else left off.
+alter table teams        enable row level security;
+alter table team_members enable row level security;
+
+-- Admins and office staff see the whole inbox. That is the entire point of a
+-- shared line: anyone can pick up where anyone else left off, claimed or not.
 create policy office_reads_all on conversations for select
   using (exists (select 1 from staff s
                  where s.id = auth.uid() and s.role in ('admin','office') and s.active));
 
--- Techs see only conversations attached to a work order assigned to them.
+-- Everyone else sees their teams' conversations -- the whole team's threads,
+-- not just the ones assigned to them. A tech on the maintenance team reads the
+-- entire maintenance queue.
+create policy team_reads_own on conversations for select
+  using (exists (select 1 from team_members m
+                 join staff s on s.id = m.staff_id and s.active
+                 where m.staff_id = auth.uid()
+                   and m.team_id = conversations.team_id));
+
+-- ...plus anything attached to a work order they personally hold.
 create policy tech_reads_assigned on conversations for select
   using (exists (select 1 from work_orders w
                  where w.conversation_id = conversations.id
                    and w.assigned_tech = auth.uid()));
+
+create policy staff_read_teams on teams for select using (true);
+create policy staff_read_members on team_members for select using (true);
+
+-- Messages and notes inherit conversation visibility.
+create policy read_messages_in_visible_conversations on messages for select
+  using (exists (select 1 from conversations c where c.id = messages.conversation_id));
+create policy read_notes_in_visible_conversations on notes for select
+  using (exists (select 1 from conversations c where c.id = notes.conversation_id));
 
 -- Only admins read the audit log, and nobody writes it from the client.
 create policy admin_reads_audit on audit_log for select
