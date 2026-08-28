@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { prettyPhone, clockTime } from "@/lib/format";
+import { catLabel, propertyOf } from "@/lib/category";
 import Composer from "@/components/Composer";
 import ClaimPill from "@/components/ClaimPill";
 import CloseButton from "@/components/CloseButton";
@@ -20,7 +21,7 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
 
   const { data: convo } = await supabase
     .from("conversations")
-    .select("id, category, source, status, category_confidence, closure_prompts, last_message_at, claimed_at, snooze_until, assigned_to, contacts(phone, full_name), staff:assigned_to(full_name)")
+    .select("id, category, source, status, category_confidence, closure_prompts, last_message_at, claimed_at, snooze_until, assigned_to, units(label, properties(name, color)), contacts(phone, full_name, party, units(label, properties(name, color))), staff:assigned_to(full_name)")
     .eq("id", id).single();
   if (!convo) notFound();
 
@@ -33,7 +34,16 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
       .eq("conversation_id", id).order("created_at"),
   ]);
 
-  const contact = convo.contacts as unknown as { phone: string; full_name: string | null };
+  const contact = convo.contacts as unknown as {
+    phone: string; full_name: string | null; party: string;
+    units: { label: string | null; properties: { name: string; color: string | null } | null } | null;
+  };
+  const prop = propertyOf(convo.units as never, contact?.units as never);
+  // Who they are belongs here, next to their number, rather than in the
+  // list — the list has to answer "what is this about", and a party badge
+  // sitting where the category badge should be answers the wrong question.
+  const party = contact.party && contact.party !== "other"
+    ? contact.party.replace("_", " ") : null;
   const holder = convo.staff as unknown as { full_name: string } | null;
   const name = contact.full_name || prettyPhone(contact.phone);
 
@@ -52,9 +62,19 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
       <div className="chead">
         <Link href="/" className="chevron" aria-label="Back to messages">&lsaquo;</Link>
         <span className="av">{initials(name)}</span>
-        <span>
+        <span className="cwho">
           <span className="nm">{name}</span>
-          <span className="sub">via {convo.source}</span>
+          <span className="sub">
+            <span className={`badge cat-${convo.category}`}>{catLabel(convo.category)}</span>
+            {party && <span className="dim">{party}</span>}
+            {prop && (
+              <span className="dim">
+                <span className="pdot" style={{ background: prop.color }} />
+                {prop.name}{prop.unit ? ` · ${prop.unit}` : ""}
+              </span>
+            )}
+            <span className="dim">via {convo.source}</span>
+          </span>
         </span>
         <ClaimPill
           conversationId={id}

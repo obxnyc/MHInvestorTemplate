@@ -9,6 +9,14 @@
   --warn:#B0561F;--warn-soft:#FBEFE5;--crit:#9B2C2C;
   --ground:var(--page);--surface:var(--card);--surface-2:var(--sunk);--rule:var(--hair);
   --radius:10px;
+  /* category palette — no red/green pair, no two neighbouring hues, so the six
+     stay apart for the most common colour blindness as well as at 3px wide */
+  --mt:#C2703A;--mt-soft:#FBEEE3;--mt-ink:#8A4418;
+  --pr:#3E6BB0;--pr-soft:#EAF0FB;--pr-ink:#33507E;
+  --tn:#2E8B68;--tn-soft:#E6F1EC;--tn-ink:#0F4B36;
+  --vd:#B0863A;--vd-soft:#FAF1DF;--vd-ink:#7A5A1E;
+  --cl:#A8497A;--cl-soft:#FAE6EF;--cl-ink:#7E3358;
+  --ot:#8595AC;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -18,6 +26,12 @@
     --accent:#52B98C;--accent-soft:#152A22;--accent-ink:#8FDCB9;
     --dark:#E9EDF3;--dark-ink:#0A0D12;
     --warn:#D6884F;--warn-soft:#2A2018;--crit:#D46B68;
+    --mt:#D6924F;--mt-soft:#2A1E14;--mt-ink:#E8B183;
+    --pr:#6D9AD8;--pr-soft:#141C29;--pr-ink:#9CC0EE;
+    --tn:#52B98C;--tn-soft:#152A22;--tn-ink:#8FDCB9;
+    --cl:#CE7BA5;--cl-soft:#2A1721;--cl-ink:#E3A6C4;
+    --vd:#CFA45C;--vd-soft:#26200F;--vd-ink:#E0C48A;
+    --ot:#7A8598;
   }
 }
 :root[data-theme="dark"]{
@@ -27,6 +41,12 @@
   --accent:#52B98C;--accent-soft:#152A22;--accent-ink:#8FDCB9;
   --dark:#E9EDF3;--dark-ink:#0A0D12;
   --warn:#D6884F;--warn-soft:#2A2018;--crit:#D46B68;
+  --mt:#D6924F;--mt-soft:#2A1E14;--mt-ink:#E8B183;
+  --pr:#6D9AD8;--pr-soft:#141C29;--pr-ink:#9CC0EE;
+  --tn:#52B98C;--tn-soft:#152A22;--tn-ink:#8FDCB9;
+  --cl:#CE7BA5;--cl-soft:#2A1721;--cl-ink:#E3A6C4;
+  --vd:#CFA45C;--vd-soft:#26200F;--vd-ink:#E0C48A;
+  --ot:#7A8598;
 }
 
 *{box-sizing:border-box}
@@ -106,6 +126,9 @@ button{font:inherit;cursor:pointer}
   .search{padding:.7rem .7rem .5rem}
   .tabsrow{padding:0 .7rem .5rem}
   .tabs a{font-size:.74rem;padding:.32rem .2rem}
+  .cattabs{padding:0 .7rem .5rem}
+  .cattab{font-size:.72rem;padding:.26rem .48rem}
+  .prop{font-size:.68rem}
   select{font-size:.74rem}
 }
 .listcol{border-right:1px solid var(--hair);background:var(--rail);
@@ -135,12 +158,45 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   background-position:calc(100% - 13px) 54%,calc(100% - 9px) 54%;
   background-size:4px 4px,4px 4px;background-repeat:no-repeat}
 
+/* ---- what it is about: the category strip ----
+   Scrolls horizontally rather than wrapping to two lines: the list column is
+   narrow by design and a strip that changes height moves every row underneath
+   it every time a filter changes. */
+/* A chip cut off at the edge is not an affordance. The fade says "there is
+   more this way" without spending a row on arrows. */
+.catwrap{position:relative}
+.catwrap::after{content:"";position:absolute;right:0;top:0;bottom:.6rem;width:2.2rem;
+  pointer-events:none;background:linear-gradient(90deg,transparent,var(--rail))}
+.cattabs{display:flex;gap:.3rem;padding:0 .9rem .6rem;overflow-x:auto;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.cattabs::-webkit-scrollbar{display:none}
+.cattab{display:inline-flex;align-items:center;gap:.34rem;flex:0 0 auto;
+  padding:.3rem .55rem;border-radius:999px;border:1px solid var(--hair);
+  background:var(--card);color:var(--muted);font-size:.76rem;font-weight:600;
+  white-space:nowrap}
+.cattab:hover{background:var(--sunk)}
+.cattab .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--cat,var(--faint));
+  flex:none}
+.cattab .n{font-size:.68rem;font-weight:700;color:var(--faint);
+  font-family:ui-monospace,monospace}
+.cattab.on{background:var(--cat-soft,var(--sunk));border-color:transparent;
+  color:var(--cat-ink,var(--ink));font-weight:700}
+.cattab.on .n{color:inherit;opacity:.75}
+/* "All" has no colour of its own — it is the absence of a filter, and giving
+   it one would imply a seventh category. */
+.cattab.cat-all .dot{background:linear-gradient(135deg,#C2703A 0 33%,#2F6DB5 33% 66%,#2E8B68 66%)}
+
 /* ---- conversation rows ---- */
 .rows{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1}
 .row{display:flex;gap:.8rem;width:100%;padding:.9rem .95rem;
   border-bottom:1px solid var(--hair-2);align-items:flex-start}
 .row:hover{background:var(--hair-2)}
-.row.sel{background:var(--sunk);box-shadow:inset 3px 0 0 var(--accent)}
+/* The rail is the fastest read in the list: you can tell a maintenance thread
+   from a prospect from across the room, before any text resolves. Selection
+   changes the background rather than the rail, so picking a row never costs
+   you the category. */
+.row{box-shadow:inset 3px 0 0 var(--cat,transparent)}
+.row.sel{background:var(--sunk)}
 /* Ownership rides on the avatar rather than taking a column of its own, so the
    message text gets the full width. */
 .avwrap{position:relative;flex:none;line-height:0;margin-top:.1rem}
@@ -162,13 +218,30 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   padding-left:.4rem;white-space:nowrap}
 .rprev{display:block;max-width:100%;margin:.3rem 0 0;font-size:.875rem;color:var(--muted);
   line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Where, as opposed to what. A dot rather than a second stripe or a second
+   badge: the category already owns those, and two competing colour systems on
+   one row cancel each other out. */
+.prop{display:flex;align-items:center;gap:.32rem;margin:.28rem 0 0;min-width:0;
+  font-size:.72rem;color:var(--faint);font-weight:600}
+.pdot{width:.45rem;height:.45rem;border-radius:2px;flex:none}
+.pname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{font-size:.58rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
   padding:.18em .45em;border-radius:5px;background:var(--sunk);color:var(--muted);
   flex:0 0 auto;white-space:nowrap}
-.badge.current_tenant{background:var(--accent-soft);color:var(--accent-ink)}
-.badge.prospect{background:#EAF0FB;color:#33507E}
-.badge.tech{background:#F0ECFA;color:#54417F}
-.badge.vendor{background:var(--warn-soft);color:var(--warn)}
+/* One colour per category, mapped once and read by the rail, the badge and the
+   tab dot — so the orange on the "Maintenance" tab is provably the same orange
+   as the stripe on a maintenance row. The values themselves live on :root and
+   flip with the theme; these rules only say which token each class points at.
+   Party badges (.tech and friends) moved to the thread header — the list is
+   about the subject now. */
+.cat-maintenance   {--cat:var(--mt);--cat-soft:var(--mt-soft);--cat-ink:var(--mt-ink)}
+.cat-prospect      {--cat:var(--pr);--cat-soft:var(--pr-soft);--cat-ink:var(--pr-ink)}
+.cat-current_tenant{--cat:var(--tn);--cat-soft:var(--tn-soft);--cat-ink:var(--tn-ink)}
+.cat-vendor        {--cat:var(--vd);--cat-soft:var(--vd-soft);--cat-ink:var(--vd-ink)}
+.cat-collections   {--cat:var(--cl);--cat-soft:var(--cl-soft);--cat-ink:var(--cl-ink)}
+.cat-other         {--cat:var(--ot);--cat-soft:var(--sunk);--cat-ink:var(--muted)}
+
+.badge{background:var(--cat-soft,var(--sunk));color:var(--cat-ink,var(--muted))}
 .pill{font-size:.62rem;font-weight:700;padding:.1em .38em;border-radius:5px;flex:none;
   font-family:ui-monospace,monospace}
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
@@ -186,8 +259,17 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .chead{display:flex;align-items:center;gap:.6rem;padding:.75rem 1rem;
   border-bottom:1px solid var(--hair);background:var(--card)}
 .chevron{color:var(--accent);font-size:1.35rem;line-height:1}
-.chead .nm{font-weight:700;font-size:.95rem;letter-spacing:-.015em;line-height:1.15}
-.chead .sub{display:block;font-size:.72rem;color:var(--muted)}
+.cwho{min-width:0;flex:1 1 auto}
+.chead .nm{display:block;font-weight:700;font-size:.95rem;letter-spacing:-.015em;
+  line-height:1.15;overflow-wrap:anywhere}
+/* Category, then who they are, then where, then how it arrived — wraps rather
+   than truncates, because every one of these is the answer to a question
+   somebody asks before they reply. */
+.chead .sub{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .45rem;
+  margin-top:.18rem;font-size:.72rem;color:var(--muted)}
+.chead .sub .dim{display:inline-flex;align-items:center;gap:.28rem}
+.chead .sub .dim + .dim::before{content:"·";color:var(--faint);margin-right:.17rem}
+.chead .badge{text-transform:uppercase}
 .takepill{margin-left:auto;border:none;border-radius:999px;padding:.32rem .75rem;
   font-size:.74rem;font-weight:700;background:var(--warn);color:#fff}
 .takepill.mine{background:var(--accent-soft);color:var(--accent-ink)}

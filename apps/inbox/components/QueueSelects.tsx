@@ -2,7 +2,13 @@
 import { useRouter, useSearchParams } from "next/navigation";
 
 /** The two dropdowns are plain links under the hood, so filtering survives a
- *  refresh and can be shared as a URL. */
+ *  refresh and can be shared as a URL.
+ *
+ *  Maintenance and Leasing used to live in this select and are now tabs. They
+ *  are the two piles anyone looks at twenty times a day, and a filter you have
+ *  to open a menu to reach is a filter nobody uses. What is left here is the
+ *  exception handling — threads nobody claimed, threads waiting on a closure
+ *  answer, threads the classifier was not sure about. */
 export default function QueueSelects(
   { who, show, unclaimed, closing }:
   { who: string; show: string; unclaimed: number; closing: number },
@@ -26,9 +32,7 @@ export default function QueueSelects(
         <option value="mine">Mine</option>
       </select>
       <select value={show} onChange={(e) => go("show", e.target.value)} aria-label="Queue">
-        <option value="open">All queues</option>
-        <option value="maintenance">Maintenance</option>
-        <option value="leasing">Leasing</option>
+        <option value="open">Everything open</option>
         <option value="closing">Needs closing{closing ? ` (${closing})` : ""}</option>
         <option value="review">Needs review</option>
       </select>

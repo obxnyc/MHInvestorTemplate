@@ -69,6 +69,11 @@ create table properties (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
   address     text,
+  -- Hex tint used to colour-code the inbox. Optional: the UI derives a stable
+  -- colour from the property name when this is null, so a new property is
+  -- never uncoloured. Set it when you want a specific park to read a specific
+  -- way (e.g. the one everybody already calls "the blue one").
+  color       text check (color is null or color ~ '^#[0-9A-Fa-f]{6}$'),
   created_at  timestamptz not null default now()
 );
 
@@ -777,6 +782,20 @@ where c.status = 'open'
   and c.closure_prompts > 0
   and (c.snooze_until is null or c.snooze_until < now())
 order by c.closure_prompts desc, conversation_last_activity(c.id);
+
+-- Counts behind the category tabs. The tabs are the answer to "is this a
+-- maintenance request or a prospect?" at a glance, and a tab with no number on
+-- it is the fastest way to see that a queue is empty -- so the count has to be
+-- cheap enough to run on every list render. security_invoker keeps the numbers
+-- honest: a tech sees the count of what a tech can open, not the whole office's.
+create or replace view open_category_counts
+with (security_invoker = true) as
+select c.category,
+       count(*)::int                                            as total,
+       count(*) filter (where c.assigned_to is null)::int       as unclaimed
+from conversations c
+where c.status = 'open'
+group by c.category;
 
 -- ---------------------------------------------------------------- claiming
 

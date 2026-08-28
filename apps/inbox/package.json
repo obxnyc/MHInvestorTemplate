@@ -9,8 +9,9 @@
     "typecheck": "tsc --noEmit",
     "test:parsers": "node lib/__fixtures__/parsers.test.mjs",
     "test:prequal": "node lib/__fixtures__/prequal.test.mjs",
-    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify",
-    "test:classify": "node lib/__fixtures__/classify.test.mjs"
+    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category",
+    "test:classify": "node lib/__fixtures__/classify.test.mjs",
+    "test:category": "node lib/__fixtures__/category.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
