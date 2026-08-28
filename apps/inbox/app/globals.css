@@ -131,8 +131,12 @@ button{font:inherit;cursor:pointer}
   .prop{font-size:.68rem}
   select{font-size:.74rem}
 }
+/* min-height:0 is load-bearing on every link in this chain. A grid item and a
+   flex item both start at min-height:auto -- "never shrink below my content" --
+   so an overflowing list grows the column instead of scrolling inside it, and
+   the shell's overflow:hidden then clips the rows you cannot scroll to. */
 .listcol{border-right:1px solid var(--hair);background:var(--rail);
-  display:flex;flex-direction:column;min-width:0}
+  display:flex;flex-direction:column;min-width:0;min-height:0}
 
 .search{position:relative;padding:.9rem .9rem .65rem}
 .search input{width:100%;padding:.6rem .8rem .6rem 2.2rem;border:1px solid var(--hair);
@@ -187,7 +191,8 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .cattab.cat-all .dot{background:linear-gradient(135deg,#C2703A 0 33%,#2F6DB5 33% 66%,#2E8B68 66%)}
 
 /* ---- conversation rows ---- */
-.rows{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1}
+.rows{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1 1 0;min-height:0;
+  overscroll-behavior:contain}
 .row{display:flex;gap:.8rem;width:100%;padding:.9rem .95rem;
   border-bottom:1px solid var(--hair-2);align-items:flex-start}
 .row:hover{background:var(--hair-2)}
@@ -249,7 +254,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .none{padding:3rem 1rem;text-align:center;color:var(--muted);font-size:.86rem}
 
 /* ---- the thread ---- */
-.chatcol{display:flex;flex-direction:column;min-width:0;background:var(--pane)}
+.chatcol{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--pane)}
 .empty{flex:1;display:grid;place-items:center;text-align:center;padding:2rem}
 .empty .ic{width:3.2rem;height:3.2rem;border-radius:50%;background:var(--sunk);
   display:grid;place-items:center;margin:0 auto .9rem}
@@ -274,7 +279,8 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   font-size:.74rem;font-weight:700;background:var(--warn);color:#fff}
 .takepill.mine{background:var(--accent-soft);color:var(--accent-ink)}
 .takepill.other{background:var(--sunk);color:var(--ink-2)}
-.msgs{flex:1;overflow-y:auto;padding:1rem 1.1rem;display:flex;flex-direction:column}
+.msgs{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  padding:1rem 1.1rem;display:flex;flex-direction:column}
 .daysep{display:flex;align-items:center;gap:.75rem;margin:.9rem 0 .7rem;font-size:.66rem;
   color:var(--faint);font-weight:700;letter-spacing:.07em;text-transform:uppercase}
 .daysep::before,.daysep::after{content:"";flex:1;height:1px;background:var(--hair)}
