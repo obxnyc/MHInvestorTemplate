@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
-import { pushToTeam } from "@/lib/push";
+import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
 import { classify, needsReview } from "@/lib/classify";
 import { prettyPhone } from "@/lib/format";
 
@@ -109,6 +109,8 @@ export async function POST(req: Request) {
     body: body.slice(0, 140),
     url: `/c/${convo.id}`,
     tag: convo.id,
+    conversationId: convo.id,
+    actions: CLAIM_ACTIONS,
   });
 
   // Empty TwiML: acknowledge without auto-replying. A human answers from the

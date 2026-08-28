@@ -236,14 +236,35 @@ Generate keys once, then set both in your environment:
 npx web-push generate-vapid-keys
 ```
 
-Everyone installs the app the same way, and on iPhone this step is mandatory:
+The two platforms differ, so the in-app prompt differs too.
 
-- **iPhone** — open the site in Safari, tap **Share → Add to Home Screen**, then
-  open it from the home screen icon. iOS only delivers web push to an installed
-  PWA, never from a Safari tab. The app detects this and shows the instruction
-  instead of a button that cannot work.
-- **Android** — Chrome offers "Install app"; push works either way.
-- **Desktop** — works in the browser directly.
+**Android** — one tap on *Turn on alerts*. Web push works straight from a
+Chrome tab; no install needed. The app suggests *Install app* from the browser
+menu anyway, because a background tab can be evicted when the phone is low on
+memory, but alerts work either way.
+
+**iPhone** — open the site in Safari, tap **Share → Add to Home Screen**, then
+open it from the icon. iOS delivers push only to an installed PWA, never from a
+Safari tab. The app detects a Safari tab and shows that instruction instead of
+an Enable button that would silently do nothing.
+
+**Desktop** — works directly in the browser.
+
+### Acting from the notification
+
+Maintenance alerts carry **I've got it** and **Already done** buttons, so a tech
+can claim or close without opening the app — useful when they are between jobs.
+The service worker calls the same endpoints the UI does, with the session
+cookie, so the action is attributed to the right person and lands in the audit
+trail. Losing a claim race comes back as *"Dale picked it up first"* rather than
+failing silently, and *Already done* on a thread with an unfinished work order
+opens the app instead, because that decision needs a screen.
+
+Chrome on Android renders at most two action buttons. **iOS ignores the actions
+array entirely** — the notification still opens the thread when tapped, so
+nothing needs special-casing. Urgent alerts (missed calls) also stay in the
+shade until dealt with and use a distinct vibration; both are Android-only and
+ignored elsewhere.
 
 Replace `public/icon-192.png` and `public/icon-512.png` with real artwork; the
 committed ones are flat placeholder squares.

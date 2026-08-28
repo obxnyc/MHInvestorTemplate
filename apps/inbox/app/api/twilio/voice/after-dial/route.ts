@@ -57,6 +57,7 @@ export async function POST(req: Request) {
       body: "Nobody picked up. Voicemail may follow.",
       url: "/calls",
       tag: `missed:${call.id}`,
+      urgent: true,
     });
   }
 

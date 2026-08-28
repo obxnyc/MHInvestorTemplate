@@ -12,7 +12,26 @@ function configure() {
   configured = true;
 }
 
-export type Push = { title: string; body: string; url: string; tag?: string };
+export type Push = {
+  title: string;
+  body: string;
+  url: string;
+  tag?: string;
+  /** Keeps the notification in the shade and buzzes harder. Android only. */
+  urgent?: boolean;
+  /** Enables acting from the shade. Needed by the claim/close actions. */
+  conversationId?: string;
+  /** Up to two. Chrome/Android renders them; iOS ignores the array. */
+  actions?: { action: "claim" | "close"; title: string }[];
+};
+
+/** The two buttons a maintenance push should carry on Android. Harmless
+ *  everywhere else — iOS drops them and the notification still opens the
+ *  thread when tapped. */
+export const CLAIM_ACTIONS: Push["actions"] = [
+  { action: "claim", title: "I've got it" },
+  { action: "close", title: "Already done" },
+];
 
 /**
  * Notify specific people. Endpoints die when someone reinstalls or clears the

@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { toE164 } from "./twilio";
-import { pushToTeam, pushToStaff } from "./push";
+import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
 
 export type IntakeSource = "zego" | "zillow" | "website" | "voicemail";
 
@@ -126,6 +126,8 @@ export async function ingest(item: Intake) {
     body: item.summary.slice(0, 140),
     url: `/c/${convo.id}`,
     tag: convo.id,
+    conversationId: convo.id,
+    actions: CLAIM_ACTIONS,
   });
 
   return { ok: true, conversationId: convo.id };

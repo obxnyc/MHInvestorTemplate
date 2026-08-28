@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTwilioSignature, formToObject } from "@/lib/twilio";
-import { pushToTeam } from "@/lib/push";
+import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
 import { prettyPhone } from "@/lib/format";
 
 export const runtime = "nodejs";
@@ -72,6 +72,8 @@ export async function POST(req: Request) {
     body: (text ?? "").slice(0, 140),
     url: `/c/${conversationId}`,
     tag: `vm:${call.id}`,
+    conversationId,
+    actions: CLAIM_ACTIONS,
   });
 
   return new NextResponse(null, { status: 204 });
