@@ -139,3 +139,22 @@ button { font:inherit; cursor:pointer; }
 .audit code { background:var(--surface-2); padding:.05em .3em; border-radius:3px; font-size:.9em; }
 .change { color:var(--ink-2); font-size:.8rem; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* ---- push prompt ---- */
+.pushbar { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
+  padding:.6rem 1rem; background:var(--accent-soft); color:var(--ink);
+  border-bottom:1px solid var(--rule); font-size:.85rem; }
+.pushbar button { margin-left:auto; padding:.35rem .8rem; border:none; border-radius:var(--radius);
+  background:var(--accent); color:var(--ground); font-weight:600; }
+
+/* ---- calls ---- */
+.pagetitle { font-size:1.25rem; margin:.75rem 0 .9rem; }
+.thread.call { display:block; }
+.thread.call.needs { border-left:3px solid var(--warn); }
+.rec { width:100%; margin:.5rem 0 .25rem; height:2rem; }
+.mini { font-size:.72rem; padding:.2rem .55rem; border-radius:var(--radius);
+  border:1px solid var(--rule); background:var(--surface); color:var(--muted); }
+.mini.primary { background:var(--accent); border-color:var(--accent); color:var(--ground);
+  font-weight:600; }
+.line3 .mini { margin-left:auto; }
+.line3 .mini + .mini { margin-left:.4rem; }

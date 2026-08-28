@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
+import { pushToTeam } from "@/lib/push";
+import { prettyPhone } from "@/lib/format";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -92,6 +94,15 @@ export async function POST(req: Request) {
   await db.from("conversations")
     .update({ last_message_at: new Date().toISOString(), status: "open" })
     .eq("id", convo.id);
+
+  const { data: who } = await db.from("contacts")
+    .select("full_name, phone").eq("id", contact.id).maybeSingle();
+  await pushToTeam(convo.team_id, {
+    title: who?.full_name || prettyPhone(who?.phone ?? from),
+    body: body.slice(0, 140),
+    url: `/c/${convo.id}`,
+    tag: convo.id,
+  });
 
   // Empty TwiML: acknowledge without auto-replying. A human answers from the
   // portal, and that reply carries their name.

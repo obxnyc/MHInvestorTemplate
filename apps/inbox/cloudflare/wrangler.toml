@@ -1,0 +1,5 @@
+name = "larabee-email-intake"
+main = "email-worker.js"
+compatibility_date = "2026-08-01"
+
+# INTAKE_URL and INTAKE_SECRET are set with `wrangler secret put`, never here.

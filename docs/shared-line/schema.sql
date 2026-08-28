@@ -83,6 +83,9 @@ create table units (
 create table contacts (
   id           uuid primary key default gen_random_uuid(),
   phone        text not null unique,       -- E.164, the join key for every webhook
+  -- Zego, Zillow and Squarespace often give an email before a phone number,
+  -- so a contact can arrive email-first and get merged on phone later.
+  email        text,
   full_name    text,
   party        party_type not null default 'other',
   unit_id      uuid references units(id) on delete set null,
@@ -93,6 +96,7 @@ create table contacts (
 );
 
 create index on contacts (party);
+create index on contacts (email) where email is not null;
 create index on contacts using gin (tags);
 
 -- Consent and opt-out. Twilio's Messaging Service keeps its own STOP list;
@@ -151,6 +155,8 @@ create table conversations (
   claimed_at     timestamptz,
   unit_id        uuid references units(id) on delete set null,
   subject        text,
+  -- where this thread came in from: 'sms', 'zego', 'zillow', 'website', 'call'
+  source         text not null default 'sms',
   last_message_at timestamptz not null default now(),
   snooze_until   timestamptz,
   created_at     timestamptz not null default now()
@@ -173,6 +179,12 @@ create table messages (
   media_urls       text[] not null default '{}',
   -- unique so a Twilio webhook retry can never double-insert
   twilio_sid       text unique,
+  -- 'sms' | 'zego' | 'zillow' | 'website' -- an inbound message did not
+  -- necessarily arrive over the phone line
+  channel          text not null default 'sms',
+  -- provider-side id (email Message-ID, form submission id) so a redelivered
+  -- webhook cannot duplicate the message
+  external_id      text unique,
   status           msg_status not null default 'received',
   error_code       text,
   -- null for inbound; this column is the "who replied" answer
@@ -188,14 +200,31 @@ create table calls (
   contact_id       uuid references contacts(id) on delete set null,
   direction        msg_direction not null,
   twilio_call_sid  text unique,
-  -- the winning <Number> leg from the Dial action callback; the "who
-  -- answered" answer
+
+  -- the winning <Number> leg from the Dial action callback: the "who answered"
+  -- answer. Null on a missed call.
   answered_by      uuid references staff(id) on delete set null,
+  -- who placed an outbound call, including a callback on a missed one
+  initiated_by     uuid references staff(id) on delete set null,
+
+  -- nobody picked up. Set on the Dial action callback when DialCallStatus is
+  -- anything but 'completed'.
+  missed           boolean not null default false,
+  -- links a return call to the missed call it answers, which is what makes
+  -- "did anyone call them back?" a query rather than a guess
+  returns_call_id  uuid references calls(id) on delete set null,
+
   duration_seconds integer,
+  recording_sid    text,
   recording_url    text,
+  -- Twilio's built-in transcription only covers US English recordings between
+  -- 2 and 120 seconds, so voicemail is capped at 120s to stay inside it.
   voicemail_text   text,
   created_at       timestamptz not null default now()
 );
+
+create index on calls (missed, created_at desc) where missed;
+create index on calls (contact_id, created_at desc);
 
 -- Internal only. Never rendered into an outbound message.
 create table notes (
@@ -203,8 +232,13 @@ create table notes (
   conversation_id  uuid not null references conversations(id) on delete cascade,
   author_id        uuid not null references staff(id) on delete cascade,
   body             text not null,
+  -- @mentioned teammates, who get a push notification. This is what turns
+  -- notes into coordination rather than a filing cabinet.
+  mentions         uuid[] not null default '{}',
   created_at       timestamptz not null default now()
 );
+
+create index on notes (conversation_id, created_at);
 
 create table templates (
   id          uuid primary key default gen_random_uuid(),
@@ -309,6 +343,24 @@ create table showings (
   attended          boolean,
   created_at        timestamptz not null default now()
 );
+
+-- ---------------------------------------------------------------- push
+
+-- One row per installed device, not per person: everyone has a phone and a
+-- desktop browser, and both should buzz. Endpoints expire, so a 404 or 410
+-- from the push service means delete the row rather than retry it.
+create table push_subscriptions (
+  id          uuid primary key default gen_random_uuid(),
+  staff_id    uuid not null references staff(id) on delete cascade,
+  endpoint    text not null unique,
+  p256dh      text not null,
+  auth        text not null,
+  user_agent  text,
+  created_at  timestamptz not null default now(),
+  last_used_at timestamptz
+);
+
+create index on push_subscriptions (staff_id);
 
 -- ---------------------------------------------------------------- inquiries & nurture
 
@@ -507,6 +559,19 @@ create trigger audit_consent        after insert or update or delete on consent
   for each row execute function log_change();
 create trigger audit_inquiries      after insert or update or delete on inquiries
   for each row execute function log_change();
+create trigger audit_notes          after insert or update or delete on notes
+  for each row execute function log_change();
+
+-- Every missed call that has not been returned. The office view for
+-- "who still needs calling back".
+create view missed_calls_open as
+select c.id as call_id, c.created_at, c.voicemail_text, c.recording_url,
+       ct.phone, ct.full_name, c.conversation_id
+from calls c
+join contacts ct on ct.id = c.contact_id
+where c.missed
+  and not exists (select 1 from calls r where r.returns_call_id = c.id)
+order by c.created_at desc;
 
 -- ---------------------------------------------------------------- claiming
 

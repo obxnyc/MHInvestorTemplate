@@ -14,7 +14,13 @@ every reply carries a name.
 - **Live** — every open screen refreshes on new activity, so two people don't
   answer the same tenant.
 
-Next.js 16 · Supabase (Postgres, Auth, RLS, Realtime) · Twilio.
+- **Push notifications** — installable to a phone home screen, alerts on new
+  texts, missed calls, voicemail, and `@mentions`.
+- **Every channel in one queue** — texts, calls and voicemail, Zego maintenance
+  requests, Zillow leads, and Squarespace form submissions all open threads in
+  the same inbox.
+
+Next.js 16 · Supabase (Postgres, Auth, RLS, Realtime) · Twilio · Cloudflare Email Routing.
 
 ---
 
@@ -97,9 +103,95 @@ application code is how two employees end up texting the same tenant.
 
 ---
 
+## Voice
+
+Point your Twilio number's **Voice** webhook at `/api/twilio/voice`.
+
+An inbound call announces that it may be recorded, then rings every active
+staff member's `forward_to` number at once. Each leg must **press 1 to accept**
+before the call bridges. That whisper is not a nicety: a phone that is off
+answers instantly with its owner's personal voicemail, silently swallowing the
+call. A voicemail box cannot press 1.
+
+If nobody accepts, the team gets a push notification immediately and the caller
+reaches voicemail. The recording and its transcript land on the caller's thread,
+and the call appears on `/calls` flagged **needs callback** until someone taps
+**Call back** — which logs who is returning it before opening the dialer, so the
+trail exists even if the callback goes unanswered.
+
+Two limits worth knowing:
+
+- Voicemail is capped at **120 seconds** deliberately. Twilio's built-in
+  transcription only covers US-English recordings between 2 and 120 seconds, so
+  a longer cap would silently produce voicemails with no transcript.
+- Recordings are dual-channel (each party on its own track, same price as mono).
+  **Check your state's recording-consent law.** The announcement is in the TwiML
+  at the top of `app/api/twilio/voice/route.ts`; do not remove it without
+  knowing your jurisdiction.
+
+## Intake from other systems
+
+Zego maintenance requests, Zillow leads, and Squarespace form submissions all
+arrive as **email**, so one pipe handles all three.
+
+Squarespace form blocks have no webhook — storage is limited to the submitters
+list, email, Google Drive, Mailchimp, or Zapier — so email is the path that
+costs nothing and needs no Zapier subscription.
+
+1. Enable **Cloudflare Email Routing** on your domain (free).
+2. Deploy `cloudflare/email-worker.js` and route `intake@larabeehomes.com` to it.
+3. Set its secrets: `INTAKE_URL` and `INTAKE_SECRET` (the latter must match the
+   app's env var).
+4. Add `intake@` as an **additional** notification recipient in Zego, Zillow,
+   and your Squarespace form — alongside your existing ones, never instead.
+
+The parsers in `lib/parse-email.ts` were written against expected templates, not
+real samples. **Forward one real email of each type and tighten the label
+lists.** Until then requests still arrive — the raw body becomes the summary —
+because `ingest()` always creates a thread even when field parsing comes back
+empty. A request that lands as an unparsed blob is recoverable; one dropped
+because a regex missed is not.
+
+For a richer form (the prequalification form, eventually), post JSON directly to
+`/api/intake/form` from a Squarespace code block instead.
+
+## Push notifications
+
+Generate keys once, then set both in your environment:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Everyone installs the app the same way, and on iPhone this step is mandatory:
+
+- **iPhone** — open the site in Safari, tap **Share → Add to Home Screen**, then
+  open it from the home screen icon. iOS only delivers web push to an installed
+  PWA, never from a Safari tab. The app detects this and shows the instruction
+  instead of a button that cannot work.
+- **Android** — Chrome offers "Install app"; push works either way.
+- **Desktop** — works in the browser directly.
+
+Replace `public/icon-192.png` and `public/icon-512.png` with real artwork; the
+committed ones are flat placeholder squares.
+
+## Internal coordination
+
+There is no separate chat room, on purpose. Coordination happens as **internal
+notes on the thread** — the switch next to the composer — so the plan of action
+stays attached to the issue it concerns rather than scrolling away in a general
+channel. Notes are never sent to the tenant.
+
+Type `@amy` in a note to notify a teammate; they get a push and it opens
+straight to that thread.
+
 ## Not built yet
 
-Voice (the ring group with the press-1 whisper is specified in
-`../../docs/shared-line/PLAN.md`), work orders and tech dispatch, the
-prequalification form and rules engine, and the lease-cycle nurture program in
-`../../docs/shared-line/NURTURE.md`. The schema covers all of them.
+Work orders and tech dispatch, the prequalification form and rules engine, and
+the lease-cycle nurture program in `../../docs/shared-line/NURTURE.md`. The
+schema covers all of them.
+
+Pulling maintenance requests from the **Rent Manager API** instead of parsing
+Zego's notification emails would be more reliable — structured fields, no
+template drift. Rent Manager gates API access behind an authorized-customer
+programme, so that is a phone call to them, not a code change.
