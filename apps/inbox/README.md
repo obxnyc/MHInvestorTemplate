@@ -187,7 +187,7 @@ later without touching any parsing code.
 | --- | --- | --- |
 | Rent Manager Tenant WebAccess | `donotreply@rentmanager.com` | **Verified** against a real message |
 | Net Dial Tone voicemail | `noreply@netdialtone.com` | **Verified** against a real message |
-| Zillow lead | `*@zillow.com` | Unverified — labels are a guess |
+| Zillow lead | `*@convo.zillow.com` | **Verified** — both templates |
 | Squarespace form | `*@squarespace.info` | Unverified — labels are a guess |
 
 Maintenance requests arrive from **Rent Manager**, not Zego — Tenant WebAccess
@@ -199,6 +199,17 @@ Net Dial Tone **transcribes voicemail itself**, so those threads carry the
 transcript with no speech-to-text service involved. Its mailbox names
 ("Existing Tenant GDM") are used to route the thread, and `[BLANK_AUDIO]` is
 labelled as no-speech rather than shown as a transcript.
+
+**Zillow gives you no phone number.** Renters are anonymised behind a per-lead
+relay address (`…@convo.zillow.com`), so a Zillow lead cannot be texted until
+they hand over a number themselves. The parser leaves `phone` null rather than
+inventing one, notes on the thread that replying to the relay reaches them, and
+uses the relay address as the contact key so every message from that lead
+threads together. Zillow also sends two different templates — first contact uses
+`<Name> says:`, follow-ups use ALL-CAPS block labels with the value on the next
+line — and both are handled. Roughly two thirds of a Zillow email is fair-housing
+notices, scam warnings and app badges; that chrome is stripped so the thread
+shows the message.
 
 Run the parser tests after touching any template:
 

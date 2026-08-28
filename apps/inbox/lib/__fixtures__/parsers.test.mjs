@@ -8,7 +8,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import ts from "typescript";
-import { RENT_MANAGER, VOICEMAIL, VOICEMAIL_BLANK } from "./samples.mjs";
+import { RENT_MANAGER, VOICEMAIL, VOICEMAIL_BLANK, ZILLOW_FIRST, ZILLOW_REPLY } from "./samples.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "..", "parse-email.ts"), "utf8").replace(/import type .*\n/, "");
@@ -20,6 +20,8 @@ const { routeEmail } = await import("data:text/javascript," + encodeURIComponent
 const rm = routeEmail(RENT_MANAGER);
 const vm = routeEmail(VOICEMAIL);
 const blank = routeEmail(VOICEMAIL_BLANK);
+const za = routeEmail(ZILLOW_FIRST);
+const zb = routeEmail(ZILLOW_REPLY);
 const junk = routeEmail({
   from: "newsletter@example.com", to: "x@y.com",
   subject: "Weekly digest", messageId: "<n@x>", text: "Nothing here.",
@@ -42,6 +44,23 @@ const checks = [
   ["[BLANK_AUDIO] is labelled, not shown as a transcript",
     !!blank?.summary.includes("no speech recorded")],
   ["unrecognised sender matches no parser", junk === null],
+
+  // Zillow arrives in two templates: first contact uses "<Name> says:",
+  // follow-ups use ALL-CAPS block labels with the value on the next line.
+  ["Zillow first contact parses the name", za?.name === "Renter Name"],
+  ["Zillow first contact parses the property",
+    !!za?.unitHint?.includes("1140 Northside Rd")],
+  ["Zillow follow-up reads RENTER'S MESSAGE block",
+    !!zb?.summary.includes("co-signer")],
+  ["Zillow boilerplate is stripped from the thread",
+    !za?.raw.includes("Zillow, Inc.") && !za?.raw.includes("federal Fair Housing Act")],
+  // Zillow anonymises renters: there is no phone number to text, only a
+  // per-lead relay address. Inventing one would be worse than having none.
+  ["Zillow leads carry no phone number", za?.phone === null && zb?.phone === null],
+  ["Zillow relay address threads both messages together",
+    za?.email === zb?.email && !!za?.email?.includes("convo.zillow.com")],
+  ["thread explains why there is no number to text",
+    !!za?.raw.includes("Ask for one before texting")],
 ];
 
 let failed = 0;

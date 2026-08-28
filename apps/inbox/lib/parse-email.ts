@@ -24,6 +24,57 @@ const EMAIL = /[\w.+-]+@[\w-]+\.[\w.]+/;
 
 const firstPhone = (t: string) => PHONE.exec(t)?.[0] ?? null;
 
+/** Zillow puts its values on the line AFTER the label, with no colon:
+ *
+ *     RENTER'S NAME
+ *     Monica Merricks
+ *
+ *  field() only understands "Label: value", so this handles the other shape.
+ */
+function blockAfter(text: string, ...labels: string[]): string | null {
+  const lines = text.split(/\r?\n/);
+  for (const label of labels) {
+    const want = label.toLowerCase();
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().toLowerCase().replace(/[:\u2019']/g, "'") !== want.replace(/[:\u2019']/g, "'")) continue;
+      // take following lines until a blank or the next ALL-CAPS label
+      const out: string[] = [];
+      for (let j = i + 1; j < lines.length; j++) {
+        const l = lines[j].trim();
+        if (!l) { if (out.length) break; else continue; }
+        if (/^[A-Z''\s]{4,}$/.test(l) && out.length) break;
+        out.push(l);
+      }
+      if (out.length) return out.join(" ").trim();
+    }
+  }
+  return null;
+}
+
+/** Zillow notification emails are mostly chrome — fair-housing notices, scam
+ *  warnings, app badges, a corporate address. Dropping it keeps the thread
+ *  readable instead of burying two useful lines in forty. */
+const ZILLOW_NOISE = [
+  /^Brand logo$/i, /^New message( from a renter)?$/i, /^Reply on Zillow$/i,
+  /^Reply to /i, /^Send application$/i, /^You can also reply directly/i,
+  /^Some rental inquiries may be scams/i, /^Learn about staying safe/i,
+  /^Reminder: The federal Fair Housing Act/i, /^Learn more about voucher/i,
+  /^Other helpful links$/i, /^Found a tenant/i, /^Is this inquiry spam/i,
+  /^Know your fair housing/i, /^Have questions or need help/i,
+  /^Get it on Google Play/i, /^Download on the App Store/i,
+  /^Download the free Zillow/i, /^Add photos and get notifications/i,
+  /^Zillow, Inc\.$/i, /^1301 Second Avenue/i, /^Seattle, WA/i,
+  /^© ?\d{4}/, /^Privacy policy/i, /^Update your preferences/i,
+  /^Manage this listing$/i, /^Report spam$/i,
+];
+
+function stripZillowChrome(text: string) {
+  return text.split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !ZILLOW_NOISE.some((re) => re.test(l)))
+    .join("\n");
+}
+
 /** Rent Manager writes tenant names "Last, First". Everywhere else in the app
  *  shows people the way they'd introduce themselves. */
 function flipName(name: string | null): string | null {
@@ -137,24 +188,60 @@ export function parseVoicemail(mail: RawEmail): Intake {
   };
 }
 
-/** Zillow rental lead. NOT yet verified against a real message — the labels
- *  below are a best guess. Send one through and tighten them. */
+/**
+ * Zillow rental lead. Verified against real messages, which come in two
+ * templates:
+ *
+ *   A (first contact)      "<Name> says:" then the message on the next line
+ *   B (follow-up messages) "RENTER'S NAME" / "RENTER'S MESSAGE" blocks
+ *
+ * The thing that matters most here: Zillow ANONYMISES the renter. There is no
+ * phone number and no real email address — only a per-lead relay address like
+ * 4pbz…@convo.zillow.com. You cannot text a Zillow lead until they give you a
+ * number, so the summary says so plainly and the relay address becomes the
+ * contact key, which threads every message from that lead together.
+ */
 export function parseZillow(mail: RawEmail): Intake {
-  const t = mail.text;
-  const name = field(t, "Name", "From", "Contact", "Renter");
-  const phone = field(t, "Phone", "Phone Number", "Number") ?? firstPhone(t);
-  const email = field(t, "Email") ?? EMAIL.exec(t.replace(mail.from, ""))?.[0] ?? null;
-  const property = field(t, "Property", "Address", "Listing", "Regarding");
-  const moveIn = field(t, "Move In", "Move-in", "Move in date", "Moving");
-  const message = field(t, "Message", "Comments", "Note");
+  const clean = stripZillowChrome(mail.text);
+
+  // The From display name is the renter's name and survives both templates.
+  const displayName = /^\s*"?([^"<]+?)"?\s*</.exec(mail.from)?.[1]?.trim() || null;
+  const name = blockAfter(clean, "RENTER'S NAME")
+    ?? /^(.+?)\s+says:/im.exec(clean)?.[1]?.trim()
+    ?? displayName;
+
+  const message = blockAfter(clean, "RENTER'S MESSAGE")
+    ?? /says:\s*\n?(.+)/i.exec(clean)?.[1]?.trim()
+    ?? null;
+
+  const property = blockAfter(clean, "Regarding your listing at:")
+    ?? /requesting information about\s+(.+?)\.?$/im.exec(mail.subject)?.[1]?.trim()
+    ?? /^([\d]+\s+[^\n]*,\s*[A-Z]{2},?\s*\d{5})\.?$/im.exec(clean)?.[1]?.trim()
+    ?? null;
+
+  const pets = blockAfter(clean, "Pets");
+
+  // The relay address is stable per lead, so it threads their messages.
+  const relay = /<([^>]+@convo\.zillow\.com)>/i.exec(mail.from)?.[1]
+    ?? EMAIL.exec(mail.from)?.[0] ?? null;
+
+  const summary = [
+    property && `Zillow — ${property}`,
+    message,
+    pets && pets.toLowerCase() !== "not answered" && `pets: ${pets}`,
+  ].filter(Boolean).join(" · ") || mail.subject || "Zillow inquiry";
 
   return {
     source: "zillow",
-    name, phone, email,
+    name,
+    // Zillow gives no phone. Leaving this null is correct and is what makes
+    // the "no number yet" note below true rather than decorative.
+    phone: null,
+    email: relay,
     unitHint: property,
-    summary: [property && `Interested in ${property}`, moveIn && `move-in ${moveIn}`, message]
-      .filter(Boolean).join(" · ") || mail.subject || "Zillow inquiry",
-    raw: t,
+    summary,
+    raw: `${clean}\n\n— Zillow relay: replying to ${relay ?? "this thread"} reaches them.`
+       + `\n— No phone number: Zillow anonymises renters. Ask for one before texting.`,
     category: "prospect",
     externalId: mail.messageId,
   };
