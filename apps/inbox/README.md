@@ -55,7 +55,12 @@ npm install
 npx vercel --prod        # or any Node host
 ```
 
-Set the same environment variables in your host's dashboard.
+Set the same environment variables in your host's dashboard, then point
+`inbox.larabeehomesllc.com` at the deployment.
+
+Use a **subdomain**, not the apex: `www.larabeehomesllc.com` is your Squarespace
+site and must keep pointing there. A CNAME on `inbox` leaves the marketing site
+completely untouched.
 
 ### 4. Point Twilio at it
 
@@ -138,12 +143,42 @@ Squarespace form blocks have no webhook — storage is limited to the submitters
 list, email, Google Drive, Mailchimp, or Zapier — so email is the path that
 costs nothing and needs no Zapier subscription.
 
-1. Enable **Cloudflare Email Routing** on your domain (free).
-2. Deploy `cloudflare/email-worker.js` and route `intake@larabeehomes.com` to it.
-3. Set its secrets: `INTAKE_URL` and `INTAKE_SECRET` (the latter must match the
-   app's env var).
-4. Add `intake@` as an **additional** notification recipient in Zego, Zillow,
-   and your Squarespace form — alongside your existing ones, never instead.
+### Pick a path based on who handles your mail
+
+**If `larabeehomesllc.com` already has business email** (Google Workspace,
+Microsoft 365, or anything with its own MX records), use **Postmark inbound**.
+
+Enabling Cloudflare Email Routing on a domain **replaces that domain's MX
+records**, which would stop your real mail from being delivered. It is one mail
+handler per domain, and yours is already spoken for. Postmark avoids the
+question entirely — no DNS changes at all:
+
+1. Create a Postmark inbound server. It gives you an address like
+   `abc123hash@inbound.postmarkapp.com`.
+2. Set its webhook to
+   `https://inbox.larabeehomesllc.com/api/intake/postmark?secret=<INTAKE_SECRET>`.
+   Postmark does not sign inbound webhooks, so that URL **is** a credential —
+   treat it like a password.
+3. In Gmail/Workspace, create filters that forward matching mail to the
+   Postmark address:
+   - `from:zego.io OR from:paylease.com` → forward
+   - `from:zillow.com` → forward
+   - `from:squarespace.info` → forward
+4. Leave your existing notification recipients exactly as they are. This adds a
+   copy; it takes nothing away.
+
+Gmail's spam filtering runs before the forward, which is a free bonus.
+
+**If the domain has no other mail on it**, Cloudflare Email Routing is free and
+slightly cleaner. Deploy `cloudflare/email-worker.js`, route
+`intake@larabeehomesllc.com` to it, set its `INTAKE_URL` and `INTAKE_SECRET`
+secrets, and add `intake@` as an additional recipient in Zego, Zillow, and
+Squarespace.
+
+Both paths feed the same parsers and the same `ingest()`, so you can switch
+later without touching any parsing code.
+
+### Tune the parsers
 
 The parsers in `lib/parse-email.ts` were written against expected templates, not
 real samples. **Forward one real email of each type and tighten the label

@@ -37,7 +37,7 @@ export default function Login() {
             <input
               id="email" type="email" required autoComplete="email"
               value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@larabeehomes.com"
+              placeholder="you@larabeehomesllc.com"
             />
             <button type="submit" disabled={state === "sending"}>
               {state === "sending" ? "Sending…" : "Email me a link"}

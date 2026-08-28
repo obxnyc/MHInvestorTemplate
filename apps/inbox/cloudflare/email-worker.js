@@ -7,7 +7,7 @@
  *
  * Deploy:
  *   1. Cloudflare dashboard → your domain → Email → Email Routing → enable
- *   2. Create address  intake@larabeehomes.com  → route to Worker
+ *   2. Create address  intake@larabeehomesllc.com  → route to Worker
  *   3. wrangler deploy, then set the secrets:
  *        wrangler secret put INTAKE_URL      # https://<app>/api/intake/email
  *        wrangler secret put INTAKE_SECRET   # must match the app's env var
