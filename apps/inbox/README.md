@@ -145,8 +145,9 @@ costs nothing and needs no Zapier subscription.
 
 ### Pick a path based on who handles your mail
 
-**If `larabeehomesllc.com` already has business email** (Google Workspace,
-Microsoft 365, or anything with its own MX records), use **Postmark inbound**.
+**`larabeehomesllc.com` is on Google** — confirmed from the headers of a real
+notification, which Google's inbound mail servers stamped on delivery to
+`info@larabeehomesllc.com`. So use **Postmark inbound**.
 
 Enabling Cloudflare Email Routing on a domain **replaces that domain's MX
 records**, which would stop your real mail from being delivered. It is one mail
@@ -159,9 +160,10 @@ question entirely — no DNS changes at all:
    `https://inbox.larabeehomesllc.com/api/intake/postmark?secret=<INTAKE_SECRET>`.
    Postmark does not sign inbound webhooks, so that URL **is** a credential —
    treat it like a password.
-3. In Gmail/Workspace, create filters that forward matching mail to the
-   Postmark address:
-   - `from:zego.io OR from:paylease.com` → forward
+3. In Gmail, create filters that forward matching mail to the Postmark
+   address. Both mailboxes that already receive these need a filter:
+   - `from:rentmanager.com` → forward   (maintenance, in `larabeehomesllc@gmail.com`)
+   - `from:netdialtone.com` → forward   (voicemail, in `info@larabeehomesllc.com`)
    - `from:zillow.com` → forward
    - `from:squarespace.info` → forward
 4. Leave your existing notification recipients exactly as they are. This adds a
@@ -169,8 +171,9 @@ question entirely — no DNS changes at all:
 
 Gmail's spam filtering runs before the forward, which is a free bonus.
 
-**If the domain has no other mail on it**, Cloudflare Email Routing is free and
-slightly cleaner. Deploy `cloudflare/email-worker.js`, route
+Cloudflare Email Routing is **not** an option here: enabling it replaces the
+domain's MX records and would stop delivery to `info@larabeehomesllc.com`. The
+worker in `cloudflare/` is kept only for a domain with no mail of its own. Deploy `cloudflare/email-worker.js`, route
 `intake@larabeehomesllc.com` to it, set its `INTAKE_URL` and `INTAKE_SECRET`
 secrets, and add `intake@` as an additional recipient in Zego, Zillow, and
 Squarespace.
@@ -178,14 +181,38 @@ Squarespace.
 Both paths feed the same parsers and the same `ingest()`, so you can switch
 later without touching any parsing code.
 
-### Tune the parsers
+### What each parser handles
 
-The parsers in `lib/parse-email.ts` were written against expected templates, not
-real samples. **Forward one real email of each type and tighten the label
-lists.** Until then requests still arrive — the raw body becomes the summary —
-because `ingest()` always creates a thread even when field parsing comes back
-empty. A request that lands as an unparsed blob is recoverable; one dropped
-because a regex missed is not.
+| Source | Sender | Status |
+| --- | --- | --- |
+| Rent Manager Tenant WebAccess | `donotreply@rentmanager.com` | **Verified** against a real message |
+| Net Dial Tone voicemail | `noreply@netdialtone.com` | **Verified** against a real message |
+| Zillow lead | `*@zillow.com` | Unverified — labels are a guess |
+| Squarespace form | `*@squarespace.info` | Unverified — labels are a guess |
+
+Maintenance requests arrive from **Rent Manager**, not Zego — Tenant WebAccess
+submits into Rent Manager and Rent Manager sends the notification. The property
+is in the *subject* line, the phone label is `Number:` not `Phone:`, and tenant
+names come through as `Last, First`.
+
+Net Dial Tone **transcribes voicemail itself**, so those threads carry the
+transcript with no speech-to-text service involved. Its mailbox names
+("Existing Tenant GDM") are used to route the thread, and `[BLANK_AUDIO]` is
+labelled as no-speech rather than shown as a transcript.
+
+Run the parser tests after touching any template:
+
+```bash
+npm run test:parsers
+```
+
+Fixtures live in `lib/__fixtures__/samples.mjs` — real provider layouts with
+resident details replaced by placeholders, so no tenant data sits in the repo.
+
+For the two unverified parsers, send one real message through and tighten them.
+Nothing is lost meanwhile: `ingest()` always creates a thread even when field
+parsing returns nothing, so an unparsed request arrives as a readable blob. A
+blob is recoverable; a dropped request is not.
 
 For a richer form (the prequalification form, eventually), post JSON directly to
 `/api/intake/form` from a Squarespace code block instead.

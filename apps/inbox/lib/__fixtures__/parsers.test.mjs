@@ -1,0 +1,53 @@
+/**
+ * Parser regression tests.  Run:  node lib/__fixtures__/parsers.test.mjs
+ *
+ * Fixtures mirror the real provider templates with resident details replaced.
+ * The labels and layout are what matter and are reproduced exactly.
+ */
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import ts from "typescript";
+import { RENT_MANAGER, VOICEMAIL, VOICEMAIL_BLANK } from "./samples.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const src = readFileSync(join(here, "..", "parse-email.ts"), "utf8").replace(/import type .*\n/, "");
+const js = ts.transpileModule(src, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const { routeEmail } = await import("data:text/javascript," + encodeURIComponent(js));
+
+const rm = routeEmail(RENT_MANAGER);
+const vm = routeEmail(VOICEMAIL);
+const blank = routeEmail(VOICEMAIL_BLANK);
+const junk = routeEmail({
+  from: "newsletter@example.com", to: "x@y.com",
+  subject: "Weekly digest", messageId: "<n@x>", text: "Nothing here.",
+});
+
+const checks = [
+  ["Rent Manager TWA routes to maintenance", rm?.category === "maintenance"],
+  ["tenant 'Doe, Jane' renders as 'Jane Doe'", rm?.name === "Jane Doe"],
+  ["reads the 'Number:' label, not 'Phone:'", !!rm?.phone?.includes("555-0100")],
+  ["unit comes from the subject line", !!rm?.unitHint?.includes("Lot #51")],
+  // Regression: \s* after a colon matches newlines, so an empty "Assigned To:"
+  // used to reach across the blank line and capture "Tenant: Doe, Jane".
+  ["empty 'Assigned To:' does not capture the next field",
+    !rm?.summary.includes("Doe, Jane")],
+  ["voicemail routes by mailbox name", vm?.category === "current_tenant"],
+  ["caller number parsed from subject", vm?.phone === "+15555550100"],
+  ["provider transcript is carried through",
+    !!vm?.summary.includes("kitchen faucet is still dripping")],
+  ["[BLANK_AUDIO] still opens a thread", !!blank],
+  ["[BLANK_AUDIO] is labelled, not shown as a transcript",
+    !!blank?.summary.includes("no speech recorded")],
+  ["unrecognised sender matches no parser", junk === null],
+];
+
+let failed = 0;
+for (const [name, ok] of checks) {
+  console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);
+  if (!ok) failed++;
+}
+console.log(`\n${checks.length - failed}/${checks.length} passed`);
+process.exit(failed ? 1 : 0);

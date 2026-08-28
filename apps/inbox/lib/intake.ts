@@ -2,7 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { toE164 } from "./twilio";
 import { pushToTeam } from "./push";
 
-export type IntakeSource = "zego" | "zillow" | "website";
+export type IntakeSource = "zego" | "zillow" | "website" | "voicemail";
 
 export type Intake = {
   source: IntakeSource;
@@ -53,7 +53,8 @@ export async function ingest(item: Intake) {
       phone: phone ?? `email:${item.email ?? item.externalId}`,
       email: item.email ?? null,
       full_name: item.name ?? null,
-      party: item.category === "prospect" ? "prospect" : "current_tenant",
+      party: item.category === "prospect" ? "prospect"
+           : item.category === "maintenance" ? "current_tenant" : "other",
     }).select("id").single();
     contact = data!;
   } else if (item.name || item.email) {
@@ -93,7 +94,12 @@ export async function ingest(item: Intake) {
     .update({ last_message_at: new Date().toISOString(), status: "open" })
     .eq("id", convo.id);
 
-  const label = { zego: "Maintenance request", zillow: "Zillow showing request", website: "Website form" }[item.source];
+  const label = {
+    zego: "Maintenance request",
+    zillow: "Zillow showing request",
+    website: "Website form",
+    voicemail: "Voicemail",
+  }[item.source];
   await pushToTeam(convo.team_id, {
     title: `${label}${item.name ? ` — ${item.name}` : ""}`,
     body: item.summary.slice(0, 140),

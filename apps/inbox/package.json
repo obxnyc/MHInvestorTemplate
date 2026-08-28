@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:parsers": "node lib/__fixtures__/parsers.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
