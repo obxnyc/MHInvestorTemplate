@@ -115,6 +115,13 @@ export default function ApplyForm({ homes }: { homes: Home[] }) {
             Include everything: a second job, Social Security, disability, child
             support, a pension. It all counts.
           </p>
+          <label htmlFor="household_income">Income from anyone else signing the lease</label>
+          <input id="household_income" name="household_income" inputMode="decimal"
+                 placeholder="0" />
+          <p className="hint">
+            Only other adults who will sign the lease with you. We add their
+            income to yours.
+          </p>
           <label htmlFor="monthly_assistance">Monthly rental assistance, if any</label>
           <input id="monthly_assistance" name="monthly_assistance" inputMode="decimal"
                  placeholder="0" />
@@ -142,8 +149,14 @@ export default function ApplyForm({ homes }: { homes: Home[] }) {
                  placeholder="" />
           <label className="check">
             <input type="checkbox" name="has_cosigner" />
-            <span>A co-signer or guarantor is available if needed</span>
+            <span>
+              Someone is willing to sign as a guarantor if we need one
+            </span>
           </label>
+          <p className="hint">
+            If your income or credit falls a little short, a guarantor lets us
+            take a second look rather than stopping here.
+          </p>
         </fieldset>
 
         {/* honeypot */}

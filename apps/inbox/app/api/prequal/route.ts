@@ -59,6 +59,7 @@ export async function POST(req: Request) {
   const answers: Answers = {
     monthly_income: num(body.monthly_income),
     other_monthly_income: num(body.other_monthly_income),
+    household_income: num(body.household_income),
     monthly_assistance: num(body.monthly_assistance),
     rent: Number(unit.monthly_rent),
     credit_score: body.credit_score === "" || body.credit_score == null ? null : num(body.credit_score),

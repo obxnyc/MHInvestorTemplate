@@ -27,7 +27,18 @@ export type Criterion = {
   explain: string;
 };
 
-export type RuleSet = { version: number; criteria: Criterion[] };
+export type RuleSet = {
+  version: number;
+  criteria: Criterion[];
+  /**
+   * Criteria a guarantor can rescue. A guarantor downgrades a FAIL to review —
+   * never to a pass. At prescreen the guarantor is a checkbox, not a verified
+   * person: their own income and credit have not been looked at, so approving
+   * on the strength of one would be approving on an unverified claim.
+   * Applied identically to every applicant, like every other rule here.
+   */
+  guarantor_rescues?: string[];
+};
 
 export type Answers = {
   /** Gross monthly income from employment. */
@@ -36,6 +47,15 @@ export type Answers = {
    *  pension, second job. Counted in full — many states protect source of
    *  income, and excluding these screens out protected classes. */
   other_monthly_income: number;
+  /**
+   * Income from other adults who will sign the lease.
+   *
+   * Asked as income from co-applicants, never as household composition. "Who
+   * else lives with you" invites disclosure of familial status; "which other
+   * adults will be on the lease, and what do they earn" is about the people
+   * legally responsible for the rent.
+   */
+  household_income: number;
   /** Rental assistance (a Housing Choice Voucher, say) paid directly to the
    *  landlord. NOT added to income; it reduces what the tenant pays. */
   monthly_assistance: number;
@@ -47,6 +67,7 @@ export type Answers = {
   rental_history_months: number;
   /** null = never had an eviction judgment. */
   years_since_eviction: number | null;
+  /** Unverified at this stage — see RuleSet.guarantor_rescues. */
   has_cosigner: boolean;
 };
 
@@ -98,9 +119,11 @@ export function tenantShareOfRent(rent: number, assistance: number): number {
   return Math.max(0, rent - Math.max(0, assistance));
 }
 
-/** Every lawful source counts. */
+/** Every lawful source counts, from every adult who will be on the lease. */
 export function countedIncome(a: Answers): number {
-  return Math.max(0, a.monthly_income) + Math.max(0, a.other_monthly_income);
+  return Math.max(0, a.monthly_income)
+       + Math.max(0, a.other_monthly_income)
+       + Math.max(0, a.household_income ?? 0);
 }
 
 function derive(key: string, a: Answers): number | null {
@@ -144,11 +167,22 @@ export function evaluate(a: Answers, ruleSet: RuleSet): Evaluation {
     else if (c.marginal && compare(value, c.marginal)) verdict = "marginal";
     else verdict = "fail";
 
+    // An offered guarantor turns a hard fail into a question for a person.
+    // It never turns one into an approval: nobody has verified the guarantor.
+    let rescued = false;
+    if (verdict === "fail" && a.has_cosigner
+        && (ruleSet.guarantor_rescues ?? []).includes(c.key)) {
+      verdict = "marginal";
+      rescued = true;
+    }
+
     results.push({
       key: c.key, label: c.label, verdict,
       value: Number.isFinite(value) ? Math.round(value * 100) / 100 : null,
       threshold: c.pass,
-      reason: verdict === "pass" ? `${c.label} meets ${c.pass}` : c.explain,
+      reason: rescued
+        ? `${c.label} is short of ${c.pass}, but a guarantor was offered — needs verifying`
+        : verdict === "pass" ? `${c.label} meets ${c.pass}` : c.explain,
     });
   }
 
@@ -186,7 +220,9 @@ export function declineMessage(
     `Based on what you shared, this home isn't a match for our current rental criteria:`,
     ...missed.map((m) => `  • ${m}`),
     ``,
-    `You're welcome to apply again with a co-signer or additional income documentation.`,
+    `You're welcome to apply again with a guarantor who can sign for the lease,`,
+    `with income from another adult who would be on the lease, or with`,
+    `additional income documentation.`,
     `Our full criteria are published at ${criteriaUrl}.`,
   ].join("\n");
 }
@@ -194,7 +230,10 @@ export function declineMessage(
 /** The ruleset shipped in seed.sql. Published, versioned, applied identically
  *  to everyone — which is the thing you actually have to be able to prove. */
 export const DEFAULT_RULE_SET: RuleSet = {
-  version: 1,
+  version: 2,
+  // Income and credit are the two a guarantor conventionally backstops.
+  // A recent eviction judgment is not something a guarantor cures.
+  guarantor_rescues: ["income_ratio", "credit_score"],
   criteria: [
     {
       key: "income_ratio",

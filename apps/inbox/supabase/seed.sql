@@ -34,6 +34,7 @@ on conflict (key) do nothing;
 insert into prequal_rule_sets (version, criteria, effective_from, published_url)
 values (1, '{
   "version": 1,
+  "guarantor_rescues": ["income_ratio", "credit_score"],
   "criteria": [
     { "key": "income_ratio",
       "label": "Household income vs. the rent you would pay",
@@ -54,3 +55,9 @@ values (1, '{
   ]
 }'::jsonb, current_date, 'https://larabeehomesllc.com/rental-criteria')
 on conflict (version) do nothing;
+
+-- guarantor_rescues names the criteria an offered guarantor can lift out of a
+-- hard decline and into human review. Never into an approval: at this stage the
+-- guarantor is a checkbox, not a person whose income anyone has verified. A
+-- recent eviction judgment is not on the list, because a guarantor does not
+-- cure one.

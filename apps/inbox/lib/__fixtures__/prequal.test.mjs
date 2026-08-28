@@ -13,9 +13,9 @@ const M = await import("data:text/javascript," + encodeURIComponent(js));
 const { evaluate, DEFAULT_RULE_SET: RS, declineMessage, tenantShareOfRent } = M;
 
 const base = {
-  monthly_income: 4500, other_monthly_income: 0, monthly_assistance: 0,
-  rent: 1200, credit_score: 700, rental_history_months: 36,
-  years_since_eviction: null, has_cosigner: false,
+  monthly_income: 4500, other_monthly_income: 0, household_income: 0,
+  monthly_assistance: 0, rent: 1200, credit_score: 700,
+  rental_history_months: 36, years_since_eviction: null, has_cosigner: false,
 };
 const ev = (o) => evaluate({ ...base, ...o }, RS);
 
@@ -68,12 +68,48 @@ t("decline names every criterion missed",
   msg.includes("credit score of 620") && msg.includes("24 months"));
 t("decline never claims the home is unavailable",
   !/no longer available|not available|already (rented|taken)|nothing (available|open)/i.test(msg));
-t("decline offers a real path forward", msg.includes("co-signer"));
+t("decline offers a real path forward",
+  msg.includes("guarantor") && msg.includes("another adult"));
 t("reason codes name the criteria", declined.reasonCodes.includes("credit_score"));
 t("passing criteria are not in the reason codes",
   !declined.reasonCodes.includes("income_ratio"));
 t("every criterion gets a recorded verdict",
   ev({}).results.length === RS.criteria.length);
+
+// ---- income from another adult on the lease ----
+// Alone, 2200 against 1200 rent is 1.83x -> declined.
+t("one income alone falls short",
+  ev({ monthly_income: 2200 }).outcome === "declined");
+const two = ev({ monthly_income: 2200, household_income: 2000 });
+t("a co-applicant's income is added in", two.countedIncome === 4200);
+t("together they qualify", two.outcome === "auto_approve");
+t("co-applicant income also lands on the tenant's share, not full rent",
+  ev({ monthly_income: 800, household_income: 900, monthly_assistance: 700, rent: 1200 })
+    .incomeRatio === 3.4);
+
+// ---- guarantor ----
+// A guarantor is an unverified checkbox at this stage, so it can move a hard
+// fail to review, but must never produce an approval on its own.
+const shortNoGuarantor = ev({ monthly_income: 2000 });
+const shortWithGuarantor = ev({ monthly_income: 2000, has_cosigner: true });
+t("short on income without a guarantor is declined",
+  shortNoGuarantor.outcome === "declined");
+t("the same applicant with a guarantor goes to review",
+  shortWithGuarantor.outcome === "manual_review");
+t("a guarantor never produces an auto-approval",
+  shortWithGuarantor.outcome !== "auto_approve");
+t("the reason says a guarantor was offered and needs verifying",
+  shortWithGuarantor.results.find((r) => r.key === "income_ratio")
+    .reason.includes("guarantor was offered"));
+t("a guarantor also covers a failed credit score",
+  ev({ credit_score: 480, has_cosigner: true }).outcome === "manual_review");
+t("a guarantor does NOT cure a recent eviction judgment",
+  ev({ years_since_eviction: 1, has_cosigner: true }).outcome === "declined");
+t("a guarantor changes nothing for an applicant who already passes",
+  ev({ has_cosigner: true }).outcome === "auto_approve");
+t("decline copy offers the guarantor route",
+  declineMessage(ev({ credit_score: 300, years_since_eviction: 1 }), "x", "y")
+    .includes("guarantor"));
 
 // ---- helper ----
 t("tenant share floors at zero", tenantShareOfRent(1000, 1500) === 0);
