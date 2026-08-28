@@ -52,7 +52,10 @@ button{font:inherit;cursor:pointer}
 .auth button:disabled{opacity:.5}
 
 /* ---- shell ---- */
-.shell{min-height:100dvh;display:flex;flex-direction:column;background:var(--card)}
+/* The layout answers to the width of the app shell, not the browser window, so
+   it behaves correctly when embedded in a narrower column. */
+.shell{min-height:100dvh;display:flex;flex-direction:column;background:var(--card);
+  container-type:inline-size;container-name:app}
 .apphead{display:flex;align-items:center;gap:.5rem;padding:1rem 1.25rem;
   border-bottom:1px solid var(--hair);position:relative;z-index:10}
 .apphead h1{font-size:1.3rem;font-weight:700;letter-spacing:-.025em;margin:0}
@@ -82,8 +85,29 @@ button{font:inherit;cursor:pointer}
 
 /* ---- two panes ---- */
 .split{display:grid;grid-template-columns:minmax(0,1fr);flex:1;min-height:0}
-@media(min-width:760px){.split{grid-template-columns:19rem minmax(0,1fr)}}
-@media(min-width:1040px){.split{grid-template-columns:25rem minmax(0,1fr)}}
+@container app (min-width:780px){.split{grid-template-columns:21rem minmax(0,1fr)}}
+@container app (min-width:980px){.split{grid-template-columns:24rem minmax(0,1fr)}}
+@container app (min-width:1200px){.split{grid-template-columns:27rem minmax(0,1fr)}}
+
+/* Below 700px the shell cannot carry two useful columns — splitting it just
+   truncates every name. Show one at a time: the list, then the conversation
+   once something is picked. */
+@container app (max-width:779px){
+  .chatcol.idle{display:none}
+}
+/* Narrow shells get tighter rows rather than losing the second pane. */
+@container app (max-width:900px){
+  .row{padding:.75rem .7rem;gap:.65rem}
+  .avwrap .av{width:2.2rem;height:2.2rem;font-size:.7rem}
+  .rname{font-size:.87rem}
+  .rprev{font-size:.8rem;margin-top:.2rem}
+  .rtime{font-size:.68rem}
+  .badge{font-size:.53rem}
+  .search{padding:.7rem .7rem .5rem}
+  .tabsrow{padding:0 .7rem .5rem}
+  .tabs a{font-size:.74rem;padding:.32rem .2rem}
+  select{font-size:.74rem}
+}
 .listcol{border-right:1px solid var(--hair);background:var(--rail);
   display:flex;flex-direction:column;min-width:0}
 
@@ -113,13 +137,13 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 
 /* ---- conversation rows ---- */
 .rows{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1}
-.row{display:flex;gap:.8rem;width:100%;padding:1rem .95rem;
-  border-bottom:1px solid var(--hair-2);align-items:center}
+.row{display:flex;gap:.8rem;width:100%;padding:.9rem .95rem;
+  border-bottom:1px solid var(--hair-2);align-items:flex-start}
 .row:hover{background:var(--hair-2)}
 .row.sel{background:var(--sunk);box-shadow:inset 3px 0 0 var(--accent)}
 /* Ownership rides on the avatar rather than taking a column of its own, so the
    message text gets the full width. */
-.avwrap{position:relative;flex:none;line-height:0}
+.avwrap{position:relative;flex:none;line-height:0;margin-top:.1rem}
 .avwrap .av{width:2.6rem;height:2.6rem;font-size:.8rem;font-weight:700}
 .who-pip{position:absolute;right:-2px;bottom:-2px;width:1.15rem;height:1.15rem;
   border-radius:50%;display:grid;place-items:center;font-size:.5rem;font-weight:800;
@@ -127,11 +151,13 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .open-pip{position:absolute;right:0;bottom:0;width:.72rem;height:.72rem;border-radius:50%;
   background:var(--warn);border:2px solid var(--rail)}
 .rbody{flex:1 1 auto;min-width:0;display:block}
-.rtop{display:flex;align-items:baseline;gap:.4rem;min-width:0}
-/* display:block matters — as inline spans these ignore overflow:hidden, so the
-   ellipsis never applies and a long preview runs off the edge. */
-.rname{display:block;flex:0 1 auto;min-width:0;font-weight:700;font-size:.95rem;
-  letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rtop{display:flex;align-items:baseline;gap:.4rem;min-width:0;flex-wrap:wrap}
+/* display:block matters on .rprev — as an inline span it ignores
+   overflow:hidden, so text-overflow:ellipsis never applies and a long preview
+   runs off the edge. The NAME is the one thing that must never be clipped, so
+   it wraps to a second line instead of becoming "Winsto…". */
+.rname{flex:1 1 auto;min-width:0;font-weight:700;font-size:.95rem;
+  letter-spacing:-.015em;overflow-wrap:anywhere}
 .rtime{margin-left:auto;font-size:.74rem;color:var(--faint);flex:0 0 auto;font-weight:500;
   padding-left:.4rem;white-space:nowrap}
 .rprev{display:block;max-width:100%;margin:.3rem 0 0;font-size:.875rem;color:var(--muted);

@@ -130,7 +130,7 @@ export default async function Messages({ searchParams }: Params) {
         </ul>
       </div>
 
-      <div className="chatcol">
+      <div className="chatcol idle">
         <div className="empty">
           <div>
             <div className="ic">
