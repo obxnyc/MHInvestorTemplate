@@ -2,24 +2,11 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
 import { pushToTeam } from "@/lib/push";
+import { classify, needsReview } from "@/lib/classify";
 import { prettyPhone } from "@/lib/format";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/** Keyword routing runs before any model call. "No heat" at 2am must never
- *  wait on an API round-trip, and these are the cases where being slow is the
- *  same as being wrong. */
-const URGENT = /\b(no heat|no water|leak|flood|burst|gas|smoke|fire|sewage|lockout|locked out|no power|furnace)\b/i;
-const MAINTENANCE = /\b(broken|repair|fix|leak|heat|ac|air condition|furnace|toilet|sink|drain|clog|appliance|fridge|stove|water heater|roof|window|door|pest|mice|roach)\b/i;
-const LEASING = /\b(available|availability|rent|renting|apply|application|tour|showing|see the|move in|3 bed|2 bed|bedroom|how much)\b/i;
-
-function classify(body: string): { category: string; urgent: boolean } {
-  const urgent = URGENT.test(body);
-  if (urgent || MAINTENANCE.test(body)) return { category: "maintenance", urgent };
-  if (LEASING.test(body)) return { category: "prospect", urgent: false };
-  return { category: "other", urgent: false };
-}
 
 export async function POST(req: Request) {
   // Read the body as TEXT first. Calling req.formData() consumes the stream and
@@ -46,10 +33,11 @@ export async function POST(req: Request) {
 
   // Contacts are keyed on E.164 so an inbound text always finds its person.
   let { data: contact } = await db
-    .from("contacts").select("id, party").eq("phone", from).maybeSingle();
+    .from("contacts").select("id, party, unit_id").eq("phone", from).maybeSingle();
   if (!contact) {
     const { data } = await db
-      .from("contacts").insert({ phone: from, party: "other" }).select("id, party").single();
+      .from("contacts").insert({ phone: from, party: "other" })
+      .select("id, party, unit_id").single();
     contact = data!;
   }
 
@@ -60,14 +48,32 @@ export async function POST(req: Request) {
     .eq("contact_id", contact.id).neq("status", "closed").maybeSingle();
 
   if (!convo) {
-    const { category, urgent } = classify(body);
-    const { data: team } = await db
-      .from("teams").select("id").eq("category", category).maybeSingle();
+    // Who is texting matters more than what they said. A sitting tenant asking
+    // "is it still available" is not a new prospect.
+    const { count: priorConversations } = await db
+      .from("conversations").select("id", { count: "exact", head: true })
+      .eq("contact_id", contact.id);
+
+    const result = await classify(body, "sms", {
+      party: contact.party,
+      hasUnit: !!contact.unit_id,
+      priorConversations: priorConversations ?? 0,
+    });
+
+    // Below the confidence threshold the thread is left unrouted and
+    // unassigned, so it surfaces in Needs review rather than being filed
+    // confidently into the wrong team's queue.
+    const uncertain = needsReview(result);
+    const { data: team } = uncertain
+      ? { data: null }
+      : await db.from("teams").select("id").eq("category", result.category).maybeSingle();
+
     const { data } = await db.from("conversations").insert({
       contact_id: contact.id,
-      category,
+      category: result.category,
+      category_confidence: result.confidence,
       team_id: team?.id ?? null,
-      subject: urgent ? "URGENT " + body.slice(0, 60) : body.slice(0, 70),
+      subject: (result.urgent ? "URGENT " : "") + (result.summary ?? body.slice(0, 70)),
     }).select("id, team_id, category").single();
     convo = data!;
   }

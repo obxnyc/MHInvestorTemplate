@@ -4,6 +4,7 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { prettyPhone, clockTime } from "@/lib/format";
 import Composer from "@/components/Composer";
 import ClaimPill from "@/components/ClaimPill";
+import CloseButton from "@/components/CloseButton";
 import Live from "@/components/Live";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
 
   const { data: convo } = await supabase
     .from("conversations")
-    .select("id, category, source, assigned_to, contacts(phone, full_name), staff:assigned_to(full_name)")
+    .select("id, category, source, status, category_confidence, assigned_to, contacts(phone, full_name), staff:assigned_to(full_name)")
     .eq("id", id).single();
   if (!convo) notFound();
 
@@ -59,7 +60,18 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
           holderName={holder?.full_name ?? null}
           isMine={convo.assigned_to === staff!.id}
         />
+        <CloseButton conversationId={id} isClosed={convo.status === "closed"} />
       </div>
+
+      {/* The classifier was not sure. Say so, rather than presenting a guess
+          as a fact — an unsure label a human can correct beats a confident
+          wrong one nobody questions. */}
+      {convo.category_confidence !== null && convo.category_confidence < 0.75 && (
+        <div className="unsure">
+          Filed as <strong>{convo.category.replace("_", " ")}</strong> but we
+          weren&rsquo;t confident. Recategorise it if that&rsquo;s wrong.
+        </div>
+      )}
 
       <div className="msgs">
         {timeline.map((item) => {
