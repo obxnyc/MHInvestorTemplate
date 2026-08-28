@@ -92,7 +92,8 @@ export async function POST(req: Request) {
   }
 
   await db.from("conversations")
-    .update({ last_message_at: new Date().toISOString(), status: "open" })
+    .update({ last_message_at: new Date().toISOString(), status: "open",
+              last_message_preview: body.slice(0, 160) })
     .eq("id", convo.id);
 
   const { data: who } = await db.from("contacts")

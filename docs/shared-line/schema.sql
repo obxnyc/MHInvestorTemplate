@@ -167,6 +167,10 @@ create table conversations (
   subject        text,
   -- where this thread came in from: 'sms', 'zego', 'zillow', 'website', 'call'
   source         text not null default 'sms',
+  -- Denormalised so the conversation list renders in one query. A texting UI
+  -- shows the last thing said, and "latest child row per parent" is an
+  -- expensive join to run on every list render.
+  last_message_preview text,
   last_message_at timestamptz not null default now(),
   snooze_until   timestamptz,
   created_at     timestamptz not null default now()

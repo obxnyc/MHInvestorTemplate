@@ -9,15 +9,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <Link href="/" className="brandlink">Larabee</Link>
-        <nav>
-          <Link href="/">Inbox</Link>
-          <Link href="/calls">Calls</Link>
-          {staff.role === "admin" && <Link href="/legal">Legal</Link>}
-          {staff.role === "admin" && <Link href="/audit">Audit</Link>}
-        </nav>
-        <span className="who" title={staff.full_name}>
+      <header className="apphead">
+        <h1>Messages</h1>
+        <span className="sp" />
+        <Link href="/calls" className="btn">Calls</Link>
+        {staff.role === "admin" && <Link href="/legal" className="btn">Legal</Link>}
+        {staff.role === "admin" && <Link href="/audit" className="btn">Audit</Link>}
+        <span className="av" title={staff.full_name}>
           {staff.full_name.split(" ").map((p: string) => p[0]).join("").slice(0, 2)}
         </span>
       </header>

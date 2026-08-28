@@ -52,7 +52,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     sent_by: staff.id,
   });
   await db.from("conversations")
-    .update({ last_message_at: new Date().toISOString() })
+    .update({ last_message_at: new Date().toISOString(),
+              last_message_preview: body.slice(0, 160) })
     .eq("id", id);
 
   return NextResponse.json({ ok: status !== "failed", status });

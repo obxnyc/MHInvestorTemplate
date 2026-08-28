@@ -111,7 +111,8 @@ export async function ingest(item: Intake) {
   });
 
   await db.from("conversations")
-    .update({ last_message_at: new Date().toISOString(), status: "open" })
+    .update({ last_message_at: new Date().toISOString(), status: "open",
+              last_message_preview: item.summary.slice(0, 160) })
     .eq("id", convo.id);
 
   const label = {

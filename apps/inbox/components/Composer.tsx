@@ -29,17 +29,22 @@ export default function Composer({ conversationId }: { conversationId: string })
     <form className={`composer ${mode}`} onSubmit={submit}>
       <div className="modes">
         <button type="button" className={mode === "reply" ? "on" : ""}
-                onClick={() => setMode("reply")}>Reply</button>
+                onClick={() => setMode("reply")}>Text</button>
         <button type="button" className={mode === "note" ? "on" : ""}
-                onClick={() => setMode("note")}>Internal note</button>
+                onClick={() => setMode("note")}>Note</button>
       </div>
-      <textarea
-        value={text} onChange={(e) => setText(e.target.value)} rows={2}
-        placeholder={mode === "reply" ? "Text the tenant…" : "Note for the team — not sent"}
-      />
-      <button type="submit" className="send" disabled={busy || !text.trim()}>
-        {busy ? "…" : mode === "reply" ? "Send" : "Save note"}
-      </button>
+      <div className="inputrow">
+        <textarea
+          value={text} onChange={(e) => setText(e.target.value)} rows={1}
+          placeholder={mode === "reply" ? "Message" : "Note for your team — not sent"}
+          onKeyDown={(e) => {
+            // Enter sends, Shift+Enter breaks the line — phone-app behaviour.
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(e); }
+          }}
+        />
+        <button type="submit" className="sendbtn" disabled={busy || !text.trim()}
+                aria-label={mode === "reply" ? "Send message" : "Save note"}>↑</button>
+      </div>
       {error && <p className="error">{error}</p>}
     </form>
   );
