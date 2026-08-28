@@ -44,6 +44,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { error } = await db.from("conversations")
     .update({
       status: reopen ? "open" : "closed",
+      closed_reason: reopen ? null : "manual",
+      closed_by: reopen ? null : staff.id,
+      closed_at: reopen ? null : new Date().toISOString(),
       // Reopening hands it back to the team pool: whoever had it last is not
       // necessarily the one picking it up again.
       ...(reopen ? { assigned_to: null, claimed_at: null } : {}),

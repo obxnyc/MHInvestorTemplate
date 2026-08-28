@@ -220,3 +220,23 @@ button { font:inherit; cursor:pointer; }
 .unsure{margin:.6rem 1.1rem 0;padding:.5rem .7rem;background:var(--warn-soft);
   border-left:3px solid var(--warn);border-radius:0 6px 6px 0;font-size:.78rem;
   color:var(--ink-2);line-height:1.45}
+
+/* ---- closure recycling ---- */
+.recycle{margin:.7rem 1.1rem 0;padding:.75rem .9rem;background:var(--warn-soft);
+  border:1px solid var(--warn);border-radius:8px}
+.recycle.loud{border-width:2px;box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 18%,transparent)}
+.recycle .head{display:flex;align-items:baseline;gap:.5rem;margin-bottom:.25rem}
+.recycle strong{font-size:.9rem}
+.recycle .count{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+  color:var(--warn);font-weight:700}
+.recycle p{margin:0 0 .6rem;font-size:.8rem;line-height:1.45;color:var(--ink-2)}
+.recycle .acts{display:flex;gap:.4rem;justify-content:flex-end}
+.recycle button{border:1px solid var(--rule);background:var(--surface);color:var(--ink);
+  border-radius:6px;padding:.32rem .7rem;font:inherit;font-size:.78rem;font-weight:600;
+  cursor:pointer}
+.recycle button.primary{background:var(--accent);border-color:var(--accent);color:var(--ground)}
+.recycle button:disabled{opacity:.45}
+.recycle textarea{width:100%;padding:.45rem .6rem;border:1px solid var(--rule);
+  border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;
+  font-size:.82rem;resize:vertical;margin-bottom:.45rem}
+.recycle .err{color:var(--crit);font-size:.76rem;margin:.4rem 0 0}

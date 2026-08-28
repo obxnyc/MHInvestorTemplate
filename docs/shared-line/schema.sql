@@ -173,6 +173,16 @@ create table conversations (
   last_message_preview text,
   last_message_at timestamptz not null default now(),
   snooze_until   timestamptz,
+  -- 'manual' or 'idle_30d'. Worth distinguishing: a thread someone decided was
+  -- finished is a different record from one that simply went quiet.
+  closed_reason  text,
+  closed_by      uuid references staff(id) on delete set null,
+  closed_at      timestamptz,
+  -- How many times this thread has come back asking "is this finished?".
+  -- A rising count is the signal that something is being ignored rather than
+  -- handled, which is the whole point of recycling instead of auto-closing.
+  closure_prompts   integer not null default 0,
+  last_prompt_at    timestamptz,
   created_at     timestamptz not null default now()
 );
 
@@ -635,6 +645,116 @@ join contacts ct on ct.id = c.contact_id
 where c.missed
   and not exists (select 1 from calls r where r.returns_call_id = c.id)
 order by c.created_at desc;
+
+-- ---------------------------------------------------------------- closing
+
+-- The last time anyone actually did anything to a thread.
+--
+-- Not just the last message: claiming it and writing an internal note are both
+-- real work. Auto-closing a thread someone picked up last Tuesday because the
+-- tenant went quiet a month ago would be wrong.
+create or replace function conversation_last_activity(p_conversation uuid)
+returns timestamptz language sql stable as $$
+  select greatest(
+    c.last_message_at,
+    coalesce(c.claimed_at, c.last_message_at),
+    coalesce((select max(n.created_at) from notes n
+               where n.conversation_id = c.id), c.last_message_at)
+  )
+  from conversations c where c.id = p_conversation;
+$$;
+
+-- Can this thread be closed without a person looking at it?
+--
+-- Two exceptions, for different reasons:
+--
+--   maintenance   never. A quiet leasing thread means the prospect moved on; a
+--                 quiet maintenance thread may mean a repair is rotting, and
+--                 closing it would hide precisely what someone needs to see.
+--
+--   current_tenant  not until somebody has written a note on it. A tenant
+--                 conversation that ends with no record of what was decided is
+--                 the thing that gets re-litigated later. Requiring a note
+--                 before it can lapse means the outcome is written down while
+--                 anyone still remembers it.
+create or replace function conversation_may_autoclose(p_conversation uuid)
+returns boolean language sql stable as $$
+  select case
+    when c.category = 'maintenance' then false
+    when c.category = 'current_tenant'
+      then exists (select 1 from notes n where n.conversation_id = c.id)
+    else true
+  end
+  and not exists (
+    select 1 from work_orders w
+    where w.conversation_id = c.id and w.status not in ('done','cancelled'))
+  from conversations c where c.id = p_conversation;
+$$;
+
+create or replace function autoclose_idle_conversations(p_days integer default 30)
+returns integer language plpgsql security definer as $$
+declare closed integer;
+begin
+  with stale as (
+    select c.id from conversations c
+    where c.status = 'open'
+      and conversation_last_activity(c.id) < now() - make_interval(days => p_days)
+      and conversation_may_autoclose(c.id)
+  )
+  update conversations c
+     set status = 'closed', closed_reason = 'idle_' || p_days || 'd', closed_at = now()
+    from stale where c.id = stale.id;
+  get diagnostics closed = row_count;
+  return closed;
+end $$;
+
+-- Everything that cannot lapse gets recycled instead: pushed back in front of
+-- somebody with "is this finished?" on a repeating cadence until they answer.
+-- Silence stops being a way for a thread to disappear.
+create or replace function recycle_open_conversations(
+  p_quiet_days integer default 7, p_repeat_days integer default 7)
+returns integer language plpgsql security definer as $$
+declare touched integer;
+begin
+  with due as (
+    select c.id from conversations c
+    where c.status = 'open'
+      and not conversation_may_autoclose(c.id)
+      and conversation_last_activity(c.id) < now() - make_interval(days => p_quiet_days)
+      -- someone said "still open" recently; respect that
+      and (c.snooze_until is null or c.snooze_until < now())
+      and (c.last_prompt_at is null
+           or c.last_prompt_at < now() - make_interval(days => p_repeat_days))
+  )
+  update conversations c
+     set closure_prompts = c.closure_prompts + 1, last_prompt_at = now()
+    from due where c.id = due.id;
+  get diagnostics touched = row_count;
+  return touched;
+end $$;
+
+-- The queue this produces: open threads that have been asked about and not
+-- answered. Ordered by how many times they have come back, so the ones being
+-- ignored surface first.
+create view needs_closure_check as
+select c.id as conversation_id, c.category, c.subject,
+       c.team_id, c.assigned_to,
+       ct.full_name, ct.phone,
+       conversation_last_activity(c.id) as last_activity,
+       (now()::date - conversation_last_activity(c.id)::date) as days_quiet,
+       c.closure_prompts, c.last_prompt_at,
+       s.full_name as assigned_to_name,
+       exists (select 1 from notes n where n.conversation_id = c.id) as has_note,
+       (select count(*) from work_orders w
+         where w.conversation_id = c.id and w.status not in ('done','cancelled'))
+         as open_work_orders
+from conversations c
+join contacts ct on ct.id = c.contact_id
+left join staff s on s.id = c.assigned_to
+where c.status = 'open'
+  and c.closure_prompts > 0
+  and (c.snooze_until is null or c.snooze_until < now())
+order by c.closure_prompts desc, conversation_last_activity(c.id);
 
 -- ---------------------------------------------------------------- claiming
 

@@ -5,6 +5,7 @@ import { prettyPhone, clockTime } from "@/lib/format";
 import Composer from "@/components/Composer";
 import ClaimPill from "@/components/ClaimPill";
 import CloseButton from "@/components/CloseButton";
+import ClosurePrompt from "@/components/ClosurePrompt";
 import Live from "@/components/Live";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
 
   const { data: convo } = await supabase
     .from("conversations")
-    .select("id, category, source, status, category_confidence, assigned_to, contacts(phone, full_name), staff:assigned_to(full_name)")
+    .select("id, category, source, status, category_confidence, closure_prompts, last_message_at, claimed_at, snooze_until, assigned_to, contacts(phone, full_name), staff:assigned_to(full_name)")
     .eq("id", id).single();
   if (!convo) notFound();
 
@@ -62,6 +63,17 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
         />
         <CloseButton conversationId={id} isClosed={convo.status === "closed"} />
       </div>
+
+      {convo.closure_prompts > 0 && convo.status === "open"
+        && (!convo.snooze_until || new Date(convo.snooze_until) < new Date()) && (
+        <ClosurePrompt
+          conversationId={id}
+          daysQuiet={Math.floor(
+            (Date.now() - new Date(convo.last_message_at).getTime()) / 864e5)}
+          prompts={convo.closure_prompts}
+          needsNote={convo.category === "current_tenant" && !(notes ?? []).length}
+        />
+      )}
 
       {/* The classifier was not sure. Say so, rather than presenting a guess
           as a fact — an unsure label a human can correct beats a confident
