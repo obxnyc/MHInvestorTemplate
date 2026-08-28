@@ -13,6 +13,11 @@ every reply carries a name.
   call site in the code can't leave a gap.
 - **Live** — every open screen refreshes on new activity, so two people don't
   answer the same tenant.
+- **New Message** — start a thread with any number. It opens in the shared list;
+  there is no private side channel.
+- **Staff Broadcast** — one message to every active employee, fanned out as
+  individual texts rather than a group thread, so replies come back as ordinary
+  conversations somebody can claim and answer.
 
 - **Push notifications** — installable to a phone home screen, alerts on new
   texts, missed calls, voicemail, and `@mentions`.

@@ -415,6 +415,26 @@ create index on court_filings (case_number);
 create index on court_filings (defendant);
 create index on court_filings (created_at desc);
 
+-- ---------------------------------------------------------------- broadcasts
+
+-- One message to every employee at once: a closure, a cover request, a policy
+-- change.
+--
+-- It fans out as individual messages into each person's own conversation
+-- rather than a group thread. Replies then come back as ordinary conversations
+-- somebody can claim and answer, instead of a group chat nobody owns and
+-- nobody can moderate.
+create table broadcasts (
+  id            uuid primary key default gen_random_uuid(),
+  sent_by       uuid not null references staff(id) on delete set null,
+  body          text not null,
+  recipients    integer not null default 0,
+  delivered     integer not null default 0,
+  created_at    timestamptz not null default now()
+);
+
+create index on broadcasts (created_at desc);
+
 -- ---------------------------------------------------------------- push
 
 -- One row per installed device, not per person: everyone has a phone and a
@@ -631,6 +651,8 @@ create trigger audit_consent        after insert or update or delete on consent
 create trigger audit_inquiries      after insert or update or delete on inquiries
   for each row execute function log_change();
 create trigger audit_filings        after insert or update or delete on court_filings
+  for each row execute function log_change();
+create trigger audit_broadcasts     after insert or update or delete on broadcasts
   for each row execute function log_change();
 create trigger audit_notes          after insert or update or delete on notes
   for each row execute function log_change();

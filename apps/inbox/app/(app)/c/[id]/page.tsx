@@ -51,7 +51,7 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
       <Live />
       <div className="chead">
         <Link href="/" className="chevron" aria-label="Back to messages">&lsaquo;</Link>
-        <span className="avatar">{initials(name)}</span>
+        <span className="av">{initials(name)}</span>
         <span>
           <span className="nm">{name}</span>
           <span className="sub">via {convo.source}</span>
@@ -124,7 +124,7 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
                     {author ?? "Automated"}
                   </span>
                 )}
-                <div className="bub">{m.body}</div>
+                <div className="b">{m.body}</div>
                 {m.media_urls?.map((u: string, i: number) => (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img key={i} src={u} alt="Attachment" className="mms" />
