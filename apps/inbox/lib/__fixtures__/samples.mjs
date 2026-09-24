@@ -1,0 +1,223 @@
+/**
+ * Real notification formats, with tenant details replaced by placeholders.
+ * The LABELS and LAYOUT are exactly as the providers send them — that is what
+ * the parsers key on. Values are fake so no resident data lives in the repo.
+ */
+export const RENT_MANAGER = {
+  from: "donotreply@rentmanager.com",
+  to: "larabeehomesllc@gmail.com",
+  subject: "New Issue Submitted from TWA: 1140 Northside #51, 1140 Northside Rd, Lot #51",
+  messageId: "<rm-sample-1@rentmanager.com>",
+  text: `Tenant WebAccess
+The following issue was submitted via TWA:
+Issue Title: Kitchen sink faucet leaking.
+Description: Kitchen sink leaking from riser
+Assigned To:
+
+Tenant: Doe, Jane
+Number: (555) 555-0100`,
+};
+
+export const VOICEMAIL = {
+  from: "noreply@netdialtone.com",
+  to: "info@larabeehomesllc.com",
+  subject: "New Mailbox Message from +15555550100",
+  messageId: "<ndt-sample-1@netdialtone.com>",
+  text: `A new message has been left for mailbox 402 (Existing Tenant GDM). The message is 0:42 minutes, and has been attached to this email.
+
+Transcription:
+Hi this is Jane in lot fifty one, the kitchen faucet is still dripping, please call me back.
+
+-- 
+Net Dial Tone
++1 513-583-0840
+support@netdialtone.com`,
+};
+
+export const VOICEMAIL_BLANK = {
+  ...VOICEMAIL,
+  messageId: "<ndt-sample-2@netdialtone.com>",
+  text: VOICEMAIL.text
+    .replace(/Transcription:\n[^\n]+/, "Transcription:\n[BLANK_AUDIO]")
+    .replace("0:42", "0:01"),
+};
+
+/** Zillow template A — first contact. Renter details replaced; layout exact. */
+export const ZILLOW_FIRST = {
+  from: "Renter Name <4pbz5we26qp8ei5h4hq80pcustc@convo.zillow.com>",
+  to: "larabeehomesllc@gmail.com",
+  subject: "Renter is requesting information about 1140 Northside Rd, Elizabeth City, NC, 27909",
+  messageId: "<z-a@convo.zillow.com>",
+  text: `Brand logo
+New message
+1140 Northside Rd, Elizabeth City, NC, 27909.
+Renter Name says:
+I would like to schedule a tour.
+Reply to Renter
+Send application
+You can also reply directly to this email
+
+About Renter Name
+
+Pets
+Not answered
+Reminder: The federal Fair Housing Act prohibits housing discrimination on the basis of race, color, national origin, sex (including sexual orientation and gender identity), familial status, disability, and religion.
+Learn more about voucher assistance programs and the basics of fair housing laws.
+
+Other helpful links
+Found a tenant and no longer wish to get inquiries for this property? Manage this listing
+Is this inquiry spam? Report spam
+Know your fair housing obligations under Zillow's Respectful Renting Pledge
+Have questions or need help? Find answers on our FAQ page, or contact us.
+
+Get it on Google Play\tDownload on the App Store
+Download the free Zillow Rental Manager app
+Add photos and get notifications of new leads.
+Zillow, Inc.
+1301 Second Avenue, Floor 36
+Seattle, WA 98101
+© 2006-2026
+Privacy policy | Update your preferences`,
+};
+
+/** Zillow template B — follow-up messages use ALL-CAPS block labels. */
+export const ZILLOW_REPLY = {
+  from: "Renter Name <4pbz5we26qp8ei5h4hq80pcustc@convo.zillow.com>",
+  to: "larabeehomesllc@gmail.com",
+  subject: "New message from a renter",
+  messageId: "<z-b@convo.zillow.com>",
+  text: `Brand logo
+New message from a renter
+Regarding your listing at:
+1140 Northside Rd, Elizabeth City, NC 27909
+Reply on Zillow
+
+Some rental inquiries may be scams. If a message asks you to scan a QR code, select a link, verify your identity, or send payment, don't respond. Report it to us instead.
+Learn about staying safe.
+
+RENTER'S NAME
+Renter Name
+RENTER'S MESSAGE
+Hi, I'm still interested in this rental. I pay $1350 per month currently. Not sure of my current credit score but I can pull it. I don't have any pets and I don't have any roommates. I am able to get a co-signer/guarantor if needed.`,
+};
+
+/** Squarespace form submission — real layout, placeholder details. Note the
+ *  blank lines between fields and the verbatim SMS consent disclosure. */
+export const SQUARESPACE = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Inquiry",
+  messageId: "<sq-real-1@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Person
+
+Email: sample@example.com
+
+Phone: (252) 555-0100
+
+Message: Looking for a 3 bedroom 2 bath house around the Elizabeth City area that allows pets, budget 800 to 1000 a month
+
+: Subscribe for news + updates
+
+SMS Consent: I agree to receive text messages from Larabee Homes LLC, including maintenance and service updates, showing confirmations, rent and account reminders, and lease notifications. Message frequency varies. Msg & data rates may apply. Reply STOP to cancel, HELP for help. See our Privacy Policy at larabeehomesllc.com/privacy-policy and Terms of Service at larabeehomesllc.com/terms-of-service.
+
+Manage Submissions
+
+Does this submission look like spam? Report it here.`,
+};
+
+/** The same form with BOTH checkboxes left unticked. This is the shape that
+ *  decides whether anyone may be texted, and it is the one that used to be a
+ *  guess: an unticked box keeps its line and loses its value. Confirmed from
+ *  two real submissions of this form -- the unlabelled newsletter checkbox
+ *  arrives as ": Subscribe for news + updates" when ticked and as a bare ":"
+ *  when it is not. */
+export const SQUARESPACE_NO_CONSENT = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Inquiry",
+  messageId: "<sq-real-2@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Prospect
+
+Email: prospect@example.com
+
+Phone: (252) 555-0142
+
+Message: interested in a 3 bedroom.
+
+:
+
+SMS Consent:
+
+Manage Submissions
+
+Does this submission look like spam? Report it here.`,
+};
+
+/** A defensive fixture, not an observed one: if Squarespace ever writes "No"
+ *  into an unticked box instead of leaving it blank, the parser must not read
+ *  that as agreement. Getting this wrong texts someone who declined. */
+export const SQUARESPACE_DECLINED = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Inquiry",
+  messageId: "<sq-declined@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Prospect
+
+Phone: (252) 555-0143
+
+Message: do you allow dogs
+
+SMS Consent: No`,
+};
+
+/** A maintenance form on the same website. The form's name lives in the
+ *  subject and is the only thing that says what the submitter thought they
+ *  were doing. */
+export const SQUARESPACE_MAINTENANCE = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Maintenance Request",
+  messageId: "<sq-maint@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Tenant
+
+Phone: (252) 555-0177
+
+Message: water heater is leaking into the hallway`,
+};
+
+/** NC court eFiling notice (Tyler Technologies). Tab-separated table cells. */
+export const COURT_FILING = {
+  from: "no-reply@efilingmail.tylertech.cloud",
+  to: "larabeehomesllc@gmail.com",
+  subject: "Filing Accepted for Case: 26CV000973-690; Sample Holdings LLC VS Sample Defendant; Envelope Number: 7689456",
+  messageId: "<tyler-1@tylertech.cloud>",
+  text: `Filing Accepted
+Envelope Number: 7689456
+
+The filing below was reviewed and has been accepted by the Clerk's office located in Pasquotank District Court, NC.
+
+Filing Details
+Court\tDistrict Court
+Case Number\t26CV000973-690
+Case Style\tSample Holdings LLC VS Sample Defendant
+Date/Time Submitted\t8/25/2026 9:34 AM EST
+Date/Time Accepted\t8/25/2026 9:38 AM EST
+Accepted Comments\t
+Filing Type\tVoluntary Dismissal
+Activity Requested\tEFile
+Filed By\tSample Filer
+
+Document Details
+Lead File\tcv405.pdf
+Lead File Page Count\t1
+File Stamped Copy\thttps://northcarolina.tylertech.cloud/ViewDocuments.aspx?FID=a4a656b3-8ee2-42aa-84b3-2f523a93bbb4
+This link is active for 90 days.`,
+};
