@@ -65,35 +65,32 @@ export function checkTwilioSignature(
   path: string,
   params: Record<string, string>,
 ): SignatureCheck {
+  // Also logged, not only returned. Twilio keeps the response body, but reading
+  // it means finding the right screen in their console; the same sentence in the
+  // hosting logs is one search away. Neither the signature nor the token is
+  // included -- the reason says what is wrong, not what the secret is.
+  const refuse = (status: number, reason: string): SignatureCheck => {
+    console.error(`twilio webhook refused ${path}: ${reason}`);
+    return { ok: false, status, reason };
+  };
+
   const signature = req.headers.get("x-twilio-signature");
-  if (!signature) {
-    return { ok: false, status: 403, reason: "no x-twilio-signature header" };
-  }
+  if (!signature) return refuse(403, "no x-twilio-signature header");
 
   const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!token) {
-    return {
-      ok: false, status: 500,
-      reason: "TWILIO_AUTH_TOKEN is not set on the server",
-    };
-  }
+  if (!token) return refuse(500, "TWILIO_AUTH_TOKEN is not set on the server");
 
   const urls = candidateUrls(req, path);
   if (!urls.length) {
-    return {
-      ok: false, status: 500,
-      reason: "cannot determine the URL this was called on: no Host header and no PUBLIC_BASE_URL",
-    };
+    return refuse(500,
+      "cannot determine the URL this was called on: no Host header and no PUBLIC_BASE_URL");
   }
 
   for (const url of urls) {
     if (twilio.validateRequest(token, signature, url, params)) return { ok: true };
   }
 
-  return {
-    ok: false, status: 403,
-    reason: `signature did not match; validated against ${urls.join(" and ")}`,
-  };
+  return refuse(403, `signature did not match; validated against ${urls.join(" and ")}`);
 }
 
 /** The origin to put inside TwiML we hand back to Twilio, for the callbacks it
