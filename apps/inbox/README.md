@@ -36,7 +36,8 @@ Next.js 16 · Supabase (Postgres, Auth, RLS, Realtime) · Twilio · Cloudflare E
 Create a Supabase project, then in the SQL editor run, in order:
 
 1. `../../docs/shared-line/schema.sql`
-2. `supabase/seed.sql`
+2. `../../docs/shared-line/storage.sql`
+3. `supabase/seed.sql`
 
 Then enable Realtime for the `messages` and `conversations` tables
 (Database → Replication).
@@ -244,6 +245,30 @@ named for repairs files as maintenance rather than as a lead. Add a
 
 For a richer form (the prequalification form, eventually), post JSON directly to
 `/api/intake/form` from a Squarespace code block instead.
+
+## Photographs
+
+A tenant's picture of a leaking water heater shows their kitchen, their
+possessions, sometimes their children. The bucket is private and there is no
+insert policy for signed-in users at all; uploads happen only in the Twilio
+webhook, under the service role.
+
+Inbound MMS is **copied into storage on receipt** and the Twilio URL is thrown
+away. Twilio serves media from its own domain behind your account credentials
+and drops it when the message is deleted, so a stored Twilio URL is both
+unrenderable — a browser has no credentials to send, and the tag shows a broken
+image — and impermanent. Reads happen through signed URLs that expire in five
+minutes.
+
+Who may see a photograph is not configured separately: the storage policy asks
+whether you can see the *conversation* the photo belongs to, which is why the
+object path carries the conversation id. One rule, no second copy of it to drift.
+
+A work order **cannot be marked done without either a completion photograph or a
+written reason** there is none. That is a database constraint, not a check in a
+route, so every path — the UI, a script, a console session — has to satisfy it.
+Some jobs genuinely have nothing to show, so the rule is "a photo, or a reason
+on the record", and the reason has to be a sentence rather than "n/a".
 
 ## Push notifications
 

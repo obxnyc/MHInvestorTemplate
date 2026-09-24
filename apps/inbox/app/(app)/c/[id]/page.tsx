@@ -3,6 +3,7 @@ import Link from "next/link";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { prettyPhone, clockTime } from "@/lib/format";
 import { catLabel, propertyOf } from "@/lib/category";
+import { signMedia } from "@/lib/media";
 import Composer from "@/components/Composer";
 import ClaimPill from "@/components/ClaimPill";
 import CloseButton from "@/components/CloseButton";
@@ -27,12 +28,21 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
 
   const [{ data: messages }, { data: notes }] = await Promise.all([
     supabase.from("messages")
-      .select("id, direction, body, status, channel, created_at, media_urls, staff:sent_by(full_name)")
+      .select("id, direction, body, status, channel, created_at, media_paths, staff:sent_by(full_name)")
       .eq("conversation_id", id).order("created_at"),
     supabase.from("notes")
       .select("id, body, created_at, staff:author_id(full_name)")
       .eq("conversation_id", id).order("created_at"),
   ]);
+
+  // One signing call for the whole thread rather than one per picture: each is
+  // a round trip, and a thread with a dozen photos would otherwise spend a
+  // second doing nothing else. The links expire in five minutes, which outlasts
+  // reading the thread and not much else.
+  const signed = await signMedia(
+    supabase,
+    (messages ?? []).flatMap((m) => (m.media_paths ?? []) as string[]),
+  );
 
   const contact = convo.contacts as unknown as {
     phone: string; full_name: string | null; party: string;
@@ -145,10 +155,18 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
                   </span>
                 )}
                 <div className="b">{m.body}</div>
-                {m.media_urls?.map((u: string, i: number) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={i} src={u} alt="Attachment" className="mms" />
-                ))}
+                {(m.media_paths as string[] | null)?.map((path, i) => {
+                  const src = signed.get(path);
+                  // A path with no signed URL means the object is missing or
+                  // the link could not be minted. Say which photo is gone
+                  // instead of rendering a broken image icon.
+                  return src ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={path} src={src} alt={`Attachment ${i + 1}`} className="mms" />
+                  ) : (
+                    <span key={path} className="mms-gone">Attachment unavailable</span>
+                  );
+                })}
                 <span className={
                   m.status === "failed" || m.status === "undelivered"
                     ? "delivered bad" : "delivered"

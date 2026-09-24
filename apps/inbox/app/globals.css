@@ -251,6 +251,10 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   font-family:ui-monospace,monospace}
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
 .pill.grey{background:var(--sunk);color:var(--faint)}
+/* A photo that cannot be shown is information, not a broken image icon. */
+.mms-gone{display:inline-block;margin-top:.4rem;padding:.4rem .6rem;border-radius:8px;
+  border:1px dashed var(--hair);background:var(--sunk);color:var(--muted);
+  font-size:.78rem;font-weight:600}
 .none{padding:3rem 1rem;text-align:center;color:var(--muted);font-size:.86rem}
 
 /* ---- the thread ---- */

@@ -205,7 +205,12 @@ create table messages (
   conversation_id  uuid not null references conversations(id) on delete cascade,
   direction        msg_direction not null,
   body             text,
-  media_urls       text[] not null default '{}',
+  -- Object paths in the private 'attachments' bucket, NOT the URLs Twilio sent.
+  -- Twilio's media URLs need account credentials to open and disappear with the
+  -- message, so an <img src> pointing at one shows a broken image and a photo
+  -- kept only there is not really yours. Every inbound picture is copied into
+  -- storage on receipt; see storage.sql for who may read it back.
+  media_paths      text[] not null default '{}',
   -- unique so a Twilio webhook retry can never double-insert
   twilio_sid       text unique,
   -- 'sms' | 'zego' | 'zillow' | 'website' -- an inbound message did not
@@ -289,9 +294,28 @@ create table work_orders (
   status           wo_status not null default 'new',
   assigned_tech    uuid references staff(id) on delete set null,
   scheduled_for    timestamptz,
-  photo_urls       text[] not null default '{}',
+  -- What the tenant sent when they reported it, and what the tech sent when the
+  -- work was done. Kept apart because the PAIR is the evidence: one photo of a
+  -- dry floor proves nothing without the photo of the wet one.
+  reported_photos   text[] not null default '{}',
+  completion_photos text[] not null default '{}',
+  -- Why a job was closed with no photo. Some work genuinely has nothing to
+  -- show -- a reset breaker, a lock-out -- so the rule is not "always a photo",
+  -- it is "a photo, or a reason on the record". An empty string is not a
+  -- reason, hence the length check.
+  completion_waiver text check (completion_waiver is null
+                                or length(trim(completion_waiver)) >= 10),
   completed_at     timestamptz,
-  created_at       timestamptz not null default now()
+  created_at       timestamptz not null default now(),
+
+  -- Enforced here rather than in the app: a closing path that forgets to check
+  -- is exactly how evidence stops being collected three months in, and every
+  -- route, script and console session has to pass this.
+  constraint completion_needs_evidence check (
+    status <> 'done'
+    or cardinality(completion_photos) > 0
+    or completion_waiver is not null
+  )
 );
 
 create index on work_orders (status, urgency);

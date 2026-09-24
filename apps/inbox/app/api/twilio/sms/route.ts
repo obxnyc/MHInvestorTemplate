@@ -4,6 +4,7 @@ import { verifyTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
 import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
 import { classify, needsReview } from "@/lib/classify";
 import { prettyPhone } from "@/lib/format";
+import { storeInboundMedia } from "@/lib/media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,15 +79,27 @@ export async function POST(req: Request) {
     convo = data!;
   }
 
-  const media: string[] = [];
+  const incoming: string[] = [];
   const n = parseInt(params.NumMedia ?? "0", 10);
-  for (let i = 0; i < n; i++) if (params[`MediaUrl${i}`]) media.push(params[`MediaUrl${i}`]);
+  for (let i = 0; i < n; i++) if (params[`MediaUrl${i}`]) incoming.push(params[`MediaUrl${i}`]);
+
+  // Copied into our own storage before the message is written, so the row never
+  // points at a Twilio URL that a browser cannot open and Twilio may later drop.
+  const { paths, failed } = incoming.length
+    ? await storeInboundMedia(db, convo.id, sid, incoming)
+    : { paths: [] as string[], failed: 0 };
+
+  // Say so in the thread rather than silently showing fewer photos than were
+  // sent. Someone has to know to ask the tenant again.
+  const noteLostMedia = failed
+    ? `\n\n[${failed} attachment${failed > 1 ? "s" : ""} could not be saved — ask them to resend]`
+    : "";
 
   const { error } = await db.from("messages").insert({
     conversation_id: convo.id,
     direction: "inbound",
-    body,
-    media_urls: media,
+    body: body + noteLostMedia,
+    media_paths: paths,
     twilio_sid: sid,
     status: "received",
     sent_by: null, // inbound is never attributed to an employee
