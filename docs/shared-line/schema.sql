@@ -1010,20 +1010,75 @@ $$;
 
 -- ---------------------------------------------------------------- row level security
 
-alter table conversations enable row level security;
-alter table messages      enable row level security;
-alter table notes         enable row level security;
-alter table work_orders   enable row level security;
-alter table audit_log     enable row level security;
+-- EVERY table in `public`, without exception.
+--
+-- This is not belt-and-braces. Supabase publishes the whole `public` schema
+-- through its REST API, and the anon key that reaches it is embedded in the
+-- browser -- it is public by design. A table here with RLS off is therefore
+-- readable by anyone who views the page source, whatever the application does.
+-- Leaving `contacts` or `prequal_submissions` off this list would publish every
+-- tenant's phone number and every applicant's credit score to the internet.
+--
+-- The rule is: enabled everywhere, then add back exactly what each role needs.
+alter table staff            enable row level security;
+alter table teams            enable row level security;
+alter table team_members     enable row level security;
+alter table properties       enable row level security;
+alter table units            enable row level security;
+alter table contacts         enable row level security;
+alter table consent          enable row level security;
+alter table conversations    enable row level security;
+alter table messages         enable row level security;
+alter table calls            enable row level security;
+alter table notes            enable row level security;
+alter table templates        enable row level security;
+alter table work_orders      enable row level security;
+alter table prequal_rule_sets     enable row level security;
+alter table prequal_submissions   enable row level security;
+alter table showings         enable row level security;
+alter table inquiries        enable row level security;
+alter table nurture_touches  enable row level security;
+alter table reassigned_number_checks enable row level security;
+alter table court_filings    enable row level security;
+alter table push_subscriptions    enable row level security;
+alter table broadcasts       enable row level security;
+alter table audit_log        enable row level security;
 
-alter table teams        enable row level security;
-alter table team_members enable row level security;
+-- Who is asking, answered once.
+--
+-- SECURITY DEFINER matters more than it looks: a policy ON staff that queries
+-- staff would recurse forever. These run as the owner, so the lookup inside
+-- them is not itself policed, and every policy below can ask the question
+-- without tripping over the answer.
+create or replace function is_active_staff() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from staff s where s.id = auth.uid() and s.active);
+$$;
+
+create or replace function staff_has_role(variadic p_roles staff_role[])
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from staff s
+                 where s.id = auth.uid() and s.active and s.role = any(p_roles));
+$$;
+
+-- The anon key is in the page source of every visitor's browser. It is not a
+-- credential and must not behave like one. Applicants reach /apply, /criteria
+-- and /book through this application's own routes, which use the service role
+-- server-side -- so nothing outside needs to touch a table directly, ever.
+revoke all on all tables in schema public from anon;
+revoke all on all sequences in schema public from anon;
+
+-- Signed-in staff get SELECT and nothing else. Every write in this application
+-- goes through a route that runs as the service role or a security definer
+-- function, which is what keeps the audit trail honest: a client that could
+-- write its own rows could write its own name onto someone else's reply.
+-- With RLS on and no INSERT/UPDATE/DELETE policy, those are already refused.
+revoke insert, update, delete on all tables in schema public from authenticated;
 
 -- Admins and office staff see the whole inbox. That is the entire point of a
 -- shared line: anyone can pick up where anyone else left off, claimed or not.
 create policy office_reads_all on conversations for select
-  using (exists (select 1 from staff s
-                 where s.id = auth.uid() and s.role in ('admin','office') and s.active));
+  using (staff_has_role('admin','office'));
 
 -- Everyone else sees their teams' conversations -- the whole team's threads,
 -- not just the ones assigned to them. A tech on the maintenance team reads the
@@ -1040,8 +1095,10 @@ create policy tech_reads_assigned on conversations for select
                  where w.conversation_id = conversations.id
                    and w.assigned_tech = auth.uid()));
 
-create policy staff_read_teams on teams for select using (true);
-create policy staff_read_members on team_members for select using (true);
+-- `using (true)` would be true for anon as well, which is exactly the mistake
+-- this pass exists to remove.
+create policy staff_read_teams on teams for select using (is_active_staff());
+create policy staff_read_members on team_members for select using (is_active_staff());
 
 -- Messages and notes inherit conversation visibility.
 create policy read_messages_in_visible_conversations on messages for select
@@ -1055,9 +1112,64 @@ alter table court_filings enable row level security;
 -- Admins only. No team-membership escape hatch: office staff handling a
 -- maintenance request must not be able to see a household's eviction history.
 create policy admin_reads_filings on court_filings for select
-  using (exists (select 1 from staff s
-                 where s.id = auth.uid() and s.role = 'admin' and s.active));
+  using (staff_has_role('admin'));
 
 create policy admin_reads_audit on audit_log for select
-  using (exists (select 1 from staff s
-                 where s.id = auth.uid() and s.role = 'admin' and s.active));
+  using (staff_has_role('admin'));
+
+-- ---- the rest of the tables ----------------------------------------------
+
+-- Shared-office data. Everyone signed in can read it, because a shared line
+-- where a tech cannot see who is calling is not shared.
+create policy staff_reads_roster    on staff        for select using (is_active_staff());
+create policy staff_reads_props     on properties   for select using (is_active_staff());
+create policy staff_reads_units     on units        for select using (is_active_staff());
+create policy staff_reads_contacts  on contacts     for select using (is_active_staff());
+create policy staff_reads_consent   on consent      for select using (is_active_staff());
+create policy staff_reads_calls     on calls        for select using (is_active_staff());
+create policy staff_reads_templates on templates    for select using (is_active_staff());
+-- The screening rules are published at /criteria anyway; hiding them from staff
+-- would only stop an employee explaining a decline they have to deliver.
+create policy staff_reads_rules on prequal_rule_sets for select using (is_active_staff());
+
+-- RLS is row-level and cannot hide a column, so the PIN needs a column
+-- privilege. Without this, `select *` on staff hands every hash to anyone
+-- signed in -- including the tech whose colleagues' PINs those are.
+revoke select on staff from authenticated;
+grant select (id, full_name, role, forward_to, client_identity, active, created_at)
+  on staff to authenticated;
+
+-- Leasing data: income, credit scores, who applied and was turned down. Office
+-- and admin only. A maintenance tech has no business in an applicant's finances.
+create policy leasing_reads_submissions on prequal_submissions for select
+  using (staff_has_role('admin','office'));
+create policy leasing_reads_showings  on showings   for select
+  using (staff_has_role('admin','office','shower'));
+create policy leasing_reads_inquiries on inquiries  for select
+  using (staff_has_role('admin','office'));
+create policy leasing_reads_nurture   on nurture_touches for select
+  using (staff_has_role('admin','office'));
+create policy office_reads_broadcasts on broadcasts for select
+  using (staff_has_role('admin','office'));
+
+-- A compliance record about numbers that changed hands. Admin only, same
+-- reasoning as the court filings.
+create policy admin_reads_rnd on reassigned_number_checks for select
+  using (staff_has_role('admin'));
+
+-- Your own devices, nobody else's. Knowing which phones a colleague has
+-- registered is not something this application needs to offer.
+create policy own_push_subscriptions on push_subscriptions for select
+  using (staff_id = auth.uid());
+
+-- Work orders: the office sees the board, a tech sees their own jobs.
+create policy office_reads_work_orders on work_orders for select
+  using (staff_has_role('admin','office'));
+create policy tech_reads_own_work_orders on work_orders for select
+  using (assigned_tech = auth.uid());
+
+-- The one thing a signed-in client may write, because a note is the one thing
+-- typed by a person rather than produced by a webhook. author_id is pinned to
+-- the session, so a note cannot be filed under somebody else's name.
+create policy staff_writes_own_notes on notes for insert
+  with check (author_id = auth.uid() and is_active_staff());

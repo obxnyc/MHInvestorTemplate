@@ -249,6 +249,34 @@ named for repairs files as maintenance rather than as a lead. Add a
 For a richer form (the prequalification form, eventually), post JSON directly to
 `/api/intake/form` from a Squarespace code block instead.
 
+## Who can read what
+
+Row-level security is on for **every** table in `public`, without exception.
+
+That is not caution, it is the shape of the platform: Supabase publishes the
+whole `public` schema through its REST API, and the anon key that reaches it
+ships inside the browser. A table with RLS off is readable by anyone who views
+the page source, whatever the application code does. Leaving `contacts` or
+`prequal_submissions` off that list would publish every tenant's phone number
+and every applicant's credit score to the internet.
+
+- **anon gets nothing.** Applicants reach `/apply`, `/criteria` and `/book`
+  through this app's own routes, which use the service role server-side, so
+  nothing outside ever needs to touch a table directly.
+- **Signed-in staff get SELECT and nothing else.** Every write goes through a
+  route running as the service role, or a security definer function. A client
+  that could write its own rows could put its own name on someone else's reply,
+  and then the audit trail is decoration.
+- **A tech** reads the shared line — contacts, their teams' threads, the roster.
+  Not applicants' finances, not court filings, not the audit trail.
+- **`pin_hash` is unreadable by anyone**, including admins. RLS is row-level and
+  cannot hide a column, so that one is a column grant. It also means
+  `select *` on `staff` is refused; `requireStaff()` names its columns.
+
+Run `../../docs/shared-line/rls-tests.sql` against a scratch database after
+touching any of it. Six checks, the first of which fails if *any* table in
+public has RLS off — so this cannot quietly regress when a table is added.
+
 ## Signing in
 
 Two doors, because there are two jobs.

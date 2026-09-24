@@ -28,7 +28,12 @@ export async function requireStaff() {
   const supabase = await supabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+  // Named columns, not *. The PIN columns are withheld from `authenticated` by
+  // a column grant -- RLS is row-level and cannot hide a column -- so a select *
+  // here is refused outright rather than quietly dropping them.
   const { data: staff } = await supabase
-    .from("staff").select("*").eq("id", user.id).single();
+    .from("staff")
+    .select("id, full_name, role, forward_to, client_identity, active, created_at")
+    .eq("id", user.id).single();
   return staff ?? null;
 }
