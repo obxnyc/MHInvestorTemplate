@@ -39,8 +39,11 @@ Create a Supabase project, then in the SQL editor run, in order:
 2. `../../docs/shared-line/storage.sql`
 3. `supabase/seed.sql`
 
-Then enable Realtime for the `messages` and `conversations` tables
-(Database → Replication).
+`storage.sql` also switches on Realtime for `messages` and `conversations`, so
+there is no toggle to find in the dashboard. That setting moves between
+Database → Replication and Database → Publications depending on which version of
+the console you get, and missing it fails silently -- everything works until two
+people are in the inbox at once.
 
 ### 2. Environment
 

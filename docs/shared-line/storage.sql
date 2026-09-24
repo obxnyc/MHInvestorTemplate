@@ -1,4 +1,5 @@
--- Larabee shared line — private file storage
+-- Larabee shared line — Supabase-specific setup: private file storage, and
+-- the live-updating tables
 --
 -- Run AFTER schema.sql, in the Supabase SQL editor. This file is Supabase-only:
 -- it depends on the `storage` schema that Supabase provides, which is why it is
@@ -49,3 +50,30 @@ using (
 -- Work-order photos live under the same bucket and the same conversation
 -- folder, so a tech photographing a finished job gets the same rule as the
 -- tenant who reported it. Nothing extra to configure.
+
+-- ---------------------------------------------------------------- live updates
+
+-- Two people work the same list at the same time, so a new text has to appear
+-- on both screens without anyone refreshing. Supabase does that by streaming
+-- changes to any table in the `supabase_realtime` publication.
+--
+-- Done here rather than by finding a toggle in the dashboard: the setting moves
+-- between Database → Replication and Database → Publications depending on which
+-- version of the console you get, and a missed toggle fails silently -- the app
+-- works perfectly until two people are in it at once.
+--
+-- Each is wrapped because re-running this file must be safe: adding a table
+-- that is already in the publication is an error, not a no-op.
+do $$
+begin
+  alter publication supabase_realtime add table messages;
+exception when duplicate_object then
+  raise notice 'messages already streams live';
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table conversations;
+exception when duplicate_object then
+  raise notice 'conversations already streams live';
+end $$;
