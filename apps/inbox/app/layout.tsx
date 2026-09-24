@@ -25,7 +25,8 @@ export const viewport: Viewport = {
   // to enlarge text from using the app at all, and it was only there to prevent
   // iOS zooming when a small input is focused -- which is fixed properly below
   // in the stylesheet by making touch inputs 16px.
-  themeColor: "#186A4E",
+  // Larabee blue: the colour of the phone's status bar when the app is open.
+  themeColor: "#405981",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
