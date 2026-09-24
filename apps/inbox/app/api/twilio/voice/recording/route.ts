@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { verifyTwilioSignature, formToObject } from "@/lib/twilio";
+import { checkTwilioSignature, formToObject } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,10 +11,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const raw = await req.text();
   const params = formToObject(raw);
-  const base = process.env.PUBLIC_BASE_URL;
-  if (!verifyTwilioSignature(req.headers.get("x-twilio-signature"), `${base}/api/twilio/voice/recording`, params)) {
-    return new NextResponse("invalid signature", { status: 403 });
-  }
+  const sig = checkTwilioSignature(req, "/api/twilio/voice/recording", params);
+  if (!sig.ok) return new NextResponse(sig.reason, { status: sig.status });
 
   await supabaseAdmin().from("calls").update({
     recording_sid: params.RecordingSid,

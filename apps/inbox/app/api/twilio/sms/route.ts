@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { verifyTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
+import { checkTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
 import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
 import { classify, needsReview } from "@/lib/classify";
 import { prettyPhone } from "@/lib/format";
@@ -15,10 +15,8 @@ export async function POST(req: Request) {
   const raw = await req.text();
   const params = formToObject(raw);
 
-  const url = `${process.env.PUBLIC_BASE_URL}/api/twilio/sms`;
-  if (!verifyTwilioSignature(req.headers.get("x-twilio-signature"), url, params)) {
-    return new NextResponse("invalid signature", { status: 403 });
-  }
+  const sig = checkTwilioSignature(req, "/api/twilio/sms", params);
+  if (!sig.ok) return new NextResponse(sig.reason, { status: sig.status });
 
   const sid = params.MessageSid;
   const from = toE164(params.From ?? "");

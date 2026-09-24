@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { twilioClient } from "@/lib/twilio";
+import { twilioClient, publicBase } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 
@@ -31,7 +31,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       to,
       body,
       messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-      statusCallback: `${process.env.PUBLIC_BASE_URL}/api/twilio/status`,
+      statusCallback: `${publicBase(req)}/api/twilio/status`,
     });
     sid = sent.sid;
     status = sent.status ?? "queued";
