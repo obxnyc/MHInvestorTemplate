@@ -41,6 +41,22 @@ create table staff (
   -- Twilio Client identity, if using softphone instead of cell forwarding
   client_identity text unique,
   active        boolean not null default true,
+
+  -- PIN sign-in, for field staff only. A tech standing in a crawlspace with
+  -- wet hands is not going to find a magic link in their email, and an office
+  -- worker at a desk does not need a shortcut worth weakening anything for.
+  --
+  -- bcrypt, never the PIN itself. A four-digit PIN is only 10,000 guesses, so
+  -- the hash is not what makes this safe -- the lockout below is. The hash is
+  -- what stops a copy of the database from handing over everyone's PIN.
+  pin_hash         text,
+  pin_set_at       timestamptz,
+  -- Counts UP across lockouts and only resets on a correct PIN, which is what
+  -- makes each successive lockout longer instead of giving an attacker five
+  -- fresh guesses every quarter of an hour forever.
+  pin_failures     integer not null default 0,
+  pin_locked_until timestamptz,
+
   created_at    timestamptz not null default now()
 );
 
@@ -820,6 +836,133 @@ select c.category,
 from conversations c
 where c.status = 'open'
 group by c.category;
+
+-- ---------------------------------------------------------------- PIN sign-in
+
+-- Field staff sign in by tapping their name and entering a PIN. Everything that
+-- decides whether that succeeds lives in here, as security definer functions,
+-- so pin_hash is never selectable by the application at all -- there is no
+-- query the web server can run, compromised or not, that returns it.
+
+-- PINs nobody should be allowed to choose. A lockout makes brute force
+-- impractical, but it does nothing about a colleague who simply guesses 1234 on
+-- the first try, which is the realistic threat in a small office.
+create or replace function pin_is_trivial(p_pin text)
+returns boolean language sql immutable as $$
+  select p_pin ~ '^(.)\1*$'                      -- 0000, 1111, 999999
+      or p_pin in ('1234','12345','123456','1234567','12345678',
+                   '4321','54321','654321','0123','01234','012345',
+                   '1212','123123','696969','2580');  -- 2580 is straight down a keypad
+$$;
+
+create or replace function set_staff_pin(p_staff uuid, p_pin text)
+returns void language plpgsql security definer as $$
+declare r staff_role;
+begin
+  if p_pin !~ '^[0-9]{4,8}$' then
+    raise exception 'A PIN is 4 to 8 digits';
+  end if;
+  if pin_is_trivial(p_pin) then
+    raise exception 'That PIN is too easy to guess -- pick another';
+  end if;
+
+  select role into r from staff where id = p_staff and active;
+  if r is null then
+    raise exception 'No such active employee';
+  end if;
+  -- Never an admin or an office account. Those reach court filings and the
+  -- audit trail, and four digits is not the right lock for that door.
+  if r not in ('tech','shower') then
+    raise exception 'PIN sign-in is for field staff only; % uses an email link', r;
+  end if;
+
+  update staff
+     set pin_hash = crypt(p_pin, gen_salt('bf', 12)),
+         pin_set_at = now(),
+         pin_failures = 0,
+         pin_locked_until = null
+   where id = p_staff;
+end $$;
+
+revoke execute on function set_staff_pin(uuid, text) from public;
+
+-- Returns whether the PIN was right, and when the account unlocks if it is
+-- locked. Deliberately says nothing else: "no such person", "no PIN set" and
+-- "wrong PIN" are one answer, because three answers would let anyone with the
+-- sign-in page enumerate who works here and who has a PIN.
+create or replace function verify_staff_pin(p_staff uuid, p_pin text)
+returns table (ok boolean, locked_until timestamptz)
+language plpgsql security definer as $$
+declare
+  s        staff%rowtype;
+  fails    integer;
+  lock_for interval;
+begin
+  select * into s from staff where id = p_staff;
+
+  if s.id is null or not s.active or s.pin_hash is null
+     or s.role not in ('tech','shower') then
+    -- Burn the same ~250ms bcrypt an existing account would, against a throwaway
+    -- hash. Returning instantly here would make the page a directory: a fast no
+    -- means no such person, a slow no means wrong PIN.
+    perform crypt(p_pin, gen_salt('bf', 12));
+    return query select false, null::timestamptz;
+    return;
+  end if;
+
+  if s.pin_locked_until is not null and s.pin_locked_until > now() then
+    return query select false, s.pin_locked_until;
+    return;
+  end if;
+
+  if s.pin_hash = crypt(p_pin, s.pin_hash) then
+    update staff set pin_failures = 0, pin_locked_until = null where id = s.id;
+    insert into audit_log (actor_id, entity, entity_id, action, changed)
+    values (s.id, 'staff', s.id, 'pin_signin', jsonb_build_object('result', 'ok'));
+    return query select true, null::timestamptz;
+    return;
+  end if;
+
+  -- Wrong. Every fifth failure locks the account, and for longer each time:
+  -- five guesses a quarter-hour would still walk a 4-digit PIN in about ten
+  -- days, which is not a wall. This is.
+  fails := s.pin_failures + 1;
+  lock_for := case
+    when fails % 5 <> 0 then null
+    when fails < 10 then interval '15 minutes'
+    when fails < 15 then interval '1 hour'
+    else interval '24 hours'
+  end;
+
+  update staff
+     set pin_failures = fails,
+         pin_locked_until = case when lock_for is null then s.pin_locked_until
+                                 else now() + lock_for end
+   where id = s.id;
+
+  -- Logged against the account, because a burst of these is how you find out
+  -- someone is trying PINs on the office iPad.
+  insert into audit_log (actor_id, entity, entity_id, action, changed)
+  values (s.id, 'staff', s.id, 'pin_failed',
+          jsonb_build_object('failures', fails, 'locked', lock_for is not null));
+
+  return query select false,
+    case when lock_for is null then null else now() + lock_for end;
+end $$;
+
+revoke execute on function verify_staff_pin(uuid, text) from public;
+
+-- Clearing a PIN is what you do the hour somebody leaves. Deactivating the
+-- staff row is the real revocation -- verify_staff_pin refuses an inactive
+-- account -- but a departing employee's PIN should not sit in the table either.
+create or replace function clear_staff_pin(p_staff uuid)
+returns void language sql security definer as $$
+  update staff set pin_hash = null, pin_set_at = null,
+                   pin_failures = 0, pin_locked_until = null
+   where id = p_staff;
+$$;
+
+revoke execute on function clear_staff_pin(uuid) from public;
 
 -- ---------------------------------------------------------------- claiming
 

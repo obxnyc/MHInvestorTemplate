@@ -1,11 +1,16 @@
 "use client";
 import { useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-client";
+import PinSignIn from "@/components/PinSignIn";
 
 /** Magic link rather than passwords: nobody in a six-person office wants to
  *  manage a password policy, and a link opens straight into the app on a
  *  phone. Swap signInWithOtp({ phone }) for SMS codes if you prefer. */
 export default function Login() {
+  // Two doors, because two jobs. Office staff are at a desk with their email
+  // open; field staff are not. The email link stays the only way in for anyone
+  // who can reach court filings or the audit trail.
+  const [mode, setMode] = useState<"email" | "pin">("email");
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -26,6 +31,10 @@ export default function Login() {
       <div className="auth-card">
         <p className="brand">Larabee Homes</p>
         <h1>Shared inbox</h1>
+
+        {mode === "pin" ? (
+          <PinSignIn onBack={() => setMode("email")} />
+        ) : (<>
         {state === "sent" ? (
           <p className="muted">
             Check <strong>{email}</strong> for a sign-in link. It opens straight
@@ -45,6 +54,10 @@ export default function Login() {
             {state === "error" && <p className="error">{message}</p>}
           </form>
         )}
+        <button className="pinlink" onClick={() => setMode("pin")}>
+          Out on a job? Sign in with your PIN
+        </button>
+        </>)}
       </div>
     </main>
   );

@@ -249,6 +249,65 @@ named for repairs files as maintenance rather than as a lead. Add a
 For a richer form (the prequalification form, eventually), post JSON directly to
 `/api/intake/form` from a Squarespace code block instead.
 
+## Signing in
+
+Two doors, because there are two jobs.
+
+**Office and admin** use a magic link: type your work email, tap the link. No
+password to invent, forget or share, and the session lasts months, so it is one
+setup step rather than a daily ritual.
+
+**Field staff** tap their name and enter a PIN. A tech in a crawlspace is not
+going to find an email link, and the name-picker is what the marina app your
+people already like does. What it does *not* do is let tapping a name be enough:
+the audit trail only means something if "Ray closed this" is a fact rather than
+an assumption about who was holding the phone, so the PIN is the part that
+counts.
+
+Setting one, from the SQL editor:
+
+```sql
+select set_staff_pin('<staff id>', '8317');
+```
+
+The function refuses anything that is not 4-8 digits, refuses PINs anyone would
+guess first (`0000`, `1234`, `2580` and friends), and refuses to give a PIN to an
+admin or office account at all — those reach court filings and the audit trail,
+and four digits is the wrong lock for that door.
+
+Clearing one, which is what you do the hour somebody leaves:
+
+```sql
+select clear_staff_pin('<staff id>');
+update staff set active = false where id = '<staff id>';
+```
+
+Either is enough on its own; do both.
+
+**What actually makes four digits safe is the lockout**, not the hashing. Ten
+thousand guesses is nothing. Every fifth wrong PIN locks the account, and for
+longer each time — 15 minutes, then an hour, then a day — and the counter only
+resets on a correct PIN. Five tries a quarter-hour would otherwise walk the whole
+keyspace in about ten days. The hash is there for a different threat: it means a
+stolen copy of the database does not hand over everyone's PIN.
+
+The decision lives in `verify_staff_pin()` in the database, not in the web
+server, because that function is the only thing that can read `pin_hash` — there
+is no query a compromised route could run that returns anyone's PIN. It also
+owns the lockout and writes the audit entry, so neither can be skipped by a
+caller that forgets.
+
+Run `../../docs/shared-line/pin-tests.sql` against a scratch database after
+touching any of it. Twelve checks, including that an unknown name takes the same
+time to reject as a wrong PIN — a fast "no" would turn the sign-in page into a
+staff directory.
+
+**One accepted trade-off:** the name list is readable by anyone who opens the
+page, because a tech taps their name before proving anything. It exposes the
+first and last names of field staff and nothing else — no office staff, no
+admins, no emails, no roles. That is the same thing anyone learns watching a van
+pull up, but it is a real disclosure and worth stating rather than glossing.
+
 ## Photographs
 
 A tenant's picture of a leaking water heater shows their kitchen, their

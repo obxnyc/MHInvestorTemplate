@@ -263,6 +263,50 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   font-size:.78rem;font-weight:600}
 .none{padding:3rem 1rem;text-align:center;color:var(--muted);font-size:.86rem}
 
+/* ---- PIN sign-in ----
+   Built for a thumb, outdoors, possibly in gloves: nothing smaller than 44px,
+   generous gaps, and no text that has to be read to operate it. */
+.pinwrap{display:flex;flex-direction:column;gap:.7rem;margin-top:.4rem}
+.pintitle{margin:0;font-size:1.02rem;font-weight:700;letter-spacing:-.015em}
+.pinmuted{margin:0;color:var(--muted);font-size:.87rem;line-height:1.5}
+.pinmuted.pad{padding:.9rem .2rem}
+.pinsearch{width:100%;padding:.65rem .8rem;border:1px solid var(--hair);
+  border-radius:var(--radius);background:var(--card);color:var(--ink);font:inherit}
+
+.pinpeople{list-style:none;margin:0;padding:0;max-height:17rem;overflow-y:auto;
+  border:1px solid var(--hair);border-radius:var(--radius);background:var(--card)}
+.pinpeople li + li{border-top:1px solid var(--hair-2)}
+.pinpeople button{display:flex;align-items:center;gap:.7rem;width:100%;
+  padding:.7rem .8rem;border:none;background:none;color:inherit;font:inherit;
+  font-weight:600;text-align:left;min-height:44px}
+.pinpeople button:hover{background:var(--sunk)}
+
+/* Four dots rather than a text field: a PIN in a box invites a keyboard, and a
+   keyboard covers the keypad. */
+.pindots{display:flex;gap:.75rem;justify-content:center;margin:.5rem 0 .1rem}
+.pindots span{width:.85rem;height:.85rem;border-radius:50%;
+  border:2px solid var(--hair);transition:background .12s,border-color .12s}
+.pindots span.on{background:var(--accent);border-color:var(--accent)}
+/* Reserved height so the pad does not jump up and down as messages come and go
+   under a thumb that is already moving toward the next key. */
+.pinerr{margin:0;min-height:1.2rem;text-align:center;font-size:.83rem;
+  font-weight:600;color:var(--crit)}
+
+.pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:.55rem}
+.pinpad button{min-height:3.4rem;border:1px solid var(--hair);border-radius:12px;
+  background:var(--card);color:var(--ink);font-size:1.35rem;font-weight:600;
+  font-variant-numeric:tabular-nums}
+.pinpad button:active{background:var(--sunk)}
+.pinpad button:disabled{opacity:.5}
+
+/* `.auth button` is (0,1,1) and out-specifies a bare class, so this has to be
+   scoped or the quiet text link renders as a second big dark button competing
+   with the real one. */
+.auth .pinlink{align-self:center;border:none;background:none;color:var(--muted);
+  font-size:.83rem;font-weight:600;text-decoration:underline;
+  text-underline-offset:2px;padding:.5rem;min-height:44px}
+.auth .pinlink:hover{color:var(--ink)}
+
 /* ---- public criteria page ----
    Read by applicants, often on a phone, sometimes after being turned down.
    Plain, roomy, no app chrome: it is a notice, not a screen. */
