@@ -51,6 +51,21 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
+/** Files a phone fetches WITHOUT a session, and must get.
+ *
+ *  Two of these decide whether this is an app or a bookmark:
+ *
+ *  - manifest.webmanifest: the browser reads it before anyone signs in. Bounced
+ *    to /login, "Add to Home Screen" makes a shortcut rather than installing the
+ *    app -- no name, no standalone window, and on iOS no push notifications at
+ *    all, because iOS only delivers those to an installed app.
+ *  - sw.js: the service worker IS the push notification handler. A redirect
+ *    here means registration fails and nobody is ever alerted to anything.
+ *
+ *  Both fetches are anonymous by design, and neither file says anything about
+ *  anybody -- they are the same for every visitor signed in or not. */
+//  One string literal, not a concatenation: Next reads this at compile time and
+//  refuses anything it cannot parse statically.
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|sw\\.js|favicon\\.ico|.*\\.(?:png|jpg|jpeg|webp|svg|ico|webmanifest)$).*)"],
 };

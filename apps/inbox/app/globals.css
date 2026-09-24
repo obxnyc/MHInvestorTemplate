@@ -49,6 +49,12 @@
   --ot:#7A8598;
 }
 
+/* iOS zooms the page when a focused input is under 16px, which is why apps
+   reach for maximum-scale=1 -- and that takes pinch-zoom away from everyone who
+   needs it. Setting the real font size on touch devices fixes the cause. */
+@media (pointer:coarse){
+  input,select,textarea{font-size:16px}
+}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%}
 body{background:var(--page);color:var(--ink);
