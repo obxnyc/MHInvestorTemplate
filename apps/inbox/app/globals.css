@@ -169,17 +169,14 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   background-size:4px 4px,4px 4px;background-repeat:no-repeat}
 
 /* ---- what it is about: the category strip ----
-   Scrolls horizontally rather than wrapping to two lines: the list column is
-   narrow by design and a strip that changes height moves every row underneath
-   it every time a filter changes. */
-/* A chip cut off at the edge is not an affordance. The fade says "there is
-   more this way" without spending a row on arrows. */
+   Wraps. This used to scroll sideways, on the theory that a strip which
+   changes height would shove the rows below it around -- but the number of
+   chips never changes, so neither does the height, and the theory was wrong.
+   What it actually produced was a chip sliced in half at the pane's edge and
+   two filters nobody knew existed. Every category is visible at once now,
+   which is the entire point of having them. */
 .catwrap{position:relative}
-.catwrap::after{content:"";position:absolute;right:0;top:0;bottom:.6rem;width:2.2rem;
-  pointer-events:none;background:linear-gradient(90deg,transparent,var(--rail))}
-.cattabs{display:flex;gap:.3rem;padding:0 .9rem .6rem;overflow-x:auto;
-  scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.cattabs::-webkit-scrollbar{display:none}
+.cattabs{display:flex;flex-wrap:wrap;gap:.3rem;padding:0 .9rem .6rem}
 .cattab{display:inline-flex;align-items:center;gap:.34rem;flex:0 0 auto;
   padding:.3rem .55rem;border-radius:999px;border:1px solid var(--hair);
   background:var(--card);color:var(--muted);font-size:.76rem;font-weight:600;
