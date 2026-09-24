@@ -127,6 +127,72 @@ Manage Submissions
 Does this submission look like spam? Report it here.`,
 };
 
+/** The same form with BOTH checkboxes left unticked. This is the shape that
+ *  decides whether anyone may be texted, and it is the one that used to be a
+ *  guess: an unticked box keeps its line and loses its value. Confirmed from
+ *  two real submissions of this form -- the unlabelled newsletter checkbox
+ *  arrives as ": Subscribe for news + updates" when ticked and as a bare ":"
+ *  when it is not. */
+export const SQUARESPACE_NO_CONSENT = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Inquiry",
+  messageId: "<sq-real-2@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Prospect
+
+Email: prospect@example.com
+
+Phone: (252) 555-0142
+
+Message: interested in a 3 bedroom.
+
+:
+
+SMS Consent:
+
+Manage Submissions
+
+Does this submission look like spam? Report it here.`,
+};
+
+/** A defensive fixture, not an observed one: if Squarespace ever writes "No"
+ *  into an unticked box instead of leaving it blank, the parser must not read
+ *  that as agreement. Getting this wrong texts someone who declined. */
+export const SQUARESPACE_DECLINED = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Inquiry",
+  messageId: "<sq-declined@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Prospect
+
+Phone: (252) 555-0143
+
+Message: do you allow dogs
+
+SMS Consent: No`,
+};
+
+/** A maintenance form on the same website. The form's name lives in the
+ *  subject and is the only thing that says what the submitter thought they
+ *  were doing. */
+export const SQUARESPACE_MAINTENANCE = {
+  from: "Squarespace <form-submission@squarespace.info>",
+  to: "info@larabeehomesllc.com",
+  subject: "Form Submission - Maintenance Request",
+  messageId: "<sq-maint@squarespace.info>",
+  text: `Sent via form submission from Larabee Homes LLC
+
+Name: Sample Tenant
+
+Phone: (252) 555-0177
+
+Message: water heater is leaking into the hallway`,
+};
+
 /** NC court eFiling notice (Tyler Technologies). Tab-separated table cells. */
 export const COURT_FILING = {
   from: "no-reply@efilingmail.tylertech.cloud",

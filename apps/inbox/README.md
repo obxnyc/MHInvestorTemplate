@@ -193,7 +193,7 @@ later without touching any parsing code.
 | Rent Manager Tenant WebAccess | `donotreply@rentmanager.com` | **Verified** against a real message |
 | Net Dial Tone voicemail | `noreply@netdialtone.com` | **Verified** against a real message |
 | Zillow lead | `*@convo.zillow.com` | **Verified** — both templates |
-| Squarespace form | `*@squarespace.info` | Unverified — labels are a guess |
+| Squarespace form | `*@squarespace.info` | **Verified** — both consent states |
 
 Maintenance requests arrive from **Rent Manager**, not Zego — Tenant WebAccess
 submits into Rent Manager and Rent Manager sends the notification. The property
@@ -225,10 +225,22 @@ npm run test:parsers
 Fixtures live in `lib/__fixtures__/samples.mjs` — real provider layouts with
 resident details replaced by placeholders, so no tenant data sits in the repo.
 
-For the two unverified parsers, send one real message through and tighten them.
-Nothing is lost meanwhile: `ingest()` always creates a thread even when field
-parsing returns nothing, so an unparsed request arrives as a readable blob. A
-blob is recoverable; a dropped request is not.
+All four are now verified against real messages. Keep the principle anyway:
+`ingest()` always creates a thread even when field parsing returns nothing, so
+an unparsed request arrives as a readable blob. A blob is recoverable; a
+dropped request is not.
+
+**Squarespace checkboxes.** An unticked box keeps its line and loses its value —
+it is *not* omitted, and it does *not* say "No". The unlabelled newsletter
+checkbox on the enquiry form is the proof: ticked it arrives as
+`: Subscribe for news + updates`, unticked as a bare `:`. `field()` returns null
+for an empty value, so an unticked SMS box correctly records no consent. A
+negative value is rejected explicitly as well, because reading one as agreement
+would authorise texts to someone who declined them.
+
+The form's own name is in the subject (`Form Submission - Inquiry`), and a form
+named for repairs files as maintenance rather than as a lead. Add a
+"Maintenance Request" form on the website and it routes itself.
 
 For a richer form (the prequalification form, eventually), post JSON directly to
 `/api/intake/form` from a Squarespace code block instead.

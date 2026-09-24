@@ -276,8 +276,62 @@ export function parseZillow(mail: RawEmail): Intake {
  * is challenged years later, the only thing that matters is the exact sentence
  * this person was shown on that day.
  */
+/** Squarespace wraps every submission in the same chrome. It is noise on a
+ *  conversation thread, and it is the same three lines every time. */
+const SQSP_CHROME = [
+  /^Sent via form submission from .*$/gim,
+  /^Manage Submissions[ \t]*$/gim,
+  /^Does this submission look like spam\?.*$/gim,
+  /^Report it here\.?[ \t]*$/gim,
+];
+
+/** Squarespace renders an UNTICKED checkbox as its label followed by an empty
+ *  value, not as an omitted line and not as "No". The newsletter box on this
+ *  very form is the proof: ticked it arrives as ": Subscribe for news +
+ *  updates", unticked as a bare ":". field() already returns null for an empty
+ *  value, so an unticked SMS box correctly records no consent.
+ *
+ *  The residual risk is a template that writes "No" into the value instead of
+ *  leaving it blank. That failure is not cosmetic -- it would authorise texts
+ *  to someone who declined them, at $500-1500 per message under the TCPA -- so
+ *  a negative value is rejected explicitly rather than trusted to be absent.
+ *  Anything else that is present counts: "Yes" is a thinner record than the
+ *  full disclosure, but it is still an agreement. */
+function consentGranted(value: string | null): boolean {
+  if (!value) return false;
+  return !/^(no|none|false|unchecked|n\/?a|-{1,2}|0|off|declined?|opt[- ]?out)$/i
+    .test(value.trim());
+}
+
+/** The consent line, wherever it sits. This form already carries one
+ *  unlabelled checkbox, so the SMS box could equally lose its label in a
+ *  redesign. The disclosure identifies itself -- the carriers require the
+ *  "Reply STOP" sentence -- so fall back to its own wording rather than to a
+ *  label that may not survive. */
+function smsDisclosure(text: string): string | null {
+  const labelled = field(text, "SMS Consent", "Text Consent", "Text Messages", "SMS");
+  if (labelled) return labelled;
+  for (const line of text.split(/\r?\n/)) {
+    const l = line.replace(/^[ \t>]*:?[ \t]*/, "").trim();
+    if (/reply stop/i.test(l) && /(text message|sms)/i.test(l)) return l;
+  }
+  return null;
+}
+
+/** Which form this came from. Squarespace puts the form's own name in the
+ *  subject ("Form Submission - Inquiry"), which is the only thing in the email
+ *  that says what the submitter thought they were doing -- worth more than
+ *  guessing from the message body. */
+function squarespaceForm(subject: string): string | null {
+  return /form submission[ \t]*[-\u2013\u2014:][ \t]*(.+)$/i.exec(subject ?? "")?.[1]?.trim()
+    ?? null;
+}
+
 export function parseSquarespace(mail: RawEmail): Intake {
-  const t = mail.text;
+  let t = mail.text;
+  for (const re of SQSP_CHROME) t = t.replace(re, "");
+  t = t.replace(/\n{3,}/g, "\n\n").trim();
+
   const name = field(t, "Name", "First Name", "Your Name", "Full Name");
   const last = field(t, "Last Name");
   const phone = field(t, "Phone", "Phone Number", "Cell") ?? firstPhone(t);
@@ -285,29 +339,35 @@ export function parseSquarespace(mail: RawEmail): Intake {
   const message = field(t, "Message", "Comments", "Tell us more", "How can we help");
   const property = field(t, "Property", "Which home", "Interested in");
 
-  // Consent line, verbatim. Presence of this field is the record that the box
-  // was ticked -- see the caveat in the README about verifying that Squarespace
-  // omits the line when it is NOT ticked.
-  const smsConsent = field(t, "SMS Consent", "Text Consent", "SMS");
+  const form = squarespaceForm(mail.subject);
+  // A form named for repairs is a repair whoever submitted it. Everything else
+  // from the website is someone asking about a home until a human says
+  // otherwise -- the classifier still gets a say downstream.
+  const category: Intake["category"] =
+    form && /maintenance|repair|work order|service request/i.test(form)
+      ? "maintenance" : "prospect";
+
+  const disclosure = smsDisclosure(t);
 
   return {
     source: "website",
     name: [name, last].filter(Boolean).join(" ") || null,
     phone, email,
     unitHint: property,
-    summary: [property && `Interested in ${property}`, message].filter(Boolean).join(" · ")
-             || mail.subject || "Website form submission",
+    summary: [property && `Interested in ${property}`, message].filter(Boolean).join(" \u00b7 ")
+             || form || mail.subject || "Website form submission",
     raw: t,
-    category: "prospect",
+    category,
     externalId: mail.messageId,
-    consent: smsConsent
+    consent: consentGranted(disclosure)
       ? {
           channel: "sms",
-          // The disclosure names service updates, confirmations, reminders and
-          // lease notices -- transactional. It does NOT cover marketing, so a
-          // separate opt-in is still needed before any nurture campaign.
+          // The disclosure names service updates, showing confirmations, rent
+          // and account reminders and lease notices -- all transactional. It
+          // does NOT cover marketing, so the lease-cycle nurture campaign still
+          // needs its own separate opt-in before it may text anyone.
           purpose: "transactional",
-          disclosureText: smsConsent,
+          disclosureText: disclosure!,
         }
       : null,
   };

@@ -8,7 +8,9 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import ts from "typescript";
-import { RENT_MANAGER, VOICEMAIL, VOICEMAIL_BLANK, ZILLOW_FIRST, ZILLOW_REPLY, SQUARESPACE, COURT_FILING } from "./samples.mjs";
+import { RENT_MANAGER, VOICEMAIL, VOICEMAIL_BLANK, ZILLOW_FIRST, ZILLOW_REPLY, SQUARESPACE,
+         SQUARESPACE_NO_CONSENT, SQUARESPACE_DECLINED, SQUARESPACE_MAINTENANCE,
+         COURT_FILING } from "./samples.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "..", "parse-email.ts"), "utf8").replace(/import type .*\n/, "");
@@ -23,6 +25,9 @@ const blank = routeEmail(VOICEMAIL_BLANK);
 const za = routeEmail(ZILLOW_FIRST);
 const zb = routeEmail(ZILLOW_REPLY);
 const sq = routeEmail(SQUARESPACE);
+const sqNo = routeEmail(SQUARESPACE_NO_CONSENT);
+const sqDecl = routeEmail(SQUARESPACE_DECLINED);
+const sqMaint = routeEmail(SQUARESPACE_MAINTENANCE);
 const cf = parseCourtFiling(COURT_FILING);
 const junk = routeEmail({
   from: "newsletter@example.com", to: "x@y.com",
@@ -76,6 +81,34 @@ const checks = [
   // separate opt-in is still required before any nurture campaign.
   ["consent is recorded as transactional, not marketing",
     sq?.consent?.purpose === "transactional"],
+
+  // Whether anyone may be texted turns entirely on these four. An unticked box
+  // keeps its line and loses its value -- confirmed from two real submissions
+  // of this form, where the unlabelled newsletter checkbox arrives as
+  // ": Subscribe for news + updates" ticked and as a bare ":" unticked.
+  ["an unticked consent box records NO consent", sqNo?.consent === null],
+  ["the rest of an unticked submission still parses",
+    sqNo?.name === "Sample Prospect" && !!sqNo?.phone?.includes("555-0142")],
+  ["a consent value of \"No\" is not read as agreement", sqDecl?.consent === null],
+  ["an empty unlabelled checkbox really is empty",
+    !sqNo?.raw.match(/^:[ \t]*\S/m)],
+
+  // Squarespace chrome is the same three lines every time and belongs on none
+  // of them.
+  ["the Squarespace footer is stripped from the thread",
+    !sq?.raw.includes("Manage Submissions")
+      && !sq?.raw.includes("look like spam")
+      && !sq?.raw.includes("Sent via form submission")],
+  ["stripping the chrome leaves the submission intact",
+    !!sq?.raw.includes("3 bedroom") && !!sq?.raw.includes("Sample Person")],
+
+  // The form's name is in the subject and is the only statement of what the
+  // submitter thought they were doing.
+  ["a maintenance form files as maintenance, not as a lead",
+    sqMaint?.category === "maintenance"],
+  ["an enquiry form still files as a prospect", sq?.category === "prospect"],
+  ["the maintenance submission keeps its detail",
+    !!sqMaint?.summary.includes("water heater")],
 
   // Court eFiling: values are tab-separated table cells, not "Label: value".
   ["court filing email is recognised", isCourtFilingEmail(COURT_FILING)],
