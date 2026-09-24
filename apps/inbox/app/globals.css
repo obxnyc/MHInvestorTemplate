@@ -257,6 +257,22 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   font-size:.78rem;font-weight:600}
 .none{padding:3rem 1rem;text-align:center;color:var(--muted);font-size:.86rem}
 
+/* ---- public criteria page ----
+   Read by applicants, often on a phone, sometimes after being turned down.
+   Plain, roomy, no app chrome: it is a notice, not a screen. */
+.crit{max-width:42rem;margin-inline:auto;padding:2.5rem 1.25rem 4rem;line-height:1.6}
+.crit h1{font-size:1.7rem;letter-spacing:-.02em;margin:0 0 .6rem}
+.crit h2{font-size:1.02rem;letter-spacing:-.01em;margin:1.8rem 0 .4rem}
+.crit .lede{color:var(--muted);margin:0 0 1.6rem}
+.crit p{margin:0 0 .7rem;max-width:60ch}
+.crit .sub{color:var(--muted);font-size:.9rem}
+.crules{list-style:none;counter-reset:c;margin:0;padding:0;display:grid;gap:1.1rem}
+.crules li{counter-increment:c;border-left:3px solid var(--accent);padding:.1rem 0 .1rem 1rem}
+.crules li h2{margin:0 0 .3rem;font-size:1rem}
+.crules li h2::before{content:counter(c) ". ";color:var(--accent);font-variant-numeric:tabular-nums}
+.crit .ver{margin-top:2rem;padding-top:1rem;border-top:1px solid var(--hair);
+  color:var(--faint);font-size:.82rem}
+
 /* ---- the thread ---- */
 .chatcol{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--pane)}
 .empty{flex:1;display:grid;place-items:center;text-align:center;padding:2rem}

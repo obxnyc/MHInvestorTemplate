@@ -21,7 +21,8 @@ type State =
   | "checking" | "on" | "off" | "blocked"
   | "ios-install"     // iOS only delivers push to a home-screen app
   | "android-hint"    // working, but installing makes it more reliable
-  | "unsupported";
+  | "unsupported"
+  | "unconfigured";   // no VAPID key on this deployment; show nothing at all
 
 /**
  * The two platforms genuinely differ, so the prompt does too.
@@ -30,11 +31,19 @@ type State =
  * iOS: push is delivered only to a PWA added to the Home Screen, never from a
  * Safari tab, so an Enable button there would silently do nothing.
  */
+/** Inlined at build time by Next, so an unset key is literally undefined in the
+ *  bundle. Without this check the banner still appears, "Turn on alerts" throws
+ *  on the missing key, and the employee is left tapping a dead button over a
+ *  setting only an administrator can fix. Push being unconfigured is not
+ *  something to tell them about -- it is something to not offer. */
+const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
 export default function PushSetup() {
   const [state, setState] = useState<State>("checking");
   const [installable, setInstallable] = useState(false);
 
   useEffect(() => {
+    if (!VAPID_KEY) { setState("unconfigured"); return; }
     if (isIOS() && !isStandalone()) { setState("ios-install"); return; }
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       setState("unsupported"); return;
@@ -63,7 +72,7 @@ export default function PushSetup() {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
+      applicationServerKey: urlBase64ToUint8Array(VAPID_KEY!),
     });
     await fetch("/api/push/subscribe", {
       method: "POST",
@@ -73,7 +82,8 @@ export default function PushSetup() {
     setState("on");
   }
 
-  if (state === "checking" || state === "on" || state === "unsupported") return null;
+  if (state === "checking" || state === "on" || state === "unsupported"
+      || state === "unconfigured") return null;
 
   if (state === "ios-install") {
     return (
