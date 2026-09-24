@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes, randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { toE164 } from "@/lib/twilio";
+import { toE164, publicBase } from "@/lib/twilio";
 import { evaluate, declineMessage, type Answers, type RuleSet } from "@/lib/prequal";
 import { pushToTeam } from "@/lib/push";
 import { sendSms, sendEmail } from "@/lib/notify";
@@ -108,10 +108,10 @@ export async function POST(req: Request) {
     booking_token: token,
   }).select("id").single();
 
-  const criteriaUrl = `${process.env.PUBLIC_BASE_URL}/criteria`;
+  const criteriaUrl = `${publicBase(req)}/criteria`;
 
   if (result.outcome === "auto_approve") {
-    const link = `${process.env.PUBLIC_BASE_URL}/book/${token}`;
+    const link = `${publicBase(req)}/book/${token}`;
     const text = `Larabee Homes: you're prequalified for ${address}. `
       + `Pick a showing time here: ${link}`;
     if (phone) await sendSms(phone, text);

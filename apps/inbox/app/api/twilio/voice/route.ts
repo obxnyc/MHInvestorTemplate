@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { verifyTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
+import { checkTwilioSignature, formToObject, toE164, publicBase } from "@/lib/twilio";
 import { ringGroup, twiml, escapeXml } from "@/lib/voice";
 
 export const runtime = "nodejs";
@@ -17,10 +17,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const raw = await req.text();
   const params = formToObject(raw);
-  const base = process.env.PUBLIC_BASE_URL;
-  if (!verifyTwilioSignature(req.headers.get("x-twilio-signature"), `${base}/api/twilio/voice`, params)) {
-    return new NextResponse("invalid signature", { status: 403 });
-  }
+  const base = publicBase(req);
+  const sig = checkTwilioSignature(req, "/api/twilio/voice", params);
+  if (!sig.ok) return new NextResponse(sig.reason, { status: sig.status });
 
   const from = toE164(params.From ?? "");
   const db = supabaseAdmin();

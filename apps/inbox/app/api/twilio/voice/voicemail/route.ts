@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyTwilioSignature, formToObject } from "@/lib/twilio";
+import { checkTwilioSignature, formToObject, publicBase } from "@/lib/twilio";
 import { twiml } from "@/lib/voice";
 
 export const runtime = "nodejs";
@@ -8,10 +8,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const raw = await req.text();
   const params = formToObject(raw);
-  const base = process.env.PUBLIC_BASE_URL;
-  if (!verifyTwilioSignature(req.headers.get("x-twilio-signature"), `${base}/api/twilio/voice/voicemail`, params)) {
-    return new NextResponse("invalid signature", { status: 403 });
-  }
+  const base = publicBase(req);
+  const sig = checkTwilioSignature(req, "/api/twilio/voice/voicemail", params);
+  if (!sig.ok) return new NextResponse(sig.reason, { status: sig.status });
 
   // maxLength is 120 on purpose. Twilio's built-in transcription only covers
   // recordings between 2 and 120 seconds, so a longer cap would silently
