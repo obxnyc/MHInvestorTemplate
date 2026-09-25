@@ -1,6 +1,7 @@
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { timeAgo } from "@/lib/format";
+import BackLink from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function Audit() {
 
   return (
     <main className="audit">
+      <BackLink />
       <h1>Audit trail</h1>
       <p className="muted">
         Every change, written by database trigger. Last 200 events.

@@ -185,7 +185,15 @@ export default async function ConversationList(
                 {/* A real link, so middle-click and copy-link work and a
                     pasted URL opens the thread. The inbox intercepts the plain
                     click and swaps the pane instead of navigating. */}
+                {/* What the right-click menu needs to act without opening the
+                    thread first. Written here because the list already knows
+                    all of it -- fetching it again on right-click would be a
+                    round trip for a menu that has to feel instant. */}
                 <Link href={`/c/${c.id}`} data-cid={c.id}
+                      data-name={name}
+                      data-phone={contact?.phone ?? ""}
+                      data-claimed={c.assigned_to ? "1" : "0"}
+                      data-mine={c.assigned_to === staff?.id ? "1" : "0"}
                       className={`row cat-${c.category}${c.id === selectedId ? " sel" : ""}`}
                       aria-current={c.id === selectedId ? "true" : undefined}>
                   <span className="avwrap">

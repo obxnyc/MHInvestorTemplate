@@ -24,16 +24,21 @@ export default function AppHeader(
   const initials = toInitials(name);
 
   const nav: [string, string][] = [
+    ["/home", "Home"],
     ["/", "Messages"],
     ["/settings", "Settings"],
   ];
 
   const on = (href: string) =>
-    href === "/" ? path === "/" || path.startsWith("/c/") : path.startsWith(href);
+    href === "/" ? path === "/" || path.startsWith("/c/") || path.startsWith("/team")
+                 : path.startsWith(href);
 
   return (
     <header className="apphead">
-      <Link href="/" className="brandmark" aria-label="Larabee Homes — home">
+      {/* The logo goes to YOUR screen, not the shared inbox. Those are
+          different questions -- "what am I supposed to be doing" and "what has
+          come in" -- and the way home should answer the first. */}
+      <Link href="/home" className="brandmark" aria-label="Larabee Homes — your dashboard">
         {/* The actual mark, not two letters in a box. The company has a logo;
             a lettered square in its place reads as a placeholder nobody got
             round to replacing, which is what it was. */}

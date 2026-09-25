@@ -3,6 +3,7 @@ import { prettyPhone, timeAgo } from "@/lib/format";
 import Link from "next/link";
 import ReturnCall from "@/components/ReturnCall";
 import Live from "@/components/Live";
+import BackLink from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function Calls() {
 
   return (
     <main className="inbox">
+      <BackLink />
       <Live />
       <h1 className="pagetitle">Calls</h1>
       <ul className="threads">

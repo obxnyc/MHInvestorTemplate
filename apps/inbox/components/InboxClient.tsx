@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import ThreadPane from "./ThreadPane";
 import DmPane from "./DmPane";
+import RowMenu, { type RowTarget } from "./RowMenu";
+import HandOff from "./HandOff";
 
 /**
  * The inbox: a list and a conversation, on one screen, permanently.
@@ -25,6 +28,13 @@ export default function InboxClient(
   // rather than guessed from the id.
   const [dm, setDm] = useState<string | null>(initialDm ?? null);
   const root = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  // Right-click on a row, and what it opens next.
+  const [menu, setMenu] = useState<RowTarget | null>(null);
+  const [forward, setForward] = useState<
+    { messageId: string; preview: string } | "loading" | null>(null);
+  const [forwardError, setForwardError] = useState<string | null>(null);
 
   // The list is rendered on the server, so its highlight cannot come from React
   // state. Setting it here keeps one source of truth -- what is selected --
@@ -77,6 +87,43 @@ export default function InboxClient(
     window.history.pushState({}, "", `/c/${id}`);
   }
 
+  function onContextMenu(e: React.MouseEvent) {
+    const row = (e.target as HTMLElement).closest<HTMLElement>("a.row");
+    // Staff threads are not handed off or claimed, so they keep the browser's
+    // own menu rather than being given one with nothing useful in it.
+    if (!row || !row.dataset.cid) return;
+    e.preventDefault();
+    setForward(null);
+    setMenu({
+      id: row.dataset.cid,
+      name: row.dataset.name || "This conversation",
+      phone: row.dataset.phone || null,
+      claimed: row.dataset.claimed === "1",
+      mine: row.dataset.mine === "1",
+      x: e.clientX, y: e.clientY,
+    });
+  }
+
+  /** Forward works on the last thing SAID, because that is what somebody means
+   *  by "send this to the plumber" -- the leak, not the thread. The list does
+   *  not carry message ids, so it is fetched when asked for rather than for
+   *  every row on every render. */
+  async function openForward(t: RowTarget) {
+    setMenu(null);
+    setForward("loading");
+    setForwardError(null);
+    try {
+      const res = await fetch(`/api/conversations/${t.id}/thread`);
+      const data = await res.json();
+      const last = (data.messages ?? []).at(-1);
+      if (!last?.id) throw new Error("There is nothing in this thread to send on.");
+      setForward({ messageId: last.id, preview: last.body ?? "" });
+    } catch (err) {
+      setForward(null);
+      setForwardError(err instanceof Error ? err.message : "Couldn't open that.");
+    }
+  }
+
   function back() {
     setSelected(null);
     setDm(null);
@@ -84,11 +131,36 @@ export default function InboxClient(
   }
 
   return (
-    <div ref={root} className={`split${selected || dm ? " split-open" : ""}`} onClick={onClick}>
+    <div ref={root} className={`split${selected || dm ? " split-open" : ""}`}
+         onClick={onClick} onContextMenu={onContextMenu}>
       {children}
       {dm
         ? <DmPane id={dm} onBack={back} />
         : <ThreadPane id={selected} onBack={back} />}
+
+      {menu && (
+        <RowMenu at={menu} onClose={() => setMenu(null)}
+                 onOpen={(id) => { setDm(null); setSelected(id);
+                                   window.history.pushState({}, "", `/c/${id}`); }}
+                 onForward={openForward}
+                 onChanged={() => router.refresh()} />
+      )}
+      {forward === "loading" && <div className="modal"><div className="sheet"><p>Opening…</p></div></div>}
+      {forward && forward !== "loading" && (
+        <HandOff messageId={forward.messageId} preview={forward.preview}
+                 onClose={() => setForward(null)} />
+      )}
+      {forwardError && (
+        <div className="modal" onClick={() => setForwardError(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <h3>Couldn&rsquo;t forward that</h3>
+            <p>{forwardError}</p>
+            <div className="acts">
+              <button className="btn pri" onClick={() => setForwardError(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

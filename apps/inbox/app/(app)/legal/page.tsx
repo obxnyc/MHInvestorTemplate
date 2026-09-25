@@ -1,5 +1,6 @@
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
+import BackLink from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export default async function Legal() {
   const today = new Date();
   return (
     <main className="audit">
+      <BackLink />
       <h1>Court filings</h1>
       <p className="muted">
         eFiling notices from the NC courts. Admins only, and kept out of the

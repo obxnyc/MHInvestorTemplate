@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
+import BackLink from "@/components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function Settings() {
 
   return (
     <main className="people">
+      <BackLink />
       <h1 className="pagetitle">Settings</h1>
       <p className="muted">Signed in as {staff.full_name}.</p>
 
