@@ -17,7 +17,7 @@ export default async function Properties() {
   // takes the whole query with it -- which would leave this screen empty until
   // the migration is run, rather than simply showing less. A feature waiting on
   // a migration degrades to being absent; it does not break the page it is on.
-  const FULL = "id, name, address, color, kind, lat, lng, confirmed_at, units(id, label, bedrooms, bathrooms, square_feet, monthly_rent, is_vacant, available_on, home_owner, home_year, home_make, home_serial)";
+  const FULL = "id, name, address, color, code, owner_id, owners(name), kind, lat, lng, confirmed_at, units(id, label, bedrooms, bathrooms, square_feet, monthly_rent, is_vacant, available_on, home_owner, home_year, home_make, home_serial)";
   const BASE = "id, name, address, color, units(id, label, bedrooms, monthly_rent, is_vacant, available_on)";
 
   const wide = await supabase.from("properties").select(FULL).order("name");
@@ -31,6 +31,9 @@ export default async function Properties() {
     name: String(p.name),
     address: (p.address as string | null) ?? null,
     color: (p.color as string | null) ?? null,
+    code: (p.code as string | null) ?? null,
+    ownerId: (p.owner_id as string | null) ?? null,
+    owner: (p.owners as { name: string } | null)?.name ?? null,
     kind: ((p.kind as Kind | undefined) ?? "sfh"),
     lat: p.lat === null || p.lat === undefined ? null : Number(p.lat),
     lng: p.lng === null || p.lng === undefined ? null : Number(p.lng),
