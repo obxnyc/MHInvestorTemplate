@@ -127,8 +127,12 @@ function envChecks(): Check[] {
  * are fixed differently -- so this asks Anthropic rather than asking
  * process.env.
  *
- * models.list() is the cheapest question there is: it authenticates and costs
- * no tokens.
+ * It sends a real one-token message rather than listing models. Listing models
+ * authenticates without touching the paid path, so an account with no billing
+ * -- Console's free "Evaluation access" plan -- passes that and then fails
+ * every actual call. A check that goes green while the feature stays dark is
+ * worse than no check. This costs a fraction of a cent and answers the
+ * question that was actually asked.
  */
 async function anthropicChecks(): Promise<Check[]> {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
@@ -148,24 +152,40 @@ async function anthropicChecks(): Promise<Check[]> {
 
   try {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    await new Anthropic({ apiKey: key }).models.list({ limit: 1 });
+    await new Anthropic({ apiKey: key }).messages.create({
+      model: "claude-opus-5",
+      max_tokens: 1,
+      messages: [{ role: "user", content: "hi" }],
+    });
     return [{
       name: "ANTHROPIC_API_KEY", level: "good",
-      detail: "Present and accepted. Translation, drafted replies and the"
-        + " classifier are live.",
+      detail: "Present, accepted, and the account can actually make calls."
+        + " Translation, drafted replies and the classifier are live.",
     }];
   } catch (e) {
     const status = (e as { status?: number }).status;
+    const said = String((e as Error).message ?? "");
+    // The one that does not look like what it is. An account on Console's free
+    // evaluation plan has a valid key and no billing, and the refusal mentions
+    // the credit balance rather than saying "set up billing".
+    const noCredit = /credit balance|billing|purchase|too low/i.test(said);
+
     return [{
       name: "ANTHROPIC_API_KEY", level: "bad",
-      detail: `Present (${shape(key)}) but Anthropic refused it`
-        + `${status ? ` with ${status}` : ""}. ${OFF}`,
-      fix: status === 401
-        ? "The key is wrong or revoked. Make a new one at console.anthropic.com →"
-          + " API keys, paste the WHOLE value, redeploy."
-        : status === 429
-          ? "Rate limited or out of credit. Check console.anthropic.com → Billing."
-          : "Check the value is the whole key with no stray whitespace, then redeploy.",
+      detail: noCredit
+        ? `The key works, but the Anthropic account has no billing set up. ${OFF}`
+        : `Present (${shape(key)}) but the call failed`
+          + `${status ? ` with ${status}` : ""}. ${OFF}`,
+      fix: noCredit
+        ? "console.anthropic.com → Set up billing, add a card and buy credit."
+          + " The free Evaluation access plan cannot call the API. No redeploy"
+          + " needed afterwards — it starts working straight away."
+        : status === 401
+          ? "The key is wrong or revoked. Make a new one at console.anthropic.com →"
+            + " API keys, paste the WHOLE value, redeploy."
+          : status === 429
+            ? "Rate limited. Wait, or check console.anthropic.com → Billing."
+            : `Anthropic said: ${said.slice(0, 160)}`,
     }];
   }
 }
