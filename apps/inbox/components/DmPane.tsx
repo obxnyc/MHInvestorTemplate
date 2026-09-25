@@ -89,11 +89,6 @@ export default function DmPane(
           <span className="sub">
             <span className="badge staffbadge">Staff</span>
             <span className="dim">Internal — never sent outside</span>
-            {data.oversight.length > 0 && (
-              <span className="dim" title="Said here on purpose, rather than watched quietly">
-                {data.oversight.join(", ")} can read this
-              </span>
-            )}
           </span>
         </span>
         {!data.viewingOnly && (
