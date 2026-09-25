@@ -1361,3 +1361,12 @@ a.metric:hover{border-color:var(--accent)}
   border-top:1px solid var(--hair-2)}
 .mini.danger{color:var(--crit);border-color:var(--hair)}
 .mini.danger:hover{border-color:var(--crit);background:var(--warn-soft)}
+
+/* Two fields that belong on one line: how urgent, and which trade. */
+.jobrow{display:flex;gap:.7rem;flex-wrap:wrap}
+.jobrow > label{flex:1;min-width:11rem}
+.sheet.wide .fieldlab select,.sheet.wide .fieldlab input{width:100%;margin-top:.25rem}
+
+/* The button that cannot be undone. Not the primary: the safe way out is. */
+.btn.danger{background:var(--crit);border-color:var(--crit);color:#fff}
+.btn.danger:hover{opacity:.92;color:#fff}
