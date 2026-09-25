@@ -30,7 +30,7 @@ export default function AskThese(
 ) {
   const [open, setOpen] = useState(true);
   const [drafts, setDrafts] = useState<Suggestion[] | null>(null);
-  const [configured, setConfigured] = useState(true);
+  const [why, setWhy] = useState<{ why: string; detail?: string }>({ why: "ok" });
   const [thinking, setThinking] = useState(false);
   // Which conversation the drafts belong to, so switching threads never shows
   // the last one's suggestions against this one's tenant.
@@ -49,7 +49,8 @@ export default function AskThese(
       const res = await fetch(`/api/conversations/${conversationId}/suggest`,
                               { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      setConfigured(data.configured !== false);
+      setWhy({ why: data.configured === false ? "off" : (data.why ?? "failed"),
+               detail: data.detail });
       setDrafts(res.ok ? (data.replies ?? []) : []);
     } catch {
       setDrafts([]);
@@ -103,10 +104,16 @@ export default function AskThese(
             <button className="btn mini" onClick={draft} disabled={thinking}>
               {thinking ? "Reading the conversation…" : "Draft a reply"}
             </button>
-          ) : !configured ? (
+          ) : why.why === "off" ? (
             <p className="asknone">
-              Drafting is switched off until <code>ANTHROPIC_API_KEY</code> is set
-              in Vercel. It is the same key the Spanish translation needs.
+              <code>ANTHROPIC_API_KEY</code> is not in this build. If it is already
+              in Vercel, it was added after the last deploy — settings are read at
+              build time, so redeploy.
+            </p>
+          ) : why.why === "failed" ? (
+            <p className="asknone bad">
+              {why.detail ?? "That didn't work."} Same key as the Spanish
+              translation, so that will be off too.
             </p>
           ) : drafts.length === 0 ? (
             <p className="asknone">

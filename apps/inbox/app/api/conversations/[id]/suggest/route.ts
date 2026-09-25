@@ -38,7 +38,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const who = convo.contacts as unknown as
     { full_name: string | null; phone: string } | null;
 
-  const replies = await suggestReplies(
+  const out = await suggestReplies(
     (messages ?? []).map((m) => ({
       mine: m.direction === "outbound",
       // The English where we have it. The model reads the conversation to
@@ -52,5 +52,5 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     },
   );
 
-  return NextResponse.json({ configured: true, replies });
+  return NextResponse.json({ configured: true, ...out });
 }

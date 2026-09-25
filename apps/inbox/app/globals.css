@@ -1301,3 +1301,4 @@ a.metric:hover{border-color:var(--accent)}
   text-underline-offset:2px;cursor:pointer;padding:0}
 .asknone{margin:0;font-size:.8rem;color:var(--muted)}
 .askset .btn.mini{padding:.3rem .7rem;min-height:2rem;font-size:.8rem}
+.asknone.bad{color:var(--crit)}
