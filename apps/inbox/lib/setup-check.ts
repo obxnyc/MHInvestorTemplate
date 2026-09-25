@@ -189,16 +189,50 @@ async function twilioChecks(origin: string): Promise<Check[]> {
  *  is the difference between re-pasting a key and going to look at the list. */
 async function databaseChecks(): Promise<Check[]> {
   const out: Check[] = [];
-  const db = supabaseAdmin();
 
-  // The service role bypasses RLS, so if this cannot read, the key is wrong --
-  // and every webhook write has been failing silently behind a 500.
-  const { error } = await db.from("staff").select("id", { count: "exact", head: true });
-  if (error) {
-    return [{ name: "Database (service role)", level: "bad",
-      detail: `The server cannot reach the database: ${error.message}`,
-      fix: "Check SUPABASE_SERVICE_ROLE_KEY in Vercel. It must be the service_role key from Supabase → Project Settings → API Keys, not the anon key, and it must be complete." }];
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+
+  // The shape first, because the commonest failure is a truncated paste and it
+  // can be named without asking anyone anything. A Supabase key is either a
+  // JWT (three dot-separated parts, starting "eyJ") or the newer sb_secret_
+  // format. Anything else is not a key.
+  const looksJwt = /^eyJ[\w-]*\.[\w-]+\.[\w-]+$/.test(key);
+  const looksNew = key.startsWith("sb_secret_");
+  if (!looksJwt && !looksNew) {
+    return [{ name: "SUPABASE_SERVICE_ROLE_KEY", level: "bad",
+      detail: key
+        ? `Not shaped like a Supabase key: ${key.length} characters, ${key.split(".").length} part(s). A service_role key is a JWT beginning "eyJ" with three parts, or begins "sb_secret_".`
+        : "Not set.",
+      fix: "Supabase → Project Settings → API Keys → the Legacy tab → service_role. Use the copy button, paste into Vercel, then redeploy." }];
   }
+
+  // Then ask the database, over plain HTTP rather than through the client
+  // library -- which reports a refused key as an error object with an empty
+  // message, and an empty message is how an evening gets spent. The status code
+  // and the body are what actually say what happened.
+  let probe: { status: number; body: string };
+  try {
+    const res = await fetch(`${url}/rest/v1/staff?select=id&limit=1`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      cache: "no-store",
+    });
+    probe = { status: res.status, body: (await res.text()).slice(0, 200) };
+  } catch (e) {
+    return [{ name: "Database (service role)", level: "bad",
+      detail: `Could not reach ${url}: ${(e as Error).message}`,
+      fix: "Check NEXT_PUBLIC_SUPABASE_URL in Vercel — it should look like https://xxxxxxxx.supabase.co." }];
+  }
+
+  if (probe.status !== 200) {
+    return [{ name: "Database (service role)", level: "bad",
+      detail: `The database refused the server's key. HTTP ${probe.status}: ${probe.body}`,
+      fix: probe.status === 401
+        ? "That key is not accepted. Supabase → Project Settings → API Keys → Legacy tab → service_role, copy it whole, paste into Vercel, redeploy. It is a long JWT — make sure none of it is missing."
+        : "Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel." }];
+  }
+
+  const db = supabaseAdmin();
   out.push({ name: "Database (service role)", level: "good",
     detail: "The server can read and write." });
 
