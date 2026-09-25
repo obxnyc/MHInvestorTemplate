@@ -828,3 +828,17 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .benchlist .bm{font-weight:800;font-variant-numeric:tabular-nums;min-width:4rem}
 .benchlist .bw{overflow-wrap:anywhere}
 .benchlist .bd{margin-left:auto;color:var(--muted);font-size:.74rem;white-space:nowrap}
+
+/* Two ways out of the sign-in form, side by side rather than stacked: they are
+   alternatives to each other, not steps. */
+.authalt{display:flex;flex-wrap:wrap;gap:.25rem 1rem;justify-content:space-between;
+  margin-top:.5rem}
+.authalt .pinlink{padding:.35rem 0;min-height:auto}
+
+/* Applications sit above the directory, not in it: they are work to do, and a
+   pending contractor is not somebody you can send a job to yet. */
+.pendbox{margin-top:1rem;padding:.9rem 1rem 1rem;border:1px solid var(--warn);
+  border-radius:var(--radius);background:var(--warn-soft)}
+.pendbox h2{margin:0 0 .2rem;font-size:1rem;letter-spacing:-.015em}
+.pendbox .people-list{margin-top:.7rem}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
