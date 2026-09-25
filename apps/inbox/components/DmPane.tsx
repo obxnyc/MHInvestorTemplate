@@ -148,7 +148,11 @@ export default function DmPane(
             <div key={m.id} className="mrow">
               {sep && <div className="daysep">{sep}</div>}
               <div className={mine ? "out" : "in"}>
-                {!mine && <span className="attrib">{m.who}</span>}
+                {/* On your own messages too. In a group of four, "who said
+                    that" is the question, and answering it for everyone except
+                    the person reading is an odd place to stop -- the tenant
+                    threads have always named the sender on both sides. */}
+                <span className="attrib">{mine ? "You" : m.who}</span>
                 <div className="bwrap"><div className="b">{m.body}</div></div>
                 <span className="delivered">{clockTime(m.at)}</span>
               </div>
