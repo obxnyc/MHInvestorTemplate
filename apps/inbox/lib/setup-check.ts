@@ -22,6 +22,7 @@
  *  where the failure explains itself. */
 import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Level = "good" | "bad" | "warn";
 export type Check = { name: string; level: Level; detail: string; fix?: string };
@@ -31,11 +32,15 @@ export type Check = { name: string; level: Level; detail: string; fix?: string }
  *  account SID -- the Twilio client validates its arguments in the constructor
  *  -- which meant the one thing that could not survive a bad credential was the
  *  page whose whole job is to explain one. */
-export async function runSetupChecks(origin: string): Promise<Check[]> {
+export async function runSetupChecks(
+  origin: string,
+  asUser?: SupabaseClient,
+): Promise<Check[]> {
   return [
     ...guard("Required settings", envChecks),
     ...(await guardAsync("Twilio", () => twilioChecks(origin))),
     ...(await guardAsync("Database", databaseChecks)),
+    ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
 }
 
@@ -255,4 +260,51 @@ async function databaseChecks(): Promise<Check[]> {
         fix: "Send one now and reload this page. If it still says none, the webhook is failing after the signature check — the reason will be in Vercel → Logs." });
 
   return out;
+}
+
+/** What the signed-in person can actually see, as opposed to what is stored.
+ *
+ *  Row-level security is invisible when it is wrong: a policy that matches
+ *  nothing returns an empty list, which is indistinguishable from an empty
+ *  table. A thread that stores six messages and displays none looks like a
+ *  rendering bug and is not one. So this compares the two counts directly --
+ *  what the service role can see, and what this person can -- and reports the
+ *  query error that the page throws away. */
+async function visibilityChecks(asUser: SupabaseClient): Promise<Check[]> {
+  const admin = supabaseAdmin();
+
+  const { data: newest } = await admin
+    .from("conversations").select("id")
+    .order("last_message_at", { ascending: false, nullsFirst: false }).limit(1);
+  const id = newest?.[0]?.id;
+  if (!id) {
+    return [{ name: "Thread visibility", level: "warn",
+      detail: "No conversation exists yet, so there is nothing to compare." }];
+  }
+
+  const stored = await admin
+    .from("messages").select("id", { count: "exact", head: true }).eq("conversation_id", id);
+
+  // Deliberately the same shape the thread page uses, embedded author and all:
+  // a policy can permit the row and a column grant still refuse the join, and
+  // those two failures look identical from the outside.
+  const seen = await asUser
+    .from("messages")
+    .select("id, direction, body, status, channel, created_at, media_paths, staff:sent_by(full_name)")
+    .eq("conversation_id", id);
+
+  if (seen.error) {
+    return [{ name: "Thread visibility", level: "bad",
+      detail: `The thread query fails for a signed-in user: ${seen.error.message}${seen.error.hint ? ` (${seen.error.hint})` : ""}${seen.error.code ? ` [${seen.error.code}]` : ""}`,
+      fix: "This is an application bug, not a setting. Nothing to paste." }];
+  }
+
+  const storedCount = stored.count ?? 0;
+  const seenCount = seen.data?.length ?? 0;
+  return [seenCount === storedCount
+    ? { name: "Thread visibility", level: "good",
+        detail: `The newest conversation holds ${storedCount} message${storedCount === 1 ? "" : "s"}, and you can see all of them.` }
+    : { name: "Thread visibility", level: "bad",
+        detail: `The newest conversation holds ${storedCount} message${storedCount === 1 ? "" : "s"}, but you can see ${seenCount}. Row-level security is hiding them.`,
+        fix: "Run docs/shared-line/rls-messages.sql in the Supabase SQL editor." }];
 }

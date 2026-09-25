@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireStaff } from "@/lib/supabase-server";
+import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { runSetupChecks } from "@/lib/setup-check";
 
 export const runtime = "nodejs";
@@ -22,7 +22,9 @@ export async function GET(req: Request) {
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
 
   try {
-    return NextResponse.json({ checks: await runSetupChecks(`${proto}://${host}`) });
+    return NextResponse.json({
+      checks: await runSetupChecks(`${proto}://${host}`, await supabaseServer()),
+    });
   } catch (e) {
     return NextResponse.json(
       { error: "the setup check itself failed", detail: (e as Error).message },

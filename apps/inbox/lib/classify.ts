@@ -67,7 +67,7 @@ export type SenderContext = {
 const LEASING_INTENT =
   /\b(available|availability|for rent|renting|apply|application|tour|showing|see the (house|home|place)|move[- ]?in|how much|deposit|pet friendly|bedroom)\b/i;
 const MAINTENANCE_INTENT =
-  /\b(broken|not working|won'?t|leak(ing)?|clog(ged)?|drip|repair|fix|toilet|sink|drain|faucet|ac\b|air condition|heater|fridge|refrigerator|stove|oven|washer|dryer|water heater|roof|window|door|pest|mice|roach|ants)\b/i;
+  /\b(broken|not working|won'?t|leak(ing)?|clog(ged)?|drip|repair|fix|toilet|sink|drain|faucet|ac\b|air condition|heater|fridge|refrigerator|stove|oven|washer|dryer|water heater|roof|window|door|pests?|mice|roaches?|ants?|bed ?bugs?|termites?)\b/i;
 
 export function classifyByContact(
   body: string, ctx: SenderContext,
@@ -83,6 +83,17 @@ export function classifyByContact(
   }
   if (!known && LEASING_INTENT.test(body) && !MAINTENANCE_INTENT.test(body)) {
     return { category: "prospect", confidence: 0.85, urgent: false, basis: "known-tenant" };
+  }
+  // A stranger does not text a landlord about a leaking sink. They are a
+  // tenant whose number we have not got on file yet, a tenant's spouse, or a
+  // tenant texting from a work phone -- and on a shared line that is most of
+  // them. Filing this as "general" and waiting for a human costs a repair the
+  // hours it sits in the review queue, which is how a leak becomes a floor.
+  //
+  // Lower confidence than the same words from a known tenant, because the
+  // reasoning is one step longer.
+  if (!known && MAINTENANCE_INTENT.test(body) && !LEASING_INTENT.test(body)) {
+    return { category: "maintenance", confidence: 0.82, urgent: false, basis: "known-tenant" };
   }
   return null;
 }
