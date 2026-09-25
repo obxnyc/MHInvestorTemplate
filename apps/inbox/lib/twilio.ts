@@ -102,8 +102,13 @@ export function checkTwilioSignature(
   const signature = req.headers.get("x-twilio-signature");
   if (!signature) return refuse(403, "no x-twilio-signature header");
 
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!token) return refuse(500, "TWILIO_AUTH_TOKEN is not set on the server");
+  const raw = process.env.TWILIO_AUTH_TOKEN;
+  if (!raw) return refuse(500, "TWILIO_AUTH_TOKEN is not set on the server");
+
+  // Trimmed, because a token pasted into a hosting dashboard collects a
+  // trailing newline more often than anyone admits, and an untrimmed one fails
+  // every request while looking perfectly correct in the box.
+  const token = raw.trim();
 
   const urls = candidateUrls(req, path);
   if (!urls.length) {
@@ -115,7 +120,32 @@ export function checkTwilioSignature(
     if (twilio.validateRequest(token, signature, url, params)) return { ok: true };
   }
 
-  return refuse(403, `signature did not match; validated against ${urls.join(" and ")}`);
+  return refuse(403,
+    `signature did not match; validated against ${urls.join(" and ")}${describeToken(raw)}`);
+}
+
+/** Said out loud when a signature fails, because the commonest cause is that
+ *  the wrong string was pasted into the box -- and the box is write-only, so
+ *  nobody can look.
+ *
+ *  A Twilio auth token is 32 hex characters. Anything else is a different
+ *  secret wearing its name: an Account SID (AC + 32 hex, which sits directly
+ *  above it on the same console panel and is not secret at all), an API key
+ *  SID (SK...) or secret, or a token with whitespace around it.
+ *
+ *  Only the shape is reported, never the value. Naming the prefix of something
+ *  that is NOT a valid token is safe -- and if it is an AC or SK prefix, that
+ *  is a public identifier by design. */
+function describeToken(raw: string): string {
+  const token = raw.trim();
+  if (/^[0-9a-f]{32}$/i.test(token)) {
+    return token === raw ? "" : " (note: TWILIO_AUTH_TOKEN had whitespace around it)";
+  }
+  const prefix = token.startsWith("AC") ? "an Account SID (AC…)"
+    : token.startsWith("SK") ? "an API key SID (SK…)"
+    : `${token.length} characters`;
+  return ` — and TWILIO_AUTH_TOKEN is not shaped like a Twilio auth token`
+    + ` (expected 32 hex characters, got ${prefix})`;
 }
 
 /** The origin to put inside TwiML we hand back to Twilio, for the callbacks it
