@@ -44,8 +44,8 @@ const BODY = { MessageSid: "SM1", From: "+12526420000", Body: "My kitchen sink i
 const PATH = "/api/twilio/sms";
 
 /** A request as Vercel presents it: the proxy headers carry the real host. */
-function req(headers) {
-  return new Request("https://internal.invalid" + PATH, {
+function req(headers, arrivedAt = PATH) {
+  return new Request("https://internal.invalid" + arrivedAt, {
     method: "POST",
     headers: new Headers(headers),
   });
@@ -95,6 +95,23 @@ for (const [name, base] of [
 }
 
 process.env.PUBLIC_BASE_URL = "https://mh-investor-template.vercel.app";
+
+// 3b. The two shapes a console entry takes that the route never sees.
+{
+  process.env.PUBLIC_BASE_URL = "https://mh-investor-template.vercel.app";
+
+  // Configured with a trailing slash. Next redirects it away, but the
+  // signature was fixed before the redirect.
+  const slashed = checkTwilioSignature(
+    req({ ...VERCEL, "x-twilio-signature": sign(LIVE + "/", BODY) }), PATH, BODY);
+  t("a webhook URL configured with a trailing slash still verifies", slashed.ok === true);
+
+  // Configured with a query string, which arrives on the request.
+  const q = "?src=console";
+  const withQuery = checkTwilioSignature(
+    req({ ...VERCEL, "x-twilio-signature": sign(LIVE + q, BODY) }, PATH + q), PATH, BODY);
+  t("a webhook URL configured with a query string still verifies", withQuery.ok === true);
+}
 
 // 4. None of that may loosen what the check is for.
 {
