@@ -55,7 +55,30 @@ export async function POST(req: Request) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
-  const { staffId } = await req.json();
+  const { staffId, staffIds, title } = await req.json();
+
+  // A group: several people, optionally named. Never deduplicated against an
+  // existing group -- two groups with the same people are a normal thing to
+  // want, because they are about different work.
+  if (Array.isArray(staffIds)) {
+    const others = [...new Set(staffIds.filter(
+      (x: unknown): x is string => typeof x === "string" && x !== me.id))];
+    if (!others.length) {
+      return NextResponse.json({ error: "pick somebody" }, { status: 400 });
+    }
+    const db2 = supabaseAdmin();
+    const { data: made, error: makeError } = await db2.from("dm_threads")
+      .insert({ created_by: me.id, title: String(title ?? "").trim() || null })
+      .select("id").single();
+    if (makeError) return NextResponse.json({ error: makeError.message }, { status: 500 });
+
+    await db2.from("dm_members").insert([
+      { thread_id: made.id, staff_id: me.id, last_read_at: new Date().toISOString() },
+      ...others.map((s2) => ({ thread_id: made.id, staff_id: s2 })),
+    ]);
+    return NextResponse.json({ ok: true, id: made.id });
+  }
+
   if (typeof staffId !== "string" || staffId === me.id) {
     return NextResponse.json({ error: "pick somebody" }, { status: 400 });
   }

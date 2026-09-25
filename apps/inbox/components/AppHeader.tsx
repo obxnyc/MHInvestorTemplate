@@ -1,79 +1,53 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Compose from "./Compose";
+import { usePathname } from "next/navigation";
 
 type Role = "admin" | "office" | "tech";
 
-/** Title, an overflow for the secondary views, and the two actions people
- *  actually reach for. Everything else lives behind the ⋯ so the header stays
- *  legible on a phone.
+/**
+ * The bar across the top of everything.
  *
- *  The title is the way home. Everyone tries clicking it -- it is the one
- *  convention every application on the internet shares -- and when it does
- *  nothing, the way back to the inbox is a menu nobody thinks to open. */
+ * Brand on the left, where every application on the internet puts the way home.
+ * Destinations on the right. Nothing else: the actions that belong to a screen
+ * live on that screen, because a header that carries "New Message" is a header
+ * that has to explain itself on the page about vendor invoices.
+ *
+ * Built to take more destinations than it has. This is the shared line today;
+ * the same bar is where Boats, Slips or Properties go when there are any.
+ */
 export default function AppHeader(
   { name, role }: { name: string; role: Role },
 ) {
-  const router = useRouter();
-  const [menu, setMenu] = useState(false);
-  const [compose, setCompose] = useState<"new" | "broadcast" | null>(null);
-  const initials = name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+  const path = usePathname();
+  const initials = name.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(false);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [menu]);
+  const nav: [string, string][] = [
+    ["/", "Messages"],
+    ["/settings", "Settings"],
+  ];
+
+  const on = (href: string) =>
+    href === "/" ? path === "/" || path.startsWith("/c/") : path.startsWith(href);
 
   return (
-    <>
-      <header className="apphead">
-        <Link href="/" className="homelink" aria-label="Back to the inbox">
-          <h1>Larabee Homes</h1>
+    <header className="apphead">
+      <Link href="/" className="brandmark" aria-label="Larabee Homes — home">
+        <span className="brandlogo" aria-hidden="true">LH</span>
+        <span className="brandname">Larabee Homes</span>
+      </Link>
+
+      <nav className="topnav" aria-label="Main">
+        {nav.map(([href, label]) => (
+          <Link key={href} href={href} className={on(href) ? "on" : ""}
+                aria-current={on(href) ? "page" : undefined}>
+            {label}
+          </Link>
+        ))}
+        <Link href="/account" className="av" title={name} aria-label={`Signed in as ${name}`}>
+          {initials}
         </Link>
-        <span className="sp" />
-
-        <div className="ovwrap">
-          <button className="iconbtn" aria-label="More" aria-expanded={menu}
-                  onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>⋯</button>
-          {menu && (
-            <div className="ovmenu" onClick={(e) => e.stopPropagation()}>
-              <Link className="ovitem" href="/">Messages</Link>
-              <Link className="ovitem" href="/calls">Calls</Link>
-              <Link className="ovitem" href="/team">Team messages</Link>
-              {role === "admin" && <Link className="ovitem" href="/legal">Court filings</Link>}
-              {role === "admin" && <Link className="ovitem" href="/audit">Audit trail</Link>}
-              {(role === "admin" || role === "office")
-                && <Link className="ovitem" href="/jobs">Jobs &amp; costs</Link>}
-              {(role === "admin" || role === "office")
-                && <Link className="ovitem" href="/people">People</Link>}
-              <Link className="ovitem" href="/account">Your sign-in</Link>
-              {role === "admin" && <Link className="ovitem" href="/setup">Setup check</Link>}
-              <div className="ovsep" />
-              <span className="ovlabel">{name}</span>
-            </div>
-          )}
-        </div>
-
-        <button className="btn" onClick={() => setCompose("new")}>New Message</button>
-        {(role === "admin" || role === "office") && (
-          <button className="btn pri" onClick={() => setCompose("broadcast")}>
-            Staff Broadcast
-          </button>
-        )}
-        <span className="av" title={name}>{initials}</span>
-      </header>
-
-      {compose && (
-        <Compose
-          mode={compose}
-          onClose={() => setCompose(null)}
-          onSent={(id) => { setCompose(null); if (id) router.push(`/c/${id}`); else router.refresh(); }}
-        />
-      )}
-    </>
+      </nav>
+      <span hidden>{role}</span>
+    </header>
   );
 }
