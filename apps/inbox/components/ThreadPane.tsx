@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { prettyPhone, clockTime, dayLabel } from "@/lib/format";
+import { prettyPhone, clockTime, dayLabel, initials } from "@/lib/format";
 import { catLabel, propertyOf } from "@/lib/category";
 import Composer from "./Composer";
 import ClaimPill from "./ClaimPill";
@@ -14,13 +14,6 @@ import ContactEditor from "./ContactEditor";
 import { languageName } from "@/lib/translate";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
-
-/** A name gives initials; an unsaved number gives its last two digits. */
-function initials(n: string) {
-  const s = String(n).trim();
-  if (/^[\d\s()+\-.]+$/.test(s)) return s.replace(/\D/g, "").slice(-2) || "#";
-  return s.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
-}
 
 type Thread = {
   convo: Record<string, unknown>;

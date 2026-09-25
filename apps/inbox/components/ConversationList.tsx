@@ -1,26 +1,9 @@
 import Link from "next/link";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
-import { prettyPhone, timeAgo } from "@/lib/format";
+import { prettyPhone, timeAgo, initials, swatch } from "@/lib/format";
 import { CATEGORIES, CAT_TAB, catLabel, propertyOf, type Category } from "@/lib/category";
 import Search from "@/components/Search";
 import QueueSelects from "@/components/QueueSelects";
-
-/** A name gives initials; an unsaved number gives its last two digits, because
- *  "(2" tells you nothing and reads like a rendering fault. */
-function initials(n: string) {
-  const s = String(n).trim();
-  if (/^[\d\s()+\-.]+$/.test(s)) return s.replace(/\D/g, "").slice(-2) || "#";
-  return s.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
-}
-
-/** Tinted per person so a face is recognisable down the list; the badge
- *  carries the category. */
-const SWATCH = [
-  ["#E3ECFA", "#2F4E7E"], ["#FAE6EC", "#7E3350"], ["#E4F0E9", "#0F4B36"],
-  ["#F0EAFA", "#54417F"], ["#FBEEE3", "#8A4418"], ["#E6F1F4", "#1F5566"],
-];
-const swatch = (n: string) =>
-  SWATCH[[...n].reduce((a, c) => a + c.charCodeAt(0), 0) % SWATCH.length];
 
 export type ListFilters = { show?: string; who?: string; q?: string; cat?: string };
 

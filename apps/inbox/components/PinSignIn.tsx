@@ -1,11 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { initials } from "@/lib/format";
 
 type Person = { id: string; full_name: string };
-
-const initials = (n: string) =>
-  n.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
 /** Name, then PIN — for people holding a phone in a crawlspace.
  *
