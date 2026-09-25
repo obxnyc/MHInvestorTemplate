@@ -27,6 +27,13 @@ const Replies = z.object({
 
 export type Suggestion = { text: string; label: string };
 
+/** Whether drafting is switched on at all. Kept separate from "it had nothing
+ *  to say", because those look identical on screen and are fixed by completely
+ *  different things -- one by adding a key, one by waiting for a reply. */
+export function draftingConfigured() {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
 const SYSTEM = [
   "You draft text messages for a small property management office in Elizabeth",
   "City, North Carolina. You are drafting for a member of staff to read, edit",
@@ -68,7 +75,7 @@ export async function suggestReplies(
   thread: { mine: boolean; body: string }[],
   context: { category: string; name: string },
 ): Promise<Suggestion[]> {
-  if (!process.env.ANTHROPIC_API_KEY) return [];
+  if (!draftingConfigured()) return [];
   // The last few turns, not the whole history: what a reply has to answer is
   // near the end, and the rest is cost.
   const recent = thread.slice(-8);

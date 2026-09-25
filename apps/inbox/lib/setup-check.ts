@@ -113,6 +113,21 @@ function envChecks(): Check[] {
         detail: `Expected MG followed by 32 hex characters; got ${shape(process.env.TWILIO_MESSAGING_SERVICE_SID)}.`,
         fix: "Twilio Console → Messaging → Services → your service → the SID at the top." });
 
+  // Optional, and its absence is the commonest confusing state in this
+  // application: with no key, Spanish stays untranslated, replies cannot be
+  // drafted, and the classifier quietly falls back to keywords -- three
+  // features that each look individually broken and are one setting.
+  const ai = process.env.ANTHROPIC_API_KEY?.trim();
+  out.push(ai
+    ? { name: "ANTHROPIC_API_KEY", level: "good",
+        detail: "Present, so translation, drafted replies and the classifier are live." }
+    : { name: "ANTHROPIC_API_KEY", level: "warn",
+        detail: "Not set. Spanish is not translated, replies cannot be drafted, and"
+          + " the classifier falls back to keyword matching. Nothing is broken —"
+          + " those three are simply off.",
+        fix: "Vercel → Settings → Environment Variables → Add. Key ANTHROPIC_API_KEY,"
+          + " Type SECRET (not Config), all three environments, then redeploy." });
+
   return out;
 }
 
