@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { benchmark, money, parseMoney, type PricePoint } from "@/lib/prices";
 import { dueState, dueLabel } from "@/lib/dispatch";
 import BackLink from "@/components/BackLink";
+import NewJob from "@/components/NewJob";
 
 type Job = {
   id: string; summary: string; status: string; dueAt: string | null;
@@ -26,12 +27,15 @@ export default function JobsBoard() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [trade, setTrade] = useState("");
   const [show, setShow] = useState<"open" | "done">("open");
+  const [making, setMaking] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     fetch("/api/jobs").then((r) => r.json()).then((d) => {
       setJobs(d.jobs ?? []); setTrades(d.trades ?? []);
     });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   // The comparison set is every priced job of the same trade, whatever its
   // status — the history is the point, and it lives in the closed ones.
@@ -74,7 +78,13 @@ export default function JobsBoard() {
           <option value="">Every trade</option>
           {trades.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
+        {/* Not everything that needs doing was texted in. */}
+        <button className="btn pri" onClick={() => setMaking(true)}>New job</button>
       </div>
+
+      {making && (
+        <NewJob trades={trades} onClose={() => setMaking(false)} onMade={load} />
+      )}
 
       <ul className="joblist board">
         {shown.map((j) => (

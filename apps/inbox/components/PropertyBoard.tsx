@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import BackLink from "@/components/BackLink";
+import Confirm from "@/components/Confirm";
 import AddressPicker, { type Place } from "@/components/AddressPicker";
 import { KIND_LIST, kindOf, unitWord, type Kind } from "@/lib/property";
 import { money } from "@/lib/prices";
@@ -47,6 +48,10 @@ export default function PropertyBoard(
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [editProp, setEditProp] = useState<Property | null>(null);
+  // What is about to be deleted, if anything. Nothing destructive happens
+  // straight from a click in this screen.
+  const [confirming, setConfirming] =
+    useState<{ kind: "property" | "unit"; id: string; label: string } | null>(null);
   const [owners, setOwners] = useState<{ id: string; name: string }[]>([]);
   const [groupBy, setGroupBy] = useState<"owner" | "kind" | "none">("none");
 
@@ -208,8 +213,11 @@ export default function PropertyBoard(
                             </>
                           )}
                           {canDelete && (
-                            <button className="mini" disabled={busy}
-                                    onClick={() => call(`/api/units/${u.id}`, "DELETE")}>
+                            <button className="mini danger" disabled={busy}
+                                    onClick={() => setConfirming({
+                                      kind: "unit", id: u.id,
+                                      label: `${unitWord(p.kind, 1)} ${u.label}`,
+                                    })}>
                               Remove
                             </button>
                           )}
@@ -251,7 +259,10 @@ export default function PropertyBoard(
                       </button>
                       {canDelete && (
                         <button className="mini danger" disabled={busy}
-                                onClick={() => call(`/api/properties/${p.id}`, "DELETE")}>
+                                onClick={() => setConfirming({
+                                  kind: "property", id: p.id,
+                                  label: p.code ? `${p.code} · ${p.name}` : p.name,
+                                })}>
                           Delete
                         </button>
                       )}
@@ -265,6 +276,28 @@ export default function PropertyBoard(
       </ul>
       </section>
       ))}
+
+      {confirming && (
+        <Confirm
+          what={confirming.label}
+          busy={busy}
+          detail={confirming.kind === "property"
+            ? "The property and every unit under it go with it. Anything already"
+              + " filed against it will refuse the delete rather than lose its"
+              + " address — but nothing here can be undone."
+            : "It goes, along with anything recorded about the home on it."}
+          onCancel={() => setConfirming(null)}
+          onConfirm={async () => {
+            const url = confirming.kind === "property"
+              ? `/api/properties/${confirming.id}`
+              : `/api/units/${confirming.id}`;
+            // Closed either way. A refusal -- something is filed against it --
+            // comes back as the error banner at the top of the screen, which is
+            // where every other failure on this page already appears.
+            await call(url, "DELETE");
+            setConfirming(null);
+          }} />
+      )}
 
       {editProp && (
         <EditProperty property={editProp} owners={owners} busy={busy}
