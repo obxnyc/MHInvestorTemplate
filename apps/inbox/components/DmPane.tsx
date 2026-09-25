@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { clockTime, dayLabel } from "@/lib/format";
 import Seen, { type Read } from "./Seen";
 import { supabaseBrowser } from "@/lib/supabase-client";
@@ -31,6 +32,15 @@ export default function DmPane(
   const [editing, setEditing] = useState(false);
   const [roster, setRoster] = useState<Person[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [, startRefresh] = useTransition();
+
+  /** The list beside this pane is rendered on the server and has no idea
+   *  anything happened here. Sending reloaded the thread and left the row
+   *  showing a preview from before the message, which reads as a message that
+   *  did not send -- the same shape of bug as the tenant composer had, in the
+   *  one place that had not been given the same fix. */
+  const refreshList = useCallback(() => startRefresh(() => router.refresh()), [router]);
 
   /** Who had opened this thread at or after the moment a message landed, which
    *  is as close to "read it" as a thread view can honestly claim. Never
@@ -43,7 +53,9 @@ export default function DmPane(
     if (res.ok) setData(await res.json());
   }, [id]);
 
-  useEffect(() => { setData(null); load(); }, [load]);
+  // Opening marks the thread read server-side, so the list has to be told or
+  // the "new" pill sits on a thread you are looking at.
+  useEffect(() => { setData(null); load().then(refreshList); }, [load, refreshList]);
 
   useEffect(() => {
     if (!editing || roster.length) return;
@@ -56,7 +68,9 @@ export default function DmPane(
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    load();
+    await load();
+    // Adding or removing somebody changes the thread's name in the list.
+    refreshList();
   }
   useEffect(() => { bottom.current?.scrollIntoView(); }, [data]);
 
@@ -64,7 +78,8 @@ export default function DmPane(
     const channel = supabaseBrowser()
       .channel(`dm:${id}`)
       .on("postgres_changes",
-          { event: "INSERT", schema: "public", table: "dm_messages" }, () => load())
+          { event: "INSERT", schema: "public", table: "dm_messages" },
+          () => { load(); refreshList(); })
       .subscribe();
     return () => { supabaseBrowser().removeChannel(channel); };
   }, [id, load]);
@@ -80,7 +95,8 @@ export default function DmPane(
       body: JSON.stringify({ body }),
     });
     setBusy(false);
-    load();
+    await load();
+    refreshList();
   }
 
   if (!data) return <div className="chatcol"><p className="none">Opening…</p></div>;
