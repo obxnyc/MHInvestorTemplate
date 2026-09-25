@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import PinSignIn from "@/components/PinSignIn";
 
@@ -68,8 +69,11 @@ export default function Login() {
     return (
       <main className="auth">
         <div className="auth-card">
-          <p className="brand">Larabee Homes</p>
-          <h1>Shared inbox</h1>
+          <div className="authhead">
+            <Image src="/icon-192.png" alt="" width={46} height={46} className="authlogo" priority />
+            <h1>Sign in</h1>
+            <p className="authwho">Larabee Homes</p>
+          </div>
           <PinSignIn onBack={() => setMode("password")} />
         </div>
       </main>
@@ -79,8 +83,11 @@ export default function Login() {
   return (
     <main className="auth">
       <div className="auth-card">
-        <p className="brand">Larabee Homes</p>
-        <h1>Shared inbox</h1>
+        <div className="authhead">
+          <Image src="/icon-192.png" alt="" width={46} height={46} className="authlogo" priority />
+          <h1>Sign in</h1>
+          <p className="authwho">Larabee Homes</p>
+        </div>
 
         {state === "sent" ? (
           <>
@@ -111,11 +118,11 @@ export default function Login() {
             <div className="authalt">
               <button type="button" className="pinlink"
                       onClick={() => { setMode("reset"); setState("idle"); }}>
-                Set or reset my password
+                Forgot password?
               </button>
               <button type="button" className="pinlink"
                       onClick={() => { setMode("link"); setState("idle"); }}>
-                Email me a link instead
+                Email me a link
               </button>
             </div>
           </form>
@@ -139,9 +146,12 @@ export default function Login() {
           </form>
         )}
 
-        <button className="pinlink" onClick={() => setMode("pin")}>
-          Out on a job? Sign in with your PIN
-        </button>
+        <p className="authfoot">
+          Out on a job?{" "}
+          <button className="pinlink" onClick={() => setMode("pin")}>
+            Sign in with your PIN
+          </button>
+        </p>
       </div>
     </main>
   );
