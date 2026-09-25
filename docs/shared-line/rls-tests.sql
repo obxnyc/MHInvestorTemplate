@@ -118,6 +118,41 @@ begin
   end if;
   raise notice 'ok  writes are refused, including self-promotion to admin';
 end $$;
+
+-- 5b. ...except the one write staff genuinely do, which has to keep working.
+--     A policy filters a privilege, it does not grant one, and a revoke that
+--     swept up `notes` left the policy checking rows that could never be
+--     offered. Nobody could write a note for as long as that stood.
+do $$
+declare c uuid;
+begin
+  insert into contacts (phone, full_name, party) values ('+15555550177','RLS Note Target','other')
+    on conflict (phone) do nothing;
+  select id into c from conversations limit 1;
+  if c is null then
+    insert into conversations (contact_id, category)
+      select id, 'other' from contacts where phone = '+15555550177' returning id into c;
+  end if;
+
+  begin
+    insert into notes (conversation_id, author_id, body)
+      values (c, auth.uid(), 'a note typed by a person');
+  exception when others then
+    raise exception 'FAIL: a signed-in employee cannot write a note (%)', sqlerrm;
+  end;
+  raise notice 'ok  staff can write a note';
+
+  -- ...and only ever under their own name.
+  begin
+    insert into notes (conversation_id, author_id, body)
+      values (c, 'aaaaaaaa-0000-0000-0000-00000000c102', 'filed under somebody else');
+    raise exception 'FAIL: a note was filed under another person''s name';
+  exception when insufficient_privilege then null;
+    when others then
+      if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  raise notice 'ok  a note cannot be filed under someone else';
+end $$;
 reset role;
 
 -- 6. An admin can reach what an admin is for.
@@ -138,5 +173,5 @@ reset role;
 
 do $$ begin
   raise notice '';
-  raise notice 'all 6 checks passed';
+  raise notice 'all 7 checks passed';
 end $$;

@@ -13,9 +13,26 @@ export async function POST(req: Request) {
   const sig = checkTwilioSignature(req, "/api/twilio/status", params);
   if (!sig.ok) return new NextResponse(sig.reason, { status: sig.status });
 
-  await supabaseAdmin().from("messages")
+  const { data, error } = await supabaseAdmin().from("messages")
     .update({ status: params.MessageStatus, error_code: params.ErrorCode ?? null })
-    .eq("twilio_sid", params.MessageSid);
+    .eq("twilio_sid", params.MessageSid)
+    .select("id");
+
+  if (error) {
+    console.error("delivery status update failed", error);
+    return new NextResponse("could not record status", { status: 500 });
+  }
+
+  // Nothing matched. Twilio reports "sent" within about a second of accepting a
+  // message, which can beat our own row into the database -- the sid only
+  // exists after the send returns, and the insert happens after that. Answering
+  // 2xx here would mean the receipt is thrown away and the message reads
+  // "Sending" forever, which is exactly the lie this endpoint exists to
+  // prevent. A 503 asks Twilio to try again, and it does, with backoff.
+  if (!data?.length) {
+    console.warn("status for an unknown message, asking Twilio to retry", params.MessageSid);
+    return new NextResponse("no such message yet", { status: 503 });
+  }
 
   return new NextResponse(null, { status: 204 });
 }

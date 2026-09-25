@@ -1171,5 +1171,10 @@ create policy tech_reads_own_work_orders on work_orders for select
 -- The one thing a signed-in client may write, because a note is the one thing
 -- typed by a person rather than produced by a webhook. author_id is pinned to
 -- the session, so a note cannot be filed under somebody else's name.
+-- A policy filters a privilege; it does not grant one. Without this the policy
+-- below is checking rows that can never be offered, and writing a note fails
+-- for everybody. Column-level, so it covers exactly what the application sets.
+grant insert (conversation_id, author_id, body, mentions) on notes to authenticated;
+
 create policy staff_writes_own_notes on notes for insert
   with check (author_id = auth.uid() and is_active_staff());
