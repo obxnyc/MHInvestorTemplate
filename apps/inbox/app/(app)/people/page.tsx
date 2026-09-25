@@ -14,11 +14,15 @@ export default async function People(
   const { tab = "office" } = await searchParams;
 
   const supabase = await supabaseServer();
-  const [{ data: staff }, { data: vendors }] = await Promise.all([
+  const [{ data: staff }, { data: vendors }, { count: requests }] = await Promise.all([
     supabase.from("staff").select("id, full_name, role, forward_to, active, created_at")
       .order("full_name"),
     supabase.from("contacts").select("id, full_name, phone")
       .eq("party", "vendor").order("full_name"),
+    // Only an admin can read these at all, so for anyone else the count comes
+    // back null and the tab is not offered.
+    supabase.from("access_requests").select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
   ]);
 
   const office = (staff ?? []).filter((s) => s.role === "admin" || s.role === "office");
@@ -30,6 +34,7 @@ export default async function People(
       isAdmin={me.role === "admin"}
       office={office}
       field={field}
+      requests={requests ?? 0}
       vendors={(vendors ?? []).map((v) => ({
         id: v.id,
         full_name: v.full_name ?? prettyPhone(v.phone),

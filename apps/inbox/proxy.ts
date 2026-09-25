@@ -22,8 +22,8 @@ import { NextResponse, type NextRequest } from "next/server";
 // /trades/apply is a contractor putting themselves forward. It writes to an
 // application queue, never to contacts, so a public form cannot reach a row
 // that already exists.
-const PUBLIC = [/^\/login/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
-                /^\/jobs\//, /^\/trades\/apply/];
+const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
+                /^\/jobs\//, /^\/trades\/apply/, /^\/join/];
 
 const isPublic = (path: string) => PUBLIC.some((re) => re.test(path));
 
