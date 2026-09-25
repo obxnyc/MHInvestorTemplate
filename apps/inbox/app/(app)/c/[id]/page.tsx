@@ -12,8 +12,14 @@ import Live from "@/components/Live";
 
 export const dynamic = "force-dynamic";
 
-const initials = (n: string) =>
-  n.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+/** A name gives initials; an unsaved number gives its last two digits. The
+ *  naive version rendered "(252) 642-2995" as "(6", which reads as a bug
+ *  because it is one. Same rule as the list, so one person is one avatar. */
+function initials(n: string) {
+  const s = String(n).trim();
+  if (/^[\d\s()+\-.]+$/.test(s)) return s.replace(/\D/g, "").slice(-2) || "#";
+  return s.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+}
 
 export default async function Chat({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

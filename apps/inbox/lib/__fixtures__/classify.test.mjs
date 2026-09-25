@@ -67,6 +67,22 @@ t("known tenant reporting a repair is maintenance",
 t("stranger describing a repair is not auto-filed as maintenance",
   c("does the toilet work in the 3 bedroom?", "sms", STRANGER).category !== "maintenance");
 
+// --- a repair reported by a number we do not recognise ---
+// On a shared line most of these are a tenant whose number is not on file, a
+// spouse, or someone texting from a work phone. Waiting for a human to place
+// it costs the repair the hours it sits in review.
+for (const msg of ["my sink is leaking", "the ac stopped working",
+                   "water heater is busted", "there are roaches in the kitchen"]) {
+  const r = c(msg, "sms", STRANGER);
+  t(`unknown number reporting "${msg}" reaches maintenance`, r.category === "maintenance");
+  t(`...and does so confidently enough to route`, !needsReview(r));
+}
+
+// The guard that keeps it honest: leasing language in the same message means
+// they are asking about a home they do not live in, and that is not a repair.
+t("a viewing question mentioning an appliance stays out of maintenance",
+  c("is the stove included and how much is the deposit?", "sms", STRANGER).category !== "maintenance");
+
 // --- ambiguity fails into review, not into a confident guess ---
 const vague = c("hey", "sms", STRANGER);
 t("a vague message is not confidently categorised", needsReview(vague));
