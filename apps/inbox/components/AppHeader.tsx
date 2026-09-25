@@ -40,6 +40,8 @@ export default function AppHeader(
               {role === "admin" && <Link className="ovitem" href="/legal">Court filings</Link>}
               {role === "admin" && <Link className="ovitem" href="/audit">Audit trail</Link>}
               {(role === "admin" || role === "office")
+                && <Link className="ovitem" href="/jobs">Jobs &amp; costs</Link>}
+              {(role === "admin" || role === "office")
                 && <Link className="ovitem" href="/people">People</Link>}
               <Link className="ovitem" href="/account">Your sign-in</Link>
               {role === "admin" && <Link className="ovitem" href="/setup">Setup check</Link>}
