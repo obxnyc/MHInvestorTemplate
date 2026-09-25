@@ -5,6 +5,7 @@ import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
 import { classify, needsReview, shouldRecategorise } from "@/lib/classify";
 import { prettyPhone } from "@/lib/format";
 import { storeInboundMedia } from "@/lib/media";
+import { toEnglish } from "@/lib/translate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,12 +33,27 @@ export async function POST(req: Request) {
 
   // Contacts are keyed on E.164 so an inbound text always finds its person.
   let { data: contact } = await db
-    .from("contacts").select("id, party, unit_id").eq("phone", from).maybeSingle();
+    .from("contacts").select("id, party, unit_id, language").eq("phone", from).maybeSingle();
   if (!contact) {
     const { data } = await db
       .from("contacts").insert({ phone: from, party: "other" })
-      .select("id, party, unit_id").single();
+      .select("id, party, unit_id, language").single();
     contact = data!;
+  }
+
+  // Translated before anything else looks at it, because everything else --
+  // the classifier, the summary, the person reading the list -- is reading
+  // English. A Spanish repair request that reaches the classifier untranslated
+  // is a repair request nobody routes.
+  const translation = await toEnglish(body);
+  const english = translation?.english ?? null;
+  const readable = english ?? body;
+
+  // Remembered on the contact so replies go out in the language they read,
+  // without anyone having to notice and set it.
+  if (translation && translation.language !== "en"
+      && contact.language !== translation.language) {
+    await db.from("contacts").update({ language: translation.language }).eq("id", contact.id);
   }
 
   // At most one open conversation per contact, enforced by a partial unique
@@ -53,7 +69,7 @@ export async function POST(req: Request) {
       .from("conversations").select("id", { count: "exact", head: true })
       .eq("contact_id", contact.id);
 
-    const result = await classify(body, "sms", {
+    const result = await classify(readable, "sms", {
       party: contact.party,
       hasUnit: !!contact.unit_id,
       priorConversations: priorConversations ?? 0,
@@ -72,14 +88,14 @@ export async function POST(req: Request) {
       category: result.category,
       category_confidence: result.confidence,
       team_id: team?.id ?? null,
-      subject: (result.urgent ? "URGENT " : "") + (result.summary ?? body.slice(0, 70)),
+      subject: (result.urgent ? "URGENT " : "") + (result.summary ?? readable.slice(0, 70)),
     }).select("id, team_id, category").single();
     convo = data!;
   } else {
     // The subject can change inside one thread. Every inbound message is
     // classified, not only the first -- see shouldRecategorise for what is
     // allowed to happen to the answer.
-    const result = await classify(body, "sms", {
+    const result = await classify(readable, "sms", {
       party: contact.party,
       hasUnit: !!contact.unit_id,
       priorConversations: 1,
@@ -102,7 +118,7 @@ export async function POST(req: Request) {
         conversation_id: convo.id,
         author_id: null,
         body: `Moved to ${move.category.replace("_", " ")}${move.urgent ? " — urgent" : ""}`
-          + ` because of: "${body.slice(0, 80)}"`,
+          + ` because of: "${readable.slice(0, 80)}"`,
       });
 
       convo = { ...convo, category: move.category, team_id: team?.id ?? convo.team_id };
@@ -129,6 +145,8 @@ export async function POST(req: Request) {
     conversation_id: convo.id,
     direction: "inbound",
     body: body + noteLostMedia,
+    body_en: english,
+    lang: translation?.language ?? null,
     media_paths: paths,
     twilio_sid: sid,
     status: "received",
@@ -142,14 +160,14 @@ export async function POST(req: Request) {
 
   await db.from("conversations")
     .update({ last_message_at: new Date().toISOString(), status: "open",
-              last_message_preview: body.slice(0, 160) })
+              last_message_preview: readable.slice(0, 160) })
     .eq("id", convo.id);
 
   const { data: who } = await db.from("contacts")
     .select("full_name, phone").eq("id", contact.id).maybeSingle();
   await pushToTeam(convo.team_id, {
     title: who?.full_name || prettyPhone(who?.phone ?? from),
-    body: body.slice(0, 140),
+    body: readable.slice(0, 140),
     url: `/c/${convo.id}`,
     tag: convo.id,
     conversationId: convo.id,

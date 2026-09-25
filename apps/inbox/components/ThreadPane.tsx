@@ -9,6 +9,8 @@ import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
 import CategoryPicker from "./CategoryPicker";
 import OpenJobs, { type Job } from "./OpenJobs";
+import Bubble from "./Bubble";
+import { languageName } from "@/lib/translate";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 
@@ -123,7 +125,7 @@ export default function ThreadPane(
     units: unknown; contacts: { phone: string; full_name: string | null; party: string; units: unknown } | null;
     staff: { full_name: string } | null;
   };
-  const contact = convo.contacts;
+  const contact = convo.contacts as (typeof convo.contacts & { language?: string | null }) | null;
   const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
   const prop = propertyOf(convo.units as never, contact?.units as never);
   const party = contact?.party && contact.party !== "other"
@@ -193,8 +195,9 @@ export default function ThreadPane(
           }
 
           const m = item.m as {
-            id: string; direction: string; body: string; status: string;
-            channel: string; media_paths: string[] | null; staff: { full_name: string } | null;
+            id: string; direction: string; body: string; body_en: string | null;
+            lang: string | null; status: string; channel: string;
+            media_paths: string[] | null; staff: { full_name: string } | null;
           };
           const isSystem = m.direction === "inbound" && m.channel !== "sms";
           return (
@@ -211,7 +214,8 @@ export default function ThreadPane(
                   </span>
                 )}
                 <div className="bwrap">
-                  <div className="b">{m.body}</div>
+                  <Bubble body={m.body} english={m.body_en} lang={m.lang}
+                          outbound={m.direction === "outbound"} />
                   <MessageMenu messageId={m.id} preview={String(m.body).slice(0, 180)} />
                 </div>
                 {(m.media_paths ?? []).map((path, i) => {
@@ -246,7 +250,9 @@ export default function ThreadPane(
         </p>
       )}
 
-      <Composer conversationId={convo.id} myName={data.meName} />
+      <Composer conversationId={convo.id} myName={data.meName}
+                sendsIn={contact?.language && contact.language !== "en"
+                  ? languageName(contact.language) : null} />
     </div>
   );
 }
