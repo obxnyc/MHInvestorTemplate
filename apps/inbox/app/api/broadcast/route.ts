@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendSms } from "@/lib/notify";
+import { canSmsFromLine } from "@/lib/twilio";
+import { oneToOneThread, sayInThread } from "@/lib/dm";
+import { pushToStaff } from "@/lib/push";
 
 export const runtime = "nodejs";
 
@@ -24,15 +27,29 @@ export async function POST(req: Request) {
   if (!body?.trim()) return NextResponse.json({ error: "empty message" }, { status: 400 });
 
   const db = supabaseAdmin();
+  // Everyone, including people with no mobile on file. They used to be left
+  // out of the query entirely, which meant a member of staff without a number
+  // never heard about the office being shut -- and nothing anywhere said so.
+  // The channel is a delivery detail; who gets told is not.
   const { data: recipients } = await db.from("staff")
     .select("id, full_name, forward_to")
     .eq("active", true)
-    .neq("id", staff.id)          // no need to text yourself
-    .not("forward_to", "is", null);
+    .neq("id", staff.id);         // no need to tell yourself
 
   if (!recipients?.length) {
-    return NextResponse.json({ error: "no staff have a mobile number on file" }, { status: 400 });
+    return NextResponse.json({ error: "there is nobody else here yet" }, { status: 400 });
   }
+
+  // Anyone the shared line cannot text -- see canSmsFromLine. They are staff,
+  // so they get the broadcast; it just cannot arrive as a text. It goes into
+  // their thread in the app instead, which is two-way and works from anywhere.
+  //
+  // Not attempted-and-failed, and not skipped: attempting it writes a failed
+  // message nobody reads, and skipping means "office closed tomorrow" reaches
+  // everyone except the person abroad, silently.
+  const textable = (p: string | null) => Boolean(p) && canSmsFromLine(p!);
+  const reachable = recipients.filter((r) => textable(r.forward_to));
+  const byApp = recipients.filter((r) => !textable(r.forward_to));
 
   const { data: broadcast } = await db.from("broadcasts").insert({
     sent_by: staff.id, body, recipients: recipients.length,
@@ -41,7 +58,7 @@ export async function POST(req: Request) {
   const { data: team } = await db.from("teams").select("id").eq("key", "staff").maybeSingle();
   let delivered = 0;
 
-  await Promise.all(recipients.map(async (r) => {
+  await Promise.all(reachable.map(async (r) => {
     // Each employee is a contact in their own right, so the thread behaves
     // like any other conversation.
     let { data: contact } = await db.from("contacts")
@@ -76,6 +93,31 @@ export async function POST(req: Request) {
     }).eq("id", convo.id);
   }));
 
+  // The same message, in the app, for the people the line cannot text. It
+  // arrives as a message from the sender in their one-to-one thread, which is
+  // exactly what the texted version is: an individual message, not a group
+  // thread, so a reply comes back to a person rather than to everybody.
+  const inApp = (await Promise.all(byApp.map(async (r) => {
+    const thread = await oneToOneThread(db, staff.id, r.id);
+    if (!thread) return null;
+    await sayInThread(db, thread, staff.id, body);
+    return { id: r.id, name: r.full_name };
+  }))).filter((x): x is { id: string; name: string } => x !== null);
+
+  if (inApp.length) {
+    delivered += inApp.length;
+    await pushToStaff(inApp.map((p) => p.id), {
+      title: `${staff.full_name} — everyone`,
+      body: body.slice(0, 140),
+      url: "/team",
+      tag: `broadcast:${broadcast!.id}`,
+    });
+  }
+
   await db.from("broadcasts").update({ delivered }).eq("id", broadcast!.id);
-  return NextResponse.json({ ok: true, recipients: recipients.length, delivered });
+  return NextResponse.json({
+    ok: true, recipients: recipients.length, delivered,
+    texted: reachable.length,
+    inApp: inApp.map((p) => p.name),
+  });
 }

@@ -21,6 +21,7 @@
     "@anthropic-ai/sdk": "^0.122.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
+    "libphonenumber-js": "^1.13.14",
     "next": "^16.3.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

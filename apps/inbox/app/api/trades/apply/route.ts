@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { toE164 } from "@/lib/twilio";
+import { toE164, isValidPhone } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 
@@ -23,8 +23,8 @@ export async function POST(req: Request) {
   if (name.length < 2) {
     return NextResponse.json({ error: "Please give your name." }, { status: 400 });
   }
-  if (!/^\+1\d{10}$/.test(phone)) {
-    return NextResponse.json({ error: "Please give a US mobile number." }, { status: 400 });
+  if (!isValidPhone(phone)) {
+    return NextResponse.json({ error: "Please give a mobile number we can reach you on." }, { status: 400 });
   }
 
   const email = String(body.email ?? "").trim().toLowerCase();

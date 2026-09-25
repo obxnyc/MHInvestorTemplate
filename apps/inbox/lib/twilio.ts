@@ -1,4 +1,7 @@
 import twilio from "twilio";
+// Re-exported so existing imports from "@/lib/twilio" keep working; the
+// definitions live in lib/phone, which components can import safely.
+export { toE164, isValidPhone, canSmsFromLine } from "./phone";
 
 /**
  * Verify a request really came from Twilio.
@@ -172,13 +175,4 @@ export function formToObject(raw: string): Record<string, string> {
 
 export function twilioClient() {
   return twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
-}
-
-/** Digits-only US numbers to E.164, which is the join key for every contact. */
-export function toE164(input: string): string {
-  const d = input.replace(/\D/g, "");
-  if (input.trim().startsWith("+")) return "+" + d;
-  if (d.length === 10) return "+1" + d;
-  if (d.length === 11 && d.startsWith("1")) return "+" + d;
-  return "+" + d;
 }
