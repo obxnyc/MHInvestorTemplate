@@ -10,8 +10,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="shell">
       <AppHeader name={staff.full_name} role={staff.role} />
-      <PushSetup />
-      {children}
+      {/* The work sits on a card with the page showing round it, rather than
+          bleeding into the window edges. Edge to edge, a conversation list has
+          no left margin, so the coloured category strip on each row rendered
+          against the browser chrome and read as a rendering fault. */}
+      <main className="portal">
+        <div className="board">
+          <PushSetup />
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

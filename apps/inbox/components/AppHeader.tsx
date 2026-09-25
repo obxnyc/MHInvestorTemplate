@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { initials as toInitials } from "@/lib/format";
 
 type Role = "admin" | "office" | "tech";
 
@@ -19,7 +21,7 @@ export default function AppHeader(
   { name, role }: { name: string; role: Role },
 ) {
   const path = usePathname();
-  const initials = name.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+  const initials = toInitials(name);
 
   const nav: [string, string][] = [
     ["/", "Messages"],
@@ -32,7 +34,11 @@ export default function AppHeader(
   return (
     <header className="apphead">
       <Link href="/" className="brandmark" aria-label="Larabee Homes — home">
-        <span className="brandlogo" aria-hidden="true">LH</span>
+        {/* The actual mark, not two letters in a box. The company has a logo;
+            a lettered square in its place reads as a placeholder nobody got
+            round to replacing, which is what it was. */}
+        <Image src="/icon-192.png" alt="" width={32} height={32}
+               className="brandlogo" priority />
         <span className="brandname">Larabee Homes</span>
       </Link>
 
