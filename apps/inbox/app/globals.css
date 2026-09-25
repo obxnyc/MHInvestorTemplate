@@ -378,6 +378,12 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .takepill.other{background:var(--sunk);color:var(--ink-2)}
 /* min-height keeps the floor: whatever else goes wrong in the height chain
    above, the thread never becomes a letterbox again. */
+/* Each message and its day separator share a row. Without this the row is a
+   plain block, so `align-self:flex-end` on an outgoing message has nothing to
+   align against and the bubble floats in the middle of the pane -- ours on the
+   right and theirs on the left is the one convention every texting app shares,
+   and breaking it makes a thread unreadable at a glance. */
+.mrow{display:flex;flex-direction:column}
 .msgs{flex:1 1 0;min-height:8rem;overflow-y:auto;overscroll-behavior:contain;
   padding:1rem 1.1rem;display:flex;flex-direction:column}
 .daysep{display:flex;align-items:center;gap:.75rem;margin:.9rem 0 .7rem;font-size:.66rem;
