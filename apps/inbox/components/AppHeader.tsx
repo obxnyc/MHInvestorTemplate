@@ -24,6 +24,7 @@ export default function AppHeader(
   const nav: [string, string][] = [
     ["/home", "Home"],
     ["/", "Messages"],
+    ["/properties", "Properties"],
     ["/settings", "Settings"],
   ];
 
