@@ -16,12 +16,20 @@ export default function QueueSelects(
   const router = useRouter();
   const params = useSearchParams();
 
+  // Per key, not per value -- the same trap the tab links fell into. These two
+  // selects happen to have no values in common, so it has not bitten here yet;
+  // it would the moment either gained an option named like the other's default.
+  const DEFAULT: Record<string, string> = { who: "everyone", show: "open" };
+
   const go = (key: string, value: string) => {
     const next = new URLSearchParams(params.toString());
-    if (value && value !== "everyone" && value !== "open") next.set(key, value);
+    if (value && DEFAULT[key] !== value) next.set(key, value);
     else next.delete(key);
     const s = next.toString();
-    router.replace(s ? `/?${s}` : "/");
+    // Stay on the current page. Sending this to "/" closed whatever thread was
+    // open, which is the one thing the two-pane layout exists to avoid.
+    const here = typeof window === "undefined" ? "/" : window.location.pathname;
+    router.replace(s ? `${here}?${s}` : here);
   };
 
   return (

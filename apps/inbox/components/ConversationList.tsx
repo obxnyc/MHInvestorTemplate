@@ -29,7 +29,7 @@ export default async function ConversationList(
     // One string literal, not a concatenation: supabase-js infers the row type
     // from the literal, and anything it cannot read collapses the result to an
     // error type.
-    .select("id, category, source, status, assigned_to, closure_prompts, category_confidence, last_message_at, last_message_preview, subject, units(label, properties(name, color)), contacts(phone, full_name, party, units(label, properties(name, color))), staff:assigned_to(full_name)")
+    .select("id, category, source, status, assigned_to, closure_prompts, category_confidence, last_message_at, last_message_preview, subject, units(label, properties(name, color)), contacts(id, phone, full_name, party, language, unit_id, units(label, properties(name, color))), staff:assigned_to(full_name)")
     .order("last_message_at", { ascending: false })
     .limit(200);
 
@@ -96,10 +96,19 @@ export default async function ConversationList(
   );
   const openTotal = [...byCat.values()].reduce((a, b) => a + b.total, 0);
 
+  /** Each filter's default, dropped from the URL so a plain link stays clean.
+   *
+   *  Per key, not per value. It used to drop any parameter whose value was
+   *  "open", "everyone" or "all" whatever key it belonged to -- and the status
+   *  filter has a value called "all" that is NOT its default. So clicking All
+   *  deleted show=all, which left the bare path, which means show=open: the tab
+   *  lit up and the list stayed exactly as it was. */
+  const FILTER_DEFAULT: Record<string, string> =
+    { show: "open", who: "everyone", cat: "all" };
+
   const keep = (extra: Record<string, string>, to = basePath) => {
     const p = new URLSearchParams({ show, who, cat, ...(q ? { q } : {}), ...extra });
-    for (const [k, v] of [...p])
-      if (!v || v === "open" || v === "everyone" || v === "all") p.delete(k);
+    for (const [k, v] of [...p]) if (!v || FILTER_DEFAULT[k] === v) p.delete(k);
     const s = p.toString();
     return s ? `${to}?${s}` : to;
   };
@@ -173,7 +182,8 @@ export default async function ConversationList(
 
           {rows?.map((c) => {
             const contact = c.contacts as unknown as
-              { phone: string; full_name: string | null; party: string;
+              { id: string; phone: string; full_name: string | null; party: string;
+                language: string | null; unit_id: string | null;
                 units: { label: string | null; properties: { name: string; color: string | null } | null } | null };
             const holder = c.staff as unknown as { full_name: string } | null;
             const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
@@ -192,6 +202,12 @@ export default async function ConversationList(
                 <Link href={`/c/${c.id}`} data-cid={c.id}
                       data-name={name}
                       data-phone={contact?.phone ?? ""}
+                      data-contact={contact?.id ?? ""}
+                      data-party={contact?.party ?? ""}
+                      data-unit={contact?.unit_id ?? ""}
+                      data-lang={contact?.language ?? ""}
+                      data-cat={c.category}
+                      data-named={contact?.full_name ? "1" : "0"}
                       data-claimed={c.assigned_to ? "1" : "0"}
                       data-mine={c.assigned_to === staff?.id ? "1" : "0"}
                       className={`row cat-${c.category}${c.id === selectedId ? " sel" : ""}`}
