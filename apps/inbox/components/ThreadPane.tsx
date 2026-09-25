@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { prettyPhone, clockTime, dayLabel, initials } from "@/lib/format";
 import { catLabel, propertyOf } from "@/lib/category";
 import Composer from "./Composer";
+import AskThese from "./AskThese";
 import ClaimPill from "./ClaimPill";
 import CloseButton from "./CloseButton";
 import MessageMenu from "./MessageMenu";
@@ -45,6 +46,10 @@ export default function ThreadPane(
   const [error, setError] = useState<string | null>(null);
   const [typing, setTyping] = useState<{ name: string; at: number } | null>(null);
   const [naming, setNaming] = useState(false);
+  // Questions pushed into the box, and what has been ticked off. Held here
+  // rather than in the strip so a reload of the thread does not lose them.
+  const [insert, setInsert] = useState<{ text: string; n: number }>({ text: "", n: 0 });
+  const [asked, setAsked] = useState<string[]>([]);
 
   const load = useCallback(async (conversationId: string) => {
     setError(null);
@@ -52,7 +57,11 @@ export default function ThreadPane(
       cache: "no-store",
     });
     if (!res.ok) { setError("Couldn't open that conversation."); return; }
-    setData(await res.json());
+    const json = await res.json() as Thread;
+    setData(json);
+    // The ticks live on the conversation, so they come back with it -- and
+    // they belong to THIS thread, so they are replaced rather than merged.
+    setAsked((json.convo as { asked?: string[] | null }).asked ?? []);
   }, []);
 
   useEffect(() => {
@@ -116,6 +125,7 @@ export default function ThreadPane(
 
   const convo = data.convo as {
     id: string; category: string; source: string; status: string;
+    subject: string | null; asked: string[] | null;
     category_confidence: number | null; assigned_to: string | null;
     units: unknown;
     contacts: {
@@ -260,7 +270,14 @@ export default function ThreadPane(
         </p>
       )}
 
-      <Composer conversationId={convo.id} myName={data.meName}
+      <AskThese conversationId={String(convo.id)}
+                category={String(convo.category ?? "other")}
+                context={[convo.subject, data.messages.at(-1)?.body]
+                  .filter(Boolean).join(" ")}
+                asked={asked} onAsked={setAsked}
+                onInsert={(text) => setInsert((i) => ({ text, n: i.n + 1 }))} />
+
+      <Composer conversationId={convo.id} myName={data.meName} insert={insert}
                 sendsIn={contact?.language && contact.language !== "en"
                   ? languageName(contact.language) : null} />
     </div>

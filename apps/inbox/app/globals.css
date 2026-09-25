@@ -1187,3 +1187,40 @@ a.metric:hover{border-color:var(--accent)}
   .ustate{margin-left:0}
   .unitlist li{gap:.45rem}
 }
+
+/* ---- worth asking ----
+   Above the box, because it is read on the way to writing. Capped and
+   scrollable rather than growing: a strip that pushes the composer off a phone
+   screen is one people close and never open again. */
+.askthese{flex:none;border-top:1px solid var(--hair);background:var(--pane);
+  max-height:13rem;overflow-y:auto}
+.askthese.shut{max-height:none;overflow:visible}
+.askhead{display:flex;align-items:center;gap:.5rem;width:100%;text-align:left;
+  padding:.5rem .95rem;border:none;background:none;font:inherit;cursor:pointer}
+.askhead:hover{background:var(--hair-2)}
+.asklabel{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint)}
+.askcount{margin-left:auto;font-size:.74rem;color:var(--muted);font-weight:600}
+.askgo{color:var(--faint);font-size:.75rem}
+.askset{padding:0 .95rem .55rem}
+.asksettitle{display:block;margin-bottom:.35rem;font-size:.72rem;font-weight:700;
+  color:var(--muted)}
+.askchips{display:flex;flex-wrap:wrap;gap:.35rem}
+.askchip{display:inline-flex;align-items:stretch;border:1px solid var(--hair);
+  border-radius:999px;background:var(--card);overflow:hidden;max-width:100%}
+.askchip:hover{border-color:var(--accent)}
+.askuse{border:none;background:none;font:inherit;font-size:.8rem;color:var(--ink-2);
+  padding:.35rem .25rem .35rem .7rem;text-align:left;cursor:pointer;min-width:0}
+.askuse:hover{color:var(--accent)}
+.askskip{border:none;border-left:1px solid var(--hair);background:none;
+  color:var(--faint);font-size:.95rem;line-height:1;padding:0 .5rem;cursor:pointer}
+.askskip:hover{background:var(--sunk);color:var(--ink)}
+/* A reminder for whoever is reading, not a question for the tenant. Tapping it
+   ticks it without putting anything in the box. */
+.askchip.staff{background:var(--sunk);border-style:dashed}
+.askchip.staff .askuse{color:var(--muted);font-style:italic}
+.askeye{color:var(--warn);margin-right:.3rem;font-weight:700}
+.askreset{display:block;margin:0 .95rem .6rem;border:none;background:none;
+  color:var(--muted);font:inherit;font-size:.76rem;text-decoration:underline;
+  text-underline-offset:2px;cursor:pointer;padding:0}
+.askreset:hover{color:var(--ink)}

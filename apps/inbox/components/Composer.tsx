@@ -6,11 +6,15 @@ import { joinTyping, sendTyping, TYPING_TTL } from "@/lib/typing";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export default function Composer(
-  { conversationId, myName, sendsIn }:
-  { conversationId: string; myName?: string; sendsIn?: string | null },
+  { conversationId, myName, sendsIn, insert }:
+  { conversationId: string; myName?: string; sendsIn?: string | null;
+    /** Text pushed in from outside -- a suggested question. `n` increments on
+     *  every push so the same question twice still arrives twice. */
+    insert?: { text: string; n: number } },
 ) {
   const router = useRouter();
   const [text, setText] = useState("");
+  const box = useRef<HTMLTextAreaElement>(null);
   const [mode, setMode] = useState<"reply" | "note">("reply");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +32,17 @@ export default function Composer(
     channel.current = ch;
     return () => { ch.unsubscribe(); channel.current = null; };
   }, [conversationId, myName]);
+
+  // Appended rather than replacing, so picking three questions builds a
+  // message instead of overwriting the last one. Focus follows, because the
+  // next thing anybody does is edit what just landed.
+  const lastInsert = useRef(0);
+  useEffect(() => {
+    if (!insert || insert.n === lastInsert.current) return;
+    lastInsert.current = insert.n;
+    setText((t) => (t.trim() ? `${t.replace(/\s+$/, "")}\n\n${insert.text}` : insert.text));
+    box.current?.focus();
+  }, [insert]);
 
   function announceTyping() {
     // Throttled to well inside the window a keystroke buys, so a fast typist
@@ -63,6 +78,7 @@ export default function Composer(
       </div>
       <div className="inputrow">
         <textarea
+          ref={box}
           value={text}
           onChange={(e) => { setText(e.target.value); if (mode === "reply") announceTyping(); }}
           rows={1}
