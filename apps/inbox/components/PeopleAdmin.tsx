@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Directory from "./Directory";
 
 type Staff = {
   id: string; full_name: string; role: string;
@@ -40,8 +41,6 @@ export default function PeopleAdmin(
   const [role, setRole] = useState("office");
   const [email, setEmail] = useState("");
   const [cell, setCell] = useState("");
-  const [vName, setVName] = useState("");
-  const [vPhone, setVPhone] = useState("");
 
   const refresh = () => start(() => router.refresh());
 
@@ -61,14 +60,6 @@ export default function PeopleAdmin(
     if (!await post("/api/people", { fullName: name, role, email, forwardTo: cell })) return;
     setDone(`${name} can now sign in with ${email}.`);
     setName(""); setEmail(""); setCell("");
-    refresh();
-  }
-
-  async function addVendor(e: React.FormEvent) {
-    e.preventDefault();
-    if (!await post("/api/people/vendor", { fullName: vName, phone: vPhone })) return;
-    setDone(`${vName} is now a trade you can forward work to.`);
-    setVName(""); setVPhone("");
     refresh();
   }
 
@@ -92,7 +83,7 @@ export default function PeopleAdmin(
   const tabs: [string, string, number][] = [
     ["office", "Office", office.length],
     ["field", "Field staff", field.length],
-    ["vendors", "Trades", vendors.length],
+    ["vendors", "Directory", vendors.length],
   ];
 
   return (
@@ -177,35 +168,7 @@ export default function PeopleAdmin(
           )}
         </>
       ) : (
-        <>
-          <ul className="people-list">
-            {vendors.map((v) => (
-              <li key={v.id}>
-                <span className="p-name">{v.full_name}</span>
-                <span className="p-sub">{v.phone}</span>
-              </li>
-            ))}
-            {!vendors.length && <li className="none">No trades yet.</li>}
-          </ul>
-
-          <form className="addbox" onSubmit={addVendor}>
-            <h2>Add a trade</h2>
-            <p className="muted">
-              A plumber, electrician, or anyone you send work to. They don&rsquo;t
-              sign in — when you dispatch a job they get a text with a link to
-              their own list, and they send the finished photo back through it.
-            </p>
-            <label htmlFor="vn">Name or company</label>
-            <input id="vn" value={vName} onChange={(e) => setVName(e.target.value)} required />
-            <label htmlFor="vp">Mobile number</label>
-            <input id="vp" type="tel" value={vPhone}
-                   onChange={(e) => setVPhone(e.target.value)}
-                   placeholder="(252) 555-0142" required />
-            <button className="btn pri" disabled={busy}>
-              {busy ? "Adding…" : "Add trade"}
-            </button>
-          </form>
-        </>
+        <Directory />
       )}
     </main>
   );

@@ -771,3 +771,23 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .addname{padding:.1em .4em;border-radius:5px;background:var(--sunk);color:var(--muted);
   font-size:.58rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
   white-space:nowrap}
+
+/* ---- the trade directory ---- */
+.dirbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:1rem}
+.dirbar .pinsearch{flex:1 1 14rem;min-width:0}
+.dirbar select{flex:0 0 auto}
+.dirbar .btn{margin-left:auto}
+.star{color:var(--vd);font-size:.9rem;line-height:1}
+.sheet.wide{max-width:32rem;max-height:86vh;overflow-y:auto}
+/* Trades and markets are both many per vendor, so both are a set of toggles
+   rather than a dropdown. A handyman who also does light plumbing has to be
+   findable as either. */
+.chipset{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.15rem}
+.chip{padding:.32rem .6rem;border:1px solid var(--hair);border-radius:999px;
+  background:var(--card);color:var(--muted);font-size:.78rem;font-weight:600;
+  min-height:32px}
+.chip:hover{background:var(--sunk)}
+.chip.on{background:var(--dark);border-color:var(--dark);color:var(--dark-ink)}
+.sheet textarea{width:100%;padding:.6rem .75rem;border:1px solid var(--hair);
+  border-radius:9px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:.88rem;resize:vertical}
