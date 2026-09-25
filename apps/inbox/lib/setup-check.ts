@@ -37,6 +37,7 @@ export async function runSetupChecks(
   asUser?: SupabaseClient,
 ): Promise<Check[]> {
   return [
+    buildCheck(),
     ...guard("Required settings", envChecks),
     ...(await guardAsync("Twilio", () => twilioChecks(origin))),
     ...(await guardAsync("Database", databaseChecks)),
@@ -307,4 +308,23 @@ async function visibilityChecks(asUser: SupabaseClient): Promise<Check[]> {
     : { name: "Thread visibility", level: "bad",
         detail: `The newest conversation holds ${storedCount} message${storedCount === 1 ? "" : "s"}, but you can see ${seenCount}. Row-level security is hiding them.`,
         fix: "Run docs/shared-line/rls-messages.sql in the Supabase SQL editor." }];
+}
+
+/** Which build is actually being served.
+ *
+ *  Added after an evening spent asking "is it deployed yet" and answering from
+ *  the wrong side of the wire. A fix that exists in the repository and a fix
+ *  that is running are different things, and confusing them cost more time here
+ *  than any bug did. The hosting platform puts the commit in the environment;
+ *  it just has to be shown. */
+function buildCheck(): Check {
+  const sha = (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7);
+  const msg = process.env.VERCEL_GIT_COMMIT_MESSAGE ?? "";
+  return {
+    name: "Running build",
+    level: "good",
+    detail: sha
+      ? `Commit ${sha}${msg ? ` — ${msg.split("\n")[0]}` : ""}.`
+      : "This deployment does not report a commit (running locally, or built outside the hosting platform).",
+  };
 }
