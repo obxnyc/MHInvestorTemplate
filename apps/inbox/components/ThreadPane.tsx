@@ -7,6 +7,7 @@ import ClaimPill from "./ClaimPill";
 import CloseButton from "./CloseButton";
 import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
+import CategoryPicker from "./CategoryPicker";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 
@@ -145,7 +146,7 @@ export default function ThreadPane(
         <span className="cwho">
           <span className="nm">{name}</span>
           <span className="sub">
-            <span className={`badge cat-${convo.category}`}>{catLabel(convo.category)}</span>
+            <CategoryPicker conversationId={convo.id} category={convo.category} />
             {party && <span className="dim">{party}</span>}
             {prop && (
               <span className="dim">
@@ -164,8 +165,8 @@ export default function ThreadPane(
 
       {convo.category_confidence !== null && convo.category_confidence < 0.75 && (
         <div className="unsure">
-          Filed as <strong>{convo.category.replace("_", " ")}</strong> but we
-          weren&rsquo;t confident. Recategorise it if that&rsquo;s wrong.
+          Filed as <strong>{catLabel(convo.category)}</strong> but we
+          weren&rsquo;t confident — change it above if that&rsquo;s wrong.
         </div>
       )}
 

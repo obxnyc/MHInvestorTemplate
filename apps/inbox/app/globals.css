@@ -725,3 +725,14 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .addbox button{margin-top:1rem}
 .okmsg{margin:.6rem 0 0;color:var(--accent-ink);background:var(--accent-soft);
   border-radius:8px;padding:.5rem .7rem;font-size:.84rem;font-weight:600}
+
+/* The category as a control. Styled as the badge it replaced, so the header
+   reads the same and the affordance is the only thing that changed. */
+.catpick select{appearance:none;border:none;border-radius:5px;padding:.18em 1.15em .18em .45em;
+  font:inherit;font-size:.58rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  background-color:var(--cat-soft,var(--sunk));color:var(--cat-ink,var(--muted));
+  background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),
+    linear-gradient(135deg,currentColor 50%,transparent 50%);
+  background-position:calc(100% - 9px) 55%,calc(100% - 6px) 55%;
+  background-size:3px 3px,3px 3px;background-repeat:no-repeat;cursor:pointer}
+.catpick select:disabled{opacity:.6}

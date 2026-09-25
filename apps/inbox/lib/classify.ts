@@ -202,3 +202,45 @@ export function classifySync(
 }
 
 export const needsReview = (c: Classification) => c.confidence < REVIEW_THRESHOLD;
+
+/* ------------------------------------------------------------------ drift
+ *
+ * A conversation is classified when it opens, and then the subject changes.
+ * "Excuse me?" is unclassifiable and becomes General; two minutes later the
+ * same person says the house has roaches. A thread that is only ever read once
+ * files that under General forever, which is how a repair sits unseen in a
+ * queue nobody checks.
+ *
+ * So every inbound message is classified, not just the first. What it may do
+ * with the answer is deliberately narrow.
+ */
+
+/** Whether a later message should move the thread, and where to.
+ *
+ *  Escalates; never downgrades. A thread that has become maintenance stays
+ *  maintenance until a human closes it or moves it by hand -- otherwise a
+ *  tenant who reports a leak and then says "thanks" would quietly demote their
+ *  own repair back to small talk.
+ *
+ *  Urgency is the exception that outranks everything: a habitability problem
+ *  moves the thread whatever it was filed as and however confident the
+ *  classifier is about the rest. */
+export function shouldRecategorise(
+  current: Category | string, result: Classification,
+): { category: Category; urgent: boolean } | null {
+  if (current === result.category && !result.urgent) return null;
+
+  if (result.urgent && current !== "maintenance") {
+    return { category: "maintenance", urgent: true };
+  }
+  if (needsReview(result)) return null;
+
+  // An unplaceable thread takes the first confident reading it gets.
+  if (current === "other") return { category: result.category, urgent: false };
+
+  // Otherwise only a repair may pull a thread across. Someone paying rent who
+  // mentions a broken door is now, primarily, a broken door.
+  if (result.category === "maintenance") return { category: "maintenance", urgent: false };
+
+  return null;
+}
