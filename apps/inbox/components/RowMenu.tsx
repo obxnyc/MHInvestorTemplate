@@ -4,6 +4,9 @@ import CategoryPicker from "./CategoryPicker";
 
 export type RowTarget = {
   id: string;
+  /** A tenant conversation or a staff thread. They share a row and a menu and
+   *  almost nothing else: one gets claimed and forwarded, the other does not. */
+  kind: "conversation" | "dm";
   name: string;
   phone: string | null;
   claimed: boolean;
@@ -36,7 +39,7 @@ export default function RowMenu(
   {
     at: RowTarget;
     onClose: () => void;
-    onOpen: (id: string) => void;
+    onOpen: (id: string, kind: RowTarget["kind"]) => void;
     onForward: (t: RowTarget) => void;
     onEditContact: (t: RowTarget) => void;
     onChanged: () => void;
@@ -98,16 +101,24 @@ export default function RowMenu(
         </span>
 
         <button className="ovitem" role="menuitem"
-                onClick={() => { onOpen(at.id); onClose(); }}>
+                onClick={() => { onOpen(at.id, at.kind); onClose(); }}>
           Open
         </button>
         {/* The row is a real link, and replacing the browser's own menu took
             its "open in new tab" away. Put it back. */}
         <button className="ovitem" role="menuitem"
-                onClick={() => { window.open(`/c/${at.id}`, "_blank", "noopener"); onClose(); }}>
+                onClick={() => {
+                  window.open(at.kind === "dm" ? `/team?t=${at.id}` : `/c/${at.id}`,
+                              "_blank", "noopener");
+                  onClose();
+                }}>
           Open in a new tab
         </button>
 
+        {/* Everything past here is about a conversation with somebody outside:
+            claiming it, passing it to a trade, closing it. None of that is a
+            thing you do to a colleague. */}
+        {at.kind === "dm" ? null : <>
         <div className="ovsep" />
 
         {at.contactId && (
@@ -166,6 +177,7 @@ export default function RowMenu(
             </button>
           </>
         )}
+        </>}
 
         {error && <p className="err menuerr">{error}</p>}
       </div>

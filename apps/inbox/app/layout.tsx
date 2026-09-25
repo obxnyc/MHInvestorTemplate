@@ -1,16 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
-
-/* The stylesheet asked for Archivo and nothing ever loaded it, so every screen
-   has been rendering in whatever the system had. Loaded properly here: served
-   from our own origin, subset, with the fallback metrics adjusted so there is
-   no reflow when it arrives. */
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--ui-font",
-});
 
 export const metadata: Metadata = {
   title: "Larabee Inbox",
@@ -42,7 +31,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

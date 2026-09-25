@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
-import { prettyPhone, timeAgo, initials, swatch } from "@/lib/format";
+import { prettyPhone, timeAgo, initials } from "@/lib/format";
+import Avatar from "@/components/Avatar";
 import { CATEGORIES, CAT_TAB, catLabel, propertyOf, type Category } from "@/lib/category";
 import Search from "@/components/Search";
 import QueueSelects from "@/components/QueueSelects";
@@ -187,7 +188,6 @@ export default async function ConversationList(
                 units: { label: string | null; properties: { name: string; color: string | null } | null } | null };
             const holder = c.staff as unknown as { full_name: string } | null;
             const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
-            const [bg, fg] = swatch(name);
             const unsure = c.category_confidence !== null && c.category_confidence < 0.75;
             const prop = propertyOf(c.units as never, contact?.units as never);
             return (
@@ -213,9 +213,7 @@ export default async function ConversationList(
                       className={`row cat-${c.category}${c.id === selectedId ? " sel" : ""}`}
                       aria-current={c.id === selectedId ? "true" : undefined}>
                   <span className="avwrap">
-                    <span className="av" style={{ background: bg, color: fg }}>
-                      {initials(name)}
-                    </span>
+                    <Avatar name={name} />
                     {holder
                       ? <span className="who-pip" title={holder.full_name}>
                           {initials(holder.full_name)}
