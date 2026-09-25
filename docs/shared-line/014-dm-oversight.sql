@@ -8,11 +8,10 @@
 -- property of a role. It is granted here to whoever is admin today, which is
 -- the owner, and defaults to false for everybody added afterwards.
 --
--- The application shows it. Every staff thread carries a line saying the owner
--- can read it. That is not decoration: people write differently when they know,
--- and a tool that watches quietly is one they stop being honest in -- which
--- destroys the thing the oversight was meant to protect. Told, it is a policy.
--- Untold, it is surveillance.
+-- The threads themselves say nothing about it. An earlier version printed a
+-- line in every staff thread naming who could read it; the owner asked for
+-- that to come off, and it did. Who is told, and how, is the owner's call to
+-- make outside this file -- the flag below only decides who can.
 
 alter table staff
   add column if not exists reads_all_dms boolean not null default false;
@@ -40,5 +39,5 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 do $$ begin
-  raise notice 'the owner can read staff threads, and everybody is told so';
+  raise notice 'the owner can read every staff thread';
 end $$;
