@@ -20,8 +20,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .eq("thread_id", id).order("created_at");
   if (error) return NextResponse.json({ error: error.message }, { status: 403 });
 
+  // Read BEFORE marking myself read below, or my own receipt is always "now"
+  // and I appear to have seen a message the instant it arrives.
   const { data: members } = await supabase
-    .from("dm_members").select("staff:staff_id(id, full_name)").eq("thread_id", id);
+    .from("dm_members")
+    .select("last_read_at, staff:staff_id(id, full_name)").eq("thread_id", id);
 
   // Marked read on open, the same rule as the shared inbox.
   await supabaseAdmin().from("dm_members")
@@ -41,6 +44,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     oversight: (watchers ?? []).map((w) => w.full_name),
     viewingOnly: !mine,
     members: (members ?? []).map((m) => m.staff),
+    // When each person last looked. The thread works out per message who had
+    // seen it by then, rather than storing a receipt per message per person --
+    // which for a group of five and a hundred messages is five hundred rows
+    // saying the same thing as five timestamps.
+    reads: (members ?? [])
+      .filter((m) => m.last_read_at)
+      .map((m) => {
+        const who = m.staff as unknown as { id: string; full_name: string } | null;
+        return who ? { staffId: who.id, name: who.full_name, at: m.last_read_at! } : null;
+      })
+      .filter((r): r is { staffId: string; name: string; at: string } => r !== null),
     messages: (messages ?? []).map((m) => ({
       id: m.id, body: m.body, at: m.created_at,
       who: (m.staff as unknown as { full_name: string } | null)?.full_name ?? "Someone",

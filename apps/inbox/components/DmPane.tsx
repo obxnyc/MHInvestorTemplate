@@ -1,12 +1,16 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clockTime, dayLabel } from "@/lib/format";
+import Seen, { type Read } from "./Seen";
 import { supabaseBrowser } from "@/lib/supabase-client";
 
 type Msg = { id: string; body: string; at: string; who: string };
 type Person = { id: string; full_name: string };
 type Thread = {
   me: string; members: Person[]; messages: Msg[];
+  /** When each person last opened the thread, which is what read receipts are
+   *  worked out from. */
+  reads: Read[];
   oversight: string[]; viewingOnly: boolean;
 };
 
@@ -27,6 +31,12 @@ export default function DmPane(
   const [editing, setEditing] = useState(false);
   const [roster, setRoster] = useState<Person[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
+
+  /** Who had opened this thread at or after the moment a message landed, which
+   *  is as close to "read it" as a thread view can honestly claim. Never
+   *  includes you: your own receipt on your own message is noise. */
+  const seenBy = (at: string): Read[] =>
+    (data?.reads ?? []).filter((r) => r.staffId !== data?.me && r.at >= at);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/team/${id}`, { cache: "no-store" });
@@ -130,6 +140,9 @@ export default function DmPane(
         </div>
       )}
 
+      {/* Worked out per message from each person's last-read time rather than
+          stored per message: for five people and a hundred messages that would
+          be five hundred rows saying what five timestamps already say. */}
       <div className="msgs">
         {data.messages.map((m) => {
           const day = dayLabel(m.at);
@@ -154,7 +167,12 @@ export default function DmPane(
                     threads have always named the sender on both sides. */}
                 <span className="attrib">{mine ? "You" : m.who}</span>
                 <div className="bwrap"><div className="b"><Body text={m.body} /></div></div>
-                <span className="delivered">{clockTime(m.at)}</span>
+                <span className="delivered">
+                  {clockTime(m.at)}
+                  {/* Only on our own. Whether THEY have read what we sent is
+                      the question; whether we read our own message is not. */}
+                  {mine && <Seen readers={seenBy(m.at)} />}
+                </span>
               </div>
             </div>
           );

@@ -754,7 +754,8 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 /* ---- who has seen it, and who is writing ----
    Both answer the same question — is anyone already on this — and both have to
    answer it without competing with the message itself. */
-.seen{display:inline-flex;flex-direction:column;align-items:flex-start;margin-left:.45rem}
+.seen{display:inline-flex;flex-direction:column;align-items:flex-start;margin-left:.45rem;
+  position:relative}
 .seenbtn{display:inline-flex;align-items:center;gap:.3rem;border:none;background:none;
   padding:.1rem .2rem;border-radius:6px;color:var(--faint);font-size:.66rem;font-weight:600}
 .seenbtn:hover{background:var(--sunk);color:var(--muted)}
@@ -764,13 +765,27 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   font-size:.5rem;font-weight:800;line-height:1}
 .seenpips .seenpip+.seenpip{margin-left:-.35rem}
 .seenword{letter-spacing:.04em}
-.seenlist{list-style:none;margin:.3rem 0 0;padding:.3rem;border:1px solid var(--hair);
-  border-radius:9px;background:var(--card);min-width:13rem;
-  box-shadow:0 8px 28px -14px #101b2d40}
+/* Hidden until wanted, and floated rather than inline: growing the row by four
+   lines on hover would shove every message below it down the screen, which is
+   the one thing a hover must never do while somebody is reading. */
+.seenlist{list-style:none;margin:0;padding:.3rem;border:1px solid var(--hair);
+  border-radius:9px;background:var(--card);min-width:16rem;white-space:nowrap;
+  box-shadow:0 10px 30px -12px #101b2d4d;
+  position:absolute;top:calc(100% + .25rem);left:0;z-index:40;
+  opacity:0;visibility:hidden;transform:translateY(-.15rem);
+  transition:opacity .09s ease,transform .09s ease,visibility .09s}
+/* Hover is the shortcut. Focus-within covers the keyboard, and .open covers a
+   phone, where there is no hover at all. */
+.seen:hover .seenlist,
+.seen:focus-within .seenlist,
+.seen.open .seenlist{opacity:1;visibility:visible;transform:none}
+/* Near the right-hand edge -- which is where our own messages sit -- it opens
+   leftwards instead of off the pane. */
+.out .seenlist{left:auto;right:0}
 .seenlist li{display:flex;align-items:center;gap:.45rem;padding:.28rem .35rem;font-size:.76rem}
 .seenlist .seenpip{border-color:var(--card)}
-.seenname{font-weight:600}
-.seenwhen{margin-left:auto;color:var(--muted);font-size:.72rem}
+.seenname{font-weight:600;white-space:nowrap}
+.seenwhen{margin-left:1rem;color:var(--muted);font-size:.72rem;white-space:nowrap}
 
 /* Above the composer, where a reply is about to be typed, rather than down in
    the thread where it would be read as a message. */
