@@ -28,8 +28,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .update({ last_read_at: new Date().toISOString() })
     .eq("thread_id", id).eq("staff_id", me.id);
 
+  const mine = (members ?? []).some((m) =>
+    (m.staff as unknown as { id: string } | null)?.id === me.id);
+
+  const { data: watchers } = await supabaseAdmin()
+    .from("staff").select("full_name").eq("reads_all_dms", true).eq("active", true);
+
   return NextResponse.json({
     me: me.id,
+    // Said on the thread, every time. People write differently when they know,
+    // and a tool that watches quietly is one they stop being honest in.
+    oversight: (watchers ?? []).map((w) => w.full_name),
+    viewingOnly: !mine,
     members: (members ?? []).map((m) => m.staff),
     messages: (messages ?? []).map((m) => ({
       id: m.id, body: m.body, at: m.created_at,

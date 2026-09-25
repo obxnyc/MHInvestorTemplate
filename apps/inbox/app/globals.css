@@ -862,3 +862,51 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .teamlab{padding:.9rem .95rem .35rem;font-size:.66rem;font-weight:700;
   letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
   border-top:1px solid var(--hair)}
+
+/* ---- the portal bar ---- */
+.brandmark{display:flex;align-items:center;gap:.55rem;color:inherit}
+.brandlogo{display:grid;place-items:center;width:2rem;height:2rem;border-radius:8px;
+  background:var(--dark);color:var(--dark-ink);font-size:.72rem;font-weight:800;
+  letter-spacing:.02em}
+.brandname{font-size:1rem;font-weight:700;letter-spacing:-.015em;white-space:nowrap}
+.topnav{margin-left:auto;display:flex;align-items:center;gap:.25rem}
+.topnav a{padding:.45rem .8rem;border-radius:8px;font-size:.88rem;font-weight:600;
+  color:var(--muted)}
+.topnav a:hover{background:var(--sunk);color:var(--ink)}
+.topnav a.on{background:var(--sunk);color:var(--ink)}
+.topnav .av{margin-left:.35rem}
+.topnav .av:hover{background:var(--dark);color:var(--dark-ink)}
+@media (max-width:520px){.brandname{display:none}}
+
+/* The actions that belong to a screen, on that screen. */
+.pagebar{display:flex;align-items:center;gap:.5rem;padding:.7rem 1.25rem;
+  border-bottom:1px solid var(--hair);background:var(--card)}
+.pagebar h1{margin:0;font-size:1.15rem;font-weight:700;letter-spacing:-.02em}
+.pagebar .sp{margin-left:auto}
+
+/* ---- settings ---- */
+.setgroup{margin-top:1.6rem}
+.setgroup h2{margin:0 0 .5rem;font-size:.7rem;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--faint)}
+.setlist{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+.setlist a{display:flex;align-items:center;gap:.8rem;padding:.8rem .95rem;
+  border:1px solid var(--hair);border-radius:var(--radius);background:var(--card)}
+.setlist a:hover{border-color:var(--accent)}
+.setname{font-weight:700}
+.setwhat{color:var(--muted);font-size:.82rem}
+.setgo{margin-left:auto;color:var(--faint)}
+@media (max-width:640px){
+  .setlist a{flex-wrap:wrap}
+  .setwhat{flex-basis:100%}
+}
+
+/* ---- staff threads in the shared list ---- */
+.staffbadge{background:var(--sunk);color:var(--ink-2)}
+.av.staffav{background:var(--dark);color:var(--dark-ink)}
+.cat-staff{--cat:var(--ink-2);--cat-soft:var(--sunk);--cat-ink:var(--ink-2)}
+.grouped{padding:.8rem 1.1rem;border-bottom:1px solid var(--hair);background:var(--card)}
+.memberlist{list-style:none;margin:.2rem 0 .6rem;padding:0;display:grid;gap:.3rem}
+.memberlist li{display:flex;align-items:center;justify-content:space-between;gap:.6rem;
+  font-size:.86rem;font-weight:600}
+.viewonly{margin:0;padding:.8rem 1.1rem;border-top:1px solid var(--hair);
+  background:var(--sunk);color:var(--muted);font-size:.82rem}

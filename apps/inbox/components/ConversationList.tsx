@@ -61,7 +61,16 @@ export default async function ConversationList(
   if (who === "mine") query = query.eq("assigned_to", staff!.id);
   if (q) query = query.or(`subject.ilike.%${q}%,last_message_preview.ilike.%${q}%`);
 
-  const [{ data: rows }, { data: counts }, { count: unclaimed }, { count: closing }] =
+  // Conversations with people outside, and threads with colleagues, in one
+  // list. You do not keep a second app open to ask Hannah whether she rang the
+  // plumber -- and what keeps that safe is that a staff thread is plainly
+  // marked and has no phone number on it to send anything to.
+  const staffThreads = supabase
+    .from("dm_members")
+    .select("last_read_at, thread:thread_id(id, title, last_at, dm_members(staff:staff_id(id, full_name)), dm_messages(body, created_at, author_id))")
+    .eq("staff_id", staff!.id);
+
+  const [{ data: rows }, { data: counts }, { count: unclaimed }, { count: closing }, { data: dms }] =
     await Promise.all([
       query,
       supabase.from("open_category_counts").select("category, total, unclaimed"),
@@ -69,7 +78,35 @@ export default async function ConversationList(
         .eq("status", "open").is("assigned_to", null),
       supabase.from("conversations").select("id", { count: "exact", head: true })
         .eq("status", "open").gt("closure_prompts", 0),
+      staffThreads,
     ]);
+
+  const staffRows = (dms ?? []).map((row) => {
+    const t = row.thread as unknown as {
+      id: string; title: string | null; last_at: string;
+      dm_members: { staff: { id: string; full_name: string } | null }[];
+      dm_messages: { body: string; created_at: string; author_id: string | null }[];
+    };
+    const others = (t.dm_members ?? []).map((m) => m.staff)
+      .filter((x): x is { id: string; full_name: string } => Boolean(x) && x!.id !== staff!.id);
+    const last = (t.dm_messages ?? [])
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    return {
+      id: t.id,
+      name: t.title ?? (others.map((o) => o.full_name).join(", ") || "Just you"),
+      at: last?.created_at ?? t.last_at,
+      preview: last?.body ?? "No messages yet",
+      unread: Boolean(last && last.author_id !== staff!.id
+        && (!row.last_read_at || last.created_at > row.last_read_at)),
+    };
+  })
+    // Only when nothing narrower is being asked for: a staff thread is not a
+    // maintenance request and must not pad out a filtered queue.
+    .filter(() => cat === "all" && who === "everyone" && show !== "closed"
+      && (!q || true))
+    .filter((r) => !q || r.name.toLowerCase().includes(q.toLowerCase())
+      || r.preview.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => b.at.localeCompare(a.at));
 
   const byCat = new Map<string, { total: number; unclaimed: number }>(
     (counts ?? []).map((r) => [r.category as string, { total: r.total, unclaimed: r.unclaimed }]),
@@ -131,6 +168,26 @@ export default async function ConversationList(
                       unclaimed={unclaimed ?? 0} closing={closing ?? 0} />
 
         <ul className="rows">
+          {staffRows.map((t) => (
+            <li key={`dm${t.id}`}>
+              <a href={`/team?t=${t.id}`} data-dm={t.id}
+                 className={`row cat-staff${t.id === selectedId ? " sel" : ""}`}>
+                <span className="avwrap">
+                  <span className="av staffav">{initials(t.name)}</span>
+                </span>
+                <span className="rbody">
+                  <span className="rtop">
+                    <span className="rname">{t.name}</span>
+                    <span className="badge staffbadge">Staff</span>
+                    {t.unread && <span className="pill warn">new</span>}
+                    <span className="rtime">{timeAgo(t.at)}</span>
+                  </span>
+                  <span className="rprev">{t.preview}</span>
+                </span>
+              </a>
+            </li>
+          ))}
+
           {rows?.map((c) => {
             const contact = c.contacts as unknown as
               { phone: string; full_name: string | null; party: string;
