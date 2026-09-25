@@ -21,6 +21,7 @@
  *  with the message stripped -- so the same checks are also served as JSON,
  *  where the failure explains itself. */
 import twilio from "twilio";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type Level = "good" | "bad" | "warn";
 export type Check = { name: string; level: Level; detail: string; fix?: string };
@@ -34,6 +35,7 @@ export async function runSetupChecks(origin: string): Promise<Check[]> {
   return [
     ...guard("Required settings", envChecks),
     ...(await guardAsync("Twilio", () => twilioChecks(origin))),
+    ...(await guardAsync("Database", databaseChecks)),
   ];
 }
 
@@ -174,6 +176,49 @@ async function twilioChecks(origin: string): Promise<Check[]> {
         detail: `Could not read the Messaging Service (${(e as Error).message}).` });
     }
   }
+
+  return out;
+}
+
+
+/** The half of the pipeline the Twilio console cannot see.
+ *
+ *  A webhook that passes its signature check and then cannot write is
+ *  indistinguishable, from the outside, from one that was never called: the
+ *  text simply does not appear. These two checks separate those cases, which
+ *  is the difference between re-pasting a key and going to look at the list. */
+async function databaseChecks(): Promise<Check[]> {
+  const out: Check[] = [];
+  const db = supabaseAdmin();
+
+  // The service role bypasses RLS, so if this cannot read, the key is wrong --
+  // and every webhook write has been failing silently behind a 500.
+  const { error } = await db.from("staff").select("id", { count: "exact", head: true });
+  if (error) {
+    return [{ name: "Database (service role)", level: "bad",
+      detail: `The server cannot reach the database: ${error.message}`,
+      fix: "Check SUPABASE_SERVICE_ROLE_KEY in Vercel. It must be the service_role key from Supabase → Project Settings → API Keys, not the anon key, and it must be complete." }];
+  }
+  out.push({ name: "Database (service role)", level: "good",
+    detail: "The server can read and write." });
+
+  // Whether anything has actually arrived. This is the question being asked
+  // when someone says "I texted it and nothing came up", and it has two very
+  // different answers.
+  const { data: recent } = await db
+    .from("messages")
+    .select("created_at, body")
+    .eq("direction", "inbound")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const last = recent?.[0];
+  out.push(last
+    ? { name: "Inbound texts", level: "good",
+        detail: `The most recent one arrived ${new Date(last.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })} and reads "${String(last.body).slice(0, 60)}". Texts are landing; if one is not visible, it is the list that is hiding it, not the webhook.` }
+    : { name: "Inbound texts", level: "warn",
+        detail: "No inbound text has ever been stored. Twilio is reaching the webhook, but nothing has made it into the database.",
+        fix: "Send one now and reload this page. If it still says none, the webhook is failing after the signature check — the reason will be in Vercel → Logs." });
 
   return out;
 }
