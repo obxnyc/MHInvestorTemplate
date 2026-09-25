@@ -989,3 +989,49 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .handover input{width:100%;padding:.55rem .7rem;border:1px solid var(--hair);
   border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.82rem}
 .handover .acts{display:flex;gap:.5rem;margin-top:.6rem}
+
+/* ---- the way out of a screen ---- */
+.backlink{display:inline-flex;align-items:center;gap:.35rem;margin:0 0 .6rem;
+  padding:.3rem .55rem .3rem .4rem;border:none;background:none;border-radius:8px;
+  color:var(--muted);font-size:.84rem;font-weight:600}
+.backlink:hover{background:var(--sunk);color:var(--ink)}
+
+/* ---- your own screen ---- */
+.dash{padding:1.2rem 1.25rem 3rem;max-width:56rem;margin-inline:auto;width:100%;
+  overflow-y:auto}
+.dash h1{margin:0 0 .2rem;font-size:1.35rem;letter-spacing:-.025em}
+.dash > .muted{margin:0 0 1.4rem;font-size:.87rem}
+.dashgroup{margin-bottom:1.5rem}
+.dashgroup h2{display:flex;align-items:center;gap:.45rem;margin:0 0 .5rem;
+  font-size:.7rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint)}
+.dashgroup h2 .cnt{display:grid;place-items:center;min-width:1.25rem;height:1.25rem;
+  padding:0 .3rem;border-radius:999px;background:var(--sunk);color:var(--ink-2);
+  font-size:.68rem;letter-spacing:0}
+.dashlist{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+/* Grid items default to min-width:auto, so a row refuses to shrink below the
+   widest thing in it and pushes out past the card, which clips it. */
+.dashlist li{min-width:0}
+.dashlist a{display:flex;align-items:center;gap:.55rem;padding:.7rem .9rem;
+  border:1px solid var(--hair);border-radius:var(--radius);background:var(--card)}
+.dashlist a:hover{border-color:var(--accent)}
+.dname{font-weight:700;font-size:.9rem;white-space:nowrap}
+.dprev{flex:1;min-width:0;color:var(--muted);font-size:.84rem;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dwhen{margin-left:auto;color:var(--faint);font-size:.76rem;font-weight:500;flex:none}
+.dashnone{margin:0;color:var(--muted);font-size:.87rem;line-height:1.6}
+.dashgo{color:var(--accent);font-weight:600}
+@media (max-width:560px){
+  .dashlist a{flex-wrap:wrap}
+  .dprev{flex-basis:100%;order:3}
+}
+
+/* ---- right-click on a row ---- */
+.menuveil{position:fixed;inset:0;z-index:60}
+.rowmenu{position:fixed;z-index:61;min-width:12.5rem;padding:.35rem;
+  background:var(--card);border:1px solid var(--hair);border-radius:11px;
+  box-shadow:0 12px 34px -14px rgba(16,27,45,.34)}
+.rowmenu .ovlabel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:16rem}
+.rowmenu .ovitem:disabled{opacity:.45}
+.menuerr{margin:.35rem .6rem .2rem;font-size:.78rem}

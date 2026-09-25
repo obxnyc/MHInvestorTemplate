@@ -2,6 +2,7 @@ import { requireStaff } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { runSetupChecks, type Check } from "@/lib/setup-check";
+import BackLink from "@/components/BackLink";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,7 @@ export default async function Setup() {
 
   return (
     <main className="audit">
+      <BackLink />
       <h1>Setup check</h1>
       <p className="muted">
         {bad === 0

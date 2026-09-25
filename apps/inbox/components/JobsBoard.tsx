@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { benchmark, money, parseMoney, type PricePoint } from "@/lib/prices";
 import { dueState, dueLabel } from "@/lib/dispatch";
+import BackLink from "@/components/BackLink";
 
 type Job = {
   id: string; summary: string; status: string; dueAt: string | null;
@@ -58,6 +59,7 @@ export default function JobsBoard() {
 
   return (
     <main className="people">
+      <BackLink fallback="/settings" />
       <h1 className="pagetitle">Jobs</h1>
       <p className="muted">
         What is outstanding, what it cost, and what that kind of work usually runs.

@@ -5,6 +5,7 @@ import Directory from "./Directory";
 import AccessRequests from "./AccessRequests";
 import { prettyPhone } from "@/lib/format";
 import { canSmsFromLine } from "@/lib/phone";
+import BackLink from "@/components/BackLink";
 
 type Staff = {
   id: string; full_name: string; role: string;
@@ -123,6 +124,7 @@ export default function PeopleAdmin(
 
   return (
     <main className="people">
+      <BackLink fallback="/settings" />
       <h1 className="pagetitle">People</h1>
       <p className="muted">
         Everyone who can reach the shared line, and everyone you can send work to.
