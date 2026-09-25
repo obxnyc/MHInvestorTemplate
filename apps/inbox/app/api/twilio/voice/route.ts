@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkTwilioSignature, formToObject, toE164, publicBase } from "@/lib/twilio";
-import { ringGroup, twiml, escapeXml } from "@/lib/voice";
+import { loadMenu, menuTwiml, twiml } from "@/lib/voice";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 /**
  * An inbound call to the shared line.
  *
- * Every staff cell rings at once, but each leg has to press 1 to accept. That
- * whisper is not a nicety: a phone that is off or out of service answers
- * INSTANTLY with its owner's personal voicemail, which silently swallows the
- * call. A voicemail box cannot press 1, so it can never win the race.
+ * The call is logged and then handed to the menu, which lives in the database
+ * rather than here. Everything after this point -- what the caller hears, which
+ * keys do what, who rings and in what order -- is editable by the office
+ * without a deployment.
  */
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -37,25 +37,17 @@ export async function POST(req: Request) {
     twilio_call_sid: params.CallSid,
   });
 
-  const staff = await ringGroup();
-  const numbers = staff.map((s) =>
-    `<Number url="${base}/api/twilio/voice/whisper?staff=${s.id}"`
-    + ` statusCallbackEvent="answered completed">${escapeXml(s.forward_to!)}</Number>`
-  ).join("");
-
-  // No one configured to ring yet: go straight to voicemail rather than
-  // hanging up on a tenant.
-  if (!numbers) {
+  const menu = await loadMenu("root");
+  // No menu built yet: ring nobody rather than hanging up, and let voicemail
+  // take it. Silence on a business line is worse than a machine.
+  if (!menu) {
     return twiml(`<Redirect>${base}/api/twilio/voice/voicemail</Redirect>`);
   }
 
-  // Recording consent varies by state; two-party states require notice. This
-  // announcement is one line and removes the question entirely.
+  // Recording consent varies by state; two-party states require notice. One
+  // line, before anything else, removes the question entirely.
   return twiml(
-    `<Say voice="Polly.Joanna">Thanks for calling Larabee Homes. `
-    + `This call may be recorded.</Say>`
-    + `<Dial timeout="20" answerOnBridge="true" record="record-from-answer-dual"`
-    + ` recordingStatusCallback="${base}/api/twilio/voice/recording"`
-    + ` action="${base}/api/twilio/voice/after-dial">${numbers}</Dial>`
+    `<Say voice="Polly.Joanna">This call may be recorded.</Say>`
+    + menuTwiml(menu, base, 0)
   );
 }
