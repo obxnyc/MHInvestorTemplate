@@ -113,7 +113,8 @@ export default function AskThese(
           ) : why.why === "failed" ? (
             <p className="asknone bad">
               {why.detail ?? "That didn't work."} Same key as the Spanish
-              translation, so that will be off too.
+              translation, so that will be off too. Settings &rarr; Setup check
+              says which.
             </p>
           ) : drafts.length === 0 ? (
             <p className="asknone">

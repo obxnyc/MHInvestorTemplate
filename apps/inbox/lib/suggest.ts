@@ -123,8 +123,10 @@ export async function suggestReplies(
     console.error("reply suggestions failed", e);
     const detail = e instanceof Anthropic.AuthenticationError
       ? "The key was rejected. Check it is the whole key and has not been revoked."
+      : /credit balance|billing|purchase|too low/i.test(String((e as Error).message ?? ""))
+        ? "The Anthropic account has no billing set up, so it cannot make calls."
       : e instanceof Anthropic.RateLimitError
-        ? "Rate limited, or the account is out of credit."
+        ? "Rate limited."
         : e instanceof Anthropic.APIError
           ? `Anthropic returned ${e.status}.`
           : "The call did not complete.";
