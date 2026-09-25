@@ -6,6 +6,18 @@ import PinSignIn from "@/components/PinSignIn";
 
 type Mode = "password" | "link" | "pin" | "reset";
 
+/** Who is at the door. Three different people arrive at this page and only one
+ *  of them has a password, so asking first is kinder than a single form that
+ *  two thirds of its visitors cannot use. */
+type Who = "tenant" | "office" | "vendor" | "investor";
+
+const WHO: [Who, string][] = [
+  ["office", "Staff"],
+  ["tenant", "Tenant"],
+  ["vendor", "Vendor"],
+  ["investor", "Investor"],
+];
+
 /**
  * Signing in.
  *
@@ -18,7 +30,9 @@ type Mode = "password" | "link" | "pin" | "reset";
  * the read receipt and the typing indicator would all become lies at once.
  */
 export default function Login() {
+  const [who, setWho] = useState<Who>("office");
   const [mode, setMode] = useState<Mode>("password");
+  const [vendorPhone, setVendorPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [state, setState] = useState<"idle" | "working" | "sent" | "error">("idle");
@@ -48,6 +62,17 @@ export default function Login() {
       email, options: { emailRedirectTo: `${location.origin}/` },
     });
     if (error) { setState("error"); setMessage(error.message); return; }
+    setState("sent");
+  }
+
+  /** The answer is the same whatever the number is -- see the route. */
+  async function sendJobsLink(e: React.FormEvent) {
+    e.preventDefault();
+    setState("working");
+    await fetch("/api/vendor/link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: vendorPhone }),
+    }).catch(() => {});
     setState("sent");
   }
 
@@ -89,7 +114,72 @@ export default function Login() {
           <p className="authwho">Larabee Homes</p>
         </div>
 
-        {state === "sent" ? (
+        <div className="authtabs" role="tablist" aria-label="Who is signing in">
+          {WHO.map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={who === k}
+                    className={who === k ? "on" : ""}
+                    onClick={() => { setWho(k); setMode("password"); setState("idle"); }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {who === "tenant" ? (
+          /* Tenants have no account, and saying so plainly is the useful
+             answer. The alternative is a form that cannot work for them and a
+             phone call to the office asking why. */
+          <div className="authtell">
+            <p>
+              You don&rsquo;t need one. Text us on the number you already have for
+              us and it reaches the whole office — repairs, rent questions,
+              anything. Somebody picks it up and you keep the same thread.
+            </p>
+            <p>
+              Looking for a home?{" "}
+              <a className="dashgo" href="/apply">Check if you prequalify</a>.
+            </p>
+          </div>
+        ) : who === "investor" ? (
+          /* No owner portal exists yet. Said plainly, with the way to get an
+             answer today, rather than a form that goes nowhere. */
+          <div className="authtell">
+            <p>
+              There&rsquo;s no investor login yet. Statements, rent rolls and
+              distributions still come from the office directly.
+            </p>
+            <p>
+              Ask Cade or the office and we&rsquo;ll send what you need — and
+              tell us what you&rsquo;d want to see here, because this is the
+              page it will go on.
+            </p>
+          </div>
+        ) : who === "vendor" ? (
+          state === "sent" ? (
+            <div className="authtell">
+              <p>
+                If that number is one we send work to, your jobs link is on its
+                way. It opens straight to your open jobs — no password.
+              </p>
+              <button className="pinlink" onClick={() => setState("idle")}>
+                Try another number
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={sendJobsLink}>
+              <p className="authtell">
+                No password. We text you the same link your jobs already come
+                on, so you can send photos back from it.
+              </p>
+              <label htmlFor="vp">Your mobile</label>
+              <input id="vp" type="tel" required autoComplete="tel" autoFocus
+                     value={vendorPhone} onChange={(ev) => setVendorPhone(ev.target.value)}
+                     placeholder="(252) 555-0142" />
+              <button type="submit" disabled={state === "working"}>
+                {state === "working" ? "Sending…" : "Text me my jobs link"}
+              </button>
+            </form>
+          )
+        ) : state === "sent" ? (
           <>
             <p className="muted">
               {mode === "reset"
@@ -146,12 +236,14 @@ export default function Login() {
           </form>
         )}
 
-        <p className="authfoot">
-          Out on a job?{" "}
-          <button className="pinlink" onClick={() => setMode("pin")}>
-            Sign in with your PIN
-          </button>
-        </p>
+        {who === "office" && (
+          <p className="authfoot">
+            Out on a job?{" "}
+            <button className="pinlink" onClick={() => setMode("pin")}>
+              Sign in with your PIN
+            </button>
+          </p>
+        )}
       </div>
     </main>
   );

@@ -1098,3 +1098,48 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .acctwrap .ovmenu{top:2.9rem}
 .ovitem.danger{color:var(--crit)}
 .ovitem.danger:hover{background:var(--warn-soft)}
+
+/* ---- who is signing in ----
+   Three people arrive at this page and only one of them has a password.
+   Asking first is kinder than one form that two thirds of its visitors
+   cannot use -- and it is the thing that lets the tenant panel say "you
+   don't need an account" instead of leaving them to work that out. */
+.authtabs{display:flex;gap:.2rem;padding:.25rem;margin:0 0 1.15rem;
+  background:var(--sunk);border-radius:10px}
+.authtabs button{flex:1;width:auto;margin:0;min-height:2.25rem;padding:.45rem .3rem;
+  border:none;border-radius:8px;background:none;color:var(--muted);
+  font-size:.82rem;font-weight:600;letter-spacing:-.01em}
+.authtabs button:hover{color:var(--ink)}
+.authtabs button.on{background:var(--card);color:var(--ink);
+  box-shadow:0 1px 2px rgba(16,27,45,.10)}
+/* What a panel says when there is nothing to fill in. */
+.authtell{margin:0 0 .3rem;color:var(--ink-2);font-size:.88rem;line-height:1.6}
+.authtell p{margin:0 0 .8rem}
+.authtell p:last-child{margin-bottom:0}
+.authtell .pinlink{align-self:flex-start;padding:.4rem 0}
+
+/* ---- the owner's numbers ----
+   auto-fit rather than a fixed count: the grid answers to the card it sits in,
+   and there is no breakpoint to keep in step when a metric is added. */
+.mgrid{display:grid;gap:.55rem;margin-bottom:1rem;
+  grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))}
+.metric{display:flex;flex-direction:column;gap:.15rem;min-width:0;
+  padding:.85rem .9rem;border:1px solid var(--hair);border-radius:var(--radius);
+  background:var(--card)}
+a.metric:hover{border-color:var(--accent)}
+.mlabel{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint)}
+.mvalue{font-size:1.5rem;font-weight:700;letter-spacing:-.03em;color:var(--ink);
+  line-height:1.15}
+.mnote{font-size:.76rem;color:var(--muted);line-height:1.4}
+/* Waiting on data, and saying so. Dashed, because a solid card that reads "—"
+   looks like a number that failed to load rather than one nothing feeds yet. */
+.metric.pending{border-style:dashed;background:none}
+.metric.pending .mvalue{color:var(--faint)}
+.dashnote{margin:0 0 1.6rem;color:var(--muted);font-size:.8rem;line-height:1.6;
+  max-width:44rem}
+
+/* A picker sitting in the right-click menu rather than a dialog on top of it. */
+.ovpick{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+  padding:.3rem .6rem .45rem;font-size:.85rem;font-weight:600;color:var(--ink)}
+.ovpick .catpick select{font-size:.8rem;padding:.2rem 1.3rem .2rem .45rem}

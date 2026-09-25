@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import CategoryPicker from "./CategoryPicker";
 
 export type RowTarget = {
   id: string;
@@ -7,6 +8,13 @@ export type RowTarget = {
   phone: string | null;
   claimed: boolean;
   mine: boolean;
+  /** The person behind the thread, for naming them without opening it. */
+  contactId: string | null;
+  party: string;
+  unitId: string | null;
+  language: string | null;
+  named: boolean;
+  category: string;
   x: number;
   y: number;
 };
@@ -24,12 +32,13 @@ export type RowTarget = {
  * every item has a home inside the thread as well.
  */
 export default function RowMenu(
-  { at, onClose, onOpen, onForward, onChanged }:
+  { at, onClose, onOpen, onForward, onEditContact, onChanged }:
   {
     at: RowTarget;
     onClose: () => void;
     onOpen: (id: string) => void;
     onForward: (t: RowTarget) => void;
+    onEditContact: (t: RowTarget) => void;
     onChanged: () => void;
   },
 ) {
@@ -90,13 +99,36 @@ export default function RowMenu(
                 onClick={() => { onOpen(at.id); onClose(); }}>
           Open
         </button>
+        {/* The row is a real link, and replacing the browser's own menu took
+            its "open in new tab" away. Put it back. */}
+        <button className="ovitem" role="menuitem"
+                onClick={() => { window.open(`/c/${at.id}`, "_blank", "noopener"); onClose(); }}>
+          Open in a new tab
+        </button>
+
+        <div className="ovsep" />
+
+        {at.contactId && (
+          <button className="ovitem" role="menuitem"
+                  onClick={() => onEditContact(at)}>
+            {/* Most of these threads are a bare phone number for weeks. Naming
+                one is the commonest thing anybody wants to do to a row, and it
+                used to mean opening the thread to find the pencil. */}
+            {at.named ? "Edit contact…" : "Save contact…"}
+          </button>
+        )}
+
+        <label className="ovpick">
+          <span>Category</span>
+          <CategoryPicker conversationId={at.id} category={at.category} />
+        </label>
+
+        <div className="ovsep" />
 
         <button className="ovitem" role="menuitem" disabled={busy}
                 onClick={() => onForward(at)}>
           Forward to someone…
         </button>
-
-        <div className="ovsep" />
 
         {at.mine ? (
           <button className="ovitem" role="menuitem" disabled={busy}

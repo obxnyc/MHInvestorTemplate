@@ -5,6 +5,7 @@ import ThreadPane from "./ThreadPane";
 import DmPane from "./DmPane";
 import RowMenu, { type RowTarget } from "./RowMenu";
 import HandOff from "./HandOff";
+import ContactEditor from "./ContactEditor";
 
 /**
  * The inbox: a list and a conversation, on one screen, permanently.
@@ -35,6 +36,7 @@ export default function InboxClient(
   const [forward, setForward] = useState<
     { messageId: string; preview: string } | "loading" | null>(null);
   const [forwardError, setForwardError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<RowTarget | null>(null);
 
   // The list is rendered on the server, so its highlight cannot come from React
   // state. Setting it here keeps one source of truth -- what is selected --
@@ -100,6 +102,12 @@ export default function InboxClient(
       phone: row.dataset.phone || null,
       claimed: row.dataset.claimed === "1",
       mine: row.dataset.mine === "1",
+      contactId: row.dataset.contact || null,
+      party: row.dataset.party || "other",
+      unitId: row.dataset.unit || null,
+      language: row.dataset.lang || null,
+      named: row.dataset.named === "1",
+      category: row.dataset.cat || "other",
       x: e.clientX, y: e.clientY,
     });
   }
@@ -143,12 +151,19 @@ export default function InboxClient(
                  onOpen={(id) => { setDm(null); setSelected(id);
                                    window.history.pushState({}, "", `/c/${id}`); }}
                  onForward={openForward}
+                 onEditContact={(t) => { setMenu(null); setEditing(t); }}
                  onChanged={() => router.refresh()} />
       )}
       {forward === "loading" && <div className="modal"><div className="sheet"><p>Opening…</p></div></div>}
       {forward && forward !== "loading" && (
         <HandOff messageId={forward.messageId} preview={forward.preview}
                  onClose={() => setForward(null)} />
+      )}
+      {editing?.contactId && editing.phone && (
+        <ContactEditor contactId={editing.contactId} name={editing.named ? editing.name : null}
+                       phone={editing.phone} party={editing.party}
+                       unitId={editing.unitId} language={editing.language}
+                       onClose={() => { setEditing(null); router.refresh(); }} />
       )}
       {forwardError && (
         <div className="modal" onClick={() => setForwardError(null)}>
