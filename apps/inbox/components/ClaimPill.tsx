@@ -2,10 +2,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { threadChanged } from "@/lib/refresh";
-
-const initials = (n: string) =>
-  n.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
-
+import { initials } from "@/lib/format";
 /** One tap, in the header, the way a phone app would do it — not a banner
  *  across the conversation. Two people tapping at the same instant resolve to
  *  one winner server-side; the loser is told who beat them. */

@@ -22,13 +22,7 @@ export default function InboxHeader({ canBroadcast }: { canBroadcast: boolean })
         )}
       </div>
       {group && <NewGroup onClose={() => setGroup(false)} />}
-      {compose && (
-        <Compose mode={compose} onClose={() => setCompose(null)}
-                 onSent={(id) => {
-                   setCompose(null);
-                   if (id) location.assign(`/c/${id}`);
-                 }} />
-      )}
+      {compose && <Compose mode={compose} onClose={() => setCompose(null)} />}
     </>
   );
 }

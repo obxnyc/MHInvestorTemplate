@@ -910,3 +910,38 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   font-size:.86rem;font-weight:600}
 .viewonly{margin:0;padding:.8rem 1.1rem;border-top:1px solid var(--hair);
   background:var(--sunk);color:var(--muted);font-size:.82rem}
+
+/* ------------------------------------------------------------- recipients
+   Who a new message goes to. Prefixed rcp rather than pick, because .picksub
+   and .picklab already belong to the hand-off sheet -- a second meaning for
+   one class name is a bug that shows up as a layout fault somewhere unrelated.
+
+   Sized so the list is the dialog: the search box and eight people fit without
+   scrolling, which is what makes picking somebody a glance rather than a task.
+   Selectors are scoped under .sheet where a plainer one would lose to the
+   .sheet p and .sheet input rules above. */
+.sheet.rcp{max-width:27rem;padding:0;display:flex;flex-direction:column;
+  max-height:min(40rem,86vh)}
+.sheet.rcp .rcphead{display:flex;align-items:center;gap:.5rem;padding:1rem 1.1rem .25rem}
+.sheet.rcp .rcphead h3{margin:0;flex:1}
+.sheet.rcp .rcphead .x{border:none;background:none;font-size:1.4rem;line-height:1;
+  color:var(--muted);cursor:pointer;padding:0 .2rem;border-radius:6px}
+.sheet.rcp .rcphead .x:hover{background:var(--hair-2);color:var(--ink)}
+.sheet.rcp input{margin:.55rem 1.1rem .5rem;width:auto}
+.sheet.rcp .err{margin:0 1.1rem .5rem}
+.sheet.rcp .rcpcap{margin:.35rem 1.1rem .3rem;font-size:.68rem;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.sheet.rcp .rcplist{overflow-y:auto;border-top:1px solid var(--hair);min-height:4rem}
+.sheet.rcp .rcplist .pad{padding:1.1rem;margin:0;font-size:.87rem}
+.sheet.rcp .rcprow{display:flex;align-items:center;gap:.7rem;width:100%;text-align:left;
+  padding:.45rem 1.1rem;border:none;background:none;font:inherit;cursor:pointer;
+  border-bottom:1px solid var(--hair-2)}
+.sheet.rcp .rcprow:last-child{border-bottom:none}
+.sheet.rcp .rcprow:hover:not(:disabled){background:var(--hair-2)}
+.sheet.rcp .rcprow:disabled{opacity:.55;cursor:default}
+.sheet.rcp .rcpwho{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;
+  flex:1;min-width:0}
+.sheet.rcp .rcpname{display:flex;align-items:center;gap:.4rem;max-width:100%;
+  font-weight:600;font-size:.93rem;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sheet.rcp .rcpsub{margin:0;font-size:.78rem;color:var(--muted);text-transform:capitalize}

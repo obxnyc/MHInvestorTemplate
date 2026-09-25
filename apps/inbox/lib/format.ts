@@ -39,3 +39,22 @@ export function dayLabel(iso: string) {
     timeZone: ZONE, weekday: "long", month: "short", day: "numeric",
   });
 }
+
+/** A name gives initials; an unsaved number gives its last two digits, because
+ *  "(2" tells you nothing and reads like a rendering fault. */
+export function initials(n: string) {
+  const s = String(n).trim();
+  if (/^[\d\s()+\-.]+$/.test(s)) return s.replace(/\D/g, "").slice(-2) || "#";
+  return s.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+}
+
+/** Tinted per person so a face is recognisable down a list. Derived from the
+ *  name rather than stored, so the same person is the same colour everywhere
+ *  without a column to keep in step. */
+const SWATCH: [string, string][] = [
+  ["#E3ECFA", "#2F4E7E"], ["#FAE6EC", "#7E3350"], ["#E4F0E9", "#0F4B36"],
+  ["#F0EAFA", "#54417F"], ["#FBEEE3", "#8A4418"], ["#E6F1F4", "#1F5566"],
+];
+
+export const swatch = (n: string): [string, string] =>
+  SWATCH[[...String(n)].reduce((a, c) => a + c.charCodeAt(0), 0) % SWATCH.length];

@@ -1,10 +1,8 @@
 "use client";
 import { useState } from "react";
+import { initials } from "@/lib/format";
 
 export type Read = { staffId: string; at: string; name: string };
-
-const initials = (n: string) =>
-  n.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
 /**
  * Who has seen this message.
