@@ -177,7 +177,7 @@ export default function ThreadPane(
           if (item.kind === "note") {
             const n = item.n as { id: string; body: string; staff: { full_name: string } | null };
             return (
-              <div key={`n${n.id}`}>
+              <div key={`n${n.id}`} className="mrow">
                 {sep && <div className="daysep">{sep}</div>}
                 <div className="note">
                   <span className="lab">{n.staff?.full_name} · only your team sees this</span>
@@ -193,7 +193,7 @@ export default function ThreadPane(
           };
           const isSystem = m.direction === "inbound" && m.channel !== "sms";
           return (
-            <div key={`m${m.id}`}>
+            <div key={`m${m.id}`} className="mrow">
               {sep && <div className="daysep">{sep}</div>}
               {isSystem && (
                 <div className="sys"><b>{labelFor(m.channel)}</b> · {clockTime(item.at)}</div>
