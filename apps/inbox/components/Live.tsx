@@ -17,6 +17,10 @@ export default function Live() {
           () => { threadChanged(); router.refresh(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" },
           () => { threadChanged(); router.refresh(); })
+      // Read receipts, so "seen" appears in the minute it matters rather than
+      // on whoever's screen happens to reload next.
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_reads" },
+          () => threadChanged())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [router]);

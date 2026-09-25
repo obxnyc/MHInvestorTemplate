@@ -24,13 +24,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .eq("id", id).single();
   if (!convo) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const [{ data: messages }, { data: notes }] = await Promise.all([
+  const [{ data: messages }, { data: notes }, { data: reads }] = await Promise.all([
     supabase.from("messages")
       .select("id, direction, body, status, channel, created_at, media_paths, staff:sent_by(full_name)")
       .eq("conversation_id", id).order("created_at"),
     supabase.from("notes")
       .select("id, body, created_at, staff:author_id(full_name)")
       .eq("conversation_id", id).order("created_at"),
+    // Who has seen this thread, and how far down. A message is "read by" every
+    // person whose last read is at or after it -- one timestamp each, rather
+    // than a row per person per message for a distinction nobody uses.
+    supabase.from("conversation_reads")
+      .select("staff_id, last_read_at, staff:staff_id(full_name)")
+      .eq("conversation_id", id),
   ]);
 
   // One signing call for the whole thread rather than one per picture: each is
@@ -45,6 +51,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     messages: messages ?? [],
     notes: notes ?? [],
     media: Object.fromEntries(signed),
+    reads: (reads ?? []).map((r) => ({
+      staffId: r.staff_id,
+      at: r.last_read_at,
+      name: (r.staff as unknown as { full_name: string } | null)?.full_name ?? "Someone",
+    })),
     me: staff.id,
+    meName: staff.full_name,
   });
 }
