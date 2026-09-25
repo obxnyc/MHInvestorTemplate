@@ -39,6 +39,7 @@ export default function AppHeader(
               <Link className="ovitem" href="/calls">Calls</Link>
               {role === "admin" && <Link className="ovitem" href="/legal">Court filings</Link>}
               {role === "admin" && <Link className="ovitem" href="/audit">Audit trail</Link>}
+              {role === "admin" && <Link className="ovitem" href="/setup">Setup check</Link>}
               <div className="ovsep" />
               <span className="ovlabel">{name}</span>
             </div>
