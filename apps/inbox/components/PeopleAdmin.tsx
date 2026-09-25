@@ -1,5 +1,5 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Directory from "./Directory";
 import AccessRequests from "./AccessRequests";
@@ -55,6 +55,26 @@ export default function PeopleAdmin(
     setBusy(false);
     if (!res.ok) { setError(out.error ?? "That didn't work."); return false; }
     return true;
+  }
+
+  const [invitePhone, setInvitePhone] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState("office");
+  const [invites, setInvites] = useState<{ id: string; name: string | null; phone: string; role: string }[]>([]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch("/api/people/invite").then((r) => r.json())
+      .then((d) => setInvites(d.invites ?? [])).catch(() => {});
+  }, [isAdmin, done]);
+
+  async function invite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!await post("/api/people/invite",
+      { fullName: inviteName, phone: invitePhone, role: inviteRole })) return;
+    setDone(`Texted ${invitePhone}. They'll set themselves up from the link.`);
+    setInviteName(""); setInvitePhone("");
+    refresh();
   }
 
   async function addStaff(e: React.FormEvent) {
@@ -144,12 +164,58 @@ export default function PeopleAdmin(
           </ul>
 
           {isAdmin && (
-            <form className="addbox" onSubmit={addStaff}>
-              <h2>Add someone who works here</h2>
+            <form className="addbox" onSubmit={invite}>
+              <h2>Text someone a setup link</h2>
               <p className="muted">
-                They&rsquo;ll sign in with their own email — by link, or by a
-                password they set themselves. Field staff can also use a
-                four-digit PIN.
+                They fill in their own name, email and password on their phone —
+                nothing for you to type and nothing for them to be told. The link
+                works once and expires in a week.
+              </p>
+              <label htmlFor="in">Name <span className="opt">— optional</span></label>
+              <input id="in" value={inviteName}
+                     onChange={(e) => setInviteName(e.target.value)} />
+              <label htmlFor="ip">Mobile number</label>
+              <input id="ip" type="tel" value={invitePhone}
+                     onChange={(e) => setInvitePhone(e.target.value)}
+                     placeholder="(252) 555-0142" required />
+              <label htmlFor="ir">What they&rsquo;ll be doing</label>
+              <select id="ir" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                <option value="office">Office — the inbox, leasing, tenants</option>
+                <option value="admin">Admin — everything, including filings and the audit trail</option>
+                <option value="tech">Maintenance — work orders assigned to them</option>
+                <option value="shower">Showings — prospects and viewings</option>
+              </select>
+              <button className="btn pri" disabled={busy}>
+                {busy ? "Texting…" : "Text them a link"}
+              </button>
+
+              {invites.length > 0 && (
+                <>
+                  <p className="fieldlab" style={{ marginTop: "1.2rem" }}>
+                    Sent, not taken up yet
+                  </p>
+                  <ul className="invitelist">
+                    {invites.map((i) => (
+                      <li key={i.id}>
+                        <span>{i.name || i.phone}</span>
+                        <span className="muted">
+                          {i.name ? i.phone : ""} · {ROLE_LABEL[i.role] ?? i.role}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </form>
+          )}
+
+          {isAdmin && (
+            <form className="addbox" onSubmit={addStaff}>
+              <h2>Or add them by hand</h2>
+              <p className="muted">
+                For somebody without a mobile you can text, or when you&rsquo;d
+                rather type it yourself. They then use &ldquo;Set or reset my
+                password&rdquo; at sign-in.
               </p>
               <label htmlFor="n">Name</label>
               <input id="n" value={name} onChange={(e) => setName(e.target.value)} required />

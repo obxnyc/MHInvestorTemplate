@@ -23,7 +23,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // application queue, never to contacts, so a public form cannot reach a row
 // that already exists.
 const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
-                /^\/jobs\//, /^\/trades\/apply/, /^\/join/];
+                /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//];
 
 const isPublic = (path: string) => PUBLIC.some((re) => re.test(path));
 

@@ -842,3 +842,8 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .pendbox h2{margin:0 0 .2rem;font-size:1rem;letter-spacing:-.015em}
 .pendbox .people-list{margin-top:.7rem}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+
+.invitelist{list-style:none;margin:.4rem 0 0;padding:0;display:grid;gap:.3rem}
+.invitelist li{display:flex;gap:.6rem;align-items:baseline;justify-content:space-between;
+  padding:.4rem .6rem;border:1px dashed var(--hair);border-radius:8px;font-size:.84rem}
+.invitelist .muted{font-size:.78rem}
