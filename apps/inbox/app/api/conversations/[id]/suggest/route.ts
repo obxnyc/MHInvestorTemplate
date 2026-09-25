@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
-import { suggestReplies } from "@/lib/suggest";
+import { suggestReplies, draftingConfigured } from "@/lib/suggest";
 import { prettyPhone } from "@/lib/format";
 
 export const runtime = "nodejs";
@@ -15,6 +15,13 @@ export const dynamic = "force-dynamic";
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "not signed in" }, { status: 401 });
+
+  // Said before any work is done. Without the key this route can only ever
+  // return nothing, and "nothing" has to be distinguishable from "nothing
+  // worth saying" or the screen is lying about which.
+  if (!draftingConfigured()) {
+    return NextResponse.json({ configured: false, replies: [] });
+  }
 
   const { id } = await ctx.params;
   const supabase = await supabaseServer();
@@ -45,5 +52,5 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     },
   );
 
-  return NextResponse.json({ replies });
+  return NextResponse.json({ configured: true, replies });
 }
