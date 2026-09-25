@@ -670,3 +670,29 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   font-size:.88rem;resize:vertical}
 .jobacts{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.6rem}
 .jobacts .mini{min-height:44px;padding:.5rem 1.1rem;font-size:.85rem}
+
+/* ---- who has seen it, and who is writing ----
+   Both answer the same question — is anyone already on this — and both have to
+   answer it without competing with the message itself. */
+.seen{display:inline-flex;flex-direction:column;align-items:flex-start;margin-left:.45rem}
+.seenbtn{display:inline-flex;align-items:center;gap:.3rem;border:none;background:none;
+  padding:.1rem .2rem;border-radius:6px;color:var(--faint);font-size:.66rem;font-weight:600}
+.seenbtn:hover{background:var(--sunk);color:var(--muted)}
+.seenpips{display:inline-flex}
+.seenpip{display:grid;place-items:center;width:1.05rem;height:1.05rem;border-radius:50%;
+  background:var(--sunk);color:var(--ink-2);border:1.5px solid var(--pane);
+  font-size:.5rem;font-weight:800;line-height:1}
+.seenpips .seenpip+.seenpip{margin-left:-.35rem}
+.seenword{letter-spacing:.04em}
+.seenlist{list-style:none;margin:.3rem 0 0;padding:.3rem;border:1px solid var(--hair);
+  border-radius:9px;background:var(--card);min-width:13rem;
+  box-shadow:0 8px 28px -14px #101b2d40}
+.seenlist li{display:flex;align-items:center;gap:.45rem;padding:.28rem .35rem;font-size:.76rem}
+.seenlist .seenpip{border-color:var(--card)}
+.seenname{font-weight:600}
+.seenwhen{margin-left:auto;color:var(--muted);font-size:.72rem}
+
+/* Above the composer, where a reply is about to be typed, rather than down in
+   the thread where it would be read as a message. */
+.typing{margin:0;padding:.35rem 1.1rem 0;color:var(--muted);font-size:.78rem;
+  font-weight:600;font-style:italic}

@@ -6,6 +6,9 @@ import Composer from "./Composer";
 import ClaimPill from "./ClaimPill";
 import CloseButton from "./CloseButton";
 import MessageMenu from "./MessageMenu";
+import Seen, { type Read } from "./Seen";
+import { supabaseBrowser } from "@/lib/supabase-client";
+import { joinTyping, TYPING_TTL } from "@/lib/typing";
 
 /** A name gives initials; an unsaved number gives its last two digits. */
 function initials(n: string) {
@@ -19,7 +22,9 @@ type Thread = {
   messages: Record<string, unknown>[];
   notes: Record<string, unknown>[];
   media: Record<string, string>;
+  reads: Read[];
   me: string;
+  meName: string;
 };
 
 /**
@@ -39,6 +44,7 @@ export default function ThreadPane(
 ) {
   const [data, setData] = useState<Thread | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [typing, setTyping] = useState<{ name: string; at: number } | null>(null);
 
   const load = useCallback(async (conversationId: string) => {
     setError(null);
@@ -54,8 +60,26 @@ export default function ThreadPane(
     // Cleared first, so a slow load never shows the previous conversation's
     // messages under the new one's name.
     setData(null);
+    setTyping(null);
     load(id);
+
+    // Opening a thread is what "read" means. Recorded on open rather than on
+    // scroll: a receipt that requires reaching the bottom would mark the long
+    // messages unread precisely when someone has read the important part.
+    supabaseBrowser().rpc("mark_conversation_read", { p_conversation: id })
+      .then(({ error }) => { if (error) console.error("read receipt failed", error); });
   }, [id, load]);
+
+  // Somebody else on the team is writing a reply. Shown so two people do not
+  // answer the same tenant from the same number a minute apart.
+  useEffect(() => {
+    if (!id) return;
+    const ch = joinTyping(id, (name) => setTyping({ name, at: Date.now() }));
+    const tick = setInterval(() => {
+      setTyping((t) => (t && Date.now() - t.at > TYPING_TTL ? null : t));
+    }, 1000);
+    return () => { ch.unsubscribe(); clearInterval(tick); };
+  }, [id]);
 
   // Anything that changes the thread -- a reply, a note, a hand-off -- asks for
   // a refresh rather than a page reload.
@@ -106,6 +130,9 @@ export default function ThreadPane(
     ...data.messages.map((m) => ({ kind: "message" as const, at: m.created_at as string, m })),
     ...data.notes.map((n) => ({ kind: "note" as const, at: n.created_at as string, n })),
   ].sort((a, b) => a.at.localeCompare(b.at));
+
+  const readersOf = (at: string) =>
+    data.reads.filter((r) => r.staffId !== data.me && r.at >= at);
 
   let lastDay = "";
 
@@ -198,13 +225,23 @@ export default function ThreadPane(
                   {clockTime(item.at)}
                   {m.direction === "outbound" && ` · ${deliveryLabel(m.status)}`}
                 </span>
+                {/* On what a tenant sent, not on our own replies: the question a
+                    shared line needs answered is whether their message has been
+                    seen, not whether the office read itself. */}
+                {m.direction === "inbound" && <Seen readers={readersOf(item.at)} />}
               </div>
             </div>
           );
         })}
       </div>
 
-      <Composer conversationId={convo.id} />
+      {typing && (
+        <p className="typing" aria-live="polite">
+          {typing.name} is typing…
+        </p>
+      )}
+
+      <Composer conversationId={convo.id} myName={data.meName} />
     </div>
   );
 }
