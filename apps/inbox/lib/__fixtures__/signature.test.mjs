@@ -27,7 +27,8 @@ try {
   unlinkSync(tmp);
 }
 
-const TOKEN = "an-auth-token-like-twilios";
+/* Shaped like a real one: 32 hex characters. */
+const TOKEN = "3f9c1ad27be04e6588b0c7d41ea9527f";
 process.env.TWILIO_AUTH_TOKEN = TOKEN;
 
 const checks = [];
@@ -196,6 +197,49 @@ process.env.PUBLIC_BASE_URL = "https://mh-investor-template.vercel.app";
 
   t("publicBase returns empty, not garbage, when it has nothing to go on",
     publicBase(req({ host: "no spaces allowed" })) === "");
+}
+
+// 9. The box in the hosting dashboard is write-only, so when the wrong string
+//    is pasted into it nobody can look and see. The refusal says what shape it
+//    found, and never what it was.
+{
+  const bogus = req({ ...VERCEL, "x-twilio-signature": "bogus" });
+
+  process.env.TWILIO_AUTH_TOKEN = "AC" + "0".repeat(32);
+  let r = checkTwilioSignature(bogus, PATH, BODY);
+  t("pasting the Account SID into the token box is named as such",
+    r.reason.includes("Account SID"));
+
+  process.env.TWILIO_AUTH_TOKEN = "SK" + "0".repeat(32);
+  r = checkTwilioSignature(bogus, PATH, BODY);
+  t("pasting an API key SID is named as such", r.reason.includes("API key SID"));
+
+  process.env.TWILIO_AUTH_TOKEN = "hunter2";
+  r = checkTwilioSignature(bogus, PATH, BODY);
+  t("anything else is reported by length only",
+    r.reason.includes("7 characters") && !r.reason.includes("hunter2"));
+
+  // A correctly shaped token is not commented on -- the note is a lead, and a
+  // lead that fires on the healthy case is noise.
+  process.env.TWILIO_AUTH_TOKEN = TOKEN;
+  r = checkTwilioSignature(bogus, PATH, BODY);
+  t("a correctly shaped token draws no comment",
+    !r.reason.includes("not shaped like") && !r.reason.includes("whitespace"));
+
+  // The one that actually costs people an afternoon: a trailing newline picked
+  // up on paste. It now both works and says it happened.
+  process.env.TWILIO_AUTH_TOKEN = `  ${TOKEN}\n`;
+  const good = checkTwilioSignature(
+    req({ ...VERCEL, "x-twilio-signature": sign(LIVE, BODY) }), PATH, BODY);
+  t("a token pasted with whitespace around it still verifies", good.ok === true);
+
+  r = checkTwilioSignature(bogus, PATH, BODY);
+  t("...and the whitespace is mentioned when something else fails",
+    r.reason.includes("whitespace"));
+
+  t("none of these ever print the token",
+    !JSON.stringify(r).includes(TOKEN));
+  process.env.TWILIO_AUTH_TOKEN = TOKEN;
 }
 
 let failed = 0;
