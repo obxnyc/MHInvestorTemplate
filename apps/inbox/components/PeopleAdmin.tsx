@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Directory from "./Directory";
+import AccessRequests from "./AccessRequests";
 
 type Staff = {
   id: string; full_name: string; role: string;
@@ -28,8 +29,9 @@ const ROLE_LABEL: Record<string, string> = {
  * breach with a form in front of it.
  */
 export default function PeopleAdmin(
-  { tab, isAdmin, office, field, vendors }:
-  { tab: string; isAdmin: boolean; office: Staff[]; field: Staff[]; vendors: Vendor[] },
+  { tab, isAdmin, office, field, vendors, requests }:
+  { tab: string; isAdmin: boolean; office: Staff[]; field: Staff[];
+    vendors: Vendor[]; requests: number },
 ) {
   const router = useRouter();
   const [, start] = useTransition();
@@ -84,6 +86,7 @@ export default function PeopleAdmin(
     ["office", "Office", office.length],
     ["field", "Field staff", field.length],
     ["vendors", "Directory", vendors.length],
+    ...(isAdmin ? [["requests", "Requests", requests] as [string, string, number]] : []),
   ];
 
   return (
@@ -106,7 +109,9 @@ export default function PeopleAdmin(
       {error && <p className="err">{error}</p>}
       {done && <p className="okmsg">{done}</p>}
 
-      {tab !== "vendors" ? (
+      {tab === "requests" ? (
+        <AccessRequests />
+      ) : tab !== "vendors" ? (
         <>
           <ul className="people-list">
             {(tab === "office" ? office : field).map((p) => (
