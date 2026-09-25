@@ -374,7 +374,12 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 /* `.auth button` is (0,1,1) and out-specifies a bare class, so this has to be
    scoped or the quiet text link renders as a second big dark button competing
    with the real one. */
-.auth .pinlink{align-self:center;border:none;background:none;color:var(--muted);
+/* width:auto and no top margin, because .auth button above makes every button
+   in this card a full-width block -- which is right for Sign in and is what
+   was turning these text links into a centred stack however the row that
+   holds them was laid out. */
+.auth .pinlink{align-self:center;width:auto;margin-top:0;
+  border:none;background:none;color:var(--muted);
   font-size:.83rem;font-weight:600;text-decoration:underline;
   text-underline-offset:2px;padding:.5rem;min-height:44px}
 .auth .pinlink:hover{color:var(--ink)}
@@ -876,10 +881,34 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .benchlist .bd{margin-left:auto;color:var(--muted);font-size:.74rem;white-space:nowrap}
 
 /* Two ways out of the sign-in form, side by side rather than stacked: they are
-   alternatives to each other, not steps. */
+   alternatives to each other, not steps. Both labels are kept short enough to
+   fit the card's inner width on one line -- "Set or reset my password" and
+   "Email me a link instead" did not, so the row wrapped and the two of them
+   came out as a centred stack, which is what it was trying not to be. */
 .authalt{display:flex;flex-wrap:wrap;gap:.25rem 1rem;justify-content:space-between;
-  margin-top:.5rem}
-.authalt .pinlink{padding:.35rem 0;min-height:auto}
+  margin-top:.75rem}
+.authalt .pinlink{align-self:auto;padding:.35rem 0;min-height:auto;
+  text-decoration:none;font-weight:600}
+.authalt .pinlink:hover{text-decoration:underline}
+
+/* The PIN is for a different person on a different device -- a tech in a
+   crawlspace, not somebody at a desk who has forgotten a password -- so it
+   sits under a rule rather than in the row of alternatives to the password. */
+.authfoot{display:flex;justify-content:center;align-items:baseline;gap:.35rem;
+  margin:1.1rem 0 0;padding-top:.9rem;border-top:1px solid var(--hair);
+  color:var(--muted);font-size:.83rem}
+.authfoot .pinlink{padding:0;min-height:auto;align-self:auto;
+  color:var(--accent);text-decoration:none}
+.authfoot .pinlink:hover{text-decoration:underline;color:var(--accent)}
+
+/* The mark, the same one as the header, over a card that has nothing else on
+   it to say whose this is. */
+.authhead{display:flex;flex-direction:column;align-items:center;text-align:center;
+  margin-bottom:1.3rem}
+.authlogo{width:2.9rem;height:2.9rem;object-fit:contain}
+.auth .authhead h1{margin:.6rem 0 .15rem;font-size:1.3rem}
+.authwho{margin:0;font-size:.8rem;font-weight:600;letter-spacing:.02em;
+  color:var(--muted)}
 
 /* Applications sit above the directory, not in it: they are work to do, and a
    pending contractor is not somebody you can send a job to yet. */
