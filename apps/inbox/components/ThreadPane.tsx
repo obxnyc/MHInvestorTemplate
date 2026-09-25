@@ -10,6 +10,7 @@ import Seen, { type Read } from "./Seen";
 import CategoryPicker from "./CategoryPicker";
 import OpenJobs, { type Job } from "./OpenJobs";
 import Bubble from "./Bubble";
+import ContactEditor from "./ContactEditor";
 import { languageName } from "@/lib/translate";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
@@ -50,6 +51,7 @@ export default function ThreadPane(
   const [data, setData] = useState<Thread | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [typing, setTyping] = useState<{ name: string; at: number } | null>(null);
+  const [naming, setNaming] = useState(false);
 
   const load = useCallback(async (conversationId: string) => {
     setError(null);
@@ -122,10 +124,14 @@ export default function ThreadPane(
   const convo = data.convo as {
     id: string; category: string; source: string; status: string;
     category_confidence: number | null; assigned_to: string | null;
-    units: unknown; contacts: { phone: string; full_name: string | null; party: string; units: unknown } | null;
+    units: unknown;
+    contacts: {
+      id: string; phone: string; full_name: string | null; party: string;
+      unit_id: string | null; language: string | null; units: unknown;
+    } | null;
     staff: { full_name: string } | null;
   };
-  const contact = convo.contacts as (typeof convo.contacts & { language?: string | null }) | null;
+  const contact = convo.contacts;
   const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
   const prop = propertyOf(convo.units as never, contact?.units as never);
   const party = contact?.party && contact.party !== "other"
@@ -148,7 +154,11 @@ export default function ThreadPane(
                 onClick={onBack}>&lsaquo;</button>
         <span className="av">{initials(name)}</span>
         <span className="cwho">
-          <span className="nm">{name}</span>
+          <button type="button" className="nm nmbtn" onClick={() => setNaming(true)}
+                  title="Name this contact">
+            {name}
+            {!contact?.full_name && <span className="addname">+ add name</span>}
+          </button>
           <span className="sub">
             <CategoryPicker conversationId={convo.id} category={convo.category} />
             {party && <span className="dim">{party}</span>}
@@ -243,6 +253,13 @@ export default function ThreadPane(
           );
         })}
       </div>
+
+      {naming && contact && (
+        <ContactEditor
+          contactId={contact.id} name={contact.full_name} phone={contact.phone}
+          party={contact.party} unitId={contact.unit_id} language={contact.language}
+          onClose={() => setNaming(false)} />
+      )}
 
       {typing && (
         <p className="typing" aria-live="polite">

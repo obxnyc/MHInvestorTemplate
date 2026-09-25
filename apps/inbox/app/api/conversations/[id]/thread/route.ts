@@ -20,7 +20,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { data: convo } = await supabase
     .from("conversations")
-    .select("id, category, source, status, category_confidence, closure_prompts, assigned_to, unit_id, units(label, properties(name, color)), contacts(phone, full_name, party, unit_id, language, units(label, properties(name, color))), staff:assigned_to(full_name)")
+    .select("id, category, source, status, category_confidence, closure_prompts, assigned_to, unit_id, units(label, properties(name, color)), contacts(id, phone, full_name, party, unit_id, language, units(label, properties(name, color))), staff:assigned_to(full_name)")
     .eq("id", id).single();
   if (!convo) return NextResponse.json({ error: "not found" }, { status: 404 });
 
