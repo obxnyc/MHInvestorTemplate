@@ -36,6 +36,25 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if ("availableOn" in body) {
     patch.available_on = String(body.availableOn ?? "").trim() || null;
   }
+  for (const [field, col] of [["bathrooms", "bathrooms"], ["squareFeet", "square_feet"],
+                             ["homeYear", "home_year"]] as const) {
+    if (field in body) {
+      const n = Number(body[field]);
+      patch[col] = body[field] === "" || !Number.isFinite(n) ? null : n;
+    }
+  }
+  for (const [field, col] of [["homeMake", "home_make"], ["homeSerial", "home_serial"]] as const) {
+    if (field in body) patch[col] = String(body[field] ?? "").trim() || null;
+  }
+  if ("homeOwner" in body) {
+    // Who owns the home on this lot. Never inferred from anything: getting it
+    // wrong is an argument with a resident about whose water heater it is.
+    const v = String(body.homeOwner);
+    if (!["ours", "theirs", "none"].includes(v)) {
+      return NextResponse.json({ error: "whose home is it?" }, { status: 400 });
+    }
+    patch.home_owner = v;
+  }
   if (!Object.keys(patch).length) {
     return NextResponse.json({ error: "nothing to change" }, { status: 400 });
   }

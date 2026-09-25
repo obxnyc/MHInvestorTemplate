@@ -1224,3 +1224,50 @@ a.metric:hover{border-color:var(--accent)}
   color:var(--muted);font:inherit;font-size:.76rem;text-decoration:underline;
   text-underline-offset:2px;cursor:pointer;padding:0}
 .askreset:hover{color:var(--ink)}
+
+/* ---- finding the place ---- */
+.addrpick{margin-top:.2rem}
+.addrbox{position:relative}
+.addrspin{position:absolute;right:.7rem;top:.65rem;color:var(--faint)}
+.addrlist{position:absolute;z-index:20;left:0;right:0;top:calc(100% + .2rem);
+  list-style:none;margin:0;padding:.25rem;background:var(--card);
+  border:1px solid var(--hair);border-radius:10px;
+  box-shadow:0 12px 30px -14px rgba(16,27,45,.3)}
+.addrlist button{display:block;width:100%;text-align:left;border:none;background:none;
+  font:inherit;font-size:.85rem;padding:.45rem .6rem;border-radius:7px;cursor:pointer}
+.addrlist button:hover{background:var(--sunk)}
+.addrnote{margin:.35rem 0 0;font-size:.78rem;color:var(--warn)}
+/* The aerial is the confirmation. Big enough to recognise a roofline on;
+   smaller and it is a green rectangle everybody clicks yes on. */
+.aerial{margin:.6rem 0 .2rem;border:1px solid var(--hair);border-radius:10px;
+  overflow:hidden;background:var(--sunk)}
+.aerial.ok{border-color:var(--accent)}
+.aerial img{display:block;width:100%;height:auto}
+.aerialbar{display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;
+  background:var(--card);border-top:1px solid var(--hair);font-size:.84rem}
+.aerialask{color:var(--ink-2);font-weight:600}
+.aerialok{color:var(--accent);font-weight:700}
+.aerialbar .mini{margin-left:auto}
+.hint{margin:.4rem 0 0;font-size:.79rem;color:var(--muted);line-height:1.5}
+.kindtag{font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--muted);background:var(--sunk);padding:.12rem .4rem;border-radius:5px}
+
+/* ---- one lot ---- */
+.uspec{color:var(--muted);min-width:9rem}
+.whose{font-size:.74rem;font-weight:700;padding:.1rem .45rem;border-radius:5px}
+.whose.ours{background:var(--accent-soft);color:var(--accent-ink)}
+.whose.theirs{background:var(--vd-soft);color:var(--vd-ink)}
+.whose.none{background:var(--sunk);color:var(--muted)}
+.whose .serial{margin-left:.35rem;font-weight:500;opacity:.8;
+  font-family:"IBM Plex Mono",monospace;font-size:.68rem}
+.udetail{flex-basis:100%;margin-top:.5rem;padding:.7rem;border-radius:8px;
+  background:var(--card);border:1px solid var(--hair)}
+.ufields{display:flex;flex-wrap:wrap;gap:.5rem}
+.udetail label{display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:4.5rem;
+  font-size:.72rem;font-weight:700;color:var(--muted)}
+.udetail label.uwide{flex:2;min-width:9rem}
+.udetail label.ufull{flex-basis:100%;margin-top:.5rem}
+.udetail input,.udetail select{padding:.4rem .5rem;border:1px solid var(--hair);
+  border-radius:7px;background:var(--card);color:var(--ink);font:inherit;font-size:.84rem;
+  font-weight:500}
+.udetail .btn{margin-top:.7rem}
