@@ -78,8 +78,13 @@ button{font:inherit;cursor:pointer}
 .auth button:disabled{opacity:.5}
 
 /* ---- shell ---- */
-/* The layout answers to the width of the app shell, not the browser window, so
-   it behaves correctly when embedded in a narrower column. */
+/* Plain media queries below, not container queries.
+   The shell used to be a query container, on the theory that the layout should
+   answer to its own width rather than the window's, so it would survive being
+   embedded in a narrower column. Nothing embeds it, and in exchange the two
+   columns silently stopped resolving: the list and the conversation stacked
+   vertically, on a screen with room for both. A speculative capability is not
+   worth a layout that does not work on the screen it is actually used on. */
 /* A DEFINITE height, not a minimum. With min-height the shell has no height
    for its children to divide, so `flex:1` on the panes resolves against their
    own content: the thread's message list collapsed to a forty-pixel strip with
@@ -88,7 +93,7 @@ button{font:inherit;cursor:pointer}
    An inbox is an app shell, not a document: the frame is the window and the
    panes scroll inside it. That is what a definite height buys. */
 .shell{height:100dvh;overflow:hidden;display:flex;flex-direction:column;
-  background:var(--card);container-type:inline-size;container-name:app}
+  background:var(--card)}
 .apphead{display:flex;align-items:center;gap:.5rem;padding:1rem 1.25rem;
   border-bottom:1px solid var(--hair);position:relative;z-index:10}
 .apphead h1{font-size:1.3rem;font-weight:700;letter-spacing:-.025em;margin:0}
@@ -118,21 +123,21 @@ button{font:inherit;cursor:pointer}
 
 /* ---- two panes ---- */
 .split{display:grid;grid-template-columns:minmax(0,1fr);flex:1;min-height:0}
-@container app (min-width:780px){.split{grid-template-columns:21rem minmax(0,1fr)}}
-@container app (min-width:980px){.split{grid-template-columns:24rem minmax(0,1fr)}}
-@container app (min-width:1200px){.split{grid-template-columns:27rem minmax(0,1fr)}}
+@media (min-width:780px){.split{grid-template-columns:21rem minmax(0,1fr)}}
+@media (min-width:980px){.split{grid-template-columns:24rem minmax(0,1fr)}}
+@media (min-width:1200px){.split{grid-template-columns:27rem minmax(0,1fr)}}
 
 /* Below 700px the shell cannot carry two useful columns — splitting it just
    truncates every name. Show one at a time: the list, then the conversation
    once something is picked. */
-@container app (max-width:779px){
+@media (max-width:779px){
   .chatcol.idle{display:none}
   /* ...and the list steps aside once a conversation is open. The back chevron
      in the thread header is the way back to it. */
   .split.thread .listcol{display:none}
 }
 /* Narrow shells get tighter rows rather than losing the second pane. */
-@container app (max-width:900px){
+@media (max-width:900px){
   .row{padding:.75rem .7rem;gap:.65rem}
   .avwrap .av{width:2.2rem;height:2.2rem;font-size:.7rem}
   .rname{font-size:.87rem}
