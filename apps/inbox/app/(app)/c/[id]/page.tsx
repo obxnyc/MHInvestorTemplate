@@ -9,6 +9,7 @@ import ClaimPill from "@/components/ClaimPill";
 import CloseButton from "@/components/CloseButton";
 import ClosurePrompt from "@/components/ClosurePrompt";
 import Live from "@/components/Live";
+import ConversationList, { type ListFilters } from "@/components/ConversationList";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,12 @@ function initials(n: string) {
   return s.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 }
 
-export default async function Chat({ params }: { params: Promise<{ id: string }> }) {
+export default async function Chat(
+  { params, searchParams }:
+  { params: Promise<{ id: string }>; searchParams: Promise<ListFilters> },
+) {
   const { id } = await params;
+  const filters = await searchParams;
   const staff = await requireStaff();
   const supabase = await supabaseServer();
 
@@ -73,8 +78,14 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
   let lastDay = "";
 
   return (
-    <div className="chatcol">
+    // `thread` tells the stylesheet a conversation is open, which is all it
+    // needs to know to hide the list on a phone -- where two panes do not fit
+    // and the back chevron is the way out.
+    <div className="split thread">
       <Live />
+      <ConversationList filters={filters} selectedId={id} basePath={`/c/${id}`} />
+
+      <div className="chatcol">
       <div className="chead">
         <Link href="/" className="chevron" aria-label="Back to messages">&lsaquo;</Link>
         <span className="av">{initials(name)}</span>
@@ -186,7 +197,8 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
         })}
       </div>
 
-      <Composer conversationId={id} />
+        <Composer conversationId={id} />
+      </div>
     </div>
   );
 }
