@@ -854,3 +854,11 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   margin-left:-.25rem;color:inherit}
 .homelink:hover h1{color:var(--accent)}
 .homelink:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* The team list reuses the inbox rows, so one screen teaches the other. */
+.listcol .rows button.row{text-align:left;border:none;background:none;font:inherit;
+  color:inherit;cursor:pointer}
+.listcol .rows button.row:hover{background:var(--hair-2)}
+.teamlab{padding:.9rem .95rem .35rem;font-size:.66rem;font-weight:700;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+  border-top:1px solid var(--hair)}
