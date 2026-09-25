@@ -15,7 +15,11 @@ import { NextResponse, type NextRequest } from "next/server";
  *
  *  Everything else -- threads, calls, court filings, the audit trail -- needs a
  *  session, and then row-level security decides what that session may see. */
-const PUBLIC = [/^\/login/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//];
+// /jobs/<token> is a contractor's own list, authenticated by the token in the
+// URL rather than by a session. Sending it to the sign-in page would mean
+// asking a plumber to create an account, which is how the completion photo
+// stops arriving.
+const PUBLIC = [/^\/login/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//, /^\/jobs\//];
 
 const isPublic = (path: string) => PUBLIC.some((re) => re.test(path));
 
