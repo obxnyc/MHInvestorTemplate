@@ -123,6 +123,13 @@ button{font:inherit;cursor:pointer}
 
 /* ---- two panes ---- */
 .split{display:grid;grid-template-columns:minmax(0,1fr);flex:1;min-height:0}
+/* Two columns as soon as two columns fit, which is lower than it looks: 640px
+   is a zoomed desktop or a tablet, not a phone. The threshold used to be 780,
+   chosen for handsets, and it quietly swallowed anyone reading at 150% -- their
+   inbox became one pane at a time on a large monitor, which is the one thing
+   this layout exists to avoid. A narrower list is a far smaller cost than
+   losing the list. */
+@media (min-width:640px){.split{grid-template-columns:15.5rem minmax(0,1fr)}}
 @media (min-width:780px){.split{grid-template-columns:21rem minmax(0,1fr)}}
 @media (min-width:980px){.split{grid-template-columns:24rem minmax(0,1fr)}}
 @media (min-width:1200px){.split{grid-template-columns:27rem minmax(0,1fr)}}
@@ -130,7 +137,7 @@ button{font:inherit;cursor:pointer}
 /* Below 700px the shell cannot carry two useful columns — splitting it just
    truncates every name. Show one at a time: the list, then the conversation
    once something is picked. */
-@media (max-width:779px){
+@media (max-width:639px){
   .chatcol.idle{display:none}
   /* ...and the list steps aside once a conversation is open. The back chevron
      in the thread header is the way back to it. */
