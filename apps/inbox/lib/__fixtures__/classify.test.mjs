@@ -96,6 +96,42 @@ t("every decision records which layer made it",
   ["source","emergency","known-tenant","model","fallback"]
     .includes(c("hey", "sms", STRANGER).basis));
 
+// --- a thread whose subject changes halfway through ---
+// "Excuse me?" opens a thread as General; two minutes later the same person
+// reports roaches. A thread classified once files that under General forever,
+// which is how a repair sits in a queue nobody checks.
+{
+  const { shouldRecategorise } = M;
+  const res = (category, confidence, urgent = false) =>
+    ({ category, confidence, urgent, basis: "known-tenant" });
+
+  t("an unplaceable thread takes the first confident reading",
+    shouldRecategorise("other", res("maintenance", 0.9))?.category === "maintenance");
+  t("...but not an unconfident one",
+    shouldRecategorise("other", res("maintenance", 0.4)) === null);
+
+  t("a repair pulls a rent conversation across",
+    shouldRecategorise("current_tenant", res("maintenance", 0.9))?.category === "maintenance");
+
+  // The one that matters most: a tenant reports a leak and then says thanks.
+  t("a repair is never demoted by small talk that follows it",
+    shouldRecategorise("maintenance", res("current_tenant", 0.95)) === null);
+  t("nor by a confident reading of any other kind",
+    shouldRecategorise("maintenance", res("prospect", 0.99)) === null);
+
+  t("a thread already in the right place is left alone",
+    shouldRecategorise("maintenance", res("maintenance", 0.9)) === null);
+
+  // Urgency outranks the lot: a habitability problem moves the thread whatever
+  // it was filed as, and without waiting to clear the confidence bar.
+  const emergency = shouldRecategorise("prospect", res("maintenance", 0.2, true));
+  t("an emergency moves the thread regardless of confidence",
+    emergency?.category === "maintenance" && emergency.urgent === true);
+
+  t("leasing chatter does not drag a thread out of prospect",
+    shouldRecategorise("prospect", res("current_tenant", 0.9)) === null);
+}
+
 let failed = 0;
 for (const [n, ok] of checks) { console.log(`${ok ? "  ok" : "FAIL"}  ${n}`); if (!ok) failed++; }
 console.log(`\n${checks.length - failed}/${checks.length} passed`);

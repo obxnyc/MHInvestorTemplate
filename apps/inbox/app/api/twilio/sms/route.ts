@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
 import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
-import { classify, needsReview } from "@/lib/classify";
+import { classify, needsReview, shouldRecategorise } from "@/lib/classify";
 import { prettyPhone } from "@/lib/format";
 import { storeInboundMedia } from "@/lib/media";
 
@@ -75,6 +75,38 @@ export async function POST(req: Request) {
       subject: (result.urgent ? "URGENT " : "") + (result.summary ?? body.slice(0, 70)),
     }).select("id, team_id, category").single();
     convo = data!;
+  } else {
+    // The subject can change inside one thread. Every inbound message is
+    // classified, not only the first -- see shouldRecategorise for what is
+    // allowed to happen to the answer.
+    const result = await classify(body, "sms", {
+      party: contact.party,
+      hasUnit: !!contact.unit_id,
+      priorConversations: 1,
+    });
+
+    const move = shouldRecategorise(convo.category, result);
+    if (move) {
+      const { data: team } = await db
+        .from("teams").select("id").eq("category", move.category).maybeSingle();
+      await db.from("conversations").update({
+        category: move.category,
+        category_confidence: result.confidence,
+        team_id: team?.id ?? convo.team_id,
+      }).eq("id", convo.id);
+
+      // Written into the thread, not just changed underneath it. Someone who
+      // filed this as a rent question needs to see that it moved and why,
+      // rather than finding it in another queue and assuming a mistake.
+      await db.from("notes").insert({
+        conversation_id: convo.id,
+        author_id: null,
+        body: `Moved to ${move.category.replace("_", " ")}${move.urgent ? " — urgent" : ""}`
+          + ` because of: "${body.slice(0, 80)}"`,
+      });
+
+      convo = { ...convo, category: move.category, team_id: team?.id ?? convo.team_id };
+    }
   }
 
   const incoming: string[] = [];
