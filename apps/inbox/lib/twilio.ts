@@ -35,21 +35,46 @@ export type SignatureCheck =
  *  and would build a candidate URL that is not a URL. */
 const HOSTNAME = /^[a-z0-9.-]+(:\d+)?$/i;
 
+/** Every URL this request could plausibly have been signed as.
+ *
+ *  More than one because Twilio hashes the URL exactly as it was configured,
+ *  and a console entry can differ from the route in ways that never reach the
+ *  application: a trailing slash (which Next redirects away, after the
+ *  signature is already fixed), or a query string on the webhook URL. Each
+ *  candidate costs one HMAC -- microseconds -- and the alternative is a 403
+ *  that looks identical to an attack.
+ *
+ *  Widening this does not weaken the check. Every candidate still has to be
+ *  signed with the account's auth token, and the paths are built from the
+ *  route, not accepted from the caller. */
 function candidateUrls(req: Request, path: string): string[] {
   const urls: string[] = [];
+  const add = (u: string) => { if (!urls.includes(u)) urls.push(u); };
 
+  // The path as the request actually arrived, which picks up a query string
+  // on the configured webhook URL. It is still this route's own path -- Next
+  // routed the request here -- so it cannot name some other endpoint.
+  let asArrived = path;
+  try {
+    const u = new URL(req.url);
+    asArrived = u.pathname + u.search;
+  } catch { /* keep the route's own path */ }
+
+  const origins: string[] = [];
   const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "")
     .split(",")[0].trim();
   const proto = (req.headers.get("x-forwarded-proto") ?? "https")
     .split(",")[0].trim();
   if (HOSTNAME.test(host) && (proto === "https" || proto === "http")) {
-    urls.push(`${proto}://${host}${path}`);
+    origins.push(`${proto}://${host}`);
   }
-
   const base = (process.env.PUBLIC_BASE_URL ?? "").trim().replace(/\/+$/, "");
-  if (base) {
-    const fromConfig = `${base}${path}`;
-    if (!urls.includes(fromConfig)) urls.push(fromConfig);
+  if (base) origins.push(base);
+
+  for (const origin of origins) {
+    add(`${origin}${asArrived}`);
+    add(`${origin}${path}`);
+    add(`${origin}${path}/`);          // console entry with a trailing slash
   }
 
   return urls;
