@@ -41,6 +41,7 @@ export async function runSetupChecks(
     ...guard("Required settings", envChecks),
     ...(await guardAsync("Twilio", () => twilioChecks(origin))),
     ...(await guardAsync("Anthropic", anthropicChecks)),
+    ...(await guardAsync("Delivery", deliveryChecks)),
     ...(await guardAsync("Database", databaseChecks)),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
@@ -251,6 +252,31 @@ async function twilioChecks(origin: string): Promise<Check[]> {
               : "No inbound request URL is set on the Messaging Service.",
             fix: `Twilio Console → Messaging → Services → your service → Integration → "Send a webhook", and set the request URL to ${expected}.`,
           });
+      // The OTHER callback, and the one that decides whether a message ever
+      // stops saying "Sending". Twilio posts a delivery receipt per message;
+      // if that post goes somewhere this deployment does not answer, the row
+      // stays queued for ever and the portal quietly claims a message is still
+      // in flight days later.
+      //
+      // The reply routes pass a statusCallback per message, which wins. A
+      // service-level one pointing somewhere stale is still worth seeing,
+      // because it is what a message sent by anything else will use.
+      const onService = (svc.statusCallback ?? "").trim();
+      const wantStatus = `${origin}/api/twilio/status`;
+      out.push(!onService
+        ? { name: "Delivery receipts", level: "warn",
+            detail: "No status callback on the Messaging Service. Messages sent"
+              + " from this app carry their own, so receipts should still arrive;"
+              + " anything sent another way will not report delivery.",
+            fix: `Optional, but set it: Twilio Console → Messaging → Services → your service → Integration → Status callback → ${wantStatus}` }
+        : onService === wantStatus
+          ? { name: "Delivery receipts", level: "good",
+              detail: `Twilio reports delivery to ${onService}.` }
+          : { name: "Delivery receipts", level: "warn",
+              detail: `Twilio reports delivery to ${onService}, but this deployment answers at ${wantStatus}.`,
+              fix: "If messages sit on \"Sending\" and never say Delivered, this is"
+                + " the first thing to fix: Twilio Console → Messaging → Services →"
+                + " your service → Integration → Status callback." });
     } catch (e) {
       out.push({ name: "Inbound webhook URL", level: "warn",
         detail: `Could not read the Messaging Service (${(e as Error).message}).` });
@@ -260,6 +286,45 @@ async function twilioChecks(origin: string): Promise<Check[]> {
   return out;
 }
 
+
+/**
+ * Are delivery receipts actually arriving?
+ *
+ * Every other check here asks a service how it is configured. This one asks
+ * our own data whether the configuration is working, which is a different
+ * question and the only one that matters: a message still sitting on "queued"
+ * twenty minutes after it was accepted means Twilio's receipt never landed,
+ * whatever the console says the URL is.
+ */
+async function deliveryChecks(): Promise<Check[]> {
+  const db = supabaseAdmin();
+  const cutoff = new Date(Date.now() - 20 * 60_000).toISOString();
+
+  const [{ count: stuck }, { count: settled }] = await Promise.all([
+    db.from("messages").select("id", { count: "exact", head: true })
+      .eq("direction", "outbound").eq("status", "queued").lt("created_at", cutoff),
+    db.from("messages").select("id", { count: "exact", head: true })
+      .eq("direction", "outbound").in("status", ["delivered", "sent", "undelivered", "failed"]),
+  ]);
+
+  if (!stuck) {
+    return [{ name: "Delivery receipts arriving", level: "good",
+      detail: settled
+        ? `Nothing stuck. ${settled} message${settled === 1 ? " has" : "s have"} reported back.`
+        : "Nothing stuck, and nothing has been sent yet to report back." }];
+  }
+
+  return [{
+    name: "Delivery receipts arriving", level: "bad",
+    detail: `${stuck} outbound message${stuck === 1 ? "" : "s"} still say "Sending"`
+      + ` twenty minutes after being accepted by Twilio.`
+      + (settled ? ` ${settled} others did report back.` : " None have ever reported back.")
+      + " Twilio accepted them, so they probably went out; the receipt is what is missing.",
+    fix: "Twilio Console → Monitor → Logs → Messaging, find one of them and look"
+      + " at the delivery-callback attempts. A 403 there means the signature check"
+      + " is rejecting it; a 404 or a redirect means the URL points somewhere else.",
+  }];
+}
 
 /** The half of the pipeline the Twilio console cannot see.
  *
