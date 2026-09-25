@@ -279,6 +279,7 @@ export default function ThreadPane(
                 category={String(convo.category ?? "other")}
                 context={[convo.subject, data.messages.at(-1)?.body]
                   .filter(Boolean).join(" ")}
+                lastInbound={data.messages.at(-1)?.direction === "inbound"}
                 asked={asked} onAsked={setAsked}
                 onInsert={(text) => setInsert((i) => ({ text, n: i.n + 1 }))} />
 
