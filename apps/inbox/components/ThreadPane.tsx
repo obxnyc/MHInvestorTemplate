@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { prettyPhone, clockTime } from "@/lib/format";
+import { prettyPhone, clockTime, dayLabel } from "@/lib/format";
 import { catLabel, propertyOf } from "@/lib/category";
 import Composer from "./Composer";
 import ClaimPill from "./ClaimPill";
@@ -144,8 +144,7 @@ export default function ThreadPane(
 
       <div className="msgs">
         {timeline.map((item) => {
-          const day = new Date(item.at).toLocaleDateString(undefined,
-            { weekday: "long", month: "short", day: "numeric" });
+          const day = dayLabel(item.at);
           const sep = day !== lastDay ? ((lastDay = day), day) : null;
 
           if (item.kind === "note") {
