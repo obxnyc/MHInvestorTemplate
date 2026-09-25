@@ -43,6 +43,7 @@ export default function AppHeader(
             <div className="ovmenu" onClick={(e) => e.stopPropagation()}>
               <Link className="ovitem" href="/">Messages</Link>
               <Link className="ovitem" href="/calls">Calls</Link>
+              <Link className="ovitem" href="/team">Team messages</Link>
               {role === "admin" && <Link className="ovitem" href="/legal">Court filings</Link>}
               {role === "admin" && <Link className="ovitem" href="/audit">Audit trail</Link>}
               {(role === "admin" || role === "office")
