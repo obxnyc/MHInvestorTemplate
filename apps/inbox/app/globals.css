@@ -127,6 +127,9 @@ button{font:inherit;cursor:pointer}
    once something is picked. */
 @container app (max-width:779px){
   .chatcol.idle{display:none}
+  /* ...and the list steps aside once a conversation is open. The back chevron
+     in the thread header is the way back to it. */
+  .split.thread .listcol{display:none}
 }
 /* Narrow shells get tighter rows rather than losing the second pane. */
 @container app (max-width:900px){
