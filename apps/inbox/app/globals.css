@@ -1271,3 +1271,8 @@ a.metric:hover{border-color:var(--accent)}
   border-radius:7px;background:var(--card);color:var(--ink);font:inherit;font-size:.84rem;
   font-weight:500}
 .udetail .btn{margin-top:.7rem}
+
+/* An unsaved number. The handset says what is true -- nobody knows who this is
+   -- where two digits read as initials that failed to load. */
+.av.unknown{background:var(--sunk);color:var(--muted)}
+.av.unknown svg{display:block}

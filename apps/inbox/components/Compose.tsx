@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { initials, swatch } from "@/lib/format";
+import Avatar from "@/components/Avatar";
 import type { Recipient } from "@/lib/compose";
 
 /**
@@ -103,13 +103,10 @@ function Picker({ onClose }: { onClose: () => void }) {
             </p>
           )}
           {(list ?? []).map((p) => {
-            const [bg, fg] = swatch(p.name);
             return (
               <button key={`${p.kind}:${p.id}`} className="rcprow" disabled={busy}
                       onClick={() => open(p)}>
-                <span className="av" style={{ background: bg, color: fg }}>
-                  {initials(p.name)}
-                </span>
+                <Avatar name={p.name} />
                 <span className="rcpwho">
                   <span className="rcpname">
                     {p.name}

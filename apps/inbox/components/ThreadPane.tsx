@@ -12,6 +12,7 @@ import CategoryPicker from "./CategoryPicker";
 import OpenJobs, { type Job } from "./OpenJobs";
 import Bubble from "./Bubble";
 import ContactEditor from "./ContactEditor";
+import Avatar from "@/components/Avatar";
 import { languageName } from "@/lib/translate";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
@@ -65,6 +66,10 @@ export default function ThreadPane(
   }, []);
 
   useEffect(() => {
+    // Cleared on every change of thread, including to nothing. Without this an
+    // error from one conversation stayed on screen over the next one, and over
+    // an empty pane -- so a single failure looked like everything was broken.
+    setError(null);
     if (!id) { setData(null); return; }
     // Cleared first, so a slow load never shows the previous conversation's
     // messages under the new one's name.
@@ -155,7 +160,7 @@ export default function ThreadPane(
       <div className="chead">
         <button type="button" className="chevron" aria-label="Back to messages"
                 onClick={onBack}>&lsaquo;</button>
-        <span className="av">{initials(name)}</span>
+        <Avatar name={name} />
         <span className="cwho">
           <button type="button" className="nm nmbtn" onClick={() => setNaming(true)}
                   title="Name this contact">

@@ -91,13 +91,32 @@ export default function InboxClient(
 
   function onContextMenu(e: React.MouseEvent) {
     const row = (e.target as HTMLElement).closest<HTMLElement>("a.row");
-    // Staff threads are not handed off or claimed, so they keep the browser's
-    // own menu rather than being given one with nothing useful in it.
-    if (!row || !row.dataset.cid) return;
+    if (!row) return;
+
+    // A staff thread gets a shorter menu rather than none. It was given none on
+    // the reasoning that claiming and forwarding do not apply to a colleague --
+    // which is true, and still meant right-clicking a name did nothing at all,
+    // so the feature read as broken on exactly the rows people tried first.
+    const thread = row.dataset.dm;
+    if (thread) {
+      e.preventDefault();
+      setForward(null);
+      setMenu({
+        id: thread, kind: "dm",
+        name: row.dataset.name || "This thread",
+        phone: null, claimed: false, mine: false,
+        contactId: null, party: "", unitId: null, language: null,
+        named: true, category: "staff",
+        x: e.clientX, y: e.clientY,
+      });
+      return;
+    }
+
+    if (!row.dataset.cid) return;
     e.preventDefault();
     setForward(null);
     setMenu({
-      id: row.dataset.cid,
+      id: row.dataset.cid, kind: "conversation",
       name: row.dataset.name || "This conversation",
       phone: row.dataset.phone || null,
       claimed: row.dataset.claimed === "1",
@@ -148,8 +167,15 @@ export default function InboxClient(
 
       {menu && (
         <RowMenu at={menu} onClose={() => setMenu(null)}
-                 onOpen={(id) => { setDm(null); setSelected(id);
-                                   window.history.pushState({}, "", `/c/${id}`); }}
+                 onOpen={(id, kind) => {
+                   if (kind === "dm") {
+                     setSelected(null); setDm(id);
+                     window.history.pushState({}, "", `/team?t=${id}`);
+                   } else {
+                     setDm(null); setSelected(id);
+                     window.history.pushState({}, "", `/c/${id}`);
+                   }
+                 }}
                  onForward={openForward}
                  onEditContact={(t) => { setMenu(null); setEditing(t); }}
                  onChanged={() => router.refresh()} />
