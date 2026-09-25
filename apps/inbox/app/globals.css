@@ -59,8 +59,23 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%}
+/* The stack, not a webfont. "Archivo" was named here and never loaded by
+   anything, so every screen has been falling through to whatever the machine
+   had -- which on a Mac is a good face and on Windows is Segoe rendered at the
+   wrong weight. Naming the system UI faces explicitly gets the same speed with
+   none of the guesswork, and no network fetch on a phone in a driveway.
+   text-rendering and the feature settings turn off the loose default spacing
+   that made this read as unfinished. */
 body{background:var(--page);color:var(--ink);
-  font:15px/1.5 Archivo,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable Text",
+    "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:15px;line-height:1.5;letter-spacing:-.006em;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  text-rendering:optimizeLegibility;
+  font-feature-settings:"kern" 1,"liga" 1,"calt" 1}
+/* Numbers line up in columns: times, counts, rents, phone numbers. Without
+   this a list of timestamps jitters as the digits change. */
+.rtime,.dwhen,.mvalue,.stamp,.delivered,.urent,.cnt,.n{font-variant-numeric:tabular-nums}
 a{color:inherit;text-decoration:none}
 button{font:inherit;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -437,19 +452,27 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .mrow{display:flex;flex-direction:column}
 .msgs{flex:1 1 0;min-height:8rem;overflow-y:auto;overscroll-behavior:contain;
   padding:1rem 1.1rem;display:flex;flex-direction:column}
-.daysep{display:flex;align-items:center;gap:.75rem;margin:.9rem 0 .7rem;font-size:.66rem;
-  color:var(--faint);font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+.daysep{display:flex;align-items:center;gap:.9rem;margin:1.2rem 0 .9rem;font-size:.68rem;
+  color:var(--faint);font-weight:600;letter-spacing:.04em}
 .daysep::before,.daysep::after{content:"";flex:1;height:1px;background:var(--hair)}
 .sys{text-align:center;font-size:.72rem;color:var(--muted);margin:.4rem auto .6rem;
   max-width:26rem;line-height:1.45;padding:.4rem .7rem;background:var(--sunk);border-radius:8px}
-.in,.out{display:flex;flex-direction:column;margin-bottom:.5rem;max-width:min(30rem,80%)}
+/* A measure, not a percentage. 80% of a wide pane is a line so long the eye
+   loses its place returning to the left edge; 34rem is about 70 characters,
+   which is what everything readable has settled on. */
+.in,.out{display:flex;flex-direction:column;margin-bottom:.35rem;
+  max-width:min(34rem,82%)}
 .in{align-items:flex-start;align-self:flex-start}
 .out{align-items:flex-end;align-self:flex-end}
-.b{padding:.5rem .8rem;border-radius:14px;font-size:.87rem;line-height:1.45;
-  white-space:pre-wrap;word-break:break-word}
-.in .b{background:var(--sunk);color:var(--ink);border-bottom-left-radius:5px}
-.out .b{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
-.stamp{font-size:.66rem;color:var(--faint);padding:.2rem .3rem 0;font-weight:500}
+/* Tighter, squarer, and set at a size somebody reads rather than glances at.
+   14px in a 14px bubble was doing two jobs badly: too small to read a paragraph
+   of, too round to look like anything but a toy. */
+.b{padding:.55rem .85rem;border-radius:12px;font-size:.92rem;line-height:1.5;
+  letter-spacing:-.004em;white-space:pre-wrap;overflow-wrap:anywhere}
+.in .b{background:var(--sunk);color:var(--ink);border-bottom-left-radius:4px}
+.out .b{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.stamp{font-size:.68rem;color:var(--faint);padding:.15rem .3rem 0;font-weight:500;
+  letter-spacing:.005em}
 .stamp b{color:var(--muted);font-weight:700}
 .failed{color:var(--crit);font-style:normal;font-weight:700}
 .mms{max-width:100%;border-radius:10px;margin-top:.4rem;display:block}
@@ -629,8 +652,8 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 /* Attribution above each bubble: who sent it, or that the system did and why.
    The audit trail read inline, so nobody has to open a log to find out who
    answered a tenant. */
-.attrib{display:flex;align-items:center;gap:.35rem;font-size:.68rem;color:var(--muted);
-  font-weight:600;margin:.15rem .3rem .25rem}
+.attrib{display:flex;align-items:center;gap:.35rem;font-size:.7rem;color:var(--muted);
+  font-weight:600;letter-spacing:.005em;margin:.5rem .25rem .2rem}
 .out .attrib{align-self:flex-end}
 .in .attrib{align-self:flex-start}
 .recycle .writing textarea{margin-bottom:.45rem}
