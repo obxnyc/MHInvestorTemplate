@@ -6,8 +6,11 @@ import { joinTyping, sendTyping, TYPING_TTL } from "@/lib/typing";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export default function Composer(
-  { conversationId, myName, sendsIn, insert }:
+  { conversationId, myName, sendsIn, insert, onSent }:
   { conversationId: string; myName?: string; sendsIn?: string | null;
+    /** Awaited after a send, so the thread reloads because this asked it to
+     *  rather than because an event happened to be heard. */
+    onSent?: () => void | Promise<void>;
     /** Text pushed in from outside -- a suggested question. `n` increments on
      *  every push so the same question twice still arrives twice. */
     insert?: { text: string; n: number } },
@@ -62,9 +65,28 @@ export default function Composer(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: text }),
     });
+    const out = await res.json().catch(() => ({}));
     setBusy(false);
+
     if (!res.ok) { setError("Didn't send. Try again."); return; }
-    setText("");
+
+    // The reply route answers 200 with ok:false when the carrier REJECTED the
+    // message -- it records the attempt and moves on, which is right, but the
+    // box was only checking the HTTP status. So a rejected text cleared the
+    // box and looked exactly like a sent one. The row is written either way,
+    // so this is about telling the person who typed it.
+    if (out.ok === false) {
+      setError(out.status === "failed"
+        ? "Written to the thread, but the carrier rejected it. It did not go out."
+        : "Didn't send. Try again.");
+    } else {
+      setText("");
+    }
+
+    // Reload first and wait for it, so the message is on screen before anything
+    // else happens. The event and the router refresh stay for everyone else
+    // listening, but this no longer depends on either arriving.
+    await onSent?.();
     start(() => (threadChanged(), router.refresh()));
   }
 
