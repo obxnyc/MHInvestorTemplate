@@ -8,6 +8,7 @@ import CloseButton from "./CloseButton";
 import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
 import CategoryPicker from "./CategoryPicker";
+import OpenJobs, { type Job } from "./OpenJobs";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 
@@ -24,6 +25,7 @@ type Thread = {
   notes: Record<string, unknown>[];
   media: Record<string, string>;
   reads: Read[];
+  jobs: Job[];
   me: string;
   meName: string;
 };
@@ -162,6 +164,8 @@ export default function ThreadPane(
                    isMine={convo.assigned_to === data.me} />
         <CloseButton conversationId={convo.id} isClosed={convo.status === "closed"} />
       </div>
+
+      <OpenJobs jobs={data.jobs ?? []} />
 
       {convo.category_confidence !== null && convo.category_confidence < 0.75 && (
         <div className="unsure">
