@@ -20,9 +20,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { data: convo } = await supabase
     .from("conversations")
-    .select("id, category, source, status, subject, asked, category_confidence, closure_prompts, assigned_to, unit_id, units(label, properties(name, color)), contacts(id, phone, full_name, party, unit_id, language, units(label, properties(name, color))), staff:assigned_to(full_name)")
+    .select("id, category, source, status, subject, category_confidence, closure_prompts, assigned_to, unit_id, units(label, properties(name, color)), contacts(id, phone, full_name, party, unit_id, language, units(label, properties(name, color))), staff:assigned_to(full_name)")
     .eq("id", id).single();
   if (!convo) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Asked separately, and allowed to fail.
+  //
+  // This column arrives with migration 015, and putting it in the select above
+  // meant that until 015 was run EVERY conversation failed to open -- one
+  // unknown column takes the whole row with it. A feature waiting on a
+  // migration must degrade to being absent, never to breaking the screen it
+  // sits on.
+  let asked: string[] = [];
+  const probe = await supabase
+    .from("conversations").select("asked").eq("id", id).maybeSingle();
+  if (!probe.error && probe.data) asked = (probe.data as { asked?: string[] }).asked ?? [];
 
   // What this person already has outstanding. Whoever picks up the thread
   // should see "three open jobs, one of them late" before they type a word --
@@ -65,7 +77,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   );
 
   return NextResponse.json({
-    convo,
+    convo: { ...convo, asked },
     messages: messages ?? [],
     notes: notes ?? [],
     media: Object.fromEntries(signed),
