@@ -5,6 +5,7 @@ import { twilioClient, publicBase } from "@/lib/twilio";
 import { pushToStaff } from "@/lib/push";
 import { prettyPhone } from "@/lib/format";
 import { jobsLink, openWorkOrder } from "@/lib/dispatch";
+import { oneToOneThread, sayInThread } from "@/lib/dm";
 
 export const runtime = "nodejs";
 
@@ -88,10 +89,34 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     recipientName = person.full_name;
 
+    // Into their thread with you, not just a notification.
+    //
+    // This used to send a push and stop there. A push is not a message: miss
+    // it, or have notifications off -- which most people do -- and the forward
+    // went nowhere at all. There was nothing in Messages, nothing in the thread
+    // with them, and the only trace was a note in the conversation THEY could
+    // not see unless they happened to open it. The sender believed they had
+    // passed it on.
+    //
+    // The staff threads were built after this route and it was never moved
+    // over. It is moved over now: the same quoting as a contractor gets, plus
+    // a link back so the whole conversation is one tap away.
+    const passed = [
+      `Forwarded from ${from}:`,
+      ``,
+      `"${String(msg.body).trim()}"`,
+      note?.trim() ? `\n${note.trim()}` : "",
+      `\nThe conversation: ${publicBase(req)}/c/${convo.id}`,
+    ].join("\n").trim();
+
+    const thread = await oneToOneThread(db, staff.id, person.id);
+    if (thread) await sayInThread(db, thread, staff.id, passed);
+
     await pushToStaff([person.id], {
       title: `${staff.full_name} forwarded you a message`,
       body: String(msg.body).slice(0, 140),
-      url: `/c/${convo.id}`,
+      // Their thread, which is where the forward now actually is.
+      url: thread ? `/team?t=${thread}` : `/c/${convo.id}`,
       tag: `fwd-${msg.id}`,
       conversationId: convo.id,
     });
