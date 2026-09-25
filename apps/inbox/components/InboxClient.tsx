@@ -62,7 +62,7 @@ export default function InboxClient(
   }
 
   return (
-    <div ref={root} className={`split${selected ? " thread" : ""}`} onClick={onClick}>
+    <div ref={root} className={`split${selected ? " split-open" : ""}`} onClick={onClick}>
       {children}
       <ThreadPane id={selected} onBack={back} />
     </div>

@@ -140,8 +140,15 @@ button{font:inherit;cursor:pointer}
 @media (max-width:639px){
   .chatcol.idle{display:none}
   /* ...and the list steps aside once a conversation is open. The back chevron
-     in the thread header is the way back to it. */
-  .split.thread .listcol{display:none}
+     in the thread header is the way back to it.
+
+     The modifier is `split-open`, not `thread`. It was `thread` once, which
+     collided with the `.thread` card used in the other lists -- a component
+     class carrying `display:block` and padding. That silently turned the grid
+     off whenever a conversation was open, which read as "clicking a message
+     takes you to another screen" and survived four fixes aimed at breakpoints,
+     because the stylesheet was right and the class name was not. */
+  .split-open .listcol{display:none}
 }
 /* Narrow shells get tighter rows rather than losing the second pane. */
 @media (max-width:900px){
