@@ -49,3 +49,35 @@ export function isValidPhone(e164: string): boolean {
 export function canSmsFromLine(e164: string): boolean {
   return /^\+1\d{10}$/.test(e164);
 }
+
+/**
+ * Twilio's status vocabulary, narrowed to ours.
+ *
+ * Twilio has more words for this than our enum does, and the one that matters
+ * is `accepted` -- what a message comes back as when it is sent through a
+ * Messaging Service, which is how every message here is sent. Writing it
+ * straight into a msg_status column is an invalid enum value, and the insert
+ * fails.
+ *
+ * That failure was silent and cost a day: the text reached the tenant, the
+ * conversation preview updated because that is a separate statement, and the
+ * message itself was never written. So the thread showed the tenant's side of
+ * a conversation and none of ours -- which reads as "my replies are not
+ * sending" when in fact they were arriving perfectly.
+ *
+ * Unknown words map to `queued` rather than throwing. A status we have not
+ * seen before means the message is somewhere in flight, and the only wrong
+ * answer is to lose the row.
+ */
+export function toMsgStatus(s: string | null | undefined): string {
+  switch (String(s ?? "").toLowerCase()) {
+    case "delivered":
+    case "read":        return "delivered";
+    case "sent":        return "sent";
+    case "undelivered": return "undelivered";
+    case "failed":      return "failed";
+    case "receiving":
+    case "received":    return "received";
+    default:            return "queued";
+  }
+}

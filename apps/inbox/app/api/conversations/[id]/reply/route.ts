@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { twilioClient, publicBase } from "@/lib/twilio";
+import { twilioClient, publicBase, toMsgStatus } from "@/lib/twilio";
 import { fromEnglish } from "@/lib/translate";
 
 export const runtime = "nodejs";
@@ -47,7 +47,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       statusCallback: `${publicBase(req)}/api/twilio/status`,
     });
     sid = sent.sid;
-    status = sent.status ?? "queued";
+    status = toMsgStatus(sent.status);
   } catch (e) {
     // Record the attempt anyway. A message that failed to send is exactly the
     // thing the next person needs to see when they pick up the thread.
@@ -56,7 +56,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const db = supabaseAdmin();
-  await db.from("messages").insert({
+  const { error: writeError } = await db.from("messages").insert({
     conversation_id: id,
     direction: "outbound",
     body: wire,
@@ -66,6 +66,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     status,
     sent_by: staff.id,
   });
+  // Checked, and loudly. This insert failed silently for a day: the text went
+  // out, the preview below updated because it is a separate statement, and the
+  // thread showed the tenant's half of the conversation and none of ours.
+  if (writeError) {
+    console.error("reply written to the carrier but not to the thread", writeError);
+    return NextResponse.json({
+      ok: false, status: "unrecorded",
+      error: "It went out, but we couldn't write it to the thread. Tell somebody —"
+        + " the tenant has it and the record does not.",
+    }, { status: 500 });
+  }
+
   await db.from("conversations")
     .update({ last_message_at: new Date().toISOString(),
               last_message_preview: body.slice(0, 160) })

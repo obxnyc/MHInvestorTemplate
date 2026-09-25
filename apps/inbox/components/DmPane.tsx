@@ -153,7 +153,7 @@ export default function DmPane(
                     the person reading is an odd place to stop -- the tenant
                     threads have always named the sender on both sides. */}
                 <span className="attrib">{mine ? "You" : m.who}</span>
-                <div className="bwrap"><div className="b">{m.body}</div></div>
+                <div className="bwrap"><div className="b"><Body text={m.body} /></div></div>
                 <span className="delivered">{clockTime(m.at)}</span>
               </div>
             </div>
@@ -181,5 +181,47 @@ export default function DmPane(
       </form>
       )}
     </div>
+  );
+}
+
+
+/**
+ * A staff message, with its links made usable.
+ *
+ * A forward arrives carrying a link back to the conversation it came from, and
+ * as raw text that is a forty-character UUID somebody has to select and paste.
+ * Ours become a button that says where it goes; everything else becomes a
+ * plain link, because a colleague pasting a URL means it to be clickable.
+ */
+function Body({ text }: { text: string }) {
+  const parts = String(text).split(/(https?:\/\/\S+)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (!/^https?:\/\//.test(part)) return <span key={i}>{part}</span>;
+
+        const convo = /\/c\/([0-9a-f-]{36})/i.exec(part);
+        if (convo) {
+          return (
+            <a key={i} className="jumpto" href={`/c/${convo[1]}`}>
+              Jump to the conversation <span aria-hidden="true">→</span>
+            </a>
+          );
+        }
+        const team = /\/team\?t=([0-9a-f-]{36})/i.exec(part);
+        if (team) {
+          return (
+            <a key={i} className="jumpto" href={`/team?t=${team[1]}`}>
+              Open that thread <span aria-hidden="true">→</span>
+            </a>
+          );
+        }
+        return (
+          <a key={i} className="inlink" href={part} target="_blank" rel="noreferrer">
+            {part}
+          </a>
+        );
+      })}
+    </>
   );
 }

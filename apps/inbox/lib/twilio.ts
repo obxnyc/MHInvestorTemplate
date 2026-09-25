@@ -1,7 +1,7 @@
 import twilio from "twilio";
 // Re-exported so existing imports from "@/lib/twilio" keep working; the
 // definitions live in lib/phone, which components can import safely.
-export { toE164, isValidPhone, canSmsFromLine } from "./phone";
+export { toE164, isValidPhone, canSmsFromLine, toMsgStatus } from "./phone";
 
 /**
  * Verify a request really came from Twilio.
