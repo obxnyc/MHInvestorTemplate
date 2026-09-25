@@ -6,7 +6,8 @@ import { joinTyping, sendTyping, TYPING_TTL } from "@/lib/typing";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export default function Composer(
-  { conversationId, myName }: { conversationId: string; myName?: string },
+  { conversationId, myName, sendsIn }:
+  { conversationId: string; myName?: string; sendsIn?: string | null },
 ) {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -65,7 +66,9 @@ export default function Composer(
           value={text}
           onChange={(e) => { setText(e.target.value); if (mode === "reply") announceTyping(); }}
           rows={1}
-          placeholder={mode === "reply" ? "Message" : "Note for your team — not sent"}
+          placeholder={mode === "reply"
+            ? (sendsIn ? `Message — sends in ${sendsIn}` : "Message")
+            : "Note for your team — not sent"}
           onKeyDown={(e) => {
             // Enter sends, Shift+Enter breaks the line — phone-app behaviour.
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(e); }
