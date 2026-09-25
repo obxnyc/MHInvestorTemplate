@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { oneToOneThread } from "@/lib/dm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,32 +91,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "that person is not here any more" }, { status: 400 });
   }
 
-  // An existing one-to-one with exactly these two and no title.
-  const { data: mine } = await db
-    .from("dm_members").select("thread_id").eq("staff_id", me.id);
-  const { data: theirs } = await db
-    .from("dm_members").select("thread_id").eq("staff_id", staffId);
-  const shared = new Set((theirs ?? []).map((t) => t.thread_id));
-  const candidates = (mine ?? []).map((t) => t.thread_id).filter((id) => shared.has(id));
-
-  for (const id of candidates) {
-    const { count } = await db.from("dm_members")
-      .select("staff_id", { count: "exact", head: true }).eq("thread_id", id);
-    const { data: thread } = await db
-      .from("dm_threads").select("title").eq("id", id).maybeSingle();
-    if (count === 2 && !thread?.title) {
-      return NextResponse.json({ ok: true, id });
-    }
-  }
-
-  const { data: made, error } = await db.from("dm_threads")
-    .insert({ created_by: me.id }).select("id").single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await db.from("dm_members").insert([
-    { thread_id: made.id, staff_id: me.id, last_read_at: new Date().toISOString() },
-    { thread_id: made.id, staff_id: staffId },
-  ]);
-
-  return NextResponse.json({ ok: true, id: made.id });
+  const id = await oneToOneThread(db, me.id, staffId);
+  if (!id) return NextResponse.json({ error: "could not open that thread" }, { status: 500 });
+  return NextResponse.json({ ok: true, id });
 }

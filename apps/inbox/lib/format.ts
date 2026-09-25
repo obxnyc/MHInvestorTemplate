@@ -1,6 +1,14 @@
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 export function prettyPhone(e164: string) {
+  // The local form for local numbers, because that is how the office reads and
+  // says them. (252) 642-2995, not +1 252 642 2995.
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
+  if (m) return `(${m[1]}) ${m[2]}-${m[3]}`;
+  // Everywhere else, that country's own grouping. Country codes are one to
+  // three digits with no way to tell which from the number alone, so this is a
+  // lookup rather than a regex -- splitting +573144504939 by guesswork gives
+  // "+573 144..." , which is a different country and a number nobody can ring.
+  return parsePhoneNumberFromString(e164)?.formatInternational() ?? e164;
 }
 
 export function timeAgo(iso: string) {

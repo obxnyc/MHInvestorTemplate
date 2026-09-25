@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { toE164 } from "@/lib/twilio";
+import { toE164, isValidPhone } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 
@@ -23,8 +23,8 @@ export async function POST(req: Request) {
   const name = String(fullName ?? "").trim();
   const e164 = toE164(String(phone ?? ""));
   if (!name) return NextResponse.json({ error: "A name is required." }, { status: 400 });
-  if (!/^\+1\d{10}$/.test(e164)) {
-    return NextResponse.json({ error: "That doesn't look like a US phone number." }, { status: 400 });
+  if (!isValidPhone(e164)) {
+    return NextResponse.json({ error: "That doesn't look like a phone number." }, { status: 400 });
   }
 
   const db = supabaseAdmin();

@@ -132,6 +132,8 @@ function Broadcast({ onClose }: { onClose: () => void }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Who got it in the app rather than by text, so the sender knows it landed.
+  const [inApp, setInApp] = useState<string[] | null>(null);
 
   async function send() {
     setBusy(true); setError(null);
@@ -142,6 +144,13 @@ function Broadcast({ onClose }: { onClose: () => void }) {
     const json = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) { setError(json.error ?? "Couldn't send. Try again."); return; }
+    // Said out loud rather than closed over. Everyone was told either way, but
+    // "it went to Diego in the app, not as a text" is worth knowing before you
+    // wonder why he did not reply to a text.
+    if (Array.isArray(json.inApp) && json.inApp.length) {
+      setInApp(json.inApp as string[]);
+      return;
+    }
     onClose();
   }
 
@@ -154,17 +163,34 @@ function Broadcast({ onClose }: { onClose: () => void }) {
           Goes to every active employee as an individual text, not a group thread — so
           replies come back as normal conversations anyone can pick up.
         </p>
-        <textarea
-          rows={3} value={body} onChange={(e) => setBody(e.target.value)} autoFocus
-          placeholder="Office closed tomorrow for the holiday. Emergency maintenance line is still live."
-        />
-        {error && <p className="err">{error}</p>}
-        <div className="acts">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn pri" disabled={busy || !body.trim()} onClick={send}>
-            {busy ? "Sending…" : "Send to all staff"}
-          </button>
-        </div>
+        {inApp ? (
+          <>
+            <div className="handover">
+              <p>
+                Sent to everyone. {inApp.join(", ")} got it in the app rather than
+                as a text, because the shared line can only text US and Canadian
+                numbers. It is in your thread with them, and they can reply there.
+              </p>
+            </div>
+            <div className="acts">
+              <button className="btn pri" onClick={onClose}>Got it</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <textarea
+              rows={3} value={body} onChange={(e) => setBody(e.target.value)} autoFocus
+              placeholder="Office closed tomorrow for the holiday. Emergency maintenance line is still live."
+            />
+            {error && <p className="err">{error}</p>}
+            <div className="acts">
+              <button className="btn" onClick={onClose}>Cancel</button>
+              <button className="btn pri" disabled={busy || !body.trim()} onClick={send}>
+                {busy ? "Sending…" : "Send to all staff"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

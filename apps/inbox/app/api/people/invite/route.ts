@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { twilioClient, publicBase, toE164 } from "@/lib/twilio";
+import { twilioClient, publicBase, toE164, isValidPhone, canSmsFromLine } from "@/lib/twilio";
 import { prettyPhone } from "@/lib/format";
 
 export const runtime = "nodejs";
@@ -24,8 +24,8 @@ export async function POST(req: Request) {
 
   const { fullName, phone, role } = await req.json();
   const e164 = toE164(String(phone ?? ""));
-  if (!/^\+1\d{10}$/.test(e164)) {
-    return NextResponse.json({ error: "That doesn't look like a US mobile number." }, { status: 400 });
+  if (!isValidPhone(e164)) {
+    return NextResponse.json({ error: "That doesn't look like a mobile number." }, { status: 400 });
   }
   if (!ROLES.has(role)) {
     return NextResponse.json({ error: "Pick what they'll be doing." }, { status: 400 });
@@ -49,6 +49,21 @@ export async function POST(req: Request) {
     `The link works once and expires in a week.`,
   ].join("\n");
 
+  // Somebody outside the US or Canada. The shared line physically cannot text
+  // them -- see canSmsFromLine -- so the link is handed back for the admin to
+  // send however they already talk to that person. The invite stands; the only
+  // thing that changes is who carries it.
+  if (!canSmsFromLine(e164)) {
+    return NextResponse.json({
+      ok: true,
+      sent: false,
+      link,
+      why: `The shared line can only text US and Canadian numbers, so ${prettyPhone(e164)}`
+        + ` could not be sent it. Send them this link yourself — WhatsApp, email, however`
+        + ` you normally reach them. It works once and expires in a week.`,
+    });
+  }
+
   try {
     await twilioClient().messages.create({
       to: e164, body: text,
@@ -66,7 +81,7 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, sent: true });
 }
 
 /** Who has been invited and not yet finished. Never returns the token. */

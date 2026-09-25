@@ -3,6 +3,8 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Directory from "./Directory";
 import AccessRequests from "./AccessRequests";
+import { prettyPhone } from "@/lib/format";
+import { canSmsFromLine } from "@/lib/phone";
 
 type Staff = {
   id: string; full_name: string; role: string;
@@ -46,17 +48,22 @@ export default function PeopleAdmin(
 
   const refresh = () => start(() => router.refresh());
 
+  /** null on failure, the response body on success -- some replies say more
+   *  than "it worked", and an invite that could not be texted comes back
+   *  carrying the link so it can be handed over another way. */
   async function post(url: string, body: unknown, method = "POST") {
-    setBusy(true); setError(null); setDone(null);
+    setBusy(true); setError(null); setDone(null); setHandover(null);
     const res = await fetch(url, {
       method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     const out = await res.json().catch(() => ({}));
     setBusy(false);
-    if (!res.ok) { setError(out.error ?? "That didn't work."); return false; }
-    return true;
+    if (!res.ok) { setError(out.error ?? "That didn't work."); return null; }
+    return out as Record<string, unknown>;
   }
 
+  // An invite that was created but not delivered, and why.
+  const [handover, setHandover] = useState<{ link: string; why: string } | null>(null);
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState("office");
@@ -70,9 +77,14 @@ export default function PeopleAdmin(
 
   async function invite(e: React.FormEvent) {
     e.preventDefault();
-    if (!await post("/api/people/invite",
-      { fullName: inviteName, phone: invitePhone, role: inviteRole })) return;
-    setDone(`Texted ${invitePhone}. They'll set themselves up from the link.`);
+    const out = await post("/api/people/invite",
+      { fullName: inviteName, phone: invitePhone, role: inviteRole });
+    if (!out) return;
+    if (out.sent === false && typeof out.link === "string") {
+      setHandover({ link: out.link, why: String(out.why ?? "") });
+    } else {
+      setDone(`Texted ${invitePhone}. They'll set themselves up from the link.`);
+    }
     setInviteName(""); setInvitePhone("");
     refresh();
   }
@@ -128,6 +140,22 @@ export default function PeopleAdmin(
 
       {error && <p className="err">{error}</p>}
       {done && <p className="okmsg">{done}</p>}
+      {handover && (
+        <div className="handover">
+          <p>{handover.why}</p>
+          {/* Shown in full and selectable rather than hidden behind a Copy
+              button alone: on a phone, half the time the copy fails silently
+              and the person is left with nothing and no way to tell. */}
+          <input readOnly value={handover.link} onFocus={(e) => e.currentTarget.select()} />
+          <div className="acts">
+            <button type="button" className="btn"
+                    onClick={() => navigator.clipboard?.writeText(handover.link)}>
+              Copy link
+            </button>
+            <button type="button" className="btn" onClick={() => setHandover(null)}>Done</button>
+          </div>
+        </div>
+      )}
 
       {tab === "requests" ? (
         <AccessRequests />
@@ -142,7 +170,12 @@ export default function PeopleAdmin(
                 </span>
                 <span className="p-sub">
                   {ROLE_LABEL[p.role] ?? p.role}
-                  {p.forward_to ? ` · ${p.forward_to}` : ""}
+                  {p.forward_to ? ` · ${prettyPhone(p.forward_to)}` : ""}
+                  {p.forward_to && !canSmsFromLine(p.forward_to) && (
+                    <span className="tag" title="The shared line can only text US and Canadian numbers. They get messages in the app instead.">
+                      app only
+                    </span>
+                  )}
                 </span>
                 {isAdmin && (
                   <span className="p-acts">
@@ -169,7 +202,9 @@ export default function PeopleAdmin(
               <p className="muted">
                 They fill in their own name, email and password on their phone —
                 nothing for you to type and nothing for them to be told. The link
-                works once and expires in a week.
+                works once and expires in a week. For a number outside the US or
+                Canada, write it with its country code (+57 314 4504939) and you
+                will get the link back to send them yourself.
               </p>
               <label htmlFor="in">Name <span className="opt">— optional</span></label>
               <input id="in" value={inviteName}
