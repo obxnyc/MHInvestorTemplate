@@ -93,7 +93,9 @@ export default function RowMenu(
       }} />
       <div ref={box} className="rowmenu" style={pos} role="menu"
            onContextMenu={(e) => e.preventDefault()}>
-        <span className="ovlabel">{at.name}</span>
+        <span className="ovlabel">
+          {at.name}{at.contactId && !at.unitId ? " · no address" : ""}
+        </span>
 
         <button className="ovitem" role="menuitem"
                 onClick={() => { onOpen(at.id); onClose(); }}>
@@ -111,10 +113,15 @@ export default function RowMenu(
         {at.contactId && (
           <button className="ovitem" role="menuitem"
                   onClick={() => onEditContact(at)}>
-            {/* Most of these threads are a bare phone number for weeks. Naming
-                one is the commonest thing anybody wants to do to a row, and it
-                used to mean opening the thread to find the pencil. */}
-            {at.named ? "Edit contact…" : "Save contact…"}
+            {/* Labelled by what is actually missing. Most of these threads are
+                a bare number for weeks, and the next most common gap is that
+                nobody knows which lot they are texting from -- which is the one
+                that matters when a job gets dispatched. The editor behind all
+                three is the same; saying which one is missing is what makes it
+                get filled in. */}
+            {!at.named ? "Save contact…"
+              : !at.unitId ? "Set their address…"
+              : "Edit contact…"}
           </button>
         )}
 
