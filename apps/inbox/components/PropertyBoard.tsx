@@ -1,8 +1,9 @@
 "use client";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import AddressPicker, { type Place } from "@/components/AddressPicker";
+import { KIND_LIST, kindOf, unitWord, type Kind } from "@/lib/property";
 import { money } from "@/lib/prices";
 
 export type Unit = {
@@ -14,29 +15,15 @@ export type Unit = {
 };
 export type Property = {
   id: string; name: string; address: string | null; color: string | null;
+  code: string | null;
+  ownerId: string | null;
+  /** The LLC's name, joined for display. */
+  owner: string | null;
   kind: Kind; lat: number | null; lng: number | null; confirmed_at: string | null;
   units: Unit[];
 };
 
-export type Kind = "sfh" | "mh" | "duplex" | "triplex" | "multi" | "mhp" | "lot";
-
-export const KINDS: [Kind, string][] = [
-  ["sfh", "Single-family home"],
-  ["mh", "Mobile home"],
-  ["duplex", "Duplex"],
-  ["triplex", "Triplex"],
-  ["multi", "Multi-family"],
-  ["mhp", "Mobile home park"],
-  ["lot", "Lot"],
-];
-
-const KIND_LABEL = Object.fromEntries(KINDS) as Record<Kind, string>;
-
-/** What a "unit" is called depends on what it sits in. In a park they are
- *  lots, everywhere else they are units, and calling a lot a unit to somebody
- *  who runs parks reads as software written by someone who has not been to one. */
-const lotWord = (k: Kind, n: number) =>
-  k === "mhp" ? (n === 1 ? "lot" : "lots") : (n === 1 ? "unit" : "units");
+export type { Kind };
 
 /**
  * Every property, and every lot in it.
@@ -59,6 +46,14 @@ export default function PropertyBoard(
   const [open, setOpen] = useState<string | null>(properties[0]?.id ?? null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [editProp, setEditProp] = useState<Property | null>(null);
+  const [owners, setOwners] = useState<{ id: string; name: string }[]>([]);
+  const [groupBy, setGroupBy] = useState<"owner" | "kind" | "none">("none");
+
+  useEffect(() => {
+    fetch("/api/owners").then((r) => r.json())
+      .then((d) => setOwners(d.owners ?? [])).catch(() => {});
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -78,6 +73,20 @@ export default function PropertyBoard(
     refresh();
     return out as Record<string, unknown>;
   }
+
+  /** One unnamed group when grouping is off, so the list renders the same way
+   *  either way rather than through two branches that drift apart. */
+  const groups: [string | null, Property[]][] = (() => {
+    if (groupBy === "none") return [[null, properties]];
+    const by = new Map<string, Property[]>();
+    for (const p of properties) {
+      const key = groupBy === "owner"
+        ? (p.owner ?? "No owner set")
+        : kindOf(p.kind).label;
+      (by.get(key) ?? by.set(key, []).get(key)!).push(p);
+    }
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  })();
 
   const totals = properties.reduce((a, p) => {
     for (const u of p.units) {
@@ -104,8 +113,22 @@ export default function PropertyBoard(
       {error && <p className="err">{error}</p>}
       {done && <p className="okmsg">{done}</p>}
 
+      {properties.length > 1 && (
+        <div className="groupbar">
+          <span>Group by</span>
+          {([["none", "Nothing"], ["owner", "Owner"], ["kind", "Type"]] as const)
+            .map(([k, label]) => (
+              <button key={k} className={groupBy === k ? "on" : ""}
+                      onClick={() => setGroupBy(k)}>{label}</button>
+            ))}
+        </div>
+      )}
+
+      {groups.map(([heading, inGroup]) => (
+      <section key={heading} className="propgroup">
+        {heading && <h2 className="grouphead">{heading}</h2>}
       <ul className="proplist">
-        {properties.map((p) => {
+        {inGroup.map((p) => {
           const vacant = p.units.filter((u) => u.is_vacant).length;
           const isOpen = open === p.id;
           return (
@@ -115,11 +138,17 @@ export default function PropertyBoard(
                 <span className="pdot" style={{ background: p.color ?? "var(--faint)" }} />
                 <span className="propname">
                   {p.name}
-                  {p.address && <span className="propaddr">{p.address}</span>}
+                  <span className="propaddr">
+                    {[p.owner, p.address].filter(Boolean).join(" · ") || "No address set"}
+                  </span>
                 </span>
                 <span className="propcount">
-                  <span className="kindtag">{KIND_LABEL[p.kind] ?? p.kind}</span>
-                  {p.units.length} {lotWord(p.kind, p.units.length)}
+                  {p.code && <span className="propcode">{p.code}</span>}
+                  <span className="kindtag">{kindOf(p.kind).label}</span>
+                  {/* A single-dwelling property does not report a count of one.
+                      "1 home" under a house is noise. */}
+                  {kindOf(p.kind).holds !== "one"
+                    && `${p.units.length} ${unitWord(p.kind, p.units.length)}`}
                   {vacant ? <span className="pill warn">{vacant} empty</span> : null}
                   {p.lat !== null && !p.confirmed_at && (
                     <span className="pill grey" title="Nobody has checked the aerial">
@@ -132,7 +161,12 @@ export default function PropertyBoard(
 
               {isOpen && (
                 <div className="propbody">
-                  {p.units.length ? (
+                  {p.units.length === 0 && kindOf(p.kind).holds === "one" ? (
+                    <p className="dashnone">
+                      Nothing recorded about this one yet. Use Details to add
+                      beds, baths and what it asks.
+                    </p>
+                  ) : p.units.length ? (
                     <ul className="unitlist">
                       {p.units.map((u) => (
                         <li key={u.id} className={u.is_vacant ? "vacant" : ""}>
@@ -191,10 +225,16 @@ export default function PropertyBoard(
                       ))}
                     </ul>
                   ) : (
-                    <p className="dashnone">No lots on this one yet.</p>
+                    <p className="dashnone">
+                      No {unitWord(p.kind, 2)} on this one yet.
+                    </p>
                   )}
 
-                  {canEdit && <AddUnits propertyId={p.id} busy={busy}
+                  {/* A house has one dwelling and it is the house. Offering a
+                      list of lots under a single-family home is what made an
+                      empty property say "no lots on this one yet". */}
+                  {canEdit && kindOf(p.kind).holds !== "one"
+                   && <AddUnits propertyId={p.id} busy={busy}
                                         onAdd={async (body) => {
                                           const out = await call(
                                             `/api/properties/${p.id}`, "POST", body);
@@ -204,16 +244,41 @@ export default function PropertyBoard(
                                             setDone(`${n} added${s ? `, ${s} already there` : ""}.`);
                                           }
                                         }} />}
+                  {canEdit && (
+                    <div className="propacts">
+                      <button className="mini" onClick={() => setEditProp(p)}>
+                        Edit this property
+                      </button>
+                      {canDelete && (
+                        <button className="mini danger" disabled={busy}
+                                onClick={() => call(`/api/properties/${p.id}`, "DELETE")}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </li>
           );
         })}
       </ul>
+      </section>
+      ))}
+
+      {editProp && (
+        <EditProperty property={editProp} owners={owners} busy={busy}
+                      onClose={() => setEditProp(null)}
+                      onSave={async (patch) => {
+                        if (await call(`/api/properties/${editProp.id}`, "PATCH", patch)) {
+                          setEditProp(null);
+                        }
+                      }} />
+      )}
 
       {canEdit && (
         adding
-          ? <AddProperty busy={busy} onCancel={() => setAdding(false)}
+          ? <AddProperty busy={busy} owners={owners} onCancel={() => setAdding(false)}
                          onAdd={async (body) => {
                            const out = await call("/api/properties", "POST", body);
                            if (out) { setAdding(false); setOpen(String(out.id)); }
@@ -227,12 +292,13 @@ export default function PropertyBoard(
 }
 
 function AddProperty(
-  { busy, onAdd, onCancel }:
-  { busy: boolean; onAdd: (b: Record<string, unknown>) => void; onCancel: () => void },
+  { busy, owners, onAdd, onCancel }:
+  { busy: boolean; owners: { id: string; name: string }[];
+    onAdd: (b: Record<string, unknown>) => void; onCancel: () => void },
 ) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<Kind>("sfh");
-  const [color, setColor] = useState("#405981");
+  const [ownerId, setOwnerId] = useState("");
   const [place, setPlace] = useState<Place>(
     { address: "", lat: null, lng: null, placeId: null, confirmed: false });
 
@@ -245,7 +311,7 @@ function AddProperty(
   return (
     <form className="addbox" onSubmit={(e) => {
       e.preventDefault();
-      onAdd({ name: nameValue, kind, color, address: place.address,
+      onAdd({ name: nameValue, kind, ownerId, address: place.address,
               lat: place.lat, lng: place.lng, placeId: place.placeId,
               confirmed: place.confirmed });
     }}>
@@ -255,7 +321,7 @@ function AddProperty(
 
       <label htmlFor="pk">What is it</label>
       <select id="pk" value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
-        {KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        {KIND_LIST.map(([k, spec]) => <option key={k} value={k}>{spec.label}</option>)}
       </select>
       {kind === "mhp" && (
         <p className="hint">
@@ -263,6 +329,20 @@ function AddProperty(
           the home standing on it is yours or the resident&rsquo;s.
         </p>
       )}
+      {kindOf(kind).holds === "one" && (
+        <p className="hint">
+          One dwelling, made for you. There are no lots to add — beds, baths and
+          rent go on the property itself.
+        </p>
+      )}
+
+      <label htmlFor="po">
+        Owner <span className="opt">— which LLC holds it</span>
+      </label>
+      <select id="po" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+        <option value="">Not set</option>
+        {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
 
       <label htmlFor="pn">
         Name <span className="opt">— what everyone calls it</span>
@@ -270,12 +350,6 @@ function AddProperty(
       <input id="pn" value={nameValue} required
              onChange={(e) => { touched.current = true; setName(e.target.value); }}
              placeholder={kind === "mhp" ? "Oak Grove" : "118 Rosebud Ave"} />
-
-      <label htmlFor="pc">
-        Colour <span className="opt">— how it is tinted in the inbox</span>
-      </label>
-      <input id="pc" type="color" className="colorin"
-             value={color} onChange={(e) => setColor(e.target.value)} />
 
       <div className="acts">
         <button type="button" className="btn" onClick={onCancel}>Cancel</button>
@@ -384,6 +458,78 @@ function UnitDetail(
               })}>
         {busy ? "Saving…" : "Save"}
       </button>
+    </div>
+  );
+}
+
+
+/** Changing a property after the fact.
+ *
+ *  Everything except the code, which is deliberately fixed: it is what a work
+ *  order, a lease and a bank line are filed under, and an identifier that can
+ *  be edited is one nobody can rely on. Rename it instead, which is free.
+ */
+function EditProperty(
+  { property, owners, busy, onSave, onClose }:
+  {
+    property: Property;
+    owners: { id: string; name: string }[];
+    busy: boolean;
+    onSave: (patch: Record<string, unknown>) => void;
+    onClose: () => void;
+  },
+) {
+  const [name, setName] = useState(property.name);
+  const [kind, setKind] = useState<Kind>(property.kind);
+  const [ownerId, setOwnerId] = useState(property.ownerId ?? "");
+  const [place, setPlace] = useState<Place>({
+    address: property.address ?? "",
+    lat: property.lat, lng: property.lng,
+    placeId: null, confirmed: Boolean(property.confirmed_at),
+  });
+
+  return (
+    <div className="modal" role="dialog" aria-modal="true" aria-label="Edit property"
+         onClick={onClose}>
+      <div className="sheet wide" onClick={(e) => e.stopPropagation()}>
+        <h3>{property.code ? `${property.code} · ` : ""}{property.name}</h3>
+
+        <label className="fieldlab" htmlFor="en">Name</label>
+        <input id="en" value={name} onChange={(e) => setName(e.target.value)} />
+
+        <label className="fieldlab" htmlFor="ek">What it is</label>
+        <select id="ek" value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
+          {KIND_LIST.map(([k, spec]) => <option key={k} value={k}>{spec.label}</option>)}
+        </select>
+        {kind !== property.kind && (
+          <p className="hint">
+            The code stays {property.code} — it identifies this property rather
+            than describing it, and anything already filed under it still points
+            here.
+          </p>
+        )}
+
+        <label className="fieldlab" htmlFor="eo">Owner</label>
+        <select id="eo" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+          <option value="">Not set</option>
+          {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+
+        <AddressPicker value={place} onChange={setPlace} />
+
+        <div className="acts">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn pri" disabled={busy || name.trim().length < 2}
+                  onClick={() => onSave({
+                    name, kind, ownerId,
+                    address: place.address,
+                    lat: place.lat, lng: place.lng,
+                    placeId: place.placeId, confirmed: place.confirmed,
+                  })}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

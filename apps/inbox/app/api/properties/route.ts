@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { KINDS, nextCode, type Kind } from "@/lib/property";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,20 +18,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "not allowed" }, { status: 403 });
   }
 
-  const { name, address, color, kind, lat, lng, placeId, confirmed } =
+  const { name, address, kind, lat, lng, placeId, confirmed, ownerId } =
     await req.json().catch(() => ({}));
   const label = String(name ?? "").trim();
   if (label.length < 2) {
     return NextResponse.json({ error: "Give it a name." }, { status: 400 });
   }
-  const tint = String(color ?? "").trim();
-  if (tint && !/^#[0-9A-Fa-f]{6}$/.test(tint)) {
-    return NextResponse.json({ error: "A colour looks like #405981." }, { status: 400 });
-  }
-
-  const KINDS = new Set(["sfh", "mh", "duplex", "triplex", "multi", "mhp", "lot"]);
-  const type = String(kind ?? "sfh");
-  if (!KINDS.has(type)) {
+  const type = String(kind ?? "sfh") as Kind;
+  const spec = KINDS[type];
+  if (!spec) {
     return NextResponse.json({ error: "Pick what kind of property it is." }, { status: 400 });
   }
 
@@ -42,28 +38,62 @@ export async function POST(req: Request) {
     ? { lat: Number(lat), lng: Number(lng) } : null;
 
   const db = supabaseAdmin();
-  const { data, error } = await db.from("properties").insert({
-    name: label,
-    address: String(address ?? "").trim() || null,
-    color: tint || null,
-    kind: type,
-    lat: point?.lat ?? null,
-    lng: point?.lng ?? null,
-    place_id: String(placeId ?? "").trim() || null,
-    // Only recorded as confirmed when somebody actually looked at the aerial
-    // and said yes. It is a claim about a person having checked, so it is not
-    // set just because coordinates arrived.
-    confirmed_at: point && confirmed ? new Date().toISOString() : null,
-    confirmed_by: point && confirmed ? me.id : null,
-  }).select("id").single();
+  // Codes are derived from what exists, and the unique index is what actually
+  // decides. Two people adding in the same second both count the same set and
+  // both get 004; the loser retries rather than being told it failed.
+  const { data: existing } = await db.from("properties").select("code");
+  const taken = ((existing ?? []).map((p) => p.code).filter(Boolean)) as string[];
 
-  // 23505 = two people adding the same park at once, or a second attempt after
-  // a slow first one.
-  if (error) {
-    return NextResponse.json(
-      { error: error.code === "23505" ? "There is already one by that name." : error.message },
-      { status: 400 },
-    );
+  let made: { id: string; code: string } | null = null;
+  let failed: { code?: string; message: string } | null = null;
+
+  for (let attempt = 0; attempt < 5 && !made; attempt++) {
+    const code = nextCode(spec.prefix, taken);
+    const res = await db.from("properties").insert({
+      name: label,
+      address: String(address ?? "").trim() || null,
+      // Shared by every property of its kind, so the tint on a conversation
+      // says what sort of place it is rather than what somebody picked.
+      color: spec.color,
+      code,
+      kind: type,
+      owner_id: String(ownerId ?? "").trim() || null,
+      lat: point?.lat ?? null,
+      lng: point?.lng ?? null,
+      place_id: String(placeId ?? "").trim() || null,
+      // Only recorded as confirmed when somebody actually looked at the aerial
+      // and said yes. It is a claim about a person having checked, so it is not
+      // set just because coordinates arrived.
+      confirmed_at: point && confirmed ? new Date().toISOString() : null,
+      confirmed_by: point && confirmed ? me.id : null,
+    }).select("id, code").single();
+
+    if (!res.error) { made = res.data as { id: string; code: string }; break; }
+
+    failed = res.error;
+    // Somebody took that code between our count and our insert. Remember it
+    // and go round again. Anything else is a real failure.
+    if (res.error.code === "23505") { taken.push(code); continue; }
+    break;
   }
-  return NextResponse.json({ ok: true, id: data.id });
+
+  if (!made) {
+    return NextResponse.json({ error: failed?.message ?? "Could not add it." },
+                             { status: 400 });
+  }
+
+  // A house is not a park with one lot. Where a property holds exactly one
+  // dwelling, that dwelling IS the property, so it is created here and the
+  // person is never asked to add it -- which is what "no lots on this one yet"
+  // under a single-family home was really saying.
+  if (spec.holds === "one") {
+    await db.from("units").insert({
+      property_id: made.id,
+      label: made.code,
+      is_vacant: true,
+      home_owner: type === "lot" ? "none" : "ours",
+    });
+  }
+
+  return NextResponse.json({ ok: true, id: made.id, code: made.code });
 }
