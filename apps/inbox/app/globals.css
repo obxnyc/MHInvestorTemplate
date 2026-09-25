@@ -352,7 +352,8 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .empty p{margin:0;color:var(--muted);font-size:.87rem;max-width:17rem;line-height:1.5}
 .chead{display:flex;align-items:center;gap:.6rem;padding:.75rem 1rem;
   border-bottom:1px solid var(--hair);background:var(--card)}
-.chevron{color:var(--accent);font-size:1.35rem;line-height:1}
+.chevron{color:var(--accent);font-size:1.35rem;line-height:1;
+  background:none;border:none;padding:0 .2rem;cursor:pointer}
 .cwho{min-width:0;flex:1 1 auto}
 .chead .nm{display:block;font-weight:700;font-size:.95rem;letter-spacing:-.015em;
   line-height:1.15;overflow-wrap:anywhere}

@@ -142,7 +142,10 @@ export default async function ConversationList(
             const prop = propertyOf(c.units as never, contact?.units as never);
             return (
               <li key={c.id}>
-                <Link href={keep({}, `/c/${c.id}`)}
+                {/* A real link, so middle-click and copy-link work and a
+                    pasted URL opens the thread. The inbox intercepts the plain
+                    click and swaps the pane instead of navigating. */}
+                <Link href={`/c/${c.id}`} data-cid={c.id}
                       className={`row cat-${c.category}${c.id === selectedId ? " sel" : ""}`}
                       aria-current={c.id === selectedId ? "true" : undefined}>
                   <span className="avwrap">

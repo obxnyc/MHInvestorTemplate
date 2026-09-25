@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { threadChanged } from "@/lib/refresh";
 
 export default function Composer({ conversationId }: { conversationId: string }) {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function Composer({ conversationId }: { conversationId: string })
     setBusy(false);
     if (!res.ok) { setError("Didn't send. Try again."); return; }
     setText("");
-    start(() => router.refresh());
+    start(() => (threadChanged(), router.refresh()));
   }
 
   return (

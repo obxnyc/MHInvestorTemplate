@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { threadChanged } from "@/lib/refresh";
 
 type Person = { id: string; name: string; sub: string };
 type Mode = "forward" | "job";
@@ -74,9 +75,9 @@ export default function HandOff(
     // A partial success -- sent but no job, or job but not texted -- is shown
     // rather than swallowed, because the half that failed is the half someone
     // has to do by hand.
-    if (out.error) { setError(out.error); start(() => router.refresh()); return; }
+    if (out.error) { setError(out.error); start(() => (threadChanged(), router.refresh())); return; }
     onClose();
-    start(() => router.refresh());
+    start(() => (threadChanged(), router.refresh()));
   }
 
   return (
