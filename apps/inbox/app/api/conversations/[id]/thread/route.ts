@@ -20,11 +20,25 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { data: convo } = await supabase
     .from("conversations")
-    .select("id, category, source, status, category_confidence, closure_prompts, assigned_to, units(label, properties(name, color)), contacts(phone, full_name, party, units(label, properties(name, color))), staff:assigned_to(full_name)")
+    .select("id, category, source, status, category_confidence, closure_prompts, assigned_to, unit_id, units(label, properties(name, color)), contacts(phone, full_name, party, unit_id, units(label, properties(name, color))), staff:assigned_to(full_name)")
     .eq("id", id).single();
   if (!convo) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const [{ data: messages }, { data: notes }, { data: reads }] = await Promise.all([
+  // What this person already has outstanding. Whoever picks up the thread
+  // should see "three open jobs, one of them late" before they type a word --
+  // the alternative is answering a tenant as though nothing else is going on,
+  // which is how the same repair gets reported three times.
+  const unitId = (convo as { unit_id?: string | null }).unit_id
+    ?? (convo.contacts as unknown as { unit_id?: string | null } | null)?.unit_id
+    ?? null;
+
+  const jobsQuery = supabase
+    .from("work_orders")
+    .select("id, summary, status, due_at, assigned_vendor, assigned_tech")
+    .neq("status", "done")
+    .order("due_at", { ascending: true, nullsFirst: false });
+
+  const [{ data: messages }, { data: notes }, { data: reads }, { data: jobs }] = await Promise.all([
     supabase.from("messages")
       .select("id, direction, body, status, channel, created_at, media_paths, staff:sent_by(full_name)")
       .eq("conversation_id", id).order("created_at"),
@@ -37,6 +51,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     supabase.from("conversation_reads")
       .select("staff_id, last_read_at, staff:staff_id(full_name)")
       .eq("conversation_id", id),
+    // By unit where we know it, so a tenant's open work follows them across
+    // every thread they ever open. By conversation otherwise, which is the
+    // best that can be done for a number not yet tied to an address.
+    unitId ? jobsQuery.eq("unit_id", unitId) : jobsQuery.eq("conversation_id", id),
   ]);
 
   // One signing call for the whole thread rather than one per picture: each is
@@ -55,6 +73,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       staffId: r.staff_id,
       at: r.last_read_at,
       name: (r.staff as unknown as { full_name: string } | null)?.full_name ?? "Someone",
+    })),
+    jobs: (jobs ?? []).map((j) => ({
+      id: j.id, summary: j.summary, status: j.status, dueAt: j.due_at,
     })),
     me: staff.id,
     meName: staff.full_name,

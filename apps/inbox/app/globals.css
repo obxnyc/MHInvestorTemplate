@@ -736,3 +736,21 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   background-position:calc(100% - 9px) 55%,calc(100% - 6px) 55%;
   background-size:3px 3px,3px 3px;background-repeat:no-repeat;cursor:pointer}
 .catpick select:disabled{opacity:.6}
+
+/* ---- what this person already has open ---- */
+.openjobs{border-bottom:1px solid var(--hair);background:var(--card)}
+.openjobs>button{display:flex;align-items:center;gap:.5rem;width:100%;padding:.5rem 1.1rem;
+  border:none;background:none;color:var(--ink-2);font:inherit;font-size:.82rem;text-align:left;
+  border-left:4px solid var(--faint)}
+.openjobs.due-soon>button{border-left-color:var(--warn);background:var(--warn-soft)}
+.openjobs.due-late>button{border-left-color:var(--crit);background:var(--warn-soft)}
+.openjobs .latecount{padding:.1em .45em;border-radius:5px;background:var(--crit);color:#fff;
+  font-size:.68rem;font-weight:800}
+.openjobs .chev{margin-left:auto;color:var(--faint)}
+.openjobs ul{list-style:none;margin:0;padding:.2rem 1.1rem .6rem;display:grid;gap:.3rem}
+.openjobs li{display:flex;gap:.6rem;align-items:baseline;font-size:.82rem;
+  padding-left:.6rem;border-left:3px solid var(--hair)}
+.openjobs li.due-soon{border-left-color:var(--warn)}
+.openjobs li.due-late{border-left-color:var(--crit)}
+.openjobs .js{font-weight:600;overflow-wrap:anywhere}
+.openjobs .jd{margin-left:auto;color:var(--muted);font-size:.75rem;white-space:nowrap}
