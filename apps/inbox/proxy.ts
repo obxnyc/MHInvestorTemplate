@@ -19,7 +19,11 @@ import { NextResponse, type NextRequest } from "next/server";
 // URL rather than by a session. Sending it to the sign-in page would mean
 // asking a plumber to create an account, which is how the completion photo
 // stops arriving.
-const PUBLIC = [/^\/login/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//, /^\/jobs\//];
+// /trades/apply is a contractor putting themselves forward. It writes to an
+// application queue, never to contacts, so a public form cannot reach a row
+// that already exists.
+const PUBLIC = [/^\/login/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
+                /^\/jobs\//, /^\/trades\/apply/];
 
 const isPublic = (path: string) => PUBLIC.some((re) => re.test(path));
 

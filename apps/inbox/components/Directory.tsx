@@ -22,6 +22,12 @@ type Market = { id: string; name: string; state: string | null };
  * handyman who also does light plumbing is one person with two trades, and
  * forcing one would drop him out of half the searches he belongs in.
  */
+type Application = {
+  id: string; name: string; company: string | null; phone: string;
+  email: string | null; trades: string[]; markets: string[]; notes: string | null;
+  insured: boolean; licensed: boolean; licenseRef: string | null; appliedOn: string;
+};
+
 export default function Directory() {
   const router = useRouter();
   const [, start] = useTransition();
@@ -31,8 +37,32 @@ export default function Directory() {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Vendor | "new" | null>(null);
 
-  const load = () => fetch("/api/directory").then((r) => r.json()).then(setData);
+  const [pending, setPending] = useState<Application[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const load = () => Promise.all([
+    fetch("/api/directory").then((r) => r.json()).then(setData),
+    fetch("/api/trades/applications").then((r) => r.json())
+      .then((d) => setPending(d.applications ?? [])).catch(() => {}),
+  ]);
   useEffect(() => { load(); }, []);
+
+  async function decide(id: string, decision: "approved" | "declined") {
+    setBusy(id); setProblem(null);
+    const res = await fetch(`/api/trades/applications/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    });
+    setBusy(null);
+    if (!res.ok) {
+      setProblem((await res.json().catch(() => ({}))).error ?? "That didn't go through.");
+      return;
+    }
+    load();
+    start(() => router.refresh());
+  }
 
   const shown = useMemo(() => {
     if (!data) return [];
@@ -53,6 +83,45 @@ export default function Directory() {
 
   return (
     <>
+      {pending.length > 0 && (
+        <section className="pendbox">
+          <h2>
+            {pending.length} {pending.length === 1 ? "trade has" : "trades have"} applied
+          </h2>
+          <p className="muted">
+            What they say about their own insurance and licence is a claim, not a
+            check. Approving adds them to the directory and lets work be sent to
+            them.
+          </p>
+          {problem && <p className="err">{problem}</p>}
+
+          <ul className="people-list">
+            {pending.map((a) => (
+              <li key={a.id}>
+                <span className="p-name">
+                  {a.name}
+                  {a.company && <span className="tag">{a.company}</span>}
+                  {a.insured && <span className="tag">says insured</span>}
+                  {a.licensed && <span className="tag">says licensed{a.licenseRef ? ` · ${a.licenseRef}` : ""}</span>}
+                </span>
+                <span className="p-sub">
+                  {a.trades.map(tradeLabel).join(" · ") || "No trade given"}
+                  {a.markets.length ? ` — ${a.markets.map(marketLabel).join(", ")}` : ""}
+                  {" · "}{a.phone}{a.email ? ` · ${a.email}` : ""}
+                  {a.notes ? ` · ${a.notes}` : ""}
+                </span>
+                <span className="p-acts">
+                  <button className="mini" disabled={busy === a.id}
+                          onClick={() => decide(a.id, "declined")}>Decline</button>
+                  <button className="mini primary" disabled={busy === a.id}
+                          onClick={() => decide(a.id, "approved")}>Approve</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="dirbar">
         <input className="pinsearch" value={q} placeholder="Search name, company, number…"
                onChange={(e) => setQ(e.target.value)} />
