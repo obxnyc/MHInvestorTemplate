@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { threadChanged } from "@/lib/refresh";
 
 type OpenWork = { id: string; summary: string; status: string };
 
@@ -21,7 +22,7 @@ export default function CloseButton(
     });
     if (res.status === 409) { setBlocking((await res.json()).workOrders); return; }
     setBlocking(null);
-    start(() => router.refresh());
+    start(() => (threadChanged(), router.refresh()));
   }
 
   if (blocking) {

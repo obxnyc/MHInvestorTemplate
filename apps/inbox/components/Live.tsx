@@ -1,6 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { threadChanged } from "@/lib/refresh";
 import { supabaseBrowser } from "@/lib/supabase-client";
 
 /** Keeps every open screen in sync. Without this, two people work from stale
@@ -13,9 +14,9 @@ export default function Live() {
     const channel = supabase
       .channel("inbox")
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" },
-          () => router.refresh())
+          () => { threadChanged(); router.refresh(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" },
-          () => router.refresh())
+          () => { threadChanged(); router.refresh(); })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [router]);

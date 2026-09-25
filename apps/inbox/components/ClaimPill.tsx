@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { threadChanged } from "@/lib/refresh";
 
 const initials = (n: string) =>
   n.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
@@ -20,11 +21,11 @@ export default function ClaimPill(
     setConflict(null);
     const res = await fetch(`/api/conversations/${conversationId}/claim`, { method: "POST" });
     if (res.status === 409) setConflict((await res.json()).heldBy);
-    start(() => router.refresh());
+    start(() => (threadChanged(), router.refresh()));
   }
   async function release() {
     await fetch(`/api/conversations/${conversationId}/claim`, { method: "DELETE" });
-    start(() => router.refresh());
+    start(() => (threadChanged(), router.refresh()));
   }
 
   if (isMine) {
