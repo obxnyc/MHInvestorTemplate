@@ -283,6 +283,7 @@ export default function ThreadPane(
                 onInsert={(text) => setInsert((i) => ({ text, n: i.n + 1 }))} />
 
       <Composer conversationId={convo.id} myName={data.meName} insert={insert}
+                onSent={() => load(String(convo.id))}
                 sendsIn={contact?.language && contact.language !== "en"
                   ? languageName(contact.language) : null} />
     </div>
