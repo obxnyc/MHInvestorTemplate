@@ -577,3 +577,76 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .check p{margin:.35rem 0 0;font-size:.86rem;line-height:1.5;color:var(--ink-2);
   overflow-wrap:anywhere}
 .check .ck-fix{color:var(--muted);font-size:.83rem}
+
+/* ---- handing a message on ----
+   The dots sit beside the bubble rather than inside it: a maintenance text is
+   often one word, and a control inside a one-word bubble either stretches it
+   or lands on top of the word. */
+.bwrap{display:flex;align-items:flex-start;gap:.25rem}
+.out .bwrap{flex-direction:row-reverse}
+.msgmenu{position:relative;flex:none}
+.msgdots{width:1.9rem;height:1.9rem;display:grid;place-items:center;border:none;
+  background:none;color:var(--faint);border-radius:7px;font-size:1rem;line-height:1;
+  opacity:0;transition:opacity .12s}
+.bwrap:hover .msgdots,.msgdots:focus-visible,.msgdots[aria-expanded="true"]{opacity:1}
+/* Hover is not available on a phone, where this app mostly lives. */
+@media (pointer:coarse){.msgdots{opacity:1}}
+.msgdots:hover{background:var(--sunk);color:var(--ink)}
+.msgmenu .ovmenu{top:2.1rem;left:0;right:auto}
+.out .msgmenu .ovmenu{left:auto;right:0}
+/* Catches the next click anywhere, so the menu closes the way every other menu
+   does rather than needing a second press on the dots. */
+.scrim{position:fixed;inset:0;z-index:20;border:none;background:none;cursor:default}
+
+.quoted{margin:0 0 .9rem;padding:.55rem .75rem;border-left:3px solid var(--hair);
+  background:var(--sunk);border-radius:0 8px 8px 0;color:var(--ink-2);
+  font-size:.85rem;line-height:1.45;overflow-wrap:anywhere}
+.fieldlab{display:block;margin:.85rem 0 .3rem;font-size:.82rem;font-weight:700}
+.fieldlab .opt{color:var(--muted);font-weight:500}
+.pickwrap{max-height:15rem;overflow-y:auto;margin-top:.4rem}
+.picklab{margin:.5rem 0 .3rem;font-size:.68rem;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--faint)}
+.picksub{margin-left:auto;color:var(--muted);font-size:.78rem;font-weight:500}
+.sheet .check{display:flex;gap:.6rem;align-items:flex-start;margin:1rem 0 .2rem;
+  font-size:.88rem;font-weight:600}
+.sheet .check input{margin-top:.15rem;width:1.05rem;height:1.05rem;flex:none}
+.sheet .check small{display:block;margin-top:.15rem;color:var(--muted);font-weight:400}
+.sheet input[type="datetime-local"]{width:100%;padding:.6rem .75rem;border:1px solid var(--hair);
+  border-radius:9px;background:var(--card);color:var(--ink);font:inherit}
+
+/* ---- a contractor's job list ----
+   Read on a phone, outdoors, one-handed, often in sunlight. Big targets, high
+   contrast, nothing that needs a second look. */
+.jobs{max-width:38rem;margin-inline:auto;padding:1.75rem 1.1rem 4rem}
+.jobs h1{margin:0 0 .4rem;font-size:1.5rem;letter-spacing:-.02em}
+.joblist{list-style:none;margin:1.4rem 0 0;padding:0;display:grid;gap:.9rem}
+.job{border:1px solid var(--hair);border-left:4px solid var(--hair);
+  border-radius:var(--radius);background:var(--card);padding:.9rem 1rem 1rem}
+/* Three states, not a countdown. Down a list of twenty the question is "which
+   of these is going wrong", and that is answered by colour faster than by any
+   number a person has to read and compare. */
+.job.due-soon{border-left-color:var(--warn)}
+.job.due-late{border-left-color:var(--crit)}
+.jobtop{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;margin-bottom:.35rem}
+.jobwhere{font-size:.8rem;font-weight:700;color:var(--muted)}
+.duepill{margin-left:auto;padding:.16em .5em;border-radius:5px;font-size:.72rem;
+  font-weight:700;background:var(--sunk);color:var(--muted)}
+.duepill.due-soon{background:var(--warn-soft);color:var(--warn)}
+.duepill.due-late{background:var(--crit);color:#fff}
+.jobsum{margin:0;font-size:1rem;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.jobdetail{margin:.35rem 0 0;color:var(--ink-2);font-size:.88rem;line-height:1.45}
+.jobshots{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem}
+.jobshots img{width:5.5rem;height:5.5rem;object-fit:cover;border-radius:8px;
+  border:1px solid var(--hair)}
+.jobdone{margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--hair-2)}
+.shotbtn{display:block}
+.shotbtn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.shotbtn span{display:block;text-align:center;min-height:44px;padding:.7rem;
+  border:1px dashed var(--hair);border-radius:10px;background:var(--sunk);
+  color:var(--ink-2);font-size:.88rem;font-weight:600;cursor:pointer}
+.shotbtn input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.jobdone textarea{width:100%;margin-top:.5rem;padding:.6rem .75rem;border:1px solid var(--hair);
+  border-radius:9px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:.88rem;resize:vertical}
+.jobacts{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.6rem}
+.jobacts .mini{min-height:44px;padding:.5rem 1.1rem;font-size:.85rem}

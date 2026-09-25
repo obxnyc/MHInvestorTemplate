@@ -9,6 +9,7 @@ import ClaimPill from "@/components/ClaimPill";
 import CloseButton from "@/components/CloseButton";
 import ClosurePrompt from "@/components/ClosurePrompt";
 import Live from "@/components/Live";
+import MessageMenu from "@/components/MessageMenu";
 import ConversationList, { type ListFilters } from "@/components/ConversationList";
 
 export const dynamic = "force-dynamic";
@@ -171,7 +172,10 @@ export default async function Chat(
                     {author ?? "Automated"}
                   </span>
                 )}
-                <div className="b">{m.body}</div>
+                <div className="bwrap">
+                  <div className="b">{m.body}</div>
+                  <MessageMenu messageId={m.id} preview={String(m.body).slice(0, 180)} />
+                </div>
                 {(m.media_paths as string[] | null)?.map((path, i) => {
                   const src = signed.get(path);
                   // A path with no signed URL means the object is missing or

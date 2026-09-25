@@ -9,11 +9,12 @@
     "typecheck": "tsc --noEmit",
     "test:parsers": "node lib/__fixtures__/parsers.test.mjs",
     "test:prequal": "node lib/__fixtures__/prequal.test.mjs",
-    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature",
+    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch",
     "test:classify": "node lib/__fixtures__/classify.test.mjs",
     "test:category": "node lib/__fixtures__/category.test.mjs",
     "test:media": "node lib/__fixtures__/media.test.mjs",
-    "test:signature": "node lib/__fixtures__/signature.test.mjs"
+    "test:signature": "node lib/__fixtures__/signature.test.mjs",
+    "test:dispatch": "node lib/__fixtures__/dispatch.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
