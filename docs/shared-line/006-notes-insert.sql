@@ -19,10 +19,15 @@
 
 grant insert (conversation_id, author_id, body, mentions) on notes to authenticated;
 
+-- has_ANY_COLUMN_privilege, not has_table_privilege. A column-level grant does
+-- not register as a table privilege, so the obvious check reports failure on a
+-- grant that worked perfectly -- and in an editor that wraps a script in a
+-- transaction, that false alarm rolls the grant back and leaves notes exactly
+-- as broken as before.
 do $$
-declare ok boolean;
 begin
-  select has_table_privilege('authenticated', 'notes', 'insert') into ok;
-  if not ok then raise exception 'the grant did not take'; end if;
+  if not has_any_column_privilege('authenticated', 'notes', 'insert') then
+    raise exception 'the grant did not take';
+  end if;
   raise notice 'staff can write notes again';
 end $$;

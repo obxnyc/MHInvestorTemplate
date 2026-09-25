@@ -8,7 +8,11 @@ type Role = "admin" | "office" | "tech";
 
 /** Title, an overflow for the secondary views, and the two actions people
  *  actually reach for. Everything else lives behind the ⋯ so the header stays
- *  legible on a phone. */
+ *  legible on a phone.
+ *
+ *  The title is the way home. Everyone tries clicking it -- it is the one
+ *  convention every application on the internet shares -- and when it does
+ *  nothing, the way back to the inbox is a menu nobody thinks to open. */
 export default function AppHeader(
   { name, role }: { name: string; role: Role },
 ) {
@@ -27,7 +31,9 @@ export default function AppHeader(
   return (
     <>
       <header className="apphead">
-        <h1>Messages</h1>
+        <Link href="/" className="homelink" aria-label="Back to the inbox">
+          <h1>Larabee Homes</h1>
+        </Link>
         <span className="sp" />
 
         <div className="ovwrap">
