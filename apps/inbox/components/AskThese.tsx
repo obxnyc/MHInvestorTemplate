@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { promptsFor, type Prompt } from "@/lib/prompts";
+import type { Suggestion } from "@/lib/suggest";
 
 /**
  * The questions worth asking on this thread, above the box.
@@ -16,17 +17,47 @@ import { promptsFor, type Prompt } from "@/lib/prompts";
  * that never shortens stops being read within a week.
  */
 export default function AskThese(
-  { conversationId, category, context, asked, onAsked, onInsert }:
+  { conversationId, category, context, asked, lastInbound, onAsked, onInsert }:
   {
     conversationId: string; category: string; context: string;
     asked: string[];
+    /** Whether the last thing said was theirs. Suggestions only make sense
+     *  when there is something unanswered. */
+    lastInbound: boolean;
     onAsked: (next: string[]) => void;
     onInsert: (text: string) => void;
   },
 ) {
   const [open, setOpen] = useState(true);
+  const [drafts, setDrafts] = useState<Suggestion[] | null>(null);
+  const [thinking, setThinking] = useState(false);
+  // Which conversation the drafts belong to, so switching threads never shows
+  // the last one's suggestions against this one's tenant.
+  const forThread = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (forThread.current !== conversationId) {
+      forThread.current = conversationId;
+      setDrafts(null);
+    }
+  }, [conversationId]);
+
+  async function draft() {
+    setThinking(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/suggest`,
+                              { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      setDrafts(res.ok ? (data.replies ?? []) : []);
+    } catch {
+      setDrafts([]);
+    } finally {
+      setThinking(false);
+    }
+  }
+
   const sets = promptsFor(category, context);
-  if (!sets.length) return null;
+  if (!sets.length && !lastInbound) return null;
 
   const done = new Set(asked);
 
@@ -51,6 +82,44 @@ export default function AskThese(
         <span className="askcount">{left ? `${left} of ${total}` : "all asked"}</span>
         <span className="askgo" aria-hidden="true">{open ? "▾" : "▸"}</span>
       </button>
+
+      {open && lastInbound && (
+        <div className="askset">
+          <span className="asksettitle">
+            Answering what they said
+            {drafts !== null && (
+              <button className="askagain" onClick={draft} disabled={thinking}>
+                {thinking ? "…" : "again"}
+              </button>
+            )}
+          </span>
+
+          {/* Asked for, not automatic. This reads the conversation and costs
+              money every time; firing it on every thread anybody opens would
+              spend most of that on threads nobody was going to reply to. */}
+          {drafts === null ? (
+            <button className="btn mini" onClick={draft} disabled={thinking}>
+              {thinking ? "Reading the conversation…" : "Draft a reply"}
+            </button>
+          ) : drafts.length === 0 ? (
+            <p className="asknone">
+              Nothing worth suggesting from what has been said so far.
+            </p>
+          ) : (
+            <div className="askchips">
+              {drafts.map((d, i) => (
+                <span key={i} className="askchip draft">
+                  <button className="askuse" onClick={() => onInsert(d.text)}
+                          title="Put this in the box to edit">
+                    <span className="drafttag">{d.label}</span>
+                    {d.text}
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {open && sets.map((set) => {
         const remaining = set.prompts.filter((p) => !done.has(p.key));

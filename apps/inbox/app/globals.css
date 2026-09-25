@@ -1287,3 +1287,17 @@ a.metric:hover{border-color:var(--accent)}
 .in .jumpto{background:var(--card);color:var(--accent);border:1px solid var(--hair)}
 .in .jumpto:hover{border-color:var(--accent)}
 .inlink{text-decoration:underline;text-underline-offset:2px;word-break:break-all}
+
+/* A drafted reply. Visibly not one of the fixed questions: those are the same
+   on every thread of this kind, this one was written from what was said. */
+.askchip.draft{border-color:var(--accent);background:var(--accent-soft);
+  align-items:flex-start;max-width:22rem}
+.askchip.draft .askuse{padding:.4rem .7rem;white-space:normal;line-height:1.45;
+  color:var(--ink)}
+.drafttag{display:block;font-size:.64rem;font-weight:800;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--accent-ink);margin-bottom:.15rem}
+.askagain{margin-left:.5rem;border:none;background:none;color:var(--accent);
+  font:inherit;font-size:.72rem;font-weight:700;text-decoration:underline;
+  text-underline-offset:2px;cursor:pointer;padding:0}
+.asknone{margin:0;font-size:.8rem;color:var(--muted)}
+.askset .btn.mini{padding:.3rem .7rem;min-height:2rem;font-size:.8rem}
