@@ -2,7 +2,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { initials as toInitials } from "@/lib/format";
+import AccountMenu from "./AccountMenu";
 
 type Role = "admin" | "office" | "tech";
 
@@ -21,8 +21,6 @@ export default function AppHeader(
   { name, role }: { name: string; role: Role },
 ) {
   const path = usePathname();
-  const initials = toInitials(name);
-
   const nav: [string, string][] = [
     ["/home", "Home"],
     ["/", "Messages"],
@@ -54,11 +52,8 @@ export default function AppHeader(
             {label}
           </Link>
         ))}
-        <Link href="/account" className="av" title={name} aria-label={`Signed in as ${name}`}>
-          {initials}
-        </Link>
+        <AccountMenu name={name} role={role} />
       </nav>
-      <span hidden>{role}</span>
     </header>
   );
 }
