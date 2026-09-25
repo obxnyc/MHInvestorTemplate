@@ -27,6 +27,16 @@ const Replies = z.object({
 
 export type Suggestion = { text: string; label: string };
 
+/** Why there are no suggestions, which is three different situations that look
+ *  identical on screen and are fixed three different ways:
+ *    off     - no key. Add one and redeploy.
+ *    failed  - a key that the API would not accept, or a call that broke.
+ *    ok      - it read the conversation and had nothing useful to add.
+ *  Collapsing these into an empty list is what made the last two hours of
+ *  this confusing, so they are kept apart. */
+export type Why = "ok" | "off" | "failed";
+export type Drafted = { replies: Suggestion[]; why: Why; detail?: string };
+
 /** Whether drafting is switched on at all. Kept separate from "it had nothing
  *  to say", because those look identical on screen and are fixed by completely
  *  different things -- one by adding a key, one by waiting for a reply. */
@@ -67,19 +77,19 @@ const SYSTEM = [
 
 /**
  * @param thread Oldest to newest. `mine` is anything this office sent.
- * @returns Up to three suggestions, or [] when there is nothing worth saying
- *          and when the key is not configured -- the strip simply does not
- *          appear rather than erroring.
+ * @returns Up to three suggestions, with WHY there are none when there are
+ *          none. Never throws: a suggestion that cannot be made must not take
+ *          the thread down with it.
  */
 export async function suggestReplies(
   thread: { mine: boolean; body: string }[],
   context: { category: string; name: string },
-): Promise<Suggestion[]> {
-  if (!draftingConfigured()) return [];
+): Promise<Drafted> {
+  if (!draftingConfigured()) return { replies: [], why: "off" };
   // The last few turns, not the whole history: what a reply has to answer is
   // near the end, and the rest is cost.
   const recent = thread.slice(-8);
-  if (!recent.some((m) => !m.mine)) return [];
+  if (!recent.some((m) => !m.mine)) return { replies: [], why: "ok" };
 
   const transcript = recent
     .map((m) => `${m.mine ? "Office" : context.name}: ${m.body}`)
@@ -100,13 +110,24 @@ export async function suggestReplies(
       }],
     });
 
-    if (response.stop_reason === "refusal") return [];
-    return (response.parsed_output?.replies ?? [])
-      .filter((r) => r.text.trim())
-      .slice(0, 3);
+    if (response.stop_reason === "refusal") return { replies: [], why: "ok" };
+    return {
+      replies: (response.parsed_output?.replies ?? [])
+        .filter((r) => r.text.trim()).slice(0, 3),
+      why: "ok",
+    };
   } catch (e) {
-    // A suggestion that cannot be made is not an error worth showing anybody.
+    // Reported, not swallowed. A key that is present but rejected produced an
+    // empty list indistinguishable from "nothing to say", which sent us
+    // looking for a missing key that was already there.
     console.error("reply suggestions failed", e);
-    return [];
+    const detail = e instanceof Anthropic.AuthenticationError
+      ? "The key was rejected. Check it is the whole key and has not been revoked."
+      : e instanceof Anthropic.RateLimitError
+        ? "Rate limited, or the account is out of credit."
+        : e instanceof Anthropic.APIError
+          ? `Anthropic returned ${e.status}.`
+          : "The call did not complete.";
+    return { replies: [], why: "failed", detail };
   }
 }

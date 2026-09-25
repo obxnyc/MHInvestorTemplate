@@ -40,6 +40,7 @@ export async function runSetupChecks(
     buildCheck(),
     ...guard("Required settings", envChecks),
     ...(await guardAsync("Twilio", () => twilioChecks(origin))),
+    ...(await guardAsync("Anthropic", anthropicChecks)),
     ...(await guardAsync("Database", databaseChecks)),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
@@ -113,22 +114,60 @@ function envChecks(): Check[] {
         detail: `Expected MG followed by 32 hex characters; got ${shape(process.env.TWILIO_MESSAGING_SERVICE_SID)}.`,
         fix: "Twilio Console → Messaging → Services → your service → the SID at the top." });
 
-  // Optional, and its absence is the commonest confusing state in this
-  // application: with no key, Spanish stays untranslated, replies cannot be
-  // drafted, and the classifier quietly falls back to keywords -- three
-  // features that each look individually broken and are one setting.
-  const ai = process.env.ANTHROPIC_API_KEY?.trim();
-  out.push(ai
-    ? { name: "ANTHROPIC_API_KEY", level: "good",
-        detail: "Present, so translation, drafted replies and the classifier are live." }
-    : { name: "ANTHROPIC_API_KEY", level: "warn",
-        detail: "Not set. Spanish is not translated, replies cannot be drafted, and"
-          + " the classifier falls back to keyword matching. Nothing is broken —"
-          + " those three are simply off.",
-        fix: "Vercel → Settings → Environment Variables → Add. Key ANTHROPIC_API_KEY,"
-          + " Type SECRET (not Config), all three environments, then redeploy." });
-
   return out;
+}
+
+/**
+ * Whether the key WORKS, not whether a string is present.
+ *
+ * Presence is the answer to a question nobody has. A key can be in Vercel and
+ * absent from the running build because settings are read when a build is
+ * made; it can be present and rejected; it can be present and out of credit.
+ * All three produce untranslated Spanish and no drafted replies, and all three
+ * are fixed differently -- so this asks Anthropic rather than asking
+ * process.env.
+ *
+ * models.list() is the cheapest question there is: it authenticates and costs
+ * no tokens.
+ */
+async function anthropicChecks(): Promise<Check[]> {
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  const OFF = "Spanish is not translated, replies cannot be drafted, and the"
+    + " classifier falls back to keyword matching.";
+
+  if (!key) {
+    return [{
+      name: "ANTHROPIC_API_KEY", level: "warn",
+      detail: `Not in this build. ${OFF} Nothing is broken — those three are off.`,
+      fix: "If it is already in Vercel, it was added after the last deploy:"
+        + " settings are read at build time, so redeploy. Otherwise add it —"
+        + " Vercel → Settings → Environment Variables, Type SECRET, all three"
+        + " environments — then redeploy.",
+    }];
+  }
+
+  try {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    await new Anthropic({ apiKey: key }).models.list({ limit: 1 });
+    return [{
+      name: "ANTHROPIC_API_KEY", level: "good",
+      detail: "Present and accepted. Translation, drafted replies and the"
+        + " classifier are live.",
+    }];
+  } catch (e) {
+    const status = (e as { status?: number }).status;
+    return [{
+      name: "ANTHROPIC_API_KEY", level: "bad",
+      detail: `Present (${shape(key)}) but Anthropic refused it`
+        + `${status ? ` with ${status}` : ""}. ${OFF}`,
+      fix: status === 401
+        ? "The key is wrong or revoked. Make a new one at console.anthropic.com →"
+          + " API keys, paste the WHOLE value, redeploy."
+        : status === 429
+          ? "Rate limited or out of credit. Check console.anthropic.com → Billing."
+          : "Check the value is the whole key with no stray whitespace, then redeploy.",
+    }];
+  }
 }
 
 /** The checks that require asking Twilio rather than looking at a string. */
