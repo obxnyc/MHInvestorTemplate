@@ -80,8 +80,15 @@ button{font:inherit;cursor:pointer}
 /* ---- shell ---- */
 /* The layout answers to the width of the app shell, not the browser window, so
    it behaves correctly when embedded in a narrower column. */
-.shell{min-height:100dvh;display:flex;flex-direction:column;background:var(--card);
-  container-type:inline-size;container-name:app}
+/* A DEFINITE height, not a minimum. With min-height the shell has no height
+   for its children to divide, so `flex:1` on the panes resolves against their
+   own content: the thread's message list collapsed to a forty-pixel strip with
+   its own scrollbar, under a banner, above a composer, with the rest of the
+   window left blank. Reading a conversation through a letterbox.
+   An inbox is an app shell, not a document: the frame is the window and the
+   panes scroll inside it. That is what a definite height buys. */
+.shell{height:100dvh;overflow:hidden;display:flex;flex-direction:column;
+  background:var(--card);container-type:inline-size;container-name:app}
 .apphead{display:flex;align-items:center;gap:.5rem;padding:1rem 1.25rem;
   border-bottom:1px solid var(--hair);position:relative;z-index:10}
 .apphead h1{font-size:1.3rem;font-weight:700;letter-spacing:-.025em;margin:0}
@@ -346,7 +353,9 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   font-size:.74rem;font-weight:700;background:var(--warn);color:#fff}
 .takepill.mine{background:var(--accent-soft);color:var(--accent-ink)}
 .takepill.other{background:var(--sunk);color:var(--ink-2)}
-.msgs{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+/* min-height keeps the floor: whatever else goes wrong in the height chain
+   above, the thread never becomes a letterbox again. */
+.msgs{flex:1 1 0;min-height:8rem;overflow-y:auto;overscroll-behavior:contain;
   padding:1rem 1.1rem;display:flex;flex-direction:column}
 .daysep{display:flex;align-items:center;gap:.75rem;margin:.9rem 0 .7rem;font-size:.66rem;
   color:var(--faint);font-weight:700;letter-spacing:.07em;text-transform:uppercase}
