@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { twilioClient, publicBase } from "@/lib/twilio";
+import { twilioClient, publicBase, toMsgStatus } from "@/lib/twilio";
 import { pushToStaff } from "@/lib/push";
 import { prettyPhone } from "@/lib/format";
 import { jobsLink, openWorkOrder } from "@/lib/dispatch";
@@ -106,7 +106,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       ``,
       `"${String(msg.body).trim()}"`,
       note?.trim() ? `\n${note.trim()}` : "",
-      `\nThe conversation: ${publicBase(req)}/c/${convo.id}`,
+      // On its own line and nothing else. The thread turns a link to a
+      // conversation into a button; a sentence wrapped round it just makes
+      // the button harder to find.
+      `\n${publicBase(req)}/c/${convo.id}`,
     ].join("\n").trim();
 
     const thread = await oneToOneThread(db, staff.id, person.id);
@@ -168,7 +171,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         statusCallback: `${publicBase(req)}/api/twilio/status`,
       });
       sid = sent.sid;
-      status = sent.status ?? "queued";
+      status = toMsgStatus(sent.status);
     } catch (e) {
       // Recorded as failed rather than swallowed. Someone has to find out that
       // the plumber was never actually told.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { checkTwilioSignature, formToObject } from "@/lib/twilio";
+import { checkTwilioSignature, formToObject, toMsgStatus } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   if (!sig.ok) return new NextResponse(sig.reason, { status: sig.status });
 
   const { data, error } = await supabaseAdmin().from("messages")
-    .update({ status: params.MessageStatus, error_code: params.ErrorCode ?? null })
+    .update({ status: toMsgStatus(params.MessageStatus), error_code: params.ErrorCode ?? null })
     .eq("twilio_sid", params.MessageSid)
     .select("id");
 

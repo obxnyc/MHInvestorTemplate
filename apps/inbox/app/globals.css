@@ -1276,3 +1276,14 @@ a.metric:hover{border-color:var(--accent)}
    -- where two digits read as initials that failed to load. */
 .av.unknown{background:var(--sunk);color:var(--muted)}
 .av.unknown svg{display:block}
+
+/* A link to somewhere in here, inside a message. Rendered as the destination
+   rather than as the URL: a forty-character UUID is not something anybody
+   reads, and as raw text it has to be selected and pasted. */
+.jumpto{display:inline-flex;align-items:center;gap:.3rem;margin-top:.45rem;
+  padding:.3rem .6rem;border-radius:999px;font-size:.8rem;font-weight:700;
+  background:rgba(255,255,255,.16);color:inherit}
+.jumpto:hover{background:rgba(255,255,255,.26)}
+.in .jumpto{background:var(--card);color:var(--accent);border:1px solid var(--hair)}
+.in .jumpto:hover{border-color:var(--accent)}
+.inlink{text-decoration:underline;text-underline-offset:2px;word-break:break-all}
