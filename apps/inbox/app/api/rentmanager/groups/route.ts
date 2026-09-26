@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-export type Role = "park" | "llc" | "managed" | "ignore" | "unset";
+export type Role = "park" | "llc" | "investor" | "managed" | "ignore" | "unset";
 
 /**
  * Every Rent Manager group, and what each one actually is.
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
   if (localAddress !== undefined) patch.local_address = String(localAddress).trim() || null;
 
   if (role !== undefined) {
-    const allowed = ["park", "llc", "managed", "ignore", "unset"];
+    const allowed = ["park", "llc", "investor", "managed", "ignore", "unset"];
     if (!allowed.includes(String(role))) {
       return NextResponse.json({ error: "unknown role" }, { status: 400 });
     }
