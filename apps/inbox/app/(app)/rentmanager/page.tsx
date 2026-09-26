@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import RentManagerProbe from "@/components/RentManagerProbe";
 import RmGroups from "@/components/RmGroups";
+import RmWriteProbe from "@/components/RmWriteProbe";
 import { rmSettings, candidateBases } from "@/lib/rentmanager";
 
 export const runtime = "nodejs";
@@ -83,6 +84,17 @@ export default async function RentManager() {
             there, and only you can tell them apart.
           </p>
           <RmGroups />
+        </li>
+
+        <li>
+          <h2>Could we create a group ourselves?</h2>
+          <p>
+            A park being redeveloped has no group yet, and making one by hand
+            is a job that will recur. Before writing anything real to Rent
+            Manager — which nothing here has ever done — this finds out
+            whether their groups endpoint accepts a create, and what it wants.
+          </p>
+          <RmWriteProbe />
         </li>
 
         <li>
