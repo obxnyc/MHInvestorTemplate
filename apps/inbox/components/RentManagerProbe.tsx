@@ -11,6 +11,11 @@ type EmbedTry = {
   added: string[]; within: Record<string, string[]>; detail: string | null;
 };
 type Found = { entity: string; base: string[]; tries: EmbedTry[] };
+type Tally = { seen: number; written: number };
+type Import = {
+  ok: boolean; dryRun: boolean; error?: string;
+  owners: Tally; properties: Tally; units: Tally; notes: string[];
+};
 type Result = {
   configured: boolean; company?: string; signedIn?: boolean;
   base?: string; header?: string; hint?: string;
@@ -31,6 +36,8 @@ export default function RentManagerProbe() {
   const [copied, setCopied] = useState(false);
   const [deep, setDeep] = useState<{ found?: Found[]; hint?: string } | null>(null);
   const [digging, setDigging] = useState(false);
+  const [pulled, setPulled] = useState<Import | null>(null);
+  const [pulling, setPulling] = useState<"" | "dry" | "real">("");
 
   async function run() {
     setBusy(true); setFailed(null); setOut(null); setCopied(false);
@@ -56,6 +63,23 @@ export default function RentManagerProbe() {
       setFailed((e as Error).message);
     } finally {
       setDigging(false);
+    }
+  }
+
+  /** The rehearsal, then the thing itself. Nothing writes without `go`. */
+  async function pull(go: boolean) {
+    setPulling(go ? "real" : "dry"); setPulled(null); setFailed(null);
+    try {
+      const res = await fetch("/api/rentmanager/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ go }),
+      });
+      setPulled(await res.json());
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally {
+      setPulling("");
     }
   }
 
@@ -147,6 +171,55 @@ export default function RentManagerProbe() {
         <p className="hint">
           Around sixty requests, one at a time. Two or three minutes.
         </p>
+      )}
+
+      {out?.signedIn && (
+        <div className="rmpull">
+          <h3>Bring the portfolio across</h3>
+          <div className="acts" style={{ justifyContent: "flex-start" }}>
+            <button className="btn" disabled={pulling !== ""}
+                    onClick={() => pull(false)}>
+              {pulling === "dry" ? "Counting…" : "Rehearse it"}
+            </button>
+            {pulled?.dryRun && pulled.ok && (
+              <button className="btn pri" disabled={pulling !== ""}
+                      onClick={() => pull(true)}>
+                {pulling === "real" ? "Importing…" : "Do it for real"}
+              </button>
+            )}
+          </div>
+          <p className="hint">
+            A rehearsal reads everything and writes nothing. Read-only either
+            way — nothing is ever sent back to Rent Manager.
+          </p>
+
+          {pulled && !pulled.ok && <p className="err">{pulled.error}</p>}
+
+          {pulled?.ok && (
+            <>
+              <p className={pulled.dryRun ? "notice" : "okmsg"}>
+                {pulled.dryRun ? "Rehearsal — nothing was written. " : "Imported. "}
+                {pulled.properties.seen} properties ({pulled.properties.written}{" "}
+                {pulled.dryRun ? "would be new" : "new"}),{" "}
+                {pulled.units.seen} units ({pulled.units.written}{" "}
+                {pulled.dryRun ? "would be new" : "new"}),{" "}
+                {pulled.owners.seen} owner LLCs ({pulled.owners.written}{" "}
+                {pulled.dryRun ? "would be new" : "new"}).
+              </p>
+              {pulled.notes.length > 0 && (
+                <>
+                  <p className="hint">
+                    {pulled.notes.length} thing{pulled.notes.length === 1 ? "" : "s"}{" "}
+                    that did not fit. These are jobs in Rent Manager, not errors here:
+                  </p>
+                  <ul className="rmnotes">
+                    {pulled.notes.map((n, i) => <li key={i}>{n}</li>)}
+                  </ul>
+                </>
+              )}
+            </>
+          )}
+        </div>
       )}
 
       {deep?.found && (
