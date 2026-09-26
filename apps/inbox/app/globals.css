@@ -146,6 +146,12 @@ button{font:inherit;cursor:pointer}
 .board{flex:1;min-height:0;width:100%;max-width:84rem;margin-inline:auto;
   display:flex;flex-direction:column;overflow:hidden;
   background:var(--card);border:1px solid var(--hair);border-radius:14px}
+/* The one scroller. A column flex that passes a definite height down, so the
+   inbox's own panes still size themselves against the window and scroll
+   internally, while a plain document page just runs off the bottom of this
+   and scrolls here. */
+.boardscroll{flex:1;min-height:0;display:flex;flex-direction:column;
+  overflow-y:auto;overscroll-behavior:contain}
 @media (max-width:640px){
   /* On a phone the gutter is most of the screen. The card becomes the screen. */
   .portal{padding:0}
@@ -793,8 +799,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   font-weight:600;font-style:italic}
 
 /* ---- people ---- */
-.people{width:100%;max-width:46rem;margin-inline:auto;padding:1rem 1.25rem 4rem;
-  overflow-y:auto}
+.people{width:100%;max-width:46rem;margin-inline:auto;padding:1rem 1.25rem 4rem}
 .people .tabs .n{font-family:ui-monospace,monospace;font-size:.72rem;opacity:.6}
 .people-list{list-style:none;margin:1rem 0 0;padding:0;display:grid;gap:.5rem}
 .people-list li{display:grid;grid-template-columns:1fr auto;gap:.2rem .8rem;
@@ -1093,8 +1098,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .backlink:hover{background:var(--sunk);color:var(--ink)}
 
 /* ---- your own screen ---- */
-.dash{padding:1.2rem 1.25rem 3rem;max-width:56rem;margin-inline:auto;width:100%;
-  overflow-y:auto}
+.dash{padding:1.2rem 1.25rem 3rem;max-width:56rem;margin-inline:auto;width:100%}
 .dash h1{margin:0 0 .2rem;font-size:1.35rem;letter-spacing:-.025em}
 .dash > .muted{margin:0 0 1.4rem;font-size:.87rem}
 .dashgroup{margin-bottom:1.5rem}

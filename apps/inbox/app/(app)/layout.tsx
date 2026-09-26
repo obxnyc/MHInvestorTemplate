@@ -20,8 +20,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           against the browser chrome and read as a rendering fault. */}
       <main className="portal">
         <div className="board">
+          {/* Outside the scroller on purpose: it is a prompt about the app,
+              not part of the page, and it should not slide away under the
+              thing it is asking about. */}
           <PushSetup />
-          {children}
+          {/* Every page scrolls, because the shell says so.
+              This used to be each page's own job -- .dash and .people asked
+              for it, .audit and the rest did not -- which meant the Setup
+              check simply stopped at the bottom of the window with no way to
+              reach the end of it. A screen that cannot scroll is not a
+              styling slip, it is content nobody can read, and it should not
+              be possible to ship a new page with that bug. */}
+          <div className="boardscroll">{children}</div>
         </div>
       </main>
     </div>
