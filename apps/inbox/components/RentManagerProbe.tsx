@@ -186,18 +186,20 @@ export default function RentManagerProbe() {
           <div className="acts" style={{ justifyContent: "flex-start" }}>
             <button className="btn" disabled={pulling !== ""}
                     onClick={() => pull(false)}>
-              {pulling === "dry" ? "Counting…" : "Rehearse it"}
+              {pulling === "dry" ? "Checking…" : "Preview — changes nothing"}
             </button>
             {pulled?.dryRun && pulled.ok && (
               <button className="btn pri" disabled={pulling !== ""}
                       onClick={() => pull(true)}>
-                {pulling === "real" ? "Importing…" : "Do it for real"}
+                {pulling === "real" ? "Importing…" : "Import it for real"}
               </button>
             )}
           </div>
           <p className="hint">
-            A rehearsal reads everything and writes nothing. Read-only either
-            way — nothing is ever sent back to Rent Manager.
+            The preview reads everything from Rent Manager, works out what it
+            would create here, and shows you — without writing anything. Click
+            it as often as you like. Nothing is ever sent back to Rent Manager
+            either way.
           </p>
 
           {pulled && !pulled.ok && <p className="err">{pulled.error}</p>}
@@ -205,13 +207,13 @@ export default function RentManagerProbe() {
           {pulled?.ok && (
             <>
               <p className={pulled.dryRun ? "notice" : "okmsg"}>
-                {pulled.dryRun ? "Rehearsal — nothing was written. " : "Imported. "}
+                {pulled.dryRun ? "Preview only — nothing was written. " : "Imported. "}
                 {pulled.properties.seen} properties ({pulled.properties.written}{" "}
-                {pulled.dryRun ? "would be new" : "new"}),{" "}
+                {pulled.dryRun ? "would be added" : "added"}),{" "}
                 {pulled.units.seen} units ({pulled.units.written}{" "}
-                {pulled.dryRun ? "would be new" : "new"}),{" "}
-                {pulled.owners.seen} owner LLCs ({pulled.owners.written}{" "}
-                {pulled.dryRun ? "would be new" : "new"}).
+                {pulled.dryRun ? "would be added" : "added"}),{" "}
+                {pulled.owners.seen} owners ({pulled.owners.written}{" "}
+                {pulled.dryRun ? "would be added" : "added"}).
               </p>
               {pulled.preview && <Rehearsal rows={pulled.preview} />}
 
