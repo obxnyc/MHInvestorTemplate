@@ -3,6 +3,7 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { prettyPhone, timeAgo } from "@/lib/format";
 import { money } from "@/lib/prices";
 import { catLabel, type Category } from "@/lib/category";
+import WhosHere from "@/components/WhosHere";
 
 export const dynamic = "force-dynamic";
 
@@ -134,6 +135,8 @@ export default async function Home() {
         Manager today. They are laid out and empty on purpose — a figure invented
         to fill the space is worse than a gap that says what it is waiting for.
       </p>
+
+      <WhosHere />
 
       <section className="dashgroup">
         <h2>Yours <span className="cnt">{mine?.length ?? 0}</span></h2>

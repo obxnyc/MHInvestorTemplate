@@ -1402,3 +1402,49 @@ a.metric:hover{border-color:var(--accent)}
 /* The button that cannot be undone. Not the primary: the safe way out is. */
 .btn.danger{background:var(--crit);border-color:var(--crit);color:#fff}
 .btn.danger:hover{opacity:.92;color:#fff}
+
+
+/* ---------------------------------------------------------------- who's here
+   A handful of people and where they are. Grouped by status rather than
+   sorted by it, because "who is on right now" is one glance and a sorted list
+   still has to be read. */
+.whoslist{list-style:none;margin:.5rem 0 0;padding:0}
+.whoshead{margin:.8rem 0 .3rem;font-size:.68rem;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint)}
+.whoshead:first-child{margin-top:.2rem}
+.whos{display:flex;align-items:center;gap:.7rem;padding:.45rem .2rem;
+  border-bottom:1px solid var(--hair-2);font-size:.88rem}
+.whos:last-child{border-bottom:none}
+/* Offline is dimmed rather than hidden. Knowing somebody is NOT about is the
+   other half of the question, and a name missing from a list reads as a bug. */
+.whos.offline{opacity:.55}
+
+.whosav{position:relative;flex:none;display:block}
+.dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;
+  border:2px solid var(--card);box-sizing:content-box}
+.dot.online{background:#2E8B68}
+.dot.idle{background:#D9932B}
+.dot.offline{background:var(--faint)}
+
+.whosname{display:flex;flex-direction:column;min-width:0;flex:1}
+.whosline{display:flex;align-items:center;gap:.4rem;min-width:0}
+.whoswho{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.whosrole{font-size:.74rem;color:var(--muted)}
+.whosyou{flex:none;font-size:.66rem;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--accent-ink);background:var(--accent-soft);
+  padding:.05rem .3rem;border-radius:4px}
+.whoswhen{font-size:.78rem;color:var(--muted);white-space:nowrap}
+/* The one line only an admin is ever sent. Full width under the row, because
+   at the end of a row it would be mistaken for the presence time next to it. */
+.whoslogin{flex-basis:100%;font-size:.74rem;color:var(--faint);
+  padding-left:2.6rem;margin-top:-.15rem}
+.whos{flex-wrap:wrap}
+
+.whostoggle{margin-left:auto;font-weight:500}
+.dashgroup h2{display:flex;align-items:center;gap:.5rem}
+.whosnote{margin:.7rem 0 0;font-size:.76rem;color:var(--faint);line-height:1.5}
+
+@media (max-width:520px){
+  .whoswhen{font-size:.74rem}
+  .whoslogin{padding-left:0}
+}
