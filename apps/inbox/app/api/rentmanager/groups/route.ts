@@ -67,7 +67,7 @@ export async function GET() {
   }
 
   const { data, error } = await db.from("rm_groups")
-    .select("id, name, role, decided_at").order("name");
+    .select("id, name, role, decided_at, local_name, local_address").order("name");
   if (error) {
     return NextResponse.json({
       signedIn: true, pending: true,
@@ -82,6 +82,8 @@ export async function GET() {
       id: g.id, name: g.name, role: g.role as Role,
       properties: counts.get(g.name) ?? 0,
       decided: Boolean(g.decided_at),
+      localName: g.local_name ?? "",
+      localAddress: g.local_address ?? "",
     })),
   });
 }
@@ -93,17 +95,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "not allowed" }, { status: 403 });
   }
 
-  const { id, role } = await req.json().catch(() => ({}));
-  const allowed = ["park", "llc", "managed", "ignore", "unset"];
-  if (!id || !allowed.includes(String(role))) {
-    return NextResponse.json({ error: "unknown role" }, { status: 400 });
+  const { id, role, localName, localAddress } = await req.json().catch(() => ({}));
+  if (!id) return NextResponse.json({ error: "which group?" }, { status: 400 });
+
+  const patch: Record<string, unknown> = {};
+
+  // The name and the role are saved by the same endpoint but independently:
+  // typing a name should not silently re-decide what the group is, and
+  // changing the role should not wipe a name already typed.
+  if (localName !== undefined) patch.local_name = String(localName).trim() || null;
+  if (localAddress !== undefined) patch.local_address = String(localAddress).trim() || null;
+
+  if (role !== undefined) {
+    const allowed = ["park", "llc", "managed", "ignore", "unset"];
+    if (!allowed.includes(String(role))) {
+      return NextResponse.json({ error: "unknown role" }, { status: 400 });
+    }
+    patch.role = role;
+    patch.decided_at = role === "unset" ? null : new Date().toISOString();
+    patch.decided_by = role === "unset" ? null : me.id;
   }
 
-  const { error } = await supabaseAdmin().from("rm_groups").update({
-    role,
-    decided_at: role === "unset" ? null : new Date().toISOString(),
-    decided_by: role === "unset" ? null : me.id,
-  }).eq("id", id);
+  if (!Object.keys(patch).length) {
+    return NextResponse.json({ error: "nothing to change" }, { status: 400 });
+  }
+
+  const { error } = await supabaseAdmin().from("rm_groups").update(patch).eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

@@ -1518,6 +1518,14 @@ a.metric:hover{border-color:var(--accent)}
 .rgname{font-size:.88rem;font-weight:600;min-width:0}
 .rgcount{display:block;font-size:.74rem;font-weight:400;color:var(--muted)}
 .rgwhat{grid-column:1 / -1;font-size:.75rem;color:var(--muted)}
+.rgpark{grid-column:1 / -1;display:grid;gap:.5rem;margin:.4rem 0 .2rem;
+  padding:.6rem .7rem;background:var(--card);border:1px solid var(--hair);
+  border-left:3px solid var(--accent);border-radius:8px}
+.rgpark label{display:block;font-size:.78rem;font-weight:600}
+.rgpark .opt{font-weight:400;color:var(--muted)}
+.rgpark input{width:100%;margin-top:.2rem;padding:.45rem .6rem;
+  border:1px solid var(--hair);border-radius:7px;background:var(--page);
+  font:inherit;font-size:.85rem}
 .rmgroups select{width:100%;padding:.4rem .5rem;border:1px solid var(--hair);
   border-radius:7px;background:var(--card);font:inherit;font-size:.84rem}
 @media (max-width:560px){ .rmgroups li{grid-template-columns:1fr} }
