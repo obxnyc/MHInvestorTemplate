@@ -42,18 +42,45 @@ export async function POST(req: Request) {
   const session = auth.session;
 
   // ------------------------------------------------------------- looking
-  const looked: RmCall[] = [];
-  for (const path of [
-    "/PropertyGroups?pagesize=2",
-    "/PropertyGroups?pagesize=1&embeds=Properties",
-    "/PropertyGroups?pagesize=1&embeds=PropertyGroupProperties",
-    "/PropertyGroupProperties?pagesize=1",
-  ]) {
-    looked.push(await rmGet(path, session));
+  //
+  // Each question in plain words, because an answer nobody can read is not a
+  // diagnosis. Four rows all labelled /PropertyGroups is raw plumbing, and
+  // it puts the reader in the position of having to know what each query was
+  // for before the result means anything.
+  const QUESTIONS: [string, string][] = [
+    ["/PropertyGroups?pagesize=2",
+     "Is there a groups endpoint at all?"],
+    ["/PropertyGroups?pagesize=1&embeds=Properties",
+     "Can we see which properties are in a group?"],
+    ["/PropertyGroups?pagesize=1&embeds=PropertyGroupProperties",
+     "…or is membership its own kind of record?"],
+    ["/PropertyGroupProperties?pagesize=1",
+     "…or its own endpoint?"],
+  ];
+
+  const looked: (RmCall & { asked: string })[] = [];
+  for (const [path, asked] of QUESTIONS) {
+    looked.push({ ...(await rmGet(path, session)), asked });
   }
 
+  const exists = looked[0]?.ok ?? false;
+  const membership = looked[1]?.ok ?? false;
+  const verdict = !exists
+    ? "There is no property-groups endpoint on this account, so a group cannot"
+      + " be created from here at all. Make it in Rent Manager."
+    : membership
+      ? "Groups exist and their membership is readable. Reading is settled;"
+        + " whether a group can be CREATED is the next question, and the only"
+        + " way to find out is to make one and delete it again."
+      : "Groups exist, but nothing here could show which properties are in"
+        + " one. Creating a group would give us an empty group we could not"
+        + " fill, which is worse than not having it.";
+
   if (stage !== "try") {
-    return NextResponse.json({ signedIn: true, stage: "look", looked });
+    return NextResponse.json({
+      signedIn: true, stage: "look", looked, verdict,
+      canTry: exists && membership,
+    });
   }
 
   // -------------------------------------------------------------- trying
@@ -86,8 +113,14 @@ export async function POST(req: Request) {
     }
   }
 
+  const wrote = made.ok;
   return NextResponse.json({
     signedIn: true, stage: "try", looked, tried, cleanedUp, litter,
+    verdict: wrote
+      ? "A group can be created from here. What Rent Manager wanted is in the"
+        + " reply below, and the test group was removed again."
+      : "Rent Manager refused to create a group. Its reason is below, word for"
+        + " word — usually it names the fields it actually wanted.",
     // Said plainly either way, because "did that leave something behind" is
     // the only question worth asking after a write probe.
     clean: made.ok ? (cleanedUp?.ok ?? false) : true,
