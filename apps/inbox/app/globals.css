@@ -1511,6 +1511,17 @@ a.metric:hover{border-color:var(--accent)}
 .rmpull h3{margin:0 0 .5rem;font-size:.95rem;letter-spacing:-.01em}
 .rmnotes{margin:.4rem 0 0;padding-left:1.1rem;font-size:.8rem;color:var(--ink-2);
   line-height:1.6;max-height:14rem;overflow-y:auto}
+.rmgroups{list-style:none;margin:.6rem 0;padding:0}
+.rmgroups li{display:grid;grid-template-columns:1fr 13rem;gap:.3rem .8rem;
+  align-items:center;padding:.5rem .2rem;border-bottom:1px solid var(--hair-2)}
+.rmgroups li.undecided{background:var(--warn-soft)}
+.rgname{font-size:.88rem;font-weight:600;min-width:0}
+.rgcount{display:block;font-size:.74rem;font-weight:400;color:var(--muted)}
+.rgwhat{grid-column:1 / -1;font-size:.75rem;color:var(--muted)}
+.rmgroups select{width:100%;padding:.4rem .5rem;border:1px solid var(--hair);
+  border-radius:7px;background:var(--card);font:inherit;font-size:.84rem}
+@media (max-width:560px){ .rmgroups li{grid-template-columns:1fr} }
+
 .rehearsal{margin-top:.8rem}
 .rehstats{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 .5rem;padding:0}
 .rehstats li{font-size:.8rem;background:var(--sunk);border:1px solid var(--hair);
