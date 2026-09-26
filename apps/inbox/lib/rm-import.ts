@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rmAuthorize, type RmSession } from "@/lib/rentmanager";
 import type { Kind } from "@/lib/property";
-import { KINDS } from "@/lib/property";
+import { KINDS, nextCode } from "@/lib/property";
 
 /**
  * Bringing the portfolio across from Rent Manager.
@@ -226,13 +226,41 @@ export async function importFromRentManager(
     unitTypeNames.set(t.UnitTypeID, t.Name ?? "");
   }
 
+  // ------------------------------------------------- what the groups mean
+  //
+  // A park is a GROUP over there and a property here; its member properties
+  // are the lots. Which groups are parks is not in the data and never will
+  // be -- "Pines Mobile Home Park" is one, "Non-Musgrove" is a reporting
+  // filter -- so it is recorded by a person and read here. A group nobody
+  // has judged does nothing at all, which is the safe way for it to fail.
+  const roleOf = new Map<string, {
+    role: string; localName: string | null; localAddress: string | null;
+    propertyId: string | null;
+  }>();
+  {
+    const { data } = await db.from("rm_groups")
+      .select("name, role, local_name, local_address, property_id");
+    for (const g of data ?? []) {
+      roleOf.set(String(g.name), {
+        role: String(g.role ?? "unset"),
+        localName: (g.local_name as string | null) ?? null,
+        localAddress: (g.local_address as string | null) ?? null,
+        propertyId: (g.property_id as string | null) ?? null,
+      });
+    }
+  }
+  const named = (p: RmProperty) =>
+    (p.PropertyGroups ?? []).map((g) => (g.Name ?? "").trim()).filter(Boolean);
+  const groupWith = (p: RmProperty, role: string) =>
+    named(p).find((n) => roleOf.get(n)?.role === role) ?? null;
+
   // ------------------------------------------------------------ properties
   const rmProps = await all<RmProperty>(
     session, "/Properties?embeds=Addresses,Units,PrimaryOwner,PropertyGroups");
   tally.properties.seen = rmProps.length;
 
   // Rent, in one pass over every unit, joined back by id. MarketRent does
-  // not come down on the embedded copies.
+  // not come down on the copies embedded in a property.
   const rentByUnit = new Map<number, number>();
   for (const u of await all<{ UnitID: number; MarketRent?: { Amount?: number } | null }>(
     session, "/Units?embeds=MarketRent")) {
@@ -244,39 +272,152 @@ export async function importFromRentManager(
     .select("id, code, kind, rm_property_id");
   const propByRm = new Map<number, { id: string; kind: string }>();
   const propByCode = new Map<string, { id: string; kind: string }>();
+  const takenCodes: string[] = [];
   for (const p of haveProps ?? []) {
     const row = { id: String(p.id), kind: String(p.kind ?? "sfh") };
     if (p.rm_property_id) propByRm.set(Number(p.rm_property_id), row);
-    if (p.code) propByCode.set(String(p.code), row);
+    if (p.code) { propByCode.set(String(p.code), row); takenCodes.push(String(p.code)); }
   }
 
-  const { data: haveUnits } = await db.from("units").select("id, rm_unit_id");
-  const unitByRm = new Map<number, string>();
+  const { data: haveUnits } = await db.from("units")
+    .select("id, rm_unit_id, rm_property_id");
+  const unitByRmUnit = new Map<number, string>();
+  const unitByRmProp = new Map<number, string>();
   for (const u of haveUnits ?? []) {
-    if (u.rm_unit_id) unitByRm.set(Number(u.rm_unit_id), String(u.id));
+    if (u.rm_unit_id) unitByRmUnit.set(Number(u.rm_unit_id), String(u.id));
+    if (u.rm_property_id) unitByRmProp.set(Number(u.rm_property_id), String(u.id));
   }
 
+  // Sorted so a park's own property is created before anything is hung off
+  // it, and so the preview reads parks first.
+  const lotsByPark = new Map<string, RmProperty[]>();
+  const standalone: RmProperty[] = [];
   for (const p of rmProps) {
     if (p.IsActive === false) continue;
+    const park = groupWith(p, "park");
+    if (park) {
+      (lotsByPark.get(park) ?? lotsByPark.set(park, []).get(park)!).push(p);
+    } else {
+      standalone.push(p);
+    }
+  }
 
+  /** The single unit Rent Manager keeps inside a lot's property, which is
+   *  where its beds, baths and square footage actually live. */
+  const innerUnit = (p: RmProperty): RmUnit | null => (p.Units ?? [])[0] ?? null;
+
+  /** Everything about one lot, ready to be written as a unit of a park. */
+  function lotRow(lot: RmProperty, parkId: string | null) {
+    const inner = innerUnit(lot);
+    const vacant = vacantSet(lot.VacantUnitIDs);
+    return {
+      property_id: parkId,
+      // Their name for the lot -- "1140 Northside #22" -- because that is
+      // what is said on the phone and written on a work order.
+      label: (lot.Name ?? lot.ShortName ?? String(lot.PropertyID)).trim(),
+      bedrooms: inner?.Bedrooms ?? null,
+      bathrooms: inner?.Bathrooms ?? null,
+      square_feet: inner?.SquareFootage ?? null,
+      monthly_rent: inner ? rentByUnit.get(inner.UnitID) ?? null : null,
+      is_vacant: inner ? vacant.has(inner.UnitID) : false,
+      // We own the dirt. The home standing on it belongs to whoever Rent
+      // Manager runs the distribution to -- an investor, in a park.
+      home_owner_id: lot.PrimaryOwnerID
+        ? ownerIdByRm.get(lot.PrimaryOwnerID) ?? null : null,
+      rm_unit_id: inner?.UnitID ?? null,
+      rm_property_id: lot.PropertyID,
+      rm_synced_at: new Date().toISOString(),
+    };
+  }
+
+  // ----------------------------------------------------------------- parks
+  for (const [groupName, lots] of lotsByPark) {
+    const g = roleOf.get(groupName)!;
+    const name = (g.localName || groupName).trim();
+    tally.properties.seen++;
+
+    let parkId = g.propertyId;
+    if (!parkId) {
+      const known = [...propByCode.keys()];
+      const code = nextCode("MHP", [...takenCodes, ...known]);
+      if (!dryRun) {
+        const { data, error } = await db.from("properties").insert({
+          name, code, kind: "mhp", color: KINDS.mhp.color,
+          address: g.localAddress,
+          rm_synced_at: new Date().toISOString(),
+        }).select("id").single();
+        if (error) { notes.push(`Could not create the park "${name}": ${error.message}`); continue; }
+        parkId = String(data.id);
+        takenCodes.push(code);
+        await db.from("rm_groups").update({ property_id: parkId }).eq("name", groupName);
+      } else {
+        takenCodes.push(code);
+      }
+      tally.properties.written++;
+    } else if (!dryRun) {
+      await db.from("properties")
+        .update({ name, address: g.localAddress, rm_synced_at: new Date().toISOString() })
+        .eq("id", parkId);
+    }
+
+    if (dryRun) {
+      preview.push({
+        code: "MHP", name, kind: "mhp",
+        units: lots.length,
+        unitNames: lots.slice(0, 4).map((l) => (l.Name ?? "").trim()),
+        vacant: lots.filter((l) => {
+          const inner = innerUnit(l);
+          return inner ? vacantSet(l.VacantUnitIDs).has(inner.UnitID) : false;
+        }).length,
+        owner: null,
+        address: g.localAddress,
+        existing: Boolean(g.propertyId),
+        groups: [groupName],
+      });
+    }
+
+    for (const lot of lots) {
+      tally.units.seen++;
+      const row = lotRow(lot, parkId);
+      const known = unitByRmProp.get(lot.PropertyID)
+        ?? (row.rm_unit_id ? unitByRmUnit.get(row.rm_unit_id) : undefined);
+      if (dryRun) { if (!known) tally.units.written++; continue; }
+      if (!parkId) continue;
+
+      if (known) {
+        const { error } = await db.from("units").update(row).eq("id", known);
+        if (error) notes.push(`Could not update lot ${row.label}: ${error.message}`);
+      } else {
+        const { error } = await db.from("units").insert(row);
+        if (error) notes.push(`Could not add lot ${row.label}: ${error.message}`);
+        else tally.units.written++;
+      }
+    }
+  }
+
+  // ----------------------------------------------- everything on its own
+  for (const p of standalone) {
     const code = (p.ShortName ?? "").trim();
     const name = (p.Name ?? code).trim();
     if (!code) {
       notes.push(`"${name}" has no Short Name in Rent Manager, so it has no code. Skipped.`);
       continue;
     }
+    tally.properties.seen++;
 
-    // Their id first, then their code -- which adopts a property somebody
-    // added here by hand before the connection existed.
     const existing = propByRm.get(p.PropertyID) ?? propByCode.get(code);
     const kind = existing ? (existing.kind as Kind) : guessKind(p, unitTypeNames);
     const spec = KINDS[kind] ?? KINDS.sfh;
+    // Somebody else's building on somebody else's land. Marked, so it stays
+    // out of occupancy and rent roll instead of inflating both.
+    const managed = Boolean(groupWith(p, "managed"));
 
     const row = {
       name, code,
       address: addressOf(p.Addresses),
       owner_id: p.PrimaryOwnerID ? ownerIdByRm.get(p.PrimaryOwnerID) ?? null : null,
       color: spec.color,
+      managed_only: managed,
       rm_property_id: p.PropertyID,
       rm_synced_at: new Date().toISOString(),
     };
@@ -284,7 +425,7 @@ export async function importFromRentManager(
     let propertyId = existing?.id ?? null;
     if (!dryRun) {
       if (propertyId) {
-        // Kind is not in the patch. A guess made on the first import must not
+        // Kind is not in the patch: a guess made on the first import must not
         // overrule somebody who corrected it afterwards.
         const { error } = await db.from("properties").update(row).eq("id", propertyId);
         if (error) { notes.push(`Could not update ${code}: ${error.message}`); continue; }
@@ -299,30 +440,24 @@ export async function importFromRentManager(
       tally.properties.written++;
     }
 
-    // ----------------------------------------------------------- its units
-    const vacant = vacantSet(p.VacantUnitIDs);
-
     if (dryRun) {
       preview.push({
         code, name, kind,
         units: (p.Units ?? []).length,
-        // A handful is enough to recognise the shape. Whether these read as
-        // "#22, #30, #58" or as one address decides whether a park came
-        // across as a park.
         unitNames: (p.Units ?? []).slice(0, 4).map((u) => (u.Name ?? "").trim()),
-        vacant: (p.Units ?? []).filter((u) => vacant.has(u.UnitID)).length,
+        vacant: (p.Units ?? []).filter((u) => vacantSet(p.VacantUnitIDs).has(u.UnitID)).length,
         owner: p.PrimaryOwnerID ? ownerNameByRm.get(p.PrimaryOwnerID) ?? null : null,
         address: addressOf(p.Addresses),
         existing: Boolean(existing),
-        groups: (p.PropertyGroups ?? [])
-          .map((g) => (g.Name ?? "").trim()).filter(Boolean),
+        groups: named(p),
       });
     }
 
+    const vacant = vacantSet(p.VacantUnitIDs);
     for (const u of p.Units ?? []) {
       tally.units.seen++;
       const label = (u.Name ?? "").trim() || String(u.UnitID);
-      const unitRow: Record<string, unknown> = {
+      const unitRow = {
         property_id: propertyId,
         label,
         bedrooms: u.Bedrooms ?? null,
@@ -331,10 +466,11 @@ export async function importFromRentManager(
         monthly_rent: rentByUnit.get(u.UnitID) ?? null,
         is_vacant: vacant.has(u.UnitID),
         rm_unit_id: u.UnitID,
+        rm_property_id: p.PropertyID,
         rm_synced_at: new Date().toISOString(),
       };
 
-      const known = unitByRm.get(u.UnitID);
+      const known = unitByRmUnit.get(u.UnitID);
       if (dryRun) { if (!known) tally.units.written++; continue; }
       if (!propertyId) { notes.push(`Unit ${label} has no property to sit under.`); continue; }
 
@@ -347,6 +483,12 @@ export async function importFromRentManager(
         else tally.units.written++;
       }
     }
+  }
+
+  const unjudged = [...new Set(rmProps.flatMap(named))]
+    .filter((n) => (roleOf.get(n)?.role ?? "unset") === "unset");
+  if (unjudged.length) {
+    notes.push(`Nobody has said what these groups are, so they did nothing: ${unjudged.join(", ")}.`);
   }
 
   // Recorded whether it was a rehearsal or not, so "when did this last run"
