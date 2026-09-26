@@ -4,6 +4,7 @@ import BackLink from "@/components/BackLink";
 import RentManagerProbe from "@/components/RentManagerProbe";
 import RmGroups from "@/components/RmGroups";
 import RmWriteProbe from "@/components/RmWriteProbe";
+import RmMakeGroup from "@/components/RmMakeGroup";
 import { rmSettings, candidateBases } from "@/lib/rentmanager";
 
 export const runtime = "nodejs";
@@ -93,8 +94,15 @@ export default async function RentManager() {
             is a job that will recur. Before writing anything real to Rent
             Manager — which nothing here has ever done — this finds out
             whether their groups endpoint accepts a create, and what it wants.
+            It turns out it wants the members with it: an empty group is
+            refused, so a group either appears complete or not at all.
           </p>
           <RmWriteProbe />
+
+          {/* The probe answered it: "You cannot create an empty Property
+              Group." Name and members in one call, or nothing -- which means
+              there is no half-made state to clean up. */}
+          <RmMakeGroup />
         </li>
 
         <li>
