@@ -47,7 +47,15 @@ export default function AddressPicker(
         const res = await fetch(`/api/places?q=${encodeURIComponent(q.trim())}`);
         const data = await res.json();
         if (mine !== seq.current) return;
-        setNote(data.error ?? null);
+        // `configured: false` is the lookup key not being set, which is the
+        // common case and used to come back as an empty dropdown and no
+        // explanation -- indistinguishable from an address Google has never
+        // heard of. It says so now, once, and typing it by hand still works.
+        setNote(data.error
+          ?? (data.configured === false
+            ? "Address suggestions are switched off — no Google Maps key on"
+              + " this server yet. Type the address in full and it saves fine."
+            : null));
         setList(data.suggestions ?? []);
         setOpen((data.suggestions ?? []).length > 0);
       } finally {

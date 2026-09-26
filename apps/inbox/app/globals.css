@@ -815,6 +815,13 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .okmsg{margin:.6rem 0 0;color:var(--accent-ink);background:var(--accent-soft);
   border-radius:8px;padding:.5rem .7rem;font-size:.84rem;font-weight:600}
 
+/* Something is not wrong, but something is not switched on. Quieter than an
+   error -- nothing failed -- and louder than a hint, because it is a job
+   somebody has to go and do. */
+.notice{margin:.7rem 0 0;color:var(--ink-2);background:var(--sunk);
+  border:1px solid var(--hair);border-left:3px solid var(--warn);
+  border-radius:8px;padding:.55rem .75rem;font-size:.84rem;line-height:1.5}
+
 /* The category as a control. Styled as the badge it replaced, so the header
    reads the same and the affordance is the only thing that changed. */
 .catpick select{appearance:none;border:none;border-radius:5px;padding:.18em 1.15em .18em .45em;
@@ -1287,6 +1294,31 @@ a.metric:hover{border-color:var(--accent)}
 .aerialok{color:var(--accent);font-weight:700}
 .aerialbar .mini{margin-left:auto}
 .hint{margin:.4rem 0 0;font-size:.79rem;color:var(--muted);line-height:1.5}
+
+/* What the property is about to be called. Quiet -- it is a statement of
+   fact, not a field -- but monospaced, because the code is an identifier and
+   will be read back off a screen against an invoice. */
+.codepreview{margin:.7rem 0 0;font-size:.82rem;color:var(--muted)}
+.codepreview strong{font-family:"IBM Plex Mono",monospace;font-size:.86rem;
+  color:var(--accent-ink);background:var(--accent-soft);
+  padding:.1rem .4rem;border-radius:5px;letter-spacing:.02em}
+
+/* Making an LLC without leaving the property you were adding. Inset rather
+   than a dialog: this opens from inside a form that is often already in one,
+   and a dialog over a dialog is how people lose what they had typed. */
+.ownernew{margin:.6rem 0 .2rem;padding:.75rem .85rem .85rem;border:1px solid var(--hair);
+  border-left:3px solid var(--accent);border-radius:10px;background:var(--sunk)}
+.ownernew .fieldlab:first-child{margin-top:0}
+.ownernew input{width:100%;padding:.6rem .7rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);font:inherit;font-size:.9rem}
+.ownernew .acts{display:flex;gap:.5rem;justify-content:flex-end;margin-top:.9rem}
+.ownernew .err{margin:.6rem 0 0;font-size:.82rem}
+.addbox .ownernew label,.ownernew label{margin:.75rem 0 .3rem}
+
+/* Dropdowns in a dialog were never given the width its inputs have, so the
+   owner picker sat at whatever width its longest LLC name happened to be. */
+.sheet select{width:100%;padding:.6rem .75rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);font:inherit;font-size:.92rem}
 .kindtag{font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
   color:var(--muted);background:var(--sunk);padding:.12rem .4rem;border-radius:5px}
 

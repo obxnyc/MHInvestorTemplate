@@ -39,11 +39,15 @@ export async function POST(req: Request) {
   }).select("id, name").single();
 
   if (error) {
-    return NextResponse.json({
-      error: error.code === "23505"
-        ? "There is already an owner by that name."
-        : error.message,
-    }, { status: 400 });
+    // 42P01 is "no such table", which here means one thing only: migration 017
+    // has not been run. Saying that is the difference between a five-minute
+    // fix and an afternoon staring at a dropdown that will not fill.
+    const why = error.code === "23505"
+      ? "There is already an owner by that name."
+      : error.code === "42P01" || /schema cache|does not exist/i.test(error.message)
+        ? "Owners need migration 017 run on the database first."
+        : error.message;
+    return NextResponse.json({ error: why }, { status: 400 });
   }
   return NextResponse.json({ ok: true, ...data });
 }

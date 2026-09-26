@@ -58,6 +58,13 @@ export default async function Properties() {
   }));
 
   return <PropertyBoard properties={properties}
+                        // The wide select succeeding IS the migration check:
+                        // it names every column 016 and 017 add, and the join
+                        // to the owners table they create. If it came back,
+                        // codes and LLCs are real and the screen can offer
+                        // them; if it did not, the screen says so rather than
+                        // showing a dropdown that cannot be filled.
+                        ready={!wide.error}
                         canEdit={me.role === "admin" || me.role === "office"}
                         canDelete={me.role === "admin"} />;
 }
