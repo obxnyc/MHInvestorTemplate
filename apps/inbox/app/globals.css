@@ -1511,6 +1511,24 @@ a.metric:hover{border-color:var(--accent)}
 .rmpull h3{margin:0 0 .5rem;font-size:.95rem;letter-spacing:-.01em}
 .rmnotes{margin:.4rem 0 0;padding-left:1.1rem;font-size:.8rem;color:var(--ink-2);
   line-height:1.6;max-height:14rem;overflow-y:auto}
+.rehearsal{margin-top:.8rem}
+.rehstats{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 .5rem;padding:0}
+.rehstats li{font-size:.8rem;background:var(--sunk);border:1px solid var(--hair);
+  border-radius:7px;padding:.25rem .55rem;color:var(--ink-2)}
+.rehstats li.warn{border-color:var(--warn);color:var(--crit)}
+.rehstats b{font-weight:700}
+.rehtable{width:100%;border-collapse:collapse;margin-top:.6rem;font-size:.8rem}
+.rehtable th{text-align:left;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);padding:.3rem .5rem .3rem 0;border-bottom:1px solid var(--hair)}
+.rehtable td{padding:.35rem .5rem .35rem 0;border-bottom:1px solid var(--hair-2);
+  vertical-align:top}
+.rehtable tr.warn td{background:var(--warn-soft)}
+.rehtable .mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.75rem}
+.unames{display:block;font-size:.7rem;color:var(--muted);
+  font-family:"IBM Plex Mono",ui-monospace,monospace}
+.already{margin-left:.4rem;font-size:.66rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--accent-ink);background:var(--accent-soft);
+  padding:.05rem .3rem;border-radius:4px}
 .rmentity{margin-top:1rem}
 .rmentity h3{margin:0 0 .1rem;font-size:.82rem;font-weight:700;letter-spacing:.04em;
   text-transform:uppercase;color:var(--faint)}
