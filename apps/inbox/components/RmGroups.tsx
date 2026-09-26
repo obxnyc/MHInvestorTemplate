@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-type Role = "park" | "llc" | "managed" | "ignore" | "unset";
+type Role = "park" | "llc" | "investor" | "managed" | "ignore" | "unset";
 type Group = {
   id: string; name: string; role: Role; properties: number; decided: boolean;
   localName: string; localAddress: string;
@@ -10,8 +10,14 @@ type Group = {
 const ROLES: [Role, string, string][] = [
   ["unset", "Not said yet", "Nothing acts on it"],
   ["park", "A park", "Its properties become lots in one park here"],
-  ["llc", "One of our companies", "Its properties are owned by us"],
-  ["managed", "Managed for others", "Kept out of occupancy and rent roll"],
+  ["llc", "One of our companies", "Its properties sit on land we own"],
+  // An investor group is a lens, not a structure: those homes stand on lots
+  // in our parks and are already placed by the park group. This records that
+  // there is a person behind the tag, which "a reporting filter" throws away.
+  ["investor", "One investor's homes",
+   "A lens over homes in our parks — where they sit is decided by the park"],
+  ["managed", "Managed for other people",
+   "Ours to run, somebody else's to own — kept out of occupancy and rent roll"],
   ["ignore", "A reporting filter", "Not a real thing — skipped"],
 ];
 
@@ -115,19 +121,24 @@ export default function RmGroups() {
                 Retreat 2" is 1148 Northside. A work order that says The
                 Retreat 2 sends a tech nowhere, so the park is named here
                 rather than inheriting a label from their reporting. */}
-            {g.role === "park" && (
+            {g.role !== "unset" && g.role !== "ignore" && (
               <div className="rgpark">
                 <label>
                   What we call it
+                  {g.role === "investor" && (
+                    <span className="opt"> — their group is spelled RHMK; ours need not be</span>
+                  )}
                   <input defaultValue={g.localName} placeholder={g.name}
                          onBlur={(e) => save(g.id, { localName: e.target.value })} />
                 </label>
-                <label>
-                  Address <span className="opt">— where the park gate is</span>
-                  <input defaultValue={g.localAddress}
-                         placeholder="1148 Northside Rd, Elizabeth City, NC"
-                         onBlur={(e) => save(g.id, { localAddress: e.target.value })} />
-                </label>
+                {g.role === "park" && (
+                  <label>
+                    Address <span className="opt">— where the park gate is</span>
+                    <input defaultValue={g.localAddress}
+                           placeholder="1148 Northside Rd, Elizabeth City, NC"
+                           onBlur={(e) => save(g.id, { localAddress: e.target.value })} />
+                  </label>
+                )}
               </div>
             )}
           </li>
