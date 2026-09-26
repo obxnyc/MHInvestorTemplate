@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { signMedia } from "@/lib/media";
+import { settleConversation } from "@/lib/receipts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .select("id, category, source, status, subject, category_confidence, closure_prompts, assigned_to, unit_id, units(label, properties(name, color)), contacts(id, phone, full_name, party, unit_id, language, units(label, properties(name, color))), staff:assigned_to(full_name)")
     .eq("id", id).single();
   if (!convo) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Before reading the messages, settle anything still claiming to be
+  // "Sending". The delivery receipt is a webhook and a webhook can be missed;
+  // this asks Twilio directly about the ones we never heard back on. Awaited
+  // on purpose -- the point is that the thread shows the truth NOW, at the
+  // moment somebody is looking at the wrong answer. It costs nothing when
+  // nothing is stuck, which is nearly always.
+  await settleConversation(id).catch((e) =>
+    console.error("could not settle delivery receipts", e));
 
   // Asked separately, and allowed to fail.
   //
