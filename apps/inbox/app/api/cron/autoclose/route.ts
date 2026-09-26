@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { pushToStaff } from "@/lib/push";
+import { settleEverything } from "@/lib/receipts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,10 +89,20 @@ export async function GET(req: Request) {
     }));
   }
 
+  // The sweep for threads nobody opened. Opening a thread settles its own
+  // stuck receipts, which covers everything anyone is actually looking at;
+  // this is for the rest, so a message stuck on "Sending" cannot outlive the
+  // day nobody happened to read it.
+  const receipts = await settleEverything()
+    .catch((e) => { console.error("receipt sweep failed", e);
+                    return { checked: 0, changed: 0 }; });
+
   return NextResponse.json({
     ok: true,
     closed: closed ?? 0,
     recycled: recycled ?? 0,
     awaitingAnswer: queue?.length ?? 0,
+    receiptsChecked: receipts.checked,
+    receiptsSettled: receipts.changed,
   });
 }
