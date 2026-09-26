@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import Confirm from "@/components/Confirm";
 import AddressPicker, { type Place } from "@/components/AddressPicker";
-import { KIND_LIST, kindOf, unitWord, type Kind } from "@/lib/property";
+import OwnerPicker, { type Owner } from "@/components/OwnerPicker";
+import { KIND_LIST, kindOf, nextCode, unitWord, type Kind } from "@/lib/property";
 import { money } from "@/lib/prices";
 
 export type Unit = {
@@ -39,8 +40,8 @@ export type { Kind };
  * markable by the person who let it.
  */
 export default function PropertyBoard(
-  { properties, canEdit, canDelete }:
-  { properties: Property[]; canEdit: boolean; canDelete: boolean },
+  { properties, ready, canEdit, canDelete }:
+  { properties: Property[]; ready: boolean; canEdit: boolean; canDelete: boolean },
 ) {
   const router = useRouter();
   const [, start] = useTransition();
@@ -52,13 +53,23 @@ export default function PropertyBoard(
   // straight from a click in this screen.
   const [confirming, setConfirming] =
     useState<{ kind: "property" | "unit"; id: string; label: string } | null>(null);
-  const [owners, setOwners] = useState<{ id: string; name: string }[]>([]);
+  const [owners, setOwners] = useState<Owner[]>([]);
   const [groupBy, setGroupBy] = useState<"owner" | "kind" | "none">("none");
 
   useEffect(() => {
     fetch("/api/owners").then((r) => r.json())
       .then((d) => setOwners(d.owners ?? [])).catch(() => {});
   }, []);
+
+  /** A new LLC goes into the list in place rather than through a reload, so
+   *  the half-filled property form underneath survives making one. */
+  const addOwner = (o: Owner) =>
+    setOwners((list) => [...list, o].sort((a, b) => a.name.localeCompare(b.name)));
+
+  // Every code already spoken for, so the add form can say which one this
+  // property is about to get. The database still decides -- this is a
+  // preview, and it says "about to be" rather than claiming it.
+  const takenCodes = properties.map((p) => p.code).filter(Boolean) as string[];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -117,6 +128,16 @@ export default function PropertyBoard(
 
       {error && <p className="err">{error}</p>}
       {done && <p className="okmsg">{done}</p>}
+
+      {/* Said once, at the top, rather than leaving three features quietly
+          missing and letting somebody work out why the codes never appear. */}
+      {!ready && canEdit && (
+        <p className="notice">
+          Property codes, types and owner LLCs are waiting on migrations 016
+          and 017 being run on the database. Properties still add and list
+          without them — they just come out unidentified.
+        </p>
+      )}
 
       {properties.length > 1 && (
         <div className="groupbar">
@@ -300,7 +321,8 @@ export default function PropertyBoard(
       )}
 
       {editProp && (
-        <EditProperty property={editProp} owners={owners} busy={busy}
+        <EditProperty property={editProp} owners={owners} ready={ready}
+                      busy={busy} onOwnerAdded={addOwner}
                       onClose={() => setEditProp(null)}
                       onSave={async (patch) => {
                         if (await call(`/api/properties/${editProp.id}`, "PATCH", patch)) {
@@ -311,10 +333,18 @@ export default function PropertyBoard(
 
       {canEdit && (
         adding
-          ? <AddProperty busy={busy} owners={owners} onCancel={() => setAdding(false)}
+          ? <AddProperty busy={busy} owners={owners} ready={ready}
+                         taken={takenCodes} onOwnerAdded={addOwner}
+                         onCancel={() => setAdding(false)}
                          onAdd={async (body) => {
                            const out = await call("/api/properties", "POST", body);
-                           if (out) { setAdding(false); setOpen(String(out.id)); }
+                           if (!out) return;
+                           setAdding(false);
+                           setOpen(String(out.id));
+                           // It saved, but without its code or its type. Said
+                           // plainly: a property that quietly came out
+                           // unidentified is a bug nobody can explain later.
+                           if (out.pending) setError(String(out.pending));
                          }} />
           : <button className="btn pri addprop" onClick={() => setAdding(true)}>
               Add a property
@@ -325,8 +355,9 @@ export default function PropertyBoard(
 }
 
 function AddProperty(
-  { busy, owners, onAdd, onCancel }:
-  { busy: boolean; owners: { id: string; name: string }[];
+  { busy, owners, ready, taken, onOwnerAdded, onAdd, onCancel }:
+  { busy: boolean; owners: Owner[]; ready: boolean; taken: string[];
+    onOwnerAdded: (o: Owner) => void;
     onAdd: (b: Record<string, unknown>) => void; onCancel: () => void },
 ) {
   const [name, setName] = useState("");
@@ -369,13 +400,19 @@ function AddProperty(
         </p>
       )}
 
-      <label htmlFor="po">
-        Owner <span className="opt">— which LLC holds it</span>
-      </label>
-      <select id="po" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-        <option value="">Not set</option>
-        {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-      </select>
+      {/* What it will be filed as. Directly under the type, because the type
+          is what decides it -- watching SFH-002 turn into MHP-001 is what
+          makes the code mean something rather than being a number that
+          appeared afterwards. The database has the last word; this says
+          "will be" and not "is". */}
+      {ready && (
+        <p className="codepreview">
+          Will be filed as <strong>{nextCode(kindOf(kind).prefix, taken)}</strong>
+        </p>
+      )}
+
+      <OwnerPicker id="po" value={ownerId} owners={owners} ready={ready}
+                   canAdd onChange={setOwnerId} onAdded={onOwnerAdded} />
 
       <label htmlFor="pn">
         Name <span className="opt">— what everyone calls it</span>
@@ -503,11 +540,13 @@ function UnitDetail(
  *  be edited is one nobody can rely on. Rename it instead, which is free.
  */
 function EditProperty(
-  { property, owners, busy, onSave, onClose }:
+  { property, owners, ready, busy, onOwnerAdded, onSave, onClose }:
   {
     property: Property;
-    owners: { id: string; name: string }[];
+    owners: Owner[];
+    ready: boolean;
     busy: boolean;
+    onOwnerAdded: (o: Owner) => void;
     onSave: (patch: Record<string, unknown>) => void;
     onClose: () => void;
   },
@@ -542,11 +581,8 @@ function EditProperty(
           </p>
         )}
 
-        <label className="fieldlab" htmlFor="eo">Owner</label>
-        <select id="eo" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-          <option value="">Not set</option>
-          {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
+        <OwnerPicker id="eo" value={ownerId} owners={owners} ready={ready}
+                     canAdd onChange={setOwnerId} onAdded={onOwnerAdded} />
 
         <AddressPicker value={place} onChange={setPlace} />
 
