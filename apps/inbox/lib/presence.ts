@@ -18,6 +18,15 @@ export type Status = "online" | "idle" | "offline";
 export const BEAT_MS = 45_000;
 /** No keyboard or mouse for this long and the tab calls itself idle. */
 export const IDLE_AFTER_MS = 5 * 60_000;
+/** A tab in the background is a shorter fuse -- somebody who switched to
+ *  another window a minute ago is still at their desk; somebody who switched
+ *  two minutes ago is doing something else. Not instant, which is what made
+ *  glancing at another app turn the dot amber. */
+export const HIDDEN_AFTER_MS = 2 * 60_000;
+/** Where tabs of the same browser leave word of the last real interaction, so
+ *  a window sitting in the background cannot report its own stillness as
+ *  yours. */
+export const ACTIVITY_KEY = "larabee:lastActive";
 /** A heartbeat older than this and we have stopped hearing from them at all.
  *  Three missed beats rather than one -- a background tab is throttled by the
  *  browser and a phone on a train misses a couple. */

@@ -33,17 +33,27 @@ export default function WhosHere() {
 
   useEffect(() => {
     let alive = true;
+    // Sign-in times are only asked for while they are being shown -- it is an
+    // extra lookup and this runs every thirty seconds.
     const load = () =>
-      fetch("/api/presence").then((r) => r.json()).then((d) => {
-        if (!alive) return;
-        setPending(Boolean(d.pending));
-        setPeople(d.people ?? []);
-        setCanSeeLogins(Boolean(d.canSeeLogins));
-      }).catch(() => {});
+      fetch(`/api/presence${showLogins ? "?logins=1" : ""}`)
+        .then((r) => r.json()).then((d) => {
+          if (!alive) return;
+          setPending(Boolean(d.pending));
+          setPeople(d.people ?? []);
+          setCanSeeLogins(Boolean(d.canSeeLogins));
+        }).catch(() => {});
     load();
     const t = setInterval(load, 30_000);
-    return () => { alive = false; clearInterval(t); };
-  }, []);
+    // Your own dot should go green the moment you touch the keyboard, not up
+    // to thirty seconds later.
+    window.addEventListener("presence:changed", load);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      window.removeEventListener("presence:changed", load);
+    };
+  }, [showLogins]);
 
   if (pending) {
     return (
@@ -108,7 +118,13 @@ export default function WhosHere() {
                 </span>
                 {showLogins && canSeeLogins && (
                   <span className="whoslogin">
-                    Last signed in {since(p.lastLogin ?? null)}
+                    {/* "Never" would be a claim about this person. Nothing
+                        recorded is a claim about us, and it is the true one
+                        for anybody whose account predates the auth service
+                        having been asked. */}
+                    {p.lastLogin
+                      ? `Last signed in ${since(p.lastLogin)}`
+                      : "No sign-in on record"}
                   </span>
                 )}
               </li>
