@@ -296,6 +296,12 @@ function Rehearsal({ rows }: { rows: Row[] }) {
   }
   const groupNames = [...groupCount.entries()].sort((a, b) => b[1] - a[1]);
 
+  const ownerCount = new Map<string, number>();
+  for (const r of rows) {
+    if (r.owner) ownerCount.set(r.owner, (ownerCount.get(r.owner) ?? 0) + 1);
+  }
+  const owners = [...ownerCount.entries()].sort((a, b) => b[1] - a[1]);
+
   return (
     <div className="rehearsal">
       <ul className="rehstats">
@@ -339,6 +345,27 @@ function Rehearsal({ rows }: { rows: Row[] }) {
           </ul>
         </details>
       )}
+      {/* Who owns what, by count. An owner with forty properties is one of
+          your own LLCs; an owner with one is somebody whose house you manage.
+          The shape of this list separates the portfolio from the management
+          book without anybody having to label them. */}
+      {owners.length > 0 && (
+        <details className="rehodd" open>
+          <summary>{owners.length} owners — yours and the ones you manage for</summary>
+          <ul className="rehmulti">
+            {owners.slice(0, 15).map(([name, n]) => (
+              <li key={name}><b>{name}</b> — {n} propert{n === 1 ? "y" : "ies"}</li>
+            ))}
+            {owners.length > 15 && (
+              <li className="pinmuted">
+                …and {owners.length - 15} more, all with{" "}
+                {owners[15]?.[1] ?? 1} or fewer
+              </li>
+            )}
+          </ul>
+        </details>
+      )}
+
       {groupNames.length > 0 && (
         <details className="rehodd" open>
           <summary>
