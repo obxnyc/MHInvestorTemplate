@@ -55,11 +55,14 @@ type Row = {
  * check happens once, in this function, and the field is simply not in the
  * response for anybody else. Not hidden by the client: absent from the wire.
  */
-export async function GET() {
+export async function GET(req: Request) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const admin = me.role === "admin";
+  // Only looked up when somebody has actually asked to see it. It is an extra
+  // call to the auth service and this endpoint is polled every half minute.
+  const wantLogins = new URL(req.url).searchParams.get("logins") === "1";
   const db = supabaseAdmin();
 
   const wide = await db.from("staff")
@@ -75,6 +78,33 @@ export async function GET() {
     return NextResponse.json({ pending: true, people: [] });
   }
 
+  /**
+   * Sign-ins come from the auth service, not from our own column.
+   *
+   * `staff.last_login_at` only started being written when migration 018 ran,
+   * so everybody who had signed in before that read as "never" -- which was
+   * not a gap in the data, it was a gap in ours. Supabase has recorded every
+   * sign-in since the account was made, and it is the thing actually doing
+   * the authenticating, so it is the honest source. Our column stays as a
+   * fallback for a deployment whose auth service will not answer.
+   */
+  const signIns = new Map<string, string | null>();
+  if (admin && wantLogins) {
+    try {
+      // Pages, because the default is fifty and a staff list can outgrow it
+      // quietly -- at which point the people missing would read as "never"
+      // and nobody would know why.
+      for (let page = 1; page <= 5; page++) {
+        const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
+        if (error) break;
+        for (const u of data.users) signIns.set(u.id, u.last_sign_in_at ?? null);
+        if (data.users.length < 200) break;
+      }
+    } catch (e) {
+      console.error("could not read sign-in times", e);
+    }
+  }
+
   const now = Date.now();
   const people = ((wide.data ?? []) as Row[]).map((s) => ({
     id: s.id,
@@ -84,7 +114,9 @@ export async function GET() {
     lastSeen: s.last_seen_at,
     me: s.id === me.id,
     // Yours is always yours. Everyone else's only if you are an admin.
-    ...(admin || s.id === me.id ? { lastLogin: s.last_login_at ?? null } : {}),
+    ...(wantLogins && (admin || s.id === me.id)
+      ? { lastLogin: signIns.get(s.id) ?? s.last_login_at ?? null }
+      : {}),
   }));
 
   return NextResponse.json({ people, canSeeLogins: admin });
