@@ -41,6 +41,14 @@ create table if not exists rm_groups (
   decided_by  uuid references staff(id) on delete set null
 );
 
+-- Their name for a park is not the name anybody uses. "The Retreat 2" is
+-- 1148 Northside; "Pines Mobile Home Park" is Evergreen. A work order that
+-- says The Retreat 2 sends a tech nowhere, so the name it carries here is
+-- recorded alongside theirs rather than inherited from it.
+alter table rm_groups
+  add column if not exists local_name    text,
+  add column if not exists local_address text;
+
 alter table rm_groups enable row level security;
 revoke all on rm_groups from anon;
 revoke insert, update, delete on rm_groups from authenticated;

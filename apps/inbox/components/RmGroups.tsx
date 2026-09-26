@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 type Role = "park" | "llc" | "managed" | "ignore" | "unset";
 type Group = {
   id: string; name: string; role: Role; properties: number; decided: boolean;
+  localName: string; localAddress: string;
 };
 
 const ROLES: [Role, string, string][] = [
@@ -45,16 +46,16 @@ export default function RmGroups() {
   }
   useEffect(() => { load(); }, []);
 
-  async function say(id: string, role: Role) {
-    setSaving(id);
+  async function save(id: string, patch: Partial<Group>) {
     setGroups((gs) => (gs ?? []).map((g) =>
-      g.id === id ? { ...g, role, decided: role !== "unset" } : g));
+      g.id === id
+        ? { ...g, ...patch, ...(patch.role ? { decided: patch.role !== "unset" } : {}) }
+        : g));
     await fetch("/api/rentmanager/groups", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, role }),
+      body: JSON.stringify({ id, ...patch }),
     }).catch(() => {});
-    setSaving(null);
   }
 
   if (pending) return <p className="notice">{pending}</p>;
@@ -71,6 +72,8 @@ export default function RmGroups() {
   }
 
   const undecided = groups.filter((g) => g.role === "unset").length;
+  // A park with no name of its own would arrive called "The Retreat 2".
+  const unnamed = groups.filter((g) => g.role === "park" && !g.localName).length;
 
   return (
     <>
@@ -80,6 +83,14 @@ export default function RmGroups() {
             + " so a park nobody has named stays a pile of separate addresses."
           : `All ${groups.length} accounted for.`}
       </p>
+
+      {unnamed > 0 && (
+        <p className="hint">
+          {unnamed} park{unnamed === 1 ? "" : "s"} still named the way Rent
+          Manager names {unnamed === 1 ? "it" : "them"}. Give{" "}
+          {unnamed === 1 ? "it" : "them"} the name you would say on the phone.
+        </p>
+      )}
 
       <ul className="rmgroups">
         {groups.map((g) => (
@@ -91,7 +102,7 @@ export default function RmGroups() {
               </span>
             </span>
             <select value={g.role} disabled={saving === g.id}
-                    onChange={(e) => say(g.id, e.target.value as Role)}>
+                    onChange={(e) => save(g.id, { role: e.target.value as Role })}>
               {ROLES.map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
               ))}
@@ -99,6 +110,26 @@ export default function RmGroups() {
             <span className="rgwhat">
               {ROLES.find(([v]) => v === g.role)?.[2]}
             </span>
+
+            {/* Their name for a park is not the name anybody uses. "The
+                Retreat 2" is 1148 Northside. A work order that says The
+                Retreat 2 sends a tech nowhere, so the park is named here
+                rather than inheriting a label from their reporting. */}
+            {g.role === "park" && (
+              <div className="rgpark">
+                <label>
+                  What we call it
+                  <input defaultValue={g.localName} placeholder={g.name}
+                         onBlur={(e) => save(g.id, { localName: e.target.value })} />
+                </label>
+                <label>
+                  Address <span className="opt">— where the park gate is</span>
+                  <input defaultValue={g.localAddress}
+                         placeholder="1148 Northside Rd, Elizabeth City, NC"
+                         onBlur={(e) => save(g.id, { localAddress: e.target.value })} />
+                </label>
+              </div>
+            )}
           </li>
         ))}
       </ul>
