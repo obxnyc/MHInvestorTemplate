@@ -2,6 +2,7 @@ import { requireStaff } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import RentManagerProbe from "@/components/RentManagerProbe";
+import RmGroups from "@/components/RmGroups";
 import { rmSettings, candidateBases } from "@/lib/rentmanager";
 
 export const runtime = "nodejs";
@@ -69,6 +70,19 @@ export default async function RentManager() {
             resident information is pulled.
           </p>
           <RentManagerProbe />
+        </li>
+
+        <li>
+          <h2>Say what each group is</h2>
+          <p>
+            A lot in a park is its own property in Rent Manager, because the
+            home standing on it has an owner and distributions run per owner.
+            The park itself is a <em>group</em>. But so is a company, so is
+            the management book, and so is a filter like
+            &ldquo;Non-Musgrove&rdquo; — they are the same kind of record over
+            there, and only you can tell them apart.
+          </p>
+          <RmGroups />
         </li>
 
         <li>
