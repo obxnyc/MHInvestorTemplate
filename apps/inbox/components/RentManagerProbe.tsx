@@ -12,9 +12,15 @@ type EmbedTry = {
 };
 type Found = { entity: string; base: string[]; tries: EmbedTry[] };
 type Tally = { seen: number; written: number };
+type Row = {
+  code: string; name: string; kind: string; units: number;
+  unitNames: string[]; vacant: number;
+  owner: string | null; address: string | null; existing: boolean;
+};
 type Import = {
   ok: boolean; dryRun: boolean; error?: string;
   owners: Tally; properties: Tally; units: Tally; notes: string[];
+  preview?: Row[];
 };
 type Result = {
   configured: boolean; company?: string; signedIn?: boolean;
@@ -206,6 +212,8 @@ export default function RentManagerProbe() {
                 {pulled.owners.seen} owner LLCs ({pulled.owners.written}{" "}
                 {pulled.dryRun ? "would be new" : "new"}).
               </p>
+              {pulled.preview && <Rehearsal rows={pulled.preview} />}
+
               {pulled.notes.length > 0 && (
                 <>
                   <p className="hint">
@@ -255,5 +263,81 @@ export default function RentManagerProbe() {
         </div>
       )}
     </>
+  );
+}
+
+
+/**
+ * What the import would actually make, listed.
+ *
+ * A total is not a check. "259 properties" reads identically whether the
+ * mapping is right or has flattened every park into two hundred separate
+ * addresses -- and the only way to tell is to look at the rows and see
+ * whether you recognise your own portfolio in them.
+ *
+ * So: the counts that would give it away first, then every row.
+ */
+function Rehearsal({ rows }: { rows: Row[] }) {
+  const [all, setAll] = useState(false);
+
+  const byKind = new Map<string, number>();
+  for (const r of rows) byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + 1);
+
+  const noUnits = rows.filter((r) => r.units === 0);
+  const noAddress = rows.filter((r) => !r.address);
+  const noOwner = rows.filter((r) => !r.owner);
+  const multi = rows.filter((r) => r.units > 1);
+  const shown = all ? rows : rows.slice(0, 25);
+
+  return (
+    <div className="rehearsal">
+      <ul className="rehstats">
+        <li><b>{rows.length}</b> properties</li>
+        <li><b>{multi.length}</b> with more than one unit</li>
+        <li className={noUnits.length ? "warn" : ""}>
+          <b>{noUnits.length}</b> with no units at all
+        </li>
+        <li className={noAddress.length ? "warn" : ""}>
+          <b>{noAddress.length}</b> with no address
+        </li>
+        <li className={noOwner.length ? "warn" : ""}>
+          <b>{noOwner.length}</b> with no owner LLC
+        </li>
+      </ul>
+      <p className="hint">
+        Guessed as: {[...byKind.entries()].map(([k, n]) => `${n} ${k}`).join(", ")}.
+        {" "}If a park you own is not in that list as <code>mhp</code>, the shape
+        did not come across and this should not be run for real yet.
+      </p>
+
+      <table className="rehtable">
+        <thead>
+          <tr><th>Code</th><th>Name</th><th>Type</th><th>Units</th>
+              <th>Owner</th><th>Address</th></tr>
+        </thead>
+        <tbody>
+          {shown.map((r) => (
+            <tr key={r.code} className={r.units === 0 ? "warn" : ""}>
+              <td className="mono">{r.code}</td>
+              <td>{r.name}{r.existing && <span className="already">already here</span>}</td>
+              <td className="mono">{r.kind}</td>
+              <td>
+                {r.units}
+                {r.unitNames.length > 0 && (
+                  <span className="unames">{r.unitNames.join(", ")}</span>
+                )}
+              </td>
+              <td>{r.owner ?? "—"}</td>
+              <td>{r.address ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > 25 && (
+        <button type="button" className="btn" onClick={() => setAll((v) => !v)}>
+          {all ? "Show the first 25" : `Show all ${rows.length}`}
+        </button>
+      )}
+    </div>
   );
 }

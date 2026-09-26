@@ -30,6 +30,23 @@ const PAGE = 250;
 
 export type Note = string;
 export type Tally = { seen: number; written: number };
+
+/** One line per property, so a rehearsal can be READ rather than trusted.
+ *  A total is not a check: "259 properties" looks the same whether the
+ *  mapping is right or catastrophically wrong, and the only way to know
+ *  which is to look at the rows and recognise them. */
+export type Row = {
+  code: string;
+  name: string;
+  kind: Kind;
+  units: number;
+  unitNames: string[];
+  vacant: number;
+  owner: string | null;
+  address: string | null;
+  existing: boolean;
+};
+
 export type Outcome = {
   ok: boolean;
   dryRun: boolean;
@@ -37,6 +54,8 @@ export type Outcome = {
   properties: Tally;
   units: Tally;
   notes: Note[];
+  /** Only on a rehearsal. */
+  preview?: Row[];
   error?: string;
 };
 
@@ -136,6 +155,7 @@ export async function importFromRentManager(
   { dryRun, staffId }: { dryRun: boolean; staffId: string | null },
 ): Promise<Outcome> {
   const notes: Note[] = [];
+  const preview: Row[] = [];
   const tally = {
     owners: { seen: 0, written: 0 },
     properties: { seen: 0, written: 0 },
@@ -155,6 +175,7 @@ export async function importFromRentManager(
   tally.owners.seen = rmOwners.length;
 
   const ownerIdByRm = new Map<number, string>();
+  const ownerNameByRm = new Map<number, string>();
   {
     const { data: existing } = await db.from("owners").select("id, name, rm_owner_id");
     const byRm = new Map<number, string>();
@@ -167,6 +188,7 @@ export async function importFromRentManager(
     for (const o of rmOwners) {
       const name = (o.DisplayName || o.Name || "").trim();
       if (!name) { notes.push(`Owner ${o.OwnerID} has no name in Rent Manager.`); continue; }
+      ownerNameByRm.set(o.OwnerID, name);
 
       // Matched on their id first, then on a name somebody typed here before
       // the two systems were introduced -- so an LLC entered by hand gets
@@ -272,6 +294,22 @@ export async function importFromRentManager(
 
     // ----------------------------------------------------------- its units
     const vacant = vacantSet(p.VacantUnitIDs);
+
+    if (dryRun) {
+      preview.push({
+        code, name, kind,
+        units: (p.Units ?? []).length,
+        // A handful is enough to recognise the shape. Whether these read as
+        // "#22, #30, #58" or as one address decides whether a park came
+        // across as a park.
+        unitNames: (p.Units ?? []).slice(0, 4).map((u) => (u.Name ?? "").trim()),
+        vacant: (p.Units ?? []).filter((u) => vacant.has(u.UnitID)).length,
+        owner: p.PrimaryOwnerID ? ownerNameByRm.get(p.PrimaryOwnerID) ?? null : null,
+        address: addressOf(p.Addresses),
+        existing: Boolean(existing),
+      });
+    }
+
     for (const u of p.Units ?? []) {
       tally.units.seen++;
       const label = (u.Name ?? "").trim() || String(u.UnitID);
@@ -314,5 +352,5 @@ export async function importFromRentManager(
     by_staff: staffId,
   }).then(() => {}, () => {});
 
-  return { ok: true, dryRun, ...tally, notes };
+  return { ok: true, dryRun, ...tally, notes, ...(dryRun ? { preview } : {}) };
 }
