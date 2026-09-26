@@ -1499,6 +1499,8 @@ a.metric:hover{border-color:var(--accent)}
 .rmlist li.no{opacity:.6}
 .rmpath{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.8rem;
   min-width:11rem}
+/* A question reads as prose, not as a path. */
+.rmlist.asked .rmpath{font-family:inherit;font-size:.86rem;min-width:22rem;flex:1}
 .rmstatus{font-size:.78rem;font-weight:700}
 .rmlist li.ok .rmstatus{color:#2E8B68}
 .rmlist li.no .rmstatus{color:var(--crit)}

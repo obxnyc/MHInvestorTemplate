@@ -4,6 +4,9 @@ import { useState } from "react";
 type Call = {
   path: string; status: number; ok: boolean;
   count: number | null; shape: string[] | null; detail: string | null;
+  /** What this request was actually asking. Without it the reader has to
+   *  already know what each query was for. */
+  asked: string;
 };
 type Write = {
   method: string; path: string; status: number; ok: boolean;
@@ -13,6 +16,7 @@ type Result = {
   signedIn: boolean; stage?: "look" | "try";
   looked?: Call[]; tried?: Write[];
   cleanedUp?: Write | null; litter?: string | null; clean?: boolean;
+  verdict?: string; canTry?: boolean;
 };
 
 /**
@@ -47,7 +51,7 @@ export default function RmWriteProbe() {
         <button className="btn" disabled={busy !== ""} onClick={() => run("look")}>
           {busy === "look" ? "Looking…" : "Look — reads only"}
         </button>
-        {out?.looked && (
+        {out?.canTry && (
           <button className="btn danger" disabled={busy !== ""}
                   onClick={() => run("try")}>
             {busy === "try" ? "Trying…" : "Try one disposable write"}
@@ -64,22 +68,24 @@ export default function RmWriteProbe() {
         <p className="err">Not signed in. Run the connection test first.</p>
       )}
 
+      {/* The conclusion first. The rows underneath are the evidence for it,
+          and nobody should have to derive one from the other. */}
+      {out?.verdict && <p className="notice">{out.verdict}</p>}
+
       {out?.looked && (
-        <ul className="rmlist">
+        <ul className="rmlist asked">
           {out.looked.map((c) => (
             <li key={c.path} className={c.ok ? "ok" : "no"}>
-              <span className="rmpath">{c.path.split("?")[0]}</span>
+              <span className="rmpath">{c.asked}</span>
               <span className="rmstatus">
-                {c.ok ? (c.count === null ? "answered" : `${c.count} record`)
-                      : `HTTP ${c.status || "—"}`}
+                {c.ok ? "yes" : c.status === 404 ? "no" : `HTTP ${c.status || "—"}`}
               </span>
               {c.shape && (
                 <details className="rmshape">
-                  <summary>{c.shape.length} fields</summary>
+                  <summary>{c.shape.length} fields on a group</summary>
                   <p>{c.shape.join(", ")}</p>
                 </details>
               )}
-              {c.detail && <span className="rmwhy">{c.detail}</span>}
             </li>
           ))}
         </ul>
