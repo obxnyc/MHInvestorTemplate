@@ -1507,4 +1507,9 @@ a.metric:hover{border-color:var(--accent)}
 .rmshape p{margin:.3rem 0 .2rem;font-family:"IBM Plex Mono",ui-monospace,monospace;
   font-size:.72rem;line-height:1.6;word-break:break-word}
 .rmwhy{flex-basis:100%;font-size:.77rem;color:var(--muted)}
+.rmentity{margin-top:1rem}
+.rmentity h3{margin:0 0 .1rem;font-size:.82rem;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--faint)}
+.rmshape strong{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.72rem;
+  color:var(--ink-2)}
 @media (max-width:520px){ .rmpath{min-width:0;flex-basis:100%} }

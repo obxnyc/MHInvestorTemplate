@@ -6,6 +6,11 @@ type Call = {
   count: number | null; shape: string[] | null; detail: string | null;
 };
 type Attempt = { base: string; status: number; ok: boolean; detail: string };
+type EmbedTry = {
+  embed: string; ok: boolean; status: number;
+  added: string[]; within: Record<string, string[]>; detail: string | null;
+};
+type Found = { entity: string; base: string[]; tries: EmbedTry[] };
 type Result = {
   configured: boolean; company?: string; signedIn?: boolean;
   base?: string; header?: string; hint?: string;
@@ -24,6 +29,8 @@ export default function RentManagerProbe() {
   const [out, setOut] = useState<Result | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [deep, setDeep] = useState<{ found?: Found[]; hint?: string } | null>(null);
+  const [digging, setDigging] = useState(false);
 
   async function run() {
     setBusy(true); setFailed(null); setOut(null); setCopied(false);
@@ -39,11 +46,24 @@ export default function RentManagerProbe() {
     }
   }
 
+  /** Where the rent, the balances and the lease dates actually live. */
+  async function dig() {
+    setDigging(true); setDeep(null);
+    try {
+      const res = await fetch("/api/rentmanager/probe/deep", { method: "POST" });
+      setDeep(await res.json());
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally {
+      setDigging(false);
+    }
+  }
+
   /** So the result can be pasted as text rather than photographed. A
    *  screenshot of forty field names is a screenshot nobody can read. */
   async function copy() {
-    if (!out) return;
-    await navigator.clipboard.writeText(JSON.stringify(out, null, 2));
+    if (!out && !deep) return;
+    await navigator.clipboard.writeText(JSON.stringify(deep ?? out, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -54,7 +74,12 @@ export default function RentManagerProbe() {
         <button className="btn pri" disabled={busy} onClick={run}>
           {busy ? "Asking Rent Manager…" : "Test the connection"}
         </button>
-        {out && (
+        {out?.signedIn && (
+          <button className="btn" disabled={digging} onClick={dig}>
+            {digging ? "Digging…" : "Find the detail"}
+          </button>
+        )}
+        {(out || deep) && (
           <button className="btn" onClick={copy}>
             {copied ? "Copied" : "Copy the result"}
           </button>
@@ -115,6 +140,45 @@ export default function RentManagerProbe() {
             One record per endpoint, and only the field names left Rent
             Manager. No resident data was fetched.
           </p>
+        </div>
+      )}
+
+      {digging && (
+        <p className="hint">
+          Around sixty requests, one at a time. Two or three minutes.
+        </p>
+      )}
+
+      {deep?.found && (
+        <div className="rmresult">
+          <p className="okmsg">
+            {deep.found.reduce((n, f) => n + f.tries.filter((t) => t.ok && t.added.length).length, 0)}
+            {" "}useful embeds found.
+          </p>
+          {deep.found.map((f) => (
+            <div key={f.entity} className="rmentity">
+              <h3>{f.entity}</h3>
+              <ul className="rmlist">
+                {f.tries.map((t) => (
+                  <li key={t.embed} className={t.ok && t.added.length ? "ok" : "no"}>
+                    <span className="rmpath">{t.embed}</span>
+                    <span className="rmstatus">
+                      {t.ok ? (t.added.length ? `+${t.added.length}` : "empty")
+                            : `HTTP ${t.status || "—"}`}
+                    </span>
+                    {t.added.length > 0 && (
+                      <details className="rmshape">
+                        <summary>{t.added.join(", ")}</summary>
+                        {Object.entries(t.within).map(([k, keys]) => (
+                          <p key={k}><strong>{k}</strong>: {keys.join(", ") || "—"}</p>
+                        ))}
+                      </details>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       )}
     </>

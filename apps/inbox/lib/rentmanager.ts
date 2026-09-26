@@ -233,3 +233,92 @@ export async function rmGet(path: string, session: RmSession): Promise<RmCall> {
              detail: (e as Error).message };
   }
 }
+
+/* ------------------------------------------------------------------ embeds
+ *
+ * The base records are skeletons. /Leases has no end date on it, /Units has
+ * no rent and no bed count, /Tenants has no balance and no phone number --
+ * and yet the Rent Manager dashboard shows all of those, so they exist. In
+ * rmAPI that detail hangs off an `embeds` parameter, and which embeds a given
+ * endpoint accepts is not something that can be looked up from here.
+ *
+ * So the same approach as finding the hostname: ask, one at a time, and
+ * report what each one added. One at a time specifically, because a list with
+ * a single bad name in it fails whole and tells you nothing about the good
+ * ones.
+ */
+
+export type EmbedTry = {
+  embed: string;
+  ok: boolean;
+  status: number;
+  /** Field names this embed added that the bare record did not have. */
+  added: string[];
+  /** For each added field that is itself a record, its own field names. This
+   *  is where the rent, the balance and the lease dates will be. */
+  within: Record<string, string[]>;
+  detail: string | null;
+};
+
+/** Keys only, never values. Finding out that a tenant record carries a
+ *  Balance is the job; reading somebody's balance is not. */
+function keysOf(v: unknown): string[] | null {
+  if (Array.isArray(v)) return v.length ? keysOf(v[0]) : [];
+  if (v && typeof v === "object") return Object.keys(v as Record<string, unknown>);
+  return null;
+}
+
+async function firstRecord(
+  path: string, session: RmSession,
+): Promise<{ status: number; record: Record<string, unknown> | null; detail: string | null }> {
+  try {
+    const res = await fetch(`${session.base}${path}`, {
+      headers: { [session.header]: session.token, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(25_000),
+    });
+    const text = await res.text();
+    if (!res.ok) return { status: res.status, record: null, detail: text.slice(0, 200) };
+    const data = JSON.parse(text) as unknown;
+    const first = Array.isArray(data) ? data[0] ?? null : data;
+    return {
+      status: res.status,
+      record: first && typeof first === "object" ? first as Record<string, unknown> : null,
+      detail: null,
+    };
+  } catch (e) {
+    return { status: 0, record: null, detail: (e as Error).message };
+  }
+}
+
+export async function rmEmbedProbe(
+  entity: string, candidates: string[], session: RmSession,
+): Promise<{ entity: string; base: string[]; tries: EmbedTry[] }> {
+  const bare = await firstRecord(`/${entity}?pagesize=1`, session);
+  const base = bare.record ? Object.keys(bare.record) : [];
+  const tries: EmbedTry[] = [];
+
+  for (const embed of candidates) {
+    const got = await firstRecord(
+      `/${entity}?pagesize=1&embeds=${encodeURIComponent(embed)}`, session);
+    if (!got.record) {
+      tries.push({ embed, ok: false, status: got.status, added: [], within: {},
+                   detail: got.detail });
+      continue;
+    }
+    const added = Object.keys(got.record).filter((k) => !base.includes(k));
+    const within: Record<string, string[]> = {};
+    for (const key of added) {
+      const sub = keysOf(got.record[key]);
+      if (sub) within[key] = sub;
+    }
+    tries.push({
+      embed, ok: true, status: got.status, added, within,
+      // An embed that is accepted and adds nothing is an embed that exists
+      // but is empty for this record -- worth distinguishing from a refusal.
+      detail: added.length ? null : "accepted, but added nothing to this record",
+    });
+  }
+
+  return { entity, base, tries };
+}
