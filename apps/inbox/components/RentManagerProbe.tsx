@@ -180,7 +180,12 @@ export default function RentManagerProbe() {
         </p>
       )}
 
-      {out?.signedIn && (
+      {/* Always here, not only after somebody has just pressed the test.
+          Gating it on that meant the whole import disappeared the moment the
+          page was reloaded -- which is exactly what reloading to set the
+          groups does. The import authenticates for itself; it never needed
+          the button to have been pressed first. */}
+      {(
         <div className="rmpull">
           <h3>Bring the portfolio across</h3>
           <div className="acts" style={{ justifyContent: "flex-start" }}>
