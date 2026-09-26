@@ -43,6 +43,7 @@ export async function runSetupChecks(
     ...(await guardAsync("Anthropic", anthropicChecks)),
     ...(await guardAsync("Delivery", deliveryChecks)),
     ...(await guardAsync("Database", databaseChecks)),
+    ...(await guardAsync("Migrations", migrationChecks)),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
 }
@@ -400,6 +401,79 @@ async function databaseChecks(): Promise<Check[]> {
         fix: "Send one now and reload this page. If it still says none, the webhook is failing after the signature check — the reason will be in Vercel → Logs." });
 
   return out;
+}
+
+/**
+ * Which migrations have actually been run against THIS database.
+ *
+ * This exists because there is no way to see it from anywhere else, and the
+ * place people look instead is the hosting dashboard -- where a row of green
+ * deployments says the code shipped and says nothing whatever about the
+ * database. They are separate systems: deploying does not run SQL, and running
+ * SQL does not deploy. A screen full of green next to a feature that is not
+ * there is exactly how an afternoon goes.
+ *
+ * Each migration is identified by one thing it creates. Asking for that column
+ * is cheaper and more honest than keeping a table of what has been run --
+ * which can itself be wrong, and is one more thing to remember to write to.
+ */
+const MIGRATIONS: { id: string; what: string; table: string; column: string }[] = [
+  { id: "015", what: "Threads remember which questions have been asked",
+    table: "conversations", column: "asked" },
+  { id: "016", what: "Property types, aerial confirmation, and whose home is on each lot",
+    table: "properties", column: "kind" },
+  { id: "016", what: "Beds, baths, square feet and home serials on a unit",
+    table: "units", column: "home_owner" },
+  { id: "017", what: "Property codes — SFH-001, MHP-002",
+    table: "properties", column: "code" },
+  { id: "017", what: "Owner LLCs",
+    table: "owners", column: "name" },
+];
+
+async function migrationChecks(): Promise<Check[]> {
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  if (!url || !key) return [];
+
+  const results = await Promise.all(MIGRATIONS.map(async (m) => {
+    try {
+      // Asked over plain HTTP rather than through the client, because the
+      // status code is the answer: 200 the column is there, 400 it is not,
+      // 404 the table is not either.
+      const res = await fetch(
+        `${url}/rest/v1/${m.table}?select=${encodeURIComponent(m.column)}&limit=1`,
+        { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" },
+      );
+      return { ...m, ok: res.ok, status: res.status };
+    } catch {
+      return { ...m, ok: false, status: 0 };
+    }
+  }));
+
+  const missing = results.filter((r) => !r.ok);
+  if (!missing.length) {
+    return [{ name: "Migrations", level: "good",
+      detail: "Every migration this build needs has been run. Codes, property"
+        + " types, owner LLCs and question memory are all live." }];
+  }
+
+  // Grouped by migration rather than one line per column, because what a
+  // person does about it is per file: open the SQL editor and run that one.
+  const byId = [...new Set(missing.map((m) => m.id))].sort();
+  return byId.map((id) => {
+    const parts = missing.filter((m) => m.id === id);
+    return {
+      name: `Migration ${id} has not been run`,
+      level: "bad" as Level,
+      detail: parts.map((p) => `${p.what} — no ${p.table}.${p.column} in the database.`)
+        .join(" ")
+        + " Nothing is broken by this: the screens that use it leave it out."
+        + " But it will not appear until the SQL is run.",
+      fix: `Supabase dashboard → SQL Editor → New query → paste docs/shared-line/${id}-*.sql`
+        + " → Run. A row of green deployments does not run this; deploying ships"
+        + " code, and the database is a separate system.",
+    };
+  });
 }
 
 /** What the signed-in person can actually see, as opposed to what is stored.
