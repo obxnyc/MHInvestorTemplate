@@ -16,6 +16,7 @@ type Row = {
   code: string; name: string; kind: string; units: number;
   unitNames: string[]; vacant: number;
   owner: string | null; address: string | null; existing: boolean;
+  groups: string[];
 };
 type Import = {
   ok: boolean; dryRun: boolean; error?: string;
@@ -289,6 +290,12 @@ function Rehearsal({ rows }: { rows: Row[] }) {
   const multi = rows.filter((r) => r.units > 1);
   const shown = all ? rows : rows.slice(0, 25);
 
+  const groupCount = new Map<string, number>();
+  for (const r of rows) {
+    for (const g of r.groups ?? []) groupCount.set(g, (groupCount.get(g) ?? 0) + 1);
+  }
+  const groupNames = [...groupCount.entries()].sort((a, b) => b[1] - a[1]);
+
   return (
     <div className="rehearsal">
       <ul className="rehstats">
@@ -310,10 +317,44 @@ function Rehearsal({ rows }: { rows: Row[] }) {
         did not come across and this should not be run for real yet.
       </p>
 
+      {/* The two sets that decide whether this is safe, pulled out by name.
+          A count of twenty-six tells you nothing; twenty-six names tell you
+          immediately whether they are the parks. */}
+      {noUnits.length > 0 && (
+        <details className="rehodd" open>
+          <summary>{noUnits.length} with no units — are these your parks?</summary>
+          <p className="mono">{noUnits.map((r) => r.name).join(" · ")}</p>
+        </details>
+      )}
+      {multi.length > 0 && (
+        <details className="rehodd" open>
+          <summary>{multi.length} with more than one unit</summary>
+          <ul className="rehmulti">
+            {multi.map((r) => (
+              <li key={r.code}>
+                <b>{r.name}</b> — {r.units} units
+                <span className="unames">{r.unitNames.join(", ")}…</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {groupNames.length > 0 && (
+        <details className="rehodd" open>
+          <summary>
+            {groupNames.length} property group{groupNames.length === 1 ? "" : "s"} in
+            Rent Manager
+          </summary>
+          <p className="mono">
+            {groupNames.map(([g, n]) => `${g} (${n})`).join(" · ")}
+          </p>
+        </details>
+      )}
+
       <table className="rehtable">
         <thead>
           <tr><th>Code</th><th>Name</th><th>Type</th><th>Units</th>
-              <th>Owner</th><th>Address</th></tr>
+              <th>Group</th><th>Owner</th><th>Address</th></tr>
         </thead>
         <tbody>
           {shown.map((r) => (
@@ -327,6 +368,7 @@ function Rehearsal({ rows }: { rows: Row[] }) {
                   <span className="unames">{r.unitNames.join(", ")}</span>
                 )}
               </td>
+              <td className="mono">{(r.groups ?? []).join(", ") || "—"}</td>
               <td>{r.owner ?? "—"}</td>
               <td>{r.address ?? "—"}</td>
             </tr>

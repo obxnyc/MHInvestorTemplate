@@ -45,6 +45,11 @@ export type Row = {
   owner: string | null;
   address: string | null;
   existing: boolean;
+  /** Rent Manager's own grouping. The dashboard's property filter reads
+   *  "LarabeeHomesParent", which is a group -- so if the parks are modelled
+   *  anywhere, this is the likeliest place, and it is the difference between
+   *  a portfolio and two hundred unrelated addresses. */
+  groups: string[];
 };
 
 export type Outcome = {
@@ -70,8 +75,10 @@ type RmUnit = {
   SquareFootage?: number | null; UnitTypeID?: number | null;
   Comment?: string | null;
 };
+type RmGroup = { Name?: string };
 type RmProperty = {
   PropertyID: number; Name?: string; ShortName?: string; IsActive?: boolean;
+  PropertyGroups?: RmGroup[];
   PrimaryOwnerID?: number | null;
   PrimaryOwner?: RmOwner | null;
   Addresses?: RmAddress[];
@@ -221,7 +228,7 @@ export async function importFromRentManager(
 
   // ------------------------------------------------------------ properties
   const rmProps = await all<RmProperty>(
-    session, "/Properties?embeds=Addresses,Units,PrimaryOwner");
+    session, "/Properties?embeds=Addresses,Units,PrimaryOwner,PropertyGroups");
   tally.properties.seen = rmProps.length;
 
   // Rent, in one pass over every unit, joined back by id. MarketRent does
@@ -307,6 +314,8 @@ export async function importFromRentManager(
         owner: p.PrimaryOwnerID ? ownerNameByRm.get(p.PrimaryOwnerID) ?? null : null,
         address: addressOf(p.Addresses),
         existing: Boolean(existing),
+        groups: (p.PropertyGroups ?? [])
+          .map((g) => (g.Name ?? "").trim()).filter(Boolean),
       });
     }
 
