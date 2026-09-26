@@ -2,12 +2,12 @@ import { requireStaff } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import RentManagerProbe from "@/components/RentManagerProbe";
-import { rmSettings } from "@/lib/rentmanager";
+import { rmSettings, candidateBases } from "@/lib/rentmanager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Getting Rent Manager connected, and seeing what it will give us. */
+/** Getting Rent Manager connected, and finding out what it will give us. */
 export default async function RentManager() {
   const me = await requireStaff();
   if (me?.role !== "admin") redirect("/");
@@ -27,26 +27,46 @@ export default async function RentManager() {
         <li className={s ? "done" : ""}>
           <h2>Credentials on the deployment</h2>
           <p>
-            Three settings in Vercel, on the project, then a redeploy:
-            {" "}<code>RENTMANAGER_BASE_URL</code>,{" "}
+            Three settings in Vercel, on the project, then a redeploy —{" "}
+            <code>RENTMANAGER_COMPANY</code>,{" "}
             <code>RENTMANAGER_USERNAME</code> and{" "}
-            <code>RENTMANAGER_PASSWORD</code>. Add{" "}
-            <code>RENTMANAGER_LOCATION_ID</code> only if 1 turns out to be wrong.
+            <code>RENTMANAGER_PASSWORD</code>. The company code is the word in
+            front of <code>.rmx.rentmanager.com</code> when you are logged in.
           </p>
           <p className="hint">
             {s
-              ? `Present. Pointing at ${s.base}.`
+              ? `Present, for company "${s.company}".`
               : "Not set yet. Nothing below will run until they are."}
           </p>
         </li>
 
         <li>
-          <h2>Find out what answers</h2>
+          <h2>Find the door</h2>
           <p>
-            This signs in and knocks on every endpoint an import would need.
-            It fetches a single record from each and shows only the field
-            names — which is what tells us how their data maps onto ours.
-            No resident information is pulled.
+            Express serves its web app and its API from different places, and
+            which is which is not something that can be looked up from here.
+            So this tries each likely address in turn, and each way the token
+            header is spelled, and reports which combination answered.
+            {s && " No need to guess it by hand:"}
+          </p>
+          {s && (
+            <ul className="rmtry">
+              {candidateBases(s.company).map((b) => <li key={b}><code>{b}</code></li>)}
+            </ul>
+          )}
+          <p className="hint">
+            Override it with <code>RENTMANAGER_BASE_URL</code> if the real one
+            turns out to be somewhere else entirely.
+          </p>
+        </li>
+
+        <li>
+          <h2>See what answers</h2>
+          <p>
+            Once signed in it knocks on every endpoint an import would need,
+            fetching a single record from each and showing only the field
+            names — which is what tells us how their data maps onto ours. No
+            resident information is pulled.
           </p>
           <RentManagerProbe />
         </li>
@@ -54,10 +74,11 @@ export default async function RentManager() {
         <li>
           <h2>Then the import</h2>
           <p>
-            Built against whatever step two finds, rather than against the
-            documentation: properties and units first, then leases and the
-            people on them, then balances. Read-only to begin with. Nothing
-            is written back to Rent Manager until you say so.
+            Built against what step three actually finds rather than against
+            the documentation. Properties and units first — keeping Rent
+            Manager&rsquo;s own codes, since those are already on the leases
+            and the invoices — then the people, then balances. Read-only.
+            Nothing is written back to Rent Manager.
           </p>
         </li>
       </ol>

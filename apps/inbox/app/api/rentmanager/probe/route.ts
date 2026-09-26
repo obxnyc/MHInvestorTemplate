@@ -1,27 +1,29 @@
 import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
-import { rmAuthorize, rmGet, rmSettings, type RmCall } from "@/lib/rentmanager";
+import {
+  candidateBases, rmAuthorize, rmGet, rmSettings, type RmCall,
+} from "@/lib/rentmanager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * Find out what this Rent Manager account will actually give us.
  *
- * Not a health check -- a survey. Rent Manager accounts differ in what has
- * been bought and switched on, the documentation describes a superset of what
- * any one account exposes, and the only honest way to find out is to knock on
- * each door and write down who answers.
+ * A survey, not a health check. Accounts differ in what has been bought and
+ * switched on, the documentation describes a superset of any one of them, and
+ * with nobody at Rent Manager to ask, the honest way to find out is to knock
+ * on every door and write down who answers.
  *
- * Every endpoint is asked for one record and nothing but field names comes
- * back to the browser. No tenant name, no balance, no address: at this stage
- * the question is "does this work and what is it called", and pulling real
- * resident data across to answer that would be careless.
+ * It fetches one record per endpoint and returns only the field names. No
+ * resident name, balance or address crosses: at this stage the question is
+ * "does this work and what is everything called", and pulling real tenant
+ * data to answer it would be careless.
  */
 
-/** In dependency order, so a reader can see the shape of the eventual import:
- *  properties hold units, units hold leases, leases hold people and money. */
+/** In the order an import would need them: properties hold units, units hold
+ *  leases, leases hold people and money. */
 const DOORS = [
   "/Properties?pagesize=1",
   "/Units?pagesize=1",
@@ -34,7 +36,7 @@ const DOORS = [
   "/Payments?pagesize=1",
   "/Vendors?pagesize=1",
   "/Owners?pagesize=1",
-  "/GLAccounts?pagesize=1",
+  "/Locations?pagesize=1",
 ];
 
 export async function POST() {
@@ -47,61 +49,66 @@ export async function POST() {
   if (!s) {
     return NextResponse.json({
       configured: false,
-      hint: "Set RENTMANAGER_BASE_URL (or RENTMANAGER_COMPANY), RENTMANAGER_USERNAME"
-        + " and RENTMANAGER_PASSWORD in Vercel, then redeploy.",
+      hint: "Set RENTMANAGER_COMPANY, RENTMANAGER_USERNAME and"
+        + " RENTMANAGER_PASSWORD in Vercel, then redeploy.",
     });
   }
 
   const auth = await rmAuthorize(true);
+
   if (!auth.ok) {
     return NextResponse.json({
       configured: true,
-      // The base URL is not a secret and being able to see it is most of
-      // diagnosing a wrong company code.
-      base: s.base,
+      company: s.company,
       signedIn: false,
-      status: auth.status,
-      detail: auth.detail,
-      hint: hintFor(auth.status, auth.detail),
+      // Every hostname tried and how each one failed. Which way it failed is
+      // the diagnosis, so all of it is shown rather than just the last.
+      attempts: auth.attempts.length
+        ? auth.attempts
+        : candidateBases(s.company).map((base) => ({
+            base, status: 0, ok: false, detail: "not attempted" })),
+      hint: diagnose(auth.attempts),
     });
   }
 
-  // Sequential rather than parallel: twelve simultaneous requests from an
-  // integration user is the sort of thing that trips a rate limit on the
-  // first night, and this runs once.
+  // Sequential rather than parallel: a dozen simultaneous requests from a
+  // brand new integration user is how you meet a rate limit on night one.
   const calls: RmCall[] = [];
-  for (const door of DOORS) calls.push(await rmGet(door, auth.token));
+  for (const door of DOORS) calls.push(await rmGet(door, auth.session));
 
-  const open = calls.filter((c) => c.ok);
   return NextResponse.json({
     configured: true,
-    base: s.base,
+    company: s.company,
     signedIn: true,
-    open: open.length,
+    base: auth.session.base,
+    header: auth.session.header,
+    attempts: auth.attempts,
+    open: calls.filter((c) => c.ok).length,
     tried: calls.length,
     calls,
   });
 }
 
-/** What the status code nearly always means here, said plainly. */
-function hintFor(status: number, detail: string): string {
-  if (status === 0) {
-    return "The address did not resolve or did not answer. Check the company code"
-      + " in RENTMANAGER_BASE_URL — it is the part before .api.rentmanager.com.";
+/** What the collected failures nearly always mean, said plainly. */
+function diagnose(attempts: { status: number; detail: string }[]): string {
+  if (!attempts.length) return "Nothing was tried. Check the settings are saved and the build redeployed.";
+
+  const refused = attempts.find((a) => a.status === 401 || a.status === 403);
+  if (refused) {
+    return "Rent Manager answered and refused the sign-in. That means the hostname is"
+      + " right and the credential is the problem: either the username or password is"
+      + " wrong, or this user is not permitted to use the API — which is a separate"
+      + " setting from being able to log in to Rent Manager normally.";
   }
-  if (status === 401 || status === 403) {
-    return "Rent Manager answered, and refused the sign-in. Either the username or"
-      + " password is wrong, or this user is not permitted to use the API —"
-      + " which is a per-user setting, and separate from being able to log in"
-      + " to Rent Manager normally.";
+  if (attempts.some((a) => a.status === 404)) {
+    return "A server answered but has no AuthorizeUser endpoint at that address. That"
+      + " usually means the API is not enabled for this account.";
   }
-  if (status === 404) {
-    return "That address answered but has no AuthorizeUser endpoint, which usually"
-      + " means the API is not enabled for this account at all.";
+  if (attempts.every((a) => a.status === 0)) {
+    return "None of the addresses answered at all. Either the company code is wrong, or"
+      + " Rent Manager Express serves its API from somewhere none of these guesses"
+      + " covered — in which case the exact host has to come from Rent Manager.";
   }
-  if (/location/i.test(detail)) {
-    return "The LocationID looks wrong. Try RENTMANAGER_LOCATION_ID=1, then 2.";
-  }
-  return "Rent Manager answered but did not accept the sign-in. The message above"
-    + " is theirs, word for word.";
+  return "Rent Manager answered but would not sign in. The messages below are theirs,"
+    + " word for word.";
 }

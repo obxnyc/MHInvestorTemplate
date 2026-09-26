@@ -5,22 +5,28 @@ type Call = {
   path: string; status: number; ok: boolean;
   count: number | null; shape: string[] | null; detail: string | null;
 };
+type Attempt = { base: string; status: number; ok: boolean; detail: string };
 type Result = {
-  configured: boolean; base?: string; signedIn?: boolean;
-  status?: number; detail?: string; hint?: string;
-  open?: number; tried?: number; calls?: Call[];
+  configured: boolean; company?: string; signedIn?: boolean;
+  base?: string; header?: string; hint?: string;
+  attempts?: Attempt[]; open?: number; tried?: number; calls?: Call[];
 };
 
-/** The button that finds out. Everything it learns comes from the deployment
- *  talking to Rent Manager -- nothing here knows a password, and nothing it
- *  prints contains one. */
+/**
+ * The button that finds out.
+ *
+ * Everything it learns comes from the deployment talking to Rent Manager.
+ * Nothing in the browser knows a password and nothing it prints contains
+ * one -- the hostname and the field names are all that come back.
+ */
 export default function RentManagerProbe() {
   const [busy, setBusy] = useState(false);
   const [out, setOut] = useState<Result | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function run() {
-    setBusy(true); setFailed(null); setOut(null);
+    setBusy(true); setFailed(null); setOut(null); setCopied(false);
     try {
       const res = await fetch("/api/rentmanager/probe", { method: "POST" });
       const data = await res.json();
@@ -33,25 +39,50 @@ export default function RentManagerProbe() {
     }
   }
 
+  /** So the result can be pasted as text rather than photographed. A
+   *  screenshot of forty field names is a screenshot nobody can read. */
+  async function copy() {
+    if (!out) return;
+    await navigator.clipboard.writeText(JSON.stringify(out, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
     <>
-      <button className="btn pri" disabled={busy} onClick={run}>
-        {busy ? "Asking Rent Manager…" : "Test the connection"}
-      </button>
+      <div className="acts" style={{ justifyContent: "flex-start" }}>
+        <button className="btn pri" disabled={busy} onClick={run}>
+          {busy ? "Asking Rent Manager…" : "Test the connection"}
+        </button>
+        {out && (
+          <button className="btn" onClick={copy}>
+            {copied ? "Copied" : "Copy the result"}
+          </button>
+        )}
+      </div>
+      {busy && (
+        <p className="hint">
+          Trying each address in turn. Up to a minute if some of them do not
+          answer at all.
+        </p>
+      )}
 
       {failed && <p className="err">{failed}</p>}
 
-      {out && !out.configured && (
-        <p className="notice">{out.hint}</p>
-      )}
+      {out && !out.configured && <p className="notice">{out.hint}</p>}
 
       {out?.configured && out.signedIn === false && (
         <div className="rmresult">
-          <p className="err">
-            Signed in to <code>{out.base}</code> — refused
-            {out.status ? ` (HTTP ${out.status})` : ""}.
-          </p>
-          {out.detail && <pre className="rmraw">{out.detail}</pre>}
+          <p className="err">Could not sign in to Rent Manager as &ldquo;{out.company}&rdquo;.</p>
+          <ul className="rmlist">
+            {(out.attempts ?? []).map((a) => (
+              <li key={a.base} className="no">
+                <span className="rmpath">{a.base}</span>
+                <span className="rmstatus">{a.status ? `HTTP ${a.status}` : "no answer"}</span>
+                <span className="rmwhy">{a.detail}</span>
+              </li>
+            ))}
+          </ul>
           <p className="hint">{out.hint}</p>
         </div>
       )}
@@ -59,7 +90,8 @@ export default function RentManagerProbe() {
       {out?.signedIn && (
         <div className="rmresult">
           <p className="okmsg">
-            Signed in to {out.base}. {out.open} of {out.tried} endpoints answered.
+            Signed in at {out.base} — token accepted as {out.header}.{" "}
+            {out.open} of {out.tried} endpoints answered.
           </p>
           <ul className="rmlist">
             {(out.calls ?? []).map((c) => (
@@ -70,9 +102,6 @@ export default function RentManagerProbe() {
                         : `HTTP ${c.status || "—"}`}
                 </span>
                 {c.shape && (
-                  /* The field names are the map. This is what says whether
-                     their "Unit" has the lot number we key everything on, and
-                     what it is called when it does. */
                   <details className="rmshape">
                     <summary>{c.shape.length} fields</summary>
                     <p>{c.shape.join(", ")}</p>
@@ -83,8 +112,8 @@ export default function RentManagerProbe() {
             ))}
           </ul>
           <p className="whosnote">
-            No resident data was fetched — one record per endpoint, and only
-            the field names are shown.
+            One record per endpoint, and only the field names left Rent
+            Manager. No resident data was fetched.
           </p>
         </div>
       )}
