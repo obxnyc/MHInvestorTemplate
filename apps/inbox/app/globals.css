@@ -1487,6 +1487,8 @@ a.metric:hover{border-color:var(--accent)}
   background:var(--sunk);padding:.08rem .3rem;border-radius:4px;
   white-space:nowrap}
 
+.rmtry{list-style:none;margin:.2rem 0 .6rem;padding:0;display:grid;gap:.25rem}
+.rmtry code{font-size:.78rem}
 .rmresult{margin-top:.9rem}
 .rmraw{margin:.5rem 0;padding:.6rem .7rem;background:var(--sunk);
   border-radius:8px;font-size:.76rem;line-height:1.5;

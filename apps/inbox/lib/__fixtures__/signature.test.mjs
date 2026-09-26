@@ -11,20 +11,35 @@ import { createHmac } from "crypto";
 import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const js = ts.transpileModule(readFileSync(join(here, "..", "twilio.ts"), "utf8"), {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText;
+const transpile = (file) =>
+  ts.transpileModule(readFileSync(join(here, "..", file), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+
+// twilio.ts re-exports the phone helpers from "./phone". TypeScript's own
+// resolution fills in the extension; Node's does not, so the specifier is
+// pointed at a sibling generated file rather than left to fail on a bare
+// path with nothing on the end of it.
+const js = transpile("twilio.ts").replace(/(["'])\.\/phone\1/g, '"./.signature.phone.gen.mjs"');
 
 // Written to a real file rather than a data: URL because this module imports
 // the twilio package by name, and a data: URL has no node_modules to resolve
 // bare specifiers against.
-const tmp = join(here, ".signature.gen.mjs");
+//
+// Written into lib/ rather than next to this test, because twilio.ts also
+// imports "./phone" -- a relative specifier, which resolves against wherever
+// the file sits. From __fixtures__/ that is a module which does not exist,
+// and the failure names the import rather than the misplacement.
+const tmp = join(here, "..", ".signature.gen.mjs");
+const tmpPhone = join(here, "..", ".signature.phone.gen.mjs");
+writeFileSync(tmpPhone, transpile("phone.ts"));
 writeFileSync(tmp, js);
 let checkTwilioSignature, publicBase;
 try {
   ({ checkTwilioSignature, publicBase } = await import(tmp));
 } finally {
   unlinkSync(tmp);
+  unlinkSync(tmpPhone);
 }
 
 /* Shaped like a real one: 32 hex characters. */
