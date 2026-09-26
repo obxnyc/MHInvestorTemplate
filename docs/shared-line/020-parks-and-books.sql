@@ -66,6 +66,15 @@ alter table units
 
 create index if not exists units_home_owner_id on units (home_owner_id);
 
+-- A lot in a park is a PROPERTY in Rent Manager, and becomes a unit here. So
+-- a unit needs to remember which of their properties it was, not only which
+-- of their units -- that is the handle its owner, its distributions and its
+-- charges all hang off.
+alter table units
+  add column if not exists rm_property_id integer;
+
+create index if not exists units_rm_property on units (rm_property_id);
+
 -- ------------------------------------------------- ours, or somebody's
 alter table properties
   add column if not exists managed_only boolean not null default false;
