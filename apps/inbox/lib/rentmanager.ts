@@ -322,3 +322,70 @@ export async function rmEmbedProbe(
 
   return { entity, base, tries };
 }
+
+/* ------------------------------------------------------------------ writes
+ *
+ * Nothing in this file wrote to Rent Manager until here, and that was
+ * deliberate: it is somebody's book of record, and a mistake in it is not
+ * undone by redeploying. These exist so that a write can be *probed* the same
+ * way everything else was -- try it, report exactly what came back -- rather
+ * than guessed at and fired off against live data.
+ */
+
+export type RmWrite = {
+  method: string;
+  path: string;
+  status: number;
+  ok: boolean;
+  /** Their response, verbatim and truncated. When a create is refused, this
+   *  is usually a list of the fields it actually wanted. */
+  body: string;
+  /** Anything that looks like an id, so a test record can be cleaned up. */
+  id: number | null;
+};
+
+async function rmSend(
+  method: "POST" | "PUT" | "DELETE",
+  path: string,
+  session: RmSession,
+  payload?: unknown,
+): Promise<RmWrite> {
+  try {
+    const res = await fetch(`${session.base}${path}`, {
+      method,
+      headers: {
+        [session.header]: session.token,
+        Accept: "application/json",
+        ...(payload === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: payload === undefined ? undefined : JSON.stringify(payload),
+      cache: "no-store",
+      signal: AbortSignal.timeout(30_000),
+    });
+    const text = (await res.text()).trim();
+
+    // Fished out rather than assumed: a create can answer with the record, a
+    // bare number, or nothing at all, and a test record nobody can find the
+    // id of is a test record nobody can delete.
+    let id: number | null = null;
+    if (/^\d+$/.test(text)) id = Number(text);
+    else if (text.startsWith("{")) {
+      try {
+        const j = JSON.parse(text) as Record<string, unknown>;
+        for (const k of ["PropertyGroupID", "GroupID", "ID", "Id"]) {
+          const v = j[k];
+          if (typeof v === "number") { id = v; break; }
+        }
+      } catch { /* leave it null */ }
+    }
+
+    return { method, path, status: res.status, ok: res.ok, body: text.slice(0, 400), id };
+  } catch (e) {
+    return { method, path, status: 0, ok: false, body: (e as Error).message, id: null };
+  }
+}
+
+export const rmPost = (path: string, session: RmSession, payload: unknown) =>
+  rmSend("POST", path, session, payload);
+export const rmDelete = (path: string, session: RmSession) =>
+  rmSend("DELETE", path, session);
