@@ -992,8 +992,15 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .brandmark{display:flex;align-items:center;gap:.55rem;color:inherit}
 .brandlogo{width:2rem;height:2rem;border-radius:8px;object-fit:contain;flex:none}
 .brandname{font-size:1rem;font-weight:700;letter-spacing:-.015em;white-space:nowrap}
-.topnav{margin-left:auto;display:flex;align-items:center;gap:.25rem}
-.topnav a{padding:.45rem .8rem;border-radius:8px;font-size:.88rem;font-weight:600;
+/* Pushed right, allowed to shrink, and swipeable once it no longer fits.
+   min-width:0 is the load-bearing part: without it a flex item refuses to go
+   narrower than its content, so the nav stayed full width and shoved the
+   account menu off the edge instead of scrolling. */
+.topnav{margin-left:auto;display:flex;align-items:center;gap:.25rem;
+  min-width:0;overflow-x:auto;scrollbar-width:none}
+.topnav::-webkit-scrollbar{display:none}
+.topnav a{flex:none;white-space:nowrap;
+  padding:.45rem .8rem;border-radius:8px;font-size:.88rem;font-weight:600;
   color:var(--muted)}
 .topnav a:hover{background:var(--sunk);color:var(--ink)}
 .topnav a.on{background:var(--sunk);color:var(--ink)}
@@ -1001,10 +1008,15 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
    to `.av`'s one, so without restating these it wins: the circle took the
    links' 8px corners and their side padding and came out an off-centre
    rounded rectangle with the initials pushed about inside it. */
-.topnav .av{width:2.15rem;height:2.15rem;padding:0;margin-left:.5rem;
+.apphead .av{width:2.15rem;height:2.15rem;padding:0;margin-left:.5rem;
   border-radius:50%;font-size:.7rem;background:var(--accent-soft);
   color:var(--accent-ink);border:1px solid var(--hair)}
-.topnav .av:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.apphead .av:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.brandmark{flex:none}
+@media (max-width:640px){
+  .apphead{padding:.6rem .8rem;gap:.4rem}
+  .topnav a{padding:.4rem .55rem;font-size:.85rem}
+}
 @media (max-width:520px){.brandname{display:none}}
 
 /* The actions that belong to a screen, on that screen. */
@@ -1137,13 +1149,14 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .menuerr{margin:.35rem .6rem .2rem;font-size:.78rem}
 
 /* ---- your initials, and what is behind them ---- */
-.acctwrap{margin-left:.5rem;display:flex;align-items:center}
+/* Never shrinks, never scrolls away. It is the way out of the app. */
+.acctwrap{flex:none;margin-left:.5rem;display:flex;align-items:center}
 /* Restated for the same reason as .topnav .av: the nav-link rule is two
    selectors deep and would otherwise give the button the links' padding. */
-.topnav .acctwrap .av{width:2.15rem;height:2.15rem;padding:0;border-radius:50%;
+.apphead .acctwrap .av{width:2.15rem;height:2.15rem;padding:0;border-radius:50%;
   font-size:.7rem;background:var(--accent-soft);color:var(--accent-ink);
   border:1px solid var(--hair)}
-.topnav .acctwrap .av:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.apphead .acctwrap .av:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .acctwrap .ovmenu{top:2.9rem}
 .ovitem.danger{color:var(--crit)}
 .ovitem.danger:hover{background:var(--warn-soft)}
