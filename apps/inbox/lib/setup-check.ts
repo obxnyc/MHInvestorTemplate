@@ -428,6 +428,8 @@ const MIGRATIONS: { id: string; what: string; table: string; column: string }[] 
     table: "properties", column: "code" },
   { id: "017", what: "Owner LLCs",
     table: "owners", column: "name" },
+  { id: "018", what: "Who is online, away or offline",
+    table: "staff", column: "last_seen_at" },
 ];
 
 async function migrationChecks(): Promise<Check[]> {

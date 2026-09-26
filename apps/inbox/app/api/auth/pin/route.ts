@@ -86,5 +86,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Sign-in is unavailable right now." }, { status: 500 });
   }
 
+  // Signed in. Recorded after the session exists, so a failed attempt never
+  // counts as one -- and best-effort, because a sign-in that worked must not
+  // be turned into a sign-in that failed by a bookkeeping write. The column
+  // arrives with migration 018; before that this quietly does nothing.
+  await admin.from("staff")
+    .update({ last_login_at: new Date().toISOString() })
+    .eq("id", staffId);
+
   return NextResponse.json({ ok: true });
 }
