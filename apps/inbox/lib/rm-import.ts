@@ -505,3 +505,118 @@ export async function importFromRentManager(
 
   return { ok: true, dryRun, ...tally, notes, ...(dryRun ? { preview } : {}) };
 }
+
+/* ------------------------------------------------------------------- undo
+ *
+ * A first import writes hundreds of rows against a portfolio nobody has seen
+ * in this shape before, and the preview is a preview -- it is what the code
+ * BELIEVES it will do, which is exactly the thing in question. So there is a
+ * way back.
+ *
+ * What it removes is defined narrowly and by evidence, not by a timestamp
+ * window: a row is undoable only if it carries a Rent Manager id, which is
+ * to say only if an import created it. Anything typed in by hand has no such
+ * id and is never touched -- including a property that an import ADOPTED,
+ * because adopting sets the id on a row somebody else made. So adopted rows
+ * are unlinked rather than deleted: the id and the sync stamp come off, the
+ * property stays.
+ */
+
+export type Undone = {
+  ok: boolean;
+  dryRun: boolean;
+  units: { removed: number };
+  properties: { removed: number; unlinked: number };
+  parks: { removed: number };
+  kept: string[];
+  error?: string;
+};
+
+export async function undoLastImport(
+  { dryRun }: { dryRun: boolean },
+): Promise<Undone> {
+  const db = supabaseAdmin();
+  const kept: string[] = [];
+  const out: Undone = {
+    ok: true, dryRun,
+    units: { removed: 0 },
+    properties: { removed: 0, unlinked: 0 },
+    parks: { removed: 0 },
+    kept,
+  };
+
+  // Units first: a property with units still under it cannot go, and a lot
+  // orphaned from its park is worse than either.
+  const { data: units } = await db.from("units")
+    .select("id, label, rm_unit_id, rm_property_id")
+    .or("rm_unit_id.not.is.null,rm_property_id.not.is.null");
+
+  for (const u of units ?? []) {
+    // Anything filed against this lot means somebody has used it. A
+    // conversation about a leak is worth more than a tidy undo.
+    const { count: convos } = await db.from("conversations")
+      .select("id", { count: "exact", head: true }).eq("unit_id", u.id);
+    const { count: jobs } = await db.from("work_orders")
+      .select("id", { count: "exact", head: true }).eq("unit_id", u.id);
+
+    if ((convos ?? 0) + (jobs ?? 0) > 0) {
+      kept.push(`${u.label}: ${(convos ?? 0)} conversation(s), ${(jobs ?? 0)} job(s) filed against it`);
+      if (!dryRun) {
+        await db.from("units")
+          .update({ rm_unit_id: null, rm_property_id: null, rm_synced_at: null })
+          .eq("id", u.id);
+      }
+      continue;
+    }
+
+    if (!dryRun) await db.from("units").delete().eq("id", u.id);
+    out.units.removed++;
+  }
+
+  // Then properties the import created, and the ones it merely adopted.
+  const { data: props } = await db.from("properties")
+    .select("id, name, code, rm_property_id, kind")
+    .not("rm_property_id", "is", null);
+
+  for (const p of props ?? []) {
+    const { count: left } = await db.from("units")
+      .select("id", { count: "exact", head: true }).eq("property_id", p.id);
+    if ((left ?? 0) > 0) {
+      // Units survived, so this property is in use. Unlink, do not delete.
+      kept.push(`${p.code ?? p.name}: ${left} unit(s) still in use`);
+      if (!dryRun) {
+        await db.from("properties")
+          .update({ rm_property_id: null, rm_synced_at: null }).eq("id", p.id);
+      }
+      out.properties.unlinked++;
+      continue;
+    }
+    if (!dryRun) await db.from("properties").delete().eq("id", p.id);
+    out.properties.removed++;
+  }
+
+  // Parks are properties created from a GROUP and so carry no Rent Manager
+  // property id of their own -- the group row is what points at them.
+  const { data: groups } = await db.from("rm_groups")
+    .select("name, property_id").not("property_id", "is", null);
+
+  for (const g of groups ?? []) {
+    const id = String(g.property_id);
+    const { count: left } = await db.from("units")
+      .select("id", { count: "exact", head: true }).eq("property_id", id);
+    if ((left ?? 0) > 0) {
+      kept.push(`${g.name}: ${left} lot(s) still in use`);
+      continue;
+    }
+    if (!dryRun) {
+      await db.from("properties").delete().eq("id", id);
+      await db.from("rm_groups").update({ property_id: null }).eq("name", g.name);
+    }
+    out.parks.removed++;
+  }
+
+  // Owners are deliberately left alone. An LLC is a fact about the business
+  // rather than a row an import invented, and a property somebody adds
+  // tomorrow will want to point at one.
+  return out;
+}
