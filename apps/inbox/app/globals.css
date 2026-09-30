@@ -458,16 +458,22 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .mrow{display:flex;flex-direction:column}
 .msgs{flex:1 1 0;min-height:8rem;overflow-y:auto;overscroll-behavior:contain;
   padding:1rem 1.1rem;display:flex;flex-direction:column}
-.daysep{display:flex;align-items:center;gap:.9rem;margin:1.2rem 0 .9rem;font-size:.68rem;
-  color:var(--faint);font-weight:600;letter-spacing:.04em}
+.daysep{display:flex;align-items:center;gap:.8rem;margin:1.1rem 0 .7rem;font-size:.64rem;
+  color:var(--faint);font-weight:600;letter-spacing:.07em;text-transform:uppercase}
 .daysep::before,.daysep::after{content:"";flex:1;height:1px;background:var(--hair)}
 .sys{text-align:center;font-size:.72rem;color:var(--muted);margin:.4rem auto .6rem;
   max-width:26rem;line-height:1.45;padding:.4rem .7rem;background:var(--sunk);border-radius:8px}
 /* A measure, not a percentage. 80% of a wide pane is a line so long the eye
    loses its place returning to the left edge; 34rem is about 70 characters,
    which is what everything readable has settled on. */
-.in,.out{display:flex;flex-direction:column;margin-bottom:.35rem;
+.in,.out{display:flex;flex-direction:column;margin-bottom:.2rem;
   max-width:min(34rem,82%)}
+/* A run of messages from one person is one utterance said in several
+   breaths. Repeating the name and the clock on each line turns three words
+   into three paragraphs of furniture, which is most of what reads as
+   clunky. */
+.in.run,.out.run{margin-top:0}
+.in.run > .attrib,.out.run > .attrib{display:none}
 .in{align-items:flex-start;align-self:flex-start}
 .out{align-items:flex-end;align-self:flex-end}
 /* Tighter, squarer, and set at a size somebody reads rather than glances at.
@@ -479,6 +485,21 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .out .b{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
 .stamp{font-size:.68rem;color:var(--faint);padding:.15rem .3rem 0;font-weight:500;
   letter-spacing:.005em}
+/* This had no size of its own and was inheriting the page's 16px, so every
+   timestamp was set within a whisker of the message it belonged to. A clock
+   is a footnote. */
+.delivered{display:flex;align-items:center;gap:.3rem;font-size:.66rem;
+  color:var(--faint);font-weight:500;letter-spacing:.01em;
+  padding:.1rem .3rem 0;line-height:1.3}
+.delivered.bad{color:var(--crit);font-weight:700}
+.out .delivered{justify-content:flex-end}
+/* Shown on the last message of a run and on hover, so a thread reads as
+   conversation rather than as a log with a time against every line. */
+.in.run > .delivered,.out.run > .delivered{
+  opacity:0;height:0;padding:0;overflow:hidden;transition:opacity .12s}
+.in.run:hover > .delivered,.out.run:hover > .delivered,
+.in.run.last > .delivered,.out.run.last > .delivered{
+  opacity:1;height:auto;padding:.1rem .3rem 0}
 .stamp b{color:var(--muted);font-weight:700}
 .failed{color:var(--crit);font-style:normal;font-weight:700}
 .mms{max-width:100%;border-radius:10px;margin-top:.4rem;display:block}
@@ -658,8 +679,9 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 /* Attribution above each bubble: who sent it, or that the system did and why.
    The audit trail read inline, so nobody has to open a log to find out who
    answered a tenant. */
-.attrib{display:flex;align-items:center;gap:.35rem;font-size:.7rem;color:var(--muted);
-  font-weight:600;letter-spacing:.005em;margin:.5rem .25rem .2rem}
+.attrib{display:flex;align-items:center;gap:.35rem;font-size:.68rem;color:var(--faint);
+  font-weight:600;letter-spacing:.02em;margin:.7rem .3rem .15rem}
+.mrow:first-child .attrib{margin-top:0}
 .out .attrib{align-self:flex-end}
 .in .attrib{align-self:flex-start}
 .recycle .writing textarea{margin-bottom:.45rem}

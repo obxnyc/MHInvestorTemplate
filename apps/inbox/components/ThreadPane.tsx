@@ -16,6 +16,7 @@ import Avatar from "@/components/Avatar";
 import { languageName } from "@/lib/translate";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
+import { continues } from "@/lib/runs";
 
 type Thread = {
   convo: Record<string, unknown>;
@@ -195,9 +196,25 @@ export default function ThreadPane(
       )}
 
       <div className="msgs">
-        {timeline.map((item) => {
+        {timeline.map((item, i) => {
           const day = dayLabel(item.at);
           const sep = day !== lastDay ? ((lastDay = day), day) : null;
+
+          /** Who is speaking, for run detection. A note breaks a run: it is
+           *  a different kind of thing said by a different kind of voice. */
+          const voice = (t: typeof item | undefined) => {
+            if (!t || t.kind !== "message") return null;
+            const msg = t.m as { direction: string; staff: { full_name: string } | null };
+            return {
+              who: msg.direction === "inbound"
+                ? "them" : msg.staff?.full_name ?? "Automated",
+              at: t.at,
+            };
+          };
+          const here = voice(item);
+          const run = Boolean(here && continues(voice(timeline[i - 1]), here, Boolean(sep)));
+          const nextOne = voice(timeline[i + 1]);
+          const last = !here || !nextOne || !continues(here, nextOne, false);
 
           if (item.kind === "note") {
             const n = item.n as { id: string; body: string; staff: { full_name: string } | null };
@@ -224,7 +241,8 @@ export default function ThreadPane(
               {isSystem && (
                 <div className="sys"><b>{labelFor(m.channel)}</b> · {clockTime(item.at)}</div>
               )}
-              <div className={m.direction === "inbound" ? "in" : "out"}>
+              <div className={`${m.direction === "inbound" ? "in" : "out"}`
+                              + `${run ? " run" : ""}${last ? " last" : ""}`}>
                 {m.direction === "outbound" && (
                   <span className="attrib">
                     <span className={m.staff?.full_name ? "pip" : "pip auto"} />

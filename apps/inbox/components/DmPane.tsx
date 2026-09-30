@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { clockTime, dayLabel } from "@/lib/format";
 import Seen, { type Read } from "./Seen";
 import { supabaseBrowser } from "@/lib/supabase-client";
+import { continues } from "@/lib/runs";
 
 type Msg = { id: string; body: string; at: string; who: string };
 type Person = { id: string; full_name: string };
@@ -160,10 +161,16 @@ export default function DmPane(
           stored per message: for five people and a hundred messages that would
           be five hundred rows saying what five timestamps already say. */}
       <div className="msgs">
-        {data.messages.map((m) => {
+        {data.messages.map((m, i) => {
           const day = dayLabel(m.at);
           const sep = day !== lastDay ? ((lastDay = day), day) : null;
           const mine = m.who === me;
+          // Same person, still talking: drop the repeated name and let the
+          // clock hide until the end of the run or a hover.
+          const prev = data.messages[i - 1] ?? null;
+          const next = data.messages[i + 1] ?? null;
+          const run = continues(prev, m, Boolean(sep));
+          const last = !next || !continues(m, next, false);
           const system = m.who === "Someone";
           if (system) {
             return (
@@ -176,7 +183,7 @@ export default function DmPane(
           return (
             <div key={m.id} className="mrow">
               {sep && <div className="daysep">{sep}</div>}
-              <div className={mine ? "out" : "in"}>
+              <div className={`${mine ? "out" : "in"}${run ? " run" : ""}${last ? " last" : ""}`}>
                 {/* On your own messages too. In a group of four, "who said
                     that" is the question, and answering it for everyone except
                     the person reading is an odd place to stop -- the tenant
