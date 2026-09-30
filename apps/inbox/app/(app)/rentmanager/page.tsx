@@ -6,6 +6,7 @@ import RmGroups from "@/components/RmGroups";
 import RmWriteProbe from "@/components/RmWriteProbe";
 import RmMakeGroup from "@/components/RmMakeGroup";
 import RmFiling from "@/components/RmFiling";
+import RmPlaceByHand from "@/components/RmPlaceByHand";
 import { rmSettings, candidateBases } from "@/lib/rentmanager";
 
 export const runtime = "nodejs";
@@ -118,6 +119,12 @@ export default async function RentManager() {
             has been forgotten. Every placement is reversible in a click.
           </p>
           <RmFiling />
+
+          {/* The street-number rule cannot help with a park that has no lots
+              yet to learn a number from, nor with one addressed by its own
+              internal streets. 1800 Pamalee is both. */}
+          <h3 className="subhead">Or place them by hand</h3>
+          <RmPlaceByHand />
         </li>
 
         <li>
