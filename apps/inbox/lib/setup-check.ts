@@ -192,6 +192,36 @@ async function anthropicChecks(): Promise<Check[]> {
   }
 }
 
+
+/**
+ * Is the URL Twilio was given the same deployment as this one?
+ *
+ * A custom domain and a vercel.app hostname are routinely the same app, so
+ * comparing the two strings answers nothing and warns constantly. This asks:
+ * it fetches /api/whoami on whatever address Twilio has and compares the
+ * commit with our own. Same commit, same deployment.
+ *
+ * Unreachable is not the same as wrong, and is reported as its own thing --
+ * a domain that does not answer at all is a real problem and a different one.
+ */
+type SameApp = "same" | "different" | "unreachable";
+
+async function sameDeployment(configured: string): Promise<SameApp> {
+  const mine = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "dev";
+  try {
+    const origin = new URL(configured).origin;
+    const res = await fetch(`${origin}/api/whoami`, {
+      cache: "no-store", signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return "unreachable";
+    const body = await res.json() as { app?: string; commit?: string };
+    if (body.app !== "larabee-inbox") return "different";
+    return body.commit === mine ? "same" : "different";
+  } catch {
+    return "unreachable";
+  }
+}
+
 /** The checks that require asking Twilio rather than looking at a string. */
 async function twilioChecks(origin: string): Promise<Check[]> {
   const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
@@ -237,13 +267,26 @@ async function twilioChecks(origin: string): Promise<Check[]> {
       const configured = (svc.inboundRequestUrl ?? "").trim();
       const expected = `${origin}/api/twilio/sms`;
 
+      // Asked, not compared. Two different spellings of the same deployment
+      // is the normal case, not a fault.
+      const inboundSame = configured ? await sameDeployment(configured) : "unreachable";
+
       out.push(configured
         ? {
             name: "Inbound webhook URL",
-            level: configured === expected ? "good" : "warn",
-            detail: `Twilio is configured to call ${configured}. This deployment answers at ${expected}.`,
-            fix: configured === expected ? undefined
-              : "These differ. That is usually fine — the signature is checked against whichever address the request actually arrives on — but if texts are not landing, make them identical in Twilio Console → Messaging → Services → your service → Integration.",
+            level: configured === expected || inboundSame === "same" ? "good"
+                 : inboundSame === "unreachable" ? "bad" : "warn",
+            detail: configured === expected
+              ? `Twilio calls ${configured}, which is this deployment.`
+              : inboundSame === "same"
+                ? `Twilio calls ${configured}. Different address from the one you are reading this on (${expected}), but the same deployment answers at both — nothing to do.`
+                : inboundSame === "unreachable"
+                  ? `Twilio calls ${configured}, and nothing answered there.`
+                  : `Twilio calls ${configured}, and something other than this app answered there.`,
+            fix: configured === expected || inboundSame === "same" ? undefined
+              : inboundSame === "unreachable"
+                ? `That address did not respond. Check the domain still points at this project, or set the URL to ${expected} in Twilio Console → Messaging → Services → your service → Integration.`
+                : `Another deployment is answering there, so texts are landing somewhere else. Set it to ${expected} in Twilio Console → Messaging → Services → your service → Integration.`,
           }
         : {
             name: "Inbound webhook URL",
@@ -270,14 +313,28 @@ async function twilioChecks(origin: string): Promise<Check[]> {
               + " from this app carry their own, so receipts should still arrive;"
               + " anything sent another way will not report delivery.",
             fix: `Optional, but set it: Twilio Console → Messaging → Services → your service → Integration → Status callback → ${wantStatus}` }
-        : onService === wantStatus
-          ? { name: "Delivery receipts", level: "good",
-              detail: `Twilio reports delivery to ${onService}.` }
-          : { name: "Delivery receipts", level: "warn",
-              detail: `Twilio reports delivery to ${onService}, but this deployment answers at ${wantStatus}.`,
-              fix: "If messages sit on \"Sending\" and never say Delivered, this is"
-                + " the first thing to fix: Twilio Console → Messaging → Services →"
-                + " your service → Integration → Status callback." });
+        : await (async () => {
+            // Same question as the inbound URL, and the same answer: two
+            // spellings of one deployment is normal, so ask rather than
+            // compare strings.
+            const where = onService === wantStatus
+              ? "same" : await sameDeployment(onService);
+            if (where === "same") {
+              return { name: "Delivery receipts", level: "good" as Level,
+                detail: onService === wantStatus
+                  ? `Twilio reports delivery to ${onService}.`
+                  : `Twilio reports delivery to ${onService} — a different address`
+                    + ` from this one, but the same deployment answers there.` };
+            }
+            return { name: "Delivery receipts", level: "bad" as Level,
+              detail: where === "unreachable"
+                ? `Twilio reports delivery to ${onService}, and nothing answered there.`
+                : `Twilio reports delivery to ${onService}, and something other than this app answered.`,
+              fix: "This is why a message can sit on \"Sending\" for ever — the"
+                + " receipt is being posted somewhere that cannot record it."
+                + ` Set it to ${wantStatus}: Twilio Console → Messaging →`
+                + " Services → your service → Integration → Status callback." };
+          })());
     } catch (e) {
       out.push({ name: "Inbound webhook URL", level: "warn",
         detail: `Could not read the Messaging Service (${(e as Error).message}).` });

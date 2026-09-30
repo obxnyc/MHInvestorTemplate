@@ -23,7 +23,11 @@ import { NextResponse, type NextRequest } from "next/server";
 // application queue, never to contacts, so a public form cannot reach a row
 // that already exists.
 const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
-                /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//];
+                /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//,
+                // Says which commit is answering here and nothing else. The
+                // setup check fetches it across domains to find out whether a
+                // custom domain and this one are the same deployment.
+                /^\/api\/whoami$/];
 
 const isPublic = (path: string) => PUBLIC.some((re) => re.test(path));
 
