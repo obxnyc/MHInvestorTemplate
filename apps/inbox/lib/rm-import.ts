@@ -139,6 +139,46 @@ function addressOf(list: RmAddress[] | undefined): string | null {
   return line || null;
 }
 
+
+/**
+ * A lot filed under the wrong parcel.
+ *
+ * 1140 Northside and 1148 Northside are two parks, next door to each other,
+ * and one of 1148's lots is sitting in 1140's group. With ninety-one lots
+ * across two adjacent parcels that will happen again, and it is invisible
+ * once imported: the lot simply appears in the wrong park and stays there.
+ *
+ * Worked out from the lots themselves rather than from an address somebody
+ * typed. Sixty-three lots beginning "1140" and one beginning "1148" is not
+ * ambiguous, and a park whose lots genuinely carry mixed numbers -- one with
+ * internal street names, say -- has no majority and so raises nothing.
+ */
+function strays(lots: RmProperty[]): Map<number, string> {
+  const numberOf = (s: string) => (s.trim().match(/^(\d{2,6})\b/) ?? [])[1] ?? null;
+
+  const tally = new Map<string, number>();
+  for (const l of lots) {
+    const n = numberOf(l.Name ?? "");
+    if (n) tally.set(n, (tally.get(n) ?? 0) + 1);
+  }
+  if (!tally.size) return new Map();
+
+  const [common, howMany] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]!;
+  // A majority, not a plurality. Three numbers at a third each is a park
+  // addressed by its own internal streets, and nothing there is a stray.
+  if (howMany < lots.length * 0.6) return new Map();
+
+  const out = new Map<number, string>();
+  for (const l of lots) {
+    const n = numberOf(l.Name ?? "");
+    if (n && n !== common) {
+      out.set(l.PropertyID,
+        `addressed ${n} but filed in a park whose other ${howMany} lots are ${common}`);
+    }
+  }
+  return out;
+}
+
 /**
  * Anything about this record that deserves a look before it is imported.
  *
@@ -380,6 +420,7 @@ export async function importFromRentManager(
   // ----------------------------------------------------------------- parks
   for (const [groupName, lots] of lotsByPark) {
     const g = roleOf.get(groupName)!;
+    const misfiled = strays(lots);
     const name = (g.localName || groupName).trim();
     tally.properties.seen++;
 
@@ -420,12 +461,23 @@ export async function importFromRentManager(
         address: g.localAddress,
         existing: Boolean(g.propertyId),
         groups: [groupName],
-        flags: lots.length ? [] : ["no lots are in this group yet"],
+        flags: [
+          ...(lots.length ? [] : ["no lots are in this group yet"]),
+          ...(misfiled.size
+            ? [`${misfiled.size} lot${misfiled.size === 1 ? "" : "s"} here look`
+               + `${misfiled.size === 1 ? "s" : ""} to belong to the parcel next door`]
+            : []),
+        ],
       });
     }
 
     for (const lot of lots) {
       tally.units.seen++;
+      const wrongParcel = misfiled.get(lot.PropertyID);
+      if (wrongParcel) {
+        notes.push(`"${(lot.Name ?? "").trim()}" is in ${groupName} but is `
+          + `${wrongParcel}. Move it in Rent Manager and it lands in the right park.`);
+      }
       const row = lotRow(lot, parkId);
       const known = unitByRmProp.get(lot.PropertyID)
         ?? (row.rm_unit_id ? unitByRmUnit.get(row.rm_unit_id) : undefined);
