@@ -17,12 +17,18 @@ const ACCEPTED = new Set([
   "image/jpeg", "image/png", "image/gif", "image/webp",
   "image/heic", "image/heif",
   "video/mp4", "video/quicktime", "video/3gpp",
+  // A tenant forwarding a bill or a shut-off notice sends a PDF, and a vCard
+  // is how a phone shares a contractor's number. Both used to be counted as
+  // failures and thrown away. Neither is rendered as an image -- the thread
+  // shows them as a file to open -- so admitting them costs nothing.
+  "application/pdf", "text/vcard", "text/x-vcard",
 ]);
 
 const EXTENSION: Record<string, string> = {
   "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif",
   "image/webp": "webp", "image/heic": "heic", "image/heif": "heif",
   "video/mp4": "mp4", "video/quicktime": "mov", "video/3gpp": "3gp",
+  "application/pdf": "pdf", "text/vcard": "vcf", "text/x-vcard": "vcf",
 };
 
 /** Carriers cap MMS well below this; the headroom is for the video a modern
@@ -126,3 +132,8 @@ export async function signMedia(
   }
   return out;
 }
+
+// The rules about what an attachment may be live in lib/attachments, which is
+// safe for a browser to import. Re-exported here so the routes that already
+// reach for "@/lib/media" keep working.
+export * from "./attachments";

@@ -64,17 +64,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     supabase.from("messages")
       .select("id, direction, body, body_en, lang, status, channel, created_at, media_paths, staff:sent_by(full_name)")
       .eq("conversation_id", id).order("created_at"),
-    // `kind` arrives with migration 022 and is asked for tolerantly: a column
-    // that is not there yet must not take the whole thread down with it. The
-    // fallback treats everything as a note, which is what it was before.
-    supabase.from("notes")
-      .select("id, body, created_at, kind, staff:author_id(full_name)")
-      .eq("conversation_id", id).order("created_at")
-      .then((r) => r.error
-        ? supabase.from("notes")
-            .select("id, body, created_at, staff:author_id(full_name)")
-            .eq("conversation_id", id).order("created_at")
-        : r),
+    // `kind` arrives with migration 022 and `media_paths` with 026, and both
+    // are asked for tolerantly: a column that is not there yet must not take
+    // the whole thread down with it. Each fallback drops one column and asks
+    // again, so a half-migrated database shows a thread missing a feature
+    // rather than a thread missing entirely.
+    notesQuery(supabase, id),
     // Who has seen this thread, and how far down. A message is "read by" every
     // person whose last read is at or after it -- one timestamp each, rather
     // than a row per person per message for a distinction nobody uses.
@@ -90,9 +85,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // One signing call for the whole thread rather than one per picture: each is
   // a round trip, and a thread with a dozen photos would otherwise spend a
   // second doing nothing else.
-  const signed = await signMedia(
-    supabase, (messages ?? []).flatMap((m) => (m.media_paths ?? []) as string[]),
-  );
+  const signed = await signMedia(supabase, [
+    ...(messages ?? []).flatMap((m) => (m.media_paths ?? []) as string[]),
+    ...(notes ?? []).flatMap((n) => ((n as { media_paths?: string[] }).media_paths ?? [])),
+  ]);
 
   return NextResponse.json({
     convo: { ...convo, asked },
@@ -110,4 +106,29 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     me: staff.id,
     meName: staff.full_name,
   });
+}
+
+/** The notes on a conversation, asked for as richly as the database allows.
+ *
+ *  Written as a cascade rather than one query with a shrug because there are
+ *  two independent migrations in play and a deployment can be sitting on
+ *  either side of each. Dropping straight from "everything" to "the bare
+ *  minimum" would lose `kind` on a database that has had it since 022 merely
+ *  because 026 has not been run -- and `kind` is what keeps forty logged
+ *  actions from burying three real notes. */
+async function notesQuery(
+  supabase: Awaited<ReturnType<typeof supabaseServer>>, id: string,
+) {
+  const ask = (cols: string) => supabase.from("notes")
+    .select(cols).eq("conversation_id", id).order("created_at");
+
+  for (const cols of [
+    "id, body, created_at, kind, media_paths, staff:author_id(full_name)",
+    "id, body, created_at, kind, staff:author_id(full_name)",
+    "id, body, created_at, staff:author_id(full_name)",
+  ]) {
+    const r = await ask(cols);
+    if (!r.error) return r;
+  }
+  return ask("id, body, created_at, staff:author_id(full_name)");
 }

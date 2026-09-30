@@ -18,6 +18,7 @@ import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 import { continues } from "@/lib/runs";
 import NotesPanel, { type Note } from "@/components/NotesPanel";
+import Attachment from "@/components/Attachment";
 
 type Thread = {
   convo: Record<string, unknown>;
@@ -185,7 +186,7 @@ export default function ThreadPane(
             was written -- context is most of what it means -- but a thread is
             a scroll, and the line that matters is four hundred messages up by
             the time it does. */}
-        <NotesPanel notes={(data.notes ?? []) as unknown as Note[]} />
+        <NotesPanel notes={(data.notes ?? []) as unknown as Note[]} media={data.media} />
         <ClaimPill conversationId={convo.id}
                    holderName={convo.staff?.full_name ?? null}
                    isMine={convo.assigned_to === data.me} />
@@ -223,13 +224,19 @@ export default function ThreadPane(
           const last = !here || !nextOne || !continues(here, nextOne, false);
 
           if (item.kind === "note") {
-            const n = item.n as { id: string; body: string; staff: { full_name: string } | null };
+            const n = item.n as {
+              id: string; body: string; media_paths?: string[] | null;
+              staff: { full_name: string } | null;
+            };
             return (
               <div key={`n${n.id}`} className="mrow">
                 {sep && <div className="daysep">{sep}</div>}
                 <div className="note">
                   <span className="lab">{n.staff?.full_name} · only your team sees this</span>
-                  <p>{n.body}</p>
+                  {n.body && <p>{n.body}</p>}
+                  {(n.media_paths ?? []).map((path) => (
+                    <Attachment key={path} path={path} src={data.media[path]} />
+                  ))}
                 </div>
               </div>
             );
@@ -260,15 +267,9 @@ export default function ThreadPane(
                           outbound={m.direction === "outbound"} />
                   <MessageMenu messageId={m.id} preview={String(m.body).slice(0, 180)} />
                 </div>
-                {(m.media_paths ?? []).map((path, i) => {
-                  const src = data.media[path];
-                  return src ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={path} src={src} alt={`Attachment ${i + 1}`} className="mms" />
-                  ) : (
-                    <span key={path} className="mms-gone">Attachment unavailable</span>
-                  );
-                })}
+                {(m.media_paths ?? []).map((path) => (
+                  <Attachment key={path} path={path} src={data.media[path]} />
+                ))}
                 <span className={
                   m.status === "failed" || m.status === "undelivered"
                     ? "delivered bad" : "delivered"
