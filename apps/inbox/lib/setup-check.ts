@@ -430,7 +430,19 @@ const MIGRATIONS: { id: string; what: string; table: string; column: string }[] 
     table: "owners", column: "name" },
   { id: "018", what: "Who is online, away or offline",
     table: "staff", column: "last_seen_at" },
+  { id: "019", what: "Remembering which Rent Manager record is which",
+    table: "properties", column: "rm_property_id" },
+  { id: "020", what: "Parks as groups, and whose home is on a lot",
+    table: "rm_groups", column: "role" },
+  { id: "020", what: "A property managed rather than owned",
+    table: "properties", column: "managed_only" },
+  { id: "022", what: "Telling a written note from a logged action",
+    table: "notes", column: "kind" },
 ];
+
+/** 021 only widens a constraint, so there is no column to look for. It is
+ *  named in 020's fix text instead -- a check that cannot fail is worse than
+ *  no check, because it reads as reassurance. */
 
 async function migrationChecks(): Promise<Check[]> {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
@@ -473,7 +485,9 @@ async function migrationChecks(): Promise<Check[]> {
         + " But it will not appear until the SQL is run.",
       fix: `Supabase dashboard → SQL Editor → New query → paste docs/shared-line/${id}-*.sql`
         + " → Run. A row of green deployments does not run this; deploying ships"
-        + " code, and the database is a separate system.",
+        + " code, and the database is a separate system."
+        + (id === "020" ? " Run 021 straight after it — it widens a constraint"
+                        + " and so has no column of its own to check for." : ""),
     };
   });
 }
