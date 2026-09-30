@@ -495,6 +495,18 @@ const MIGRATIONS: { id: string; what: string; table: string; column: string }[] 
     table: "properties", column: "managed_only" },
   { id: "022", what: "Telling a written note from a logged action",
     table: "notes", column: "kind" },
+  { id: "023", what: "Remembering which Rent Manager records have been placed",
+    table: "rm_placements", column: "rm_property_id" },
+  { id: "024", what: "Where each lot sits on the map, and its meter numbers",
+    table: "units", column: "map_x" },
+  { id: "024", what: "Notes on a unit rather than on a conversation",
+    table: "unit_notes", column: "body" },
+  { id: "025", what: "Which free aerial and parcel services to draw from",
+    table: "map_sources", column: "url" },
+  { id: "025", what: "The county's parcel outline, cached on the property",
+    table: "properties", column: "parcel_geojson" },
+  { id: "026", what: "Photos and files on an internal note",
+    table: "notes", column: "media_paths" },
 ];
 
 /** 021 only widens a constraint, so there is no column to look for. It is

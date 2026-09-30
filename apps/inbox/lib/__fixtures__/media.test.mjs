@@ -1,17 +1,39 @@
 /** Inbound media copying. No network: fetch and storage are both stubbed.
  *  Run: node lib/__fixtures__/media.test.mjs */
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, "..", "media.ts"), "utf8")
-  .replace(/^import type .*$/gm, "");
-const js = ts.transpileModule(src, {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-const { storeInboundMedia } = await import("data:text/javascript," + encodeURIComponent(js));
+const transpile = (file) =>
+  ts.transpileModule(
+    readFileSync(join(here, "..", file), "utf8").replace(/^import type .*$/gm, ""),
+    { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+
+// media.ts re-exports the attachment rules from "./attachments". TypeScript
+// fills in the extension; Node does not, so the specifier is pointed at a
+// generated sibling rather than left to fail on a bare path.
+//
+// Both files are written into lib/ rather than next to this test, because a
+// relative specifier resolves against wherever the importing file sits. From
+// __fixtures__/ that is a module which does not exist, and the failure names
+// the import rather than the misplacement.
+const tmp = join(here, "..", ".media.gen.mjs");
+const tmpRules = join(here, "..", ".media.attachments.gen.mjs");
+writeFileSync(tmpRules, transpile("attachments.ts"));
+writeFileSync(tmp, transpile("media.ts")
+  .replace(/(["'])\.\/attachments\1/g, '"./.media.attachments.gen.mjs"'));
+let storeInboundMedia, safeName, nameOf, isImagePath, pathIsSendable,
+    belongsToConversation, keepableExtension, isSendable;
+try {
+  ({ storeInboundMedia, safeName, nameOf, isImagePath, pathIsSendable,
+     belongsToConversation, keepableExtension, isSendable } = await import(tmp));
+} finally {
+  unlinkSync(tmp);
+  unlinkSync(tmpRules);
+}
 
 // The module logs every skipped attachment, which is right in production and
 // unreadable here -- the stack carries the whole inlined module with it.
@@ -98,7 +120,11 @@ const OK_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM1/M
 {
   const db = fakeDb();
   const u = OK_URL + "x";
-  stubFetch({ [u]: { headers: { "content-type": "application/pdf", "content-length": "10" }, body: jpeg(10) } });
+  // text/html specifically. This bucket is read back through signed URLs a
+  // browser opens directly, and Supabase serves an object under the type it
+  // was stored with -- so an HTML file here is a script on our own origin,
+  // delivered by anyone who can text our number.
+  stubFetch({ [u]: { headers: { "content-type": "text/html", "content-length": "10" }, body: jpeg(10) } });
   const r = await storeInboundMedia(db, "c1", "MM4", [u]);
   t("an unexpected content type is not stored", r.paths.length === 0 && r.failed === 1);
 }
@@ -147,6 +173,65 @@ const OK_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM1/M
 // outage. Every one of them has to leave a trace -- a photo that vanishes
 // without a log is a maintenance request nobody can reconstruct.
 t("every skipped attachment is logged, not swallowed", logged.length === 8);
+
+// ------------------------------------------------------- going the other way
+//
+// Outbound attachments. Everything below is a pure rule -- no network, no
+// storage -- and every one of them is load-bearing: two are the difference
+// between a message that arrives and one that is silently dropped by a
+// carrier, and one is the check that stops a signed-in person texting
+// themselves another conversation's photographs.
+
+t("a carrier will take a JPEG", isSendable("image/jpeg"));
+t("and a PDF, which is how a notice gets sent", isSendable("application/pdf"));
+t("a spreadsheet is not something a phone can receive",
+  !isSendable("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+t("but we will still hold one, because a note is not a text",
+  keepableExtension("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") === "xlsx");
+t("a content type with a charset on it is still recognised",
+  isSendable("image/jpeg; charset=binary") && keepableExtension("TEXT/CSV") === "csv");
+
+// The bucket is read back through signed URLs a browser opens directly, and
+// Supabase serves an object under the type it was stored with. Accepting
+// either of these would be accepting a script that runs on our own origin.
+t("HTML is refused outright", keepableExtension("text/html") === null);
+t("and so is an SVG, which is a script wearing a picture's clothes",
+  keepableExtension("image/svg+xml") === null);
+
+t("a file keeps a name somebody can recognise",
+  safeName("March ledger.xlsx", "xlsx") === "March-ledger.xlsx");
+t("a name that would climb out of its folder cannot",
+  !safeName("../../etc/passwd", "png").includes("/")
+  && !safeName("../../etc/passwd", "png").includes(".."));
+// The extension is the canonical one for the type the server accepted, never
+// whatever the file was called. Without that, a PDF named `notice.html` would
+// be stored under a name a browser is willing to treat as a page.
+t("an extension cannot be smuggled in through the name",
+  safeName("notice.html", "pdf") === "notice.pdf"
+  && safeName("invoice.pdf.html", "pdf").endsWith(".pdf"));
+t("a name of nothing but punctuation still produces a filename",
+  safeName("???", "pdf") === "file.pdf");
+t("and a very long one is cut short", safeName("x".repeat(300), "png").length <= 64);
+
+t("the name comes back out of the path",
+  nameOf("conversations/c1/out-abc/0-March-ledger.xlsx") === "March-ledger.xlsx");
+t("a picture renders as a picture",
+  isImagePath("conversations/c1/out-abc/0-roof.JPG"));
+t("a PDF does not", !isImagePath("conversations/c1/out-abc/0-lease.pdf"));
+
+t("sendability survives the trip through a path",
+  pathIsSendable("conversations/c1/out-abc/0-roof.jpg")
+  && !pathIsSendable("conversations/c1/out-abc/0-ledger.xlsx"));
+
+// The one that is an authorization check rather than a formatting rule.
+t("an attachment belongs to the conversation it is filed under",
+  belongsToConversation("conversations/c1/out-abc/0-roof.jpg", "c1"));
+t("naming another conversation's folder is refused",
+  !belongsToConversation("conversations/c2/out-abc/0-roof.jpg", "c1"));
+t("and so is hiding the right id further down the path",
+  !belongsToConversation("conversations/c2/c1/0-roof.jpg", "c1"));
+t("a path that climbs out of its folder is refused",
+  !belongsToConversation("conversations/c1/../c2/0-roof.jpg", "c1"));
 
 let failed = 0;
 for (const [n, ok] of checks) { console.log(`${ok ? "  ok" : "FAIL"}  ${n}`); if (!ok) failed++; }

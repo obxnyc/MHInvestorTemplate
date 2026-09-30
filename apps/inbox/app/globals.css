@@ -505,6 +505,19 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .stamp b{color:var(--muted);font-weight:700}
 .failed{color:var(--crit);font-style:normal;font-weight:700}
 .mms{max-width:100%;border-radius:10px;margin-top:.4rem;display:block}
+/* A photograph in a thread is capped, not free. An unbounded portrait shot
+   from a phone is 3000px tall and buries every message around it. */
+.shot{display:block;max-width:min(20rem,100%)}
+.shot .mms{max-height:22rem;width:auto;object-fit:cover}
+/* Anything that is not a picture: a line with a name on it, because a grey
+   rectangle pretending to preview a spreadsheet helps nobody. */
+.filechip{display:inline-flex;align-items:center;gap:.4rem;margin-top:.4rem;
+  padding:.4rem .65rem;border:1px solid var(--hair);border-radius:9px;
+  background:var(--card);color:var(--ink-2);font-size:.78rem;font-weight:600;
+  text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.filechip svg{flex:none;color:var(--muted)}
+.filechip:hover{border-color:var(--accent);color:var(--accent-ink)}
 .note{align-self:stretch;max-width:100%;background:var(--warn-soft);border-radius:10px;
   padding:.55rem .8rem;margin:.25rem 0 .6rem;border-left:3px solid var(--warn)}
 .note .lab{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--warn);
@@ -525,6 +538,36 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .sendbtn{width:2.2rem;height:2.2rem;border-radius:50%;border:none;background:var(--accent);
   color:#fff;font-size:1.05rem;flex:none;display:grid;place-items:center;padding-bottom:.12rem}
 .sendbtn:disabled{opacity:.35}
+.clip{width:2.2rem;height:2.2rem;border-radius:50%;border:1px solid var(--hair);
+  background:var(--card);color:var(--muted);flex:none;display:grid;place-items:center}
+.clip:hover:not(:disabled){color:var(--accent-ink);border-color:var(--accent)}
+.clip:disabled{opacity:.4}
+
+/* ---- what is attached, before it is sent ---- */
+/* Above the text box rather than inside the row: the list grows, and a growing
+   list inside a flex row pushes the send button off a phone. */
+.attachbar{margin-bottom:.5rem}
+.attachrow{list-style:none;margin:0;padding:0;display:flex;gap:.45rem;
+  flex-wrap:wrap}
+.thumb{position:relative;width:3.6rem;height:3.6rem;border-radius:9px;
+  overflow:hidden;border:1px solid var(--hair);background:var(--sunk);flex:none}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb.doc{display:grid;place-items:center;padding:.3rem}
+.thumb.doc .docname{font-size:.56rem;line-height:1.2;color:var(--ink-2);
+  font-weight:700;text-align:center;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+  word-break:break-all}
+.thumb.loading{display:grid;place-items:center;color:var(--muted);font-size:1.1rem}
+/* Flagged, not removed. The file is fine -- it is the carrier that will not
+   take it -- so the fix is one click on Note, not picking it again. */
+.thumb.nogo{border-color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
+.thumb .rm{position:absolute;top:.15rem;right:.15rem;width:1.15rem;height:1.15rem;
+  border-radius:50%;border:none;background:rgba(10,14,18,.66);color:#fff;
+  font-size:.85rem;line-height:1;display:grid;place-items:center;padding:0}
+.attachwarn{margin:.4rem 0 0;font-size:.72rem;line-height:1.4;color:var(--warn)}
+/* Drag a photo anywhere onto the composer, not at a 2cm paperclip. */
+.composer.dragging{background:var(--accent-soft);
+  outline:2px dashed var(--accent);outline-offset:-4px}
 
 /* ---- dialogs ---- */
 .modal{position:fixed;inset:0;background:rgba(10,14,18,.45);display:grid;place-items:center;

@@ -1,12 +1,14 @@
 "use client";
 import { useState } from "react";
 import { clockTime, dayLabel } from "@/lib/format";
+import Attachment from "./Attachment";
 
 export type Note = {
   id: string;
   body: string;
   created_at: string;
   kind?: string;
+  media_paths?: string[] | null;
   staff: { full_name: string } | null;
 };
 
@@ -24,7 +26,9 @@ export type Note = {
  * mixing them means three real notes buried under forty lines of "Moved
  * from Maintenance to Leasing", which is the burial this exists to prevent.
  */
-export default function NotesPanel({ notes }: { notes: Note[] }) {
+export default function NotesPanel(
+  { notes, media }: { notes: Note[]; media?: Record<string, string> },
+) {
   const [open, setOpen] = useState(false);
   const [showLog, setShowLog] = useState(false);
 
@@ -61,7 +65,10 @@ export default function NotesPanel({ notes }: { notes: Note[] }) {
                       {dayLabel(n.created_at)} · {clockTime(n.created_at)}
                     </span>
                   </span>
-                  <p>{n.body}</p>
+                  {n.body && <p>{n.body}</p>}
+                  {(n.media_paths ?? []).map((path) => (
+                    <Attachment key={path} path={path} src={media?.[path]} />
+                  ))}
                 </li>
               ))}
             </ul>

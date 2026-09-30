@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { threadChanged } from "@/lib/refresh";
 import { joinTyping, sendTyping, TYPING_TTL } from "@/lib/typing";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { AttachStrip, AttachButton } from "./Attach";
+import { useAttachments } from "./useAttachments";
 
 export default function Composer(
   { conversationId, myName, sendsIn, insert, onSent }:
@@ -21,7 +23,13 @@ export default function Composer(
   const [mode, setMode] = useState<"reply" | "note">("reply");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [, start] = useTransition();
+
+  const files = useAttachments(conversationId);
+  // A text carries only what a carrier will carry; a note carries anything.
+  const unsendable = mode === "reply" && files.items.some((f) => !f.sendable);
+  const hasSomething = text.trim().length > 0 || files.items.length > 0;
 
   // Announced, not stored. A keystroke tells the rest of the team you are on
   // this one, so two people do not answer the same tenant from the same number
@@ -56,19 +64,34 @@ export default function Composer(
     sendTyping(channel.current, myName);
   }
 
+  /** Files off a paste or a drop. A clipboard carries a screenshot as an
+   *  item with no name, which is exactly the case this exists for. */
+  function fromTransfer(list: DataTransferItemList | null, fallback: FileList | null): File[] {
+    const out: File[] = [];
+    for (const item of list ?? []) {
+      if (item.kind !== "file") continue;
+      const f = item.getAsFile();
+      if (f) out.push(f);
+    }
+    if (!out.length) out.push(...(fallback ?? []));
+    return out;
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
+    // A photograph with no caption is a whole message. What is not a message
+    // is nothing at all, or a spreadsheet aimed at a phone.
+    if (!hasSomething || unsendable || files.busy > 0) return;
     setBusy(true); setError(null);
     const res = await fetch(`/api/conversations/${conversationId}/${mode}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: text }),
+      body: JSON.stringify({ body: text, media: files.items.map((f) => f.path) }),
     });
     const out = await res.json().catch(() => ({}));
     setBusy(false);
 
-    if (!res.ok) { setError("Didn't send. Try again."); return; }
+    if (!res.ok) { setError(out.error ?? "Didn't send. Try again."); return; }
 
     // The reply route answers 200 with ok:false when the carrier REJECTED the
     // message -- it records the attempt and moves on, which is right, but the
@@ -81,6 +104,10 @@ export default function Composer(
         : "Didn't send. Try again.");
     } else {
       setText("");
+      // Cleared only on a send that stuck. Losing the picture along with the
+      // message would mean picking it off a phone a second time.
+      files.clear();
+      if (out.warning) setError(out.warning);
     }
 
     // Reload first and wait for it, so the message is on screen before anything
@@ -91,18 +118,43 @@ export default function Composer(
   }
 
   return (
-    <form className={`composer ${mode}`} onSubmit={submit}>
+    <form
+      className={`composer ${mode}${dragging ? " dragging" : ""}`}
+      onSubmit={submit}
+      // Dropped anywhere on the composer, not only on the paperclip: dragging
+      // a photo at a 2 cm target is a thing people miss.
+      onDragOver={(e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        if (!e.dataTransfer?.types?.includes("Files")) return;
+        e.preventDefault(); setDragging(false);
+        void files.take(fromTransfer(e.dataTransfer.items, e.dataTransfer.files));
+      }}
+    >
       <div className="modes">
         <button type="button" className={mode === "reply" ? "on" : ""}
                 onClick={() => setMode("reply")}>Text</button>
         <button type="button" className={mode === "note" ? "on" : ""}
                 onClick={() => setMode("note")}>Note</button>
       </div>
+      <AttachStrip
+        items={files.items} busy={files.busy} problem={files.problem}
+        onRemove={files.remove} sendableOnly={mode === "reply"}
+      />
       <div className="inputrow">
+        <AttachButton onPick={(picked) => void files.take(picked)}
+                      disabled={busy || files.busy > 0} />
         <textarea
           ref={box}
           value={text}
           onChange={(e) => { setText(e.target.value); if (mode === "reply") announceTyping(); }}
+          // The whole reason this was worth building. A screenshot of an
+          // account goes Cmd+Shift+4 then Cmd+V, with no file on a disk
+          // anywhere in between.
+          onPaste={(e) => {
+            const picked = fromTransfer(e.clipboardData?.items ?? null, e.clipboardData?.files ?? null);
+            if (picked.length) { e.preventDefault(); void files.take(picked); }
+          }}
           rows={1}
           placeholder={mode === "reply"
             ? (sendsIn ? `Message — sends in ${sendsIn}` : "Message")
@@ -112,7 +164,8 @@ export default function Composer(
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(e); }
           }}
         />
-        <button type="submit" className="sendbtn" disabled={busy || !text.trim()}
+        <button type="submit" className="sendbtn"
+                disabled={busy || !hasSomething || unsendable || files.busy > 0}
                 aria-label={mode === "reply" ? "Send message" : "Save note"}>↑</button>
       </div>
       {error && <p className="error">{error}</p>}

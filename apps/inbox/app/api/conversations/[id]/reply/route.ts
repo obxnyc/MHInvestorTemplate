@@ -3,6 +3,7 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { twilioClient, publicBase, toMsgStatus } from "@/lib/twilio";
 import { fromEnglish } from "@/lib/translate";
+import { signMedia, belongsToConversation, pathIsSendable, nameOf } from "@/lib/media";
 
 export const runtime = "nodejs";
 
@@ -13,8 +14,40 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!staff) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const { body } = await req.json();
-  if (!body?.trim()) return NextResponse.json({ error: "empty message" }, { status: 400 });
+  const { body, media } = await req.json() as { body?: string; media?: unknown };
+
+  // Paths come back from the attach route, which means they come back through
+  // a browser, which means they are not to be believed. Each is checked
+  // against THIS conversation: without that, a signed-in person could reply to
+  // their own thread while naming another conversation's folder and have our
+  // own number text them somebody else's photographs.
+  const wanted = Array.isArray(media) ? media.filter((m): m is string => typeof m === "string") : [];
+  const paths = wanted.filter((p) => belongsToConversation(p, id));
+  if (paths.length !== wanted.length) {
+    return NextResponse.json({ error: "that attachment isn't this conversation's" }, { status: 400 });
+  }
+  if (paths.length > 10) {
+    return NextResponse.json({ error: "ten attachments at most" }, { status: 400 });
+  }
+
+  // Refused here rather than handed to Twilio, because Twilio accepts a
+  // spreadsheet, bills for it, and the carrier drops it somewhere the tenant
+  // never sees -- which looks to everyone involved like a message that was
+  // sent. The composer already knows this and greys the send button; this is
+  // the check that does not depend on the browser being honest.
+  const unsendable = paths.filter((p) => !pathIsSendable(p));
+  if (unsendable.length) {
+    return NextResponse.json({
+      error: `A phone can't receive ${unsendable.map(nameOf).join(", ")}.`
+        + " Put it on a Note instead, or send it as a PDF.",
+    }, { status: 400 });
+  }
+
+  // A picture on its own is a whole message. Requiring text alongside it would
+  // be this app insisting on something the tenant's phone does not.
+  if (!body?.trim() && !paths.length) {
+    return NextResponse.json({ error: "empty message" }, { status: 400 });
+  }
 
   const supabase = await supabaseServer();
   // Reading through the user's client means RLS decides whether they may see
@@ -32,10 +65,30 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   //
   // A failed translation falls back to English rather than silently not
   // sending. A worse message that arrives beats a perfect one that does not.
-  const translated = person.language && person.language !== "en"
-    ? await fromEnglish(body, person.language)
+  const text = body?.trim() ? body : "";
+  const translated = text && person.language && person.language !== "en"
+    ? await fromEnglish(text, person.language)
     : null;
-  const wire = translated ?? body;
+  const wire = translated ?? text;
+
+  // Signed long enough for Twilio to come and fetch them, and no longer.
+  // Twilio takes its own copy at send time, so these links have one job and
+  // fifteen minutes to do it -- rather than being a URL to our tenants'
+  // kitchens that keeps working for an hour in somebody's logs.
+  const links: string[] = [];
+  if (paths.length) {
+    const signed = await signMedia(supabaseAdmin(), paths, 900);
+    for (const p of paths) {
+      const url = signed.get(p);
+      if (url) links.push(url);
+      else console.error("could not sign an attachment for sending", { id, path: p });
+    }
+    if (!links.length) {
+      return NextResponse.json({
+        error: "We couldn't hand the picture to the carrier. Nothing was sent.",
+      }, { status: 500 });
+    }
+  }
 
   let sid: string | null = null;
   let status = "queued";
@@ -43,6 +96,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const sent = await twilioClient().messages.create({
       to,
       body: wire,
+      // Omitted entirely when there is nothing to send: an empty array is a
+      // different request to Twilio than no array at all, and the empty one
+      // turns a plain text into an MMS that some carriers charge for and
+      // some simply drop.
+      ...(links.length ? { mediaUrl: links } : {}),
       messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
       statusCallback: `${publicBase(req)}/api/twilio/status`,
     });
@@ -60,7 +118,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     conversation_id: id,
     direction: "outbound",
     body: wire,
-    body_en: translated ? body : null,
+    body_en: translated ? text : null,
+    media_paths: paths,
     lang: translated ? person.language : null,
     twilio_sid: sid,
     status,
@@ -78,9 +137,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }, { status: 500 });
   }
 
+  // A photograph with no caption still has to say something in the list, or
+  // the thread reads as though nothing happened.
+  const preview = text
+    ? text.slice(0, 160)
+    : `📷 ${paths.length} attachment${paths.length === 1 ? "" : "s"}`;
+
   await db.from("conversations")
     .update({ last_message_at: new Date().toISOString(),
-              last_message_preview: body.slice(0, 160) })
+              last_message_preview: preview })
     .eq("id", id);
 
   return NextResponse.json({
