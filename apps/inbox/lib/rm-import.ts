@@ -334,10 +334,36 @@ export async function importFromRentManager(
       });
     }
   }
+  // Where WE say a lot sits, when that differs from Rent Manager. Nothing is
+  // written over there on the strength of a street number -- a filing that
+  // looks like an oversight is sometimes a decision whose reason has been
+  // forgotten. Deleting the row falls straight back to their answer.
+  const placed = new Map<number, string | null>();
+  {
+    const { data, error } = await db.from("rm_placements")
+      .select("rm_property_id, park_group");
+    if (!error) {
+      for (const r of data ?? []) {
+        placed.set(Number(r.rm_property_id), (r.park_group as string | null) ?? null);
+      }
+    }
+  }
+
   const named = (p: RmProperty) =>
     (p.PropertyGroups ?? []).map((g) => (g.Name ?? "").trim()).filter(Boolean);
   const groupWith = (p: RmProperty, role: string) =>
     named(p).find((n) => roleOf.get(n)?.role === role) ?? null;
+
+  /** The park a property belongs to: ours if we have said, theirs otherwise.
+   *  A placement row with no group is the other decision -- leave it standing
+   *  alone whatever group it is in over there. */
+  const parkOf = (p: RmProperty): string | null => {
+    if (placed.has(p.PropertyID)) {
+      const ours = placed.get(p.PropertyID);
+      return ours && roleOf.get(ours)?.role === "park" ? ours : null;
+    }
+    return groupWith(p, "park");
+  };
 
   // ------------------------------------------------------------ properties
   const rmProps = await all<RmProperty>(
@@ -381,7 +407,7 @@ export async function importFromRentManager(
   const standalone: RmProperty[] = [];
   for (const p of rmProps) {
     if (p.IsActive === false) continue;
-    const park = groupWith(p, "park");
+    const park = parkOf(p);
     if (park) {
       (lotsByPark.get(park) ?? lotsByPark.set(park, []).get(park)!).push(p);
     } else {

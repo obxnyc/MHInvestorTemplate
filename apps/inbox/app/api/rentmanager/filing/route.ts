@@ -48,6 +48,59 @@ async function everyProperty(session: RmSession): Promise<Prop[]> {
   return all;
 }
 
+/**
+ * Record where a lot sits, here.
+ *
+ * Nothing goes to Rent Manager. A filing that looks like an oversight is
+ * sometimes a decision whose reason has been forgotten, and writing into
+ * somebody's book of record on the strength of a street number is not a
+ * thing to do while that is an open question. Every row is reversible and
+ * carries what Rent Manager said at the time, so a later change over there
+ * is visible rather than silently overridden for ever.
+ */
+export async function POST(req: Request) {
+  const me = await requireStaff();
+  if (me?.role !== "admin") {
+    return NextResponse.json({ error: "not allowed" }, { status: 403 });
+  }
+
+  const { place, undo } = await req.json().catch(() => ({}));
+  const db = supabaseAdmin();
+
+  if (Array.isArray(undo) && undo.length) {
+    const ids = undo.map(Number).filter(Number.isFinite);
+    const { error } = await db.from("rm_placements").delete().in("rm_property_id", ids);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true, removed: ids.length });
+  }
+
+  if (!Array.isArray(place) || !place.length) {
+    return NextResponse.json({ error: "nothing to place" }, { status: 400 });
+  }
+
+  const rows = (place as {
+    property: number; intoName: string | null; why?: string; wasIn?: string | null;
+  }[]).map((m) => ({
+    rm_property_id: Number(m.property),
+    park_group: m.intoName ?? null,
+    why: (m.why ?? "").slice(0, 300) || null,
+    was_in: m.wasIn ?? null,
+    placed_at: new Date().toISOString(),
+    placed_by: me.id,
+  })).filter((r) => Number.isFinite(r.rm_property_id));
+
+  const { error } = await db.from("rm_placements")
+    .upsert(rows, { onConflict: "rm_property_id" });
+  if (error) {
+    return NextResponse.json({
+      error: /rm_placements/.test(error.message)
+        ? "Run migration 023 — there is nowhere to record a placement yet."
+        : error.message,
+    }, { status: 400 });
+  }
+  return NextResponse.json({ ok: true, placed: rows.length });
+}
+
 export async function GET() {
   const me = await requireStaff();
   if (me?.role !== "admin") {
@@ -73,6 +126,11 @@ export async function GET() {
   }
 
   const props = (await everyProperty(auth.session)).filter((p) => p.IsActive !== false);
+
+  // Decisions already made here. They win over Rent Manager and are not
+  // proposed again.
+  const { data: already } = await supabaseAdmin().from("rm_placements")
+    .select("rm_property_id, park_group, why, was_in, placed_at");
 
   // What street number each park runs on, taken from the lots already in it.
   const parks = new Map<string, {
@@ -112,8 +170,10 @@ export async function GET() {
     why: string;
   };
   const moves: Suggestion[] = [];
+  const decided = new Set((already ?? []).map((r) => Number(r.rm_property_id)));
 
   for (const p of props) {
+    if (decided.has(p.PropertyID)) continue;
     const name = (p.Name ?? "").trim();
     const groups = (p.PropertyGroups ?? []).map((g) => (g.Name ?? "").trim());
     const inPark = groups.find((g) => parkNames.has(g)) ?? null;
@@ -142,8 +202,22 @@ export async function GET() {
     }
   }
 
+  const byId = new Map<number, string>();
+  for (const p of props) byId.set(p.PropertyID, (p.Name ?? "").trim());
+
   return NextResponse.json({
     signedIn: true,
+    // Only the ones still standing. A placement whose property has gone from
+    // Rent Manager is noise.
+    placed: (already ?? [])
+      .filter((r) => byId.has(Number(r.rm_property_id)))
+      .map((r) => ({
+        property: Number(r.rm_property_id),
+        propertyName: byId.get(Number(r.rm_property_id))!,
+        intoName: (r.park_group as string | null) ?? null,
+        why: (r.why as string | null) ?? null,
+        wasIn: (r.was_in as string | null) ?? null,
+      })),
     parks: [...parks.entries()].map(([name, p]) => ({
       name, label: p.label, id: p.id, lots: p.total, runsOn: runsOn.get(name) ?? null,
     })),
