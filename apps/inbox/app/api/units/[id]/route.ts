@@ -43,8 +43,25 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       patch[col] = body[field] === "" || !Number.isFinite(n) ? null : n;
     }
   }
-  for (const [field, col] of [["homeMake", "home_make"], ["homeSerial", "home_serial"]] as const) {
+  for (const [field, col] of [["homeMake", "home_make"], ["homeSerial", "home_serial"],
+                             // The two numbers somebody rings up about, and
+                             // which nobody can find while the water company
+                             // is on the phone.
+                             ["meterWater", "meter_water"],
+                             ["meterElectric", "meter_electric"]] as const) {
     if (field in body) patch[col] = String(body[field] ?? "").trim() || null;
+  }
+
+  // Where it is. A coordinate over a real aerial, a fraction of the picture
+  // over an uploaded plan -- and clearing it is setting both to nothing,
+  // which is how a pin dropped in the wrong place is taken back.
+  for (const [field, col] of [["lat", "lat"], ["lng", "lng"],
+                              ["mapX", "map_x"], ["mapY", "map_y"]] as const) {
+    if (field in body) {
+      const n = Number(body[field]);
+      patch[col] = body[field] === null || body[field] === "" || !Number.isFinite(n)
+        ? null : n;
+    }
   }
   if ("homeOwner" in body) {
     // Who owns the home on this lot. Never inferred from anything: getting it
