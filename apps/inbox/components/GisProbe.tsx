@@ -8,6 +8,7 @@ type Layer = {
 type Result = {
   appId?: string; reachable?: boolean; mapTitle?: string | null; title?: string | null;
   layers?: Layer[]; hint?: string; error?: string;
+  catalogue?: number; likelyParcels?: { name: string; url: string }[];
   verdict?: { parcels: string | null; parcelsTitle: string | null;
               imagery: string | null; imageryTitle: string | null };
 };
@@ -76,10 +77,25 @@ export default function GisProbe() {
           <ul className="rmlist asked">
             <li className={out.verdict?.parcels ? "ok" : "no"}>
               <span className="rmpath">Parcel boundaries we can draw</span>
-              <span className="rmstatus">{out.verdict?.parcels ? "yes" : "none found"}</span>
+              <span className="rmstatus">
+                {out.verdict?.parcels ? "yes" : "not on this map"}
+              </span>
               {out.verdict?.parcels && (
                 <span className="rmwhy">{out.verdict.parcelsTitle} — {out.verdict.parcels}</span>
               )}
+              {!out.verdict?.parcels && out.likelyParcels && out.likelyParcels.length > 0 && (
+                <span className="rmwhy">
+                  But the county publishes {out.likelyParcels.length} service
+                  {out.likelyParcels.length === 1 ? "" : "s"} that look like
+                  parcels: {out.likelyParcels.map((p) => p.name).join(", ")}
+                </span>
+              )}
+              {!out.verdict?.parcels && !out.likelyParcels?.length && out.catalogue
+                ? <span className="rmwhy">
+                    Nothing parcel-shaped among the {out.catalogue} services
+                    this county publishes either.
+                  </span>
+                : null}
             </li>
             <li className={out.verdict?.imagery ? "ok" : "no"}>
               <span className="rmpath">Aerial photography</span>

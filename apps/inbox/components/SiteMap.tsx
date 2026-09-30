@@ -52,6 +52,11 @@ const SIZE = { width: 900, height: 620 };
 export default function SiteMap({ propertyId }: { propertyId: string }) {
   const [data, setData] = useState<Data | null>(null);
   const [placing, setPlacing] = useState<string | null>(null);
+  // Adding rather than placing: a pad goes in at 1140 and the lot should
+  // exist because somebody clicked where it is, not because they went to
+  // another screen and typed a number.
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
@@ -79,29 +84,58 @@ export default function SiteMap({ propertyId }: { propertyId: string }) {
     return null;
   }
 
+  /** The next label in the sequence, so adding forty lots is forty clicks
+   *  rather than forty clicks and forty typed numbers. Only offered when the
+   *  existing labels are plainly numeric; anything else and it stays quiet. */
+  function nextLabel(): string {
+    const numbers = (data?.units ?? [])
+      .map((u) => Number(String(u.label).replace(/^\D*/, "")))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (!numbers.length) return "1";
+    const pattern = String(data?.units[0]?.label ?? "");
+    const prefix = pattern.match(/^\D*/)?.[0] ?? "";
+    const width = pattern.replace(/^\D*/, "").length;
+    const next = Math.max(...numbers) + 1;
+    return prefix + String(next).padStart(width > 1 ? width : 1, "0");
+  }
+
   async function drop(e: React.MouseEvent) {
-    if (!placing || !surface.current || !data?.canEdit) return;
+    if (!surface.current || !data?.canEdit) return;
+    if (!placing && !adding) return;
     const box = surface.current.getBoundingClientRect();
     // Measured against the rendered box and scaled to the frame, so a map
     // squeezed onto a phone still drops the pin where the finger went.
     const px = ((e.clientX - box.left) / box.width) * SIZE.width;
     const py = ((e.clientY - box.top) / box.height) * SIZE.height;
 
-    const body = kind === "aerial" && frame
+    const where = kind === "aerial" && frame
       ? toLatLng(frame, px, py)
       : { mapX: px / SIZE.width, mapY: py / SIZE.height };
 
     setBusy(true);
     try {
-      await fetch(`/api/units/${placing}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      if (adding) {
+        // Made where it was clicked, in one step. A lot that exists but is
+        // not anywhere is the thing this screen is for avoiding.
+        const label = newLabel.trim() || nextLabel();
+        await fetch(`/api/properties/${propertyId}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ labels: label, at: where }),
+        });
+        setNewLabel("");
+      } else {
+        await fetch(`/api/units/${placing}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(where),
+        });
+      }
       await load();
-      // Straight on to the next one: placing sixty lots is one long action,
-      // not sixty separate ones.
-      const rest = data.units.filter((u) => !at(u) && u.id !== placing);
-      setPlacing(rest[0]?.id ?? null);
+      if (!adding) {
+        // Straight on to the next one: placing sixty lots is one long action,
+        // not sixty separate ones.
+        const rest = data.units.filter((u) => !at(u) && u.id !== placing);
+        setPlacing(rest[0]?.id ?? null);
+      }
     } finally { setBusy(false); }
   }
 
@@ -132,6 +166,24 @@ export default function SiteMap({ propertyId }: { propertyId: string }) {
               <button className="mini" onClick={() => setPlacing(null)}>Stop</button>
             </span>
           )}
+          {adding && (
+            <span className="placing">
+              Click where the new one goes — it will be called{" "}
+              <b>{newLabel.trim() || nextLabel()}</b>
+              <button className="mini" onClick={() => setAdding(false)}>Stop</button>
+            </span>
+          )}
+          {data.canEdit && kind !== "none" && !placing && (
+            <button className={`mini${adding ? " on" : ""}`}
+                    onClick={() => { setAdding((v) => !v); setOpen(null); }}>
+              {adding ? "Stop adding" : "Add a lot"}
+            </button>
+          )}
+          {adding && (
+            <input className="newlot" value={newLabel} placeholder={nextLabel()}
+                   onChange={(e) => setNewLabel(e.target.value)}
+                   aria-label="What to call the new lot" />
+          )}
         </div>
 
         {kind === "none" ? (
@@ -142,7 +194,7 @@ export default function SiteMap({ propertyId }: { propertyId: string }) {
           </p>
         ) : (
           <div ref={surface}
-               className={`surface${placing ? " placing" : ""}`}
+               className={`surface${placing || adding ? " placing" : ""}`}
                style={{ aspectRatio: `${SIZE.width} / ${SIZE.height}` }}
                onClick={drop}>
             {kind === "image" && data.map.image && (

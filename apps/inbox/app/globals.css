@@ -1646,6 +1646,9 @@ a.metric:hover{border-color:var(--accent)}
 .sitewrap{display:grid;grid-template-columns:minmax(0,1fr) 22rem;gap:1rem;
   align-items:start;margin-top:.6rem}
 .sitemain{min-width:0}
+.newlot{width:7rem;padding:.2rem .45rem;border:1px solid var(--accent);
+  border-radius:7px;font:inherit;font-size:.8rem;background:var(--card)}
+.siteheadrow .mini.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .siteheadrow{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
   font-size:.86rem;color:var(--ink-2);margin-bottom:.5rem}
 .placing{display:flex;align-items:center;gap:.5rem;color:var(--accent-ink);
