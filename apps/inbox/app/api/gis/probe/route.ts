@@ -140,13 +140,44 @@ export async function POST(req: Request) {
   const described: Layer[] = [];
   for (const l of layers.slice(0, 14)) described.push(await describe(l));
 
+  // Whole words, and never "land": that matched Wetlands and reported a
+  // wetlands layer as this county's parcel boundaries. A check that is
+  // confidently wrong is worse than one that finds nothing, because the
+  // wrong answer gets believed and the missing one gets chased.
   const parcels = described.filter((l) =>
-    /parcel|cadastr|propert|tax|land/i.test(l.title) && l.geoJson);
+    /\b(parcels?|cadastral|taxlots?|landbase|ownership)\b/i.test(l.title)
+    && l.geoJson && l.geometry === "esriGeometryPolygon");
   const imagery = described.filter((l) =>
-    l.kind === "basemap" || /imager|aerial|ortho|photo/i.test(l.title));
+    l.kind === "basemap" || /\b(imagery|aerial|orthoimagery|orthophoto|naip)\b/i.test(l.title));
+
+  /**
+   * Everything the county publishes, not only what this one map draws.
+   *
+   * The map that was linked has flood zones, soils and zoning on it and no
+   * parcels at all -- which does not mean the county has none, only that
+   * this app does not show them. The organisation's service directory lists
+   * everything it serves, and a parcels layer living one app over is the
+   * likeliest explanation.
+   */
+  let catalogue: { name: string; url: string }[] = [];
+  const org = described.find((l) => l.url.includes("/arcgis/rest/services/"));
+  if (org) {
+    const root = org.url.slice(0, org.url.indexOf("/services/") + "/services".length);
+    const dir = await json(`${root}?f=json`);
+    catalogue = ((dir?.services ?? []) as { name?: string; type?: string }[])
+      .map((sv) => ({
+        name: String(sv.name ?? "").split("/").pop() ?? "",
+        url: `${root}/${String(sv.name ?? "").split("/").pop()}/${sv.type ?? "FeatureServer"}`,
+      }))
+      .filter((sv) => sv.name);
+  }
+  const likelyParcels = catalogue.filter((sv) =>
+    /\b(parcel|cadastr|taxlot|landbase|ownership)/i.test(sv.name));
 
   return NextResponse.json({
     appId, reachable: true, mapId, mapTitle,
+    catalogue: catalogue.length,
+    likelyParcels,
     title: (item?.title as string) ?? null,
     layers: described,
     // The two answers actually being looked for, named rather than left to be

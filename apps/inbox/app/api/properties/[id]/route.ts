@@ -18,7 +18,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "not allowed" }, { status: 403 });
   }
   const { id } = await ctx.params;
-  const { labels, bedrooms, rent } = await req.json().catch(() => ({}));
+  const { labels, bedrooms, rent, at } = await req.json().catch(() => ({}));
 
   const wanted = expand(String(labels ?? ""));
   if (!wanted.length) {
@@ -36,17 +36,45 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { data: have } = await db
     .from("units").select("label").eq("property_id", id);
   const already = new Set((have ?? []).map((u) => u.label));
+  // Where it is, when it was made by clicking a map. Only ever for a single
+  // lot: a range of forty cannot all be in one spot, and quietly stacking
+  // them there would look like the map had lost them.
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const place = at && wanted.length === 1 ? {
+    lat: num((at as Record<string, unknown>).lat),
+    lng: num((at as Record<string, unknown>).lng),
+    map_x: num((at as Record<string, unknown>).mapX),
+    map_y: num((at as Record<string, unknown>).mapY),
+  } : {};
+
   const rows = wanted.filter((l) => !already.has(l)).map((label) => ({
     property_id: id,
     label,
     bedrooms: Number.isFinite(Number(bedrooms)) && bedrooms !== "" ? Number(bedrooms) : null,
     monthly_rent: Number.isFinite(Number(rent)) && rent !== "" ? Number(rent) : null,
     is_vacant: true,
+    ...place,
   }));
 
   if (rows.length) {
     const { error } = await db.from("units").insert(rows);
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    // Before migration 024 there is nowhere to put a position. The lot is
+    // still worth making; it simply arrives unplaced.
+    if (error && /map_x|map_y|column/i.test(error.message)) {
+      const bare = rows.map(({ map_x, map_y, ...rest }) => {
+        void map_x; void map_y;
+        return rest;
+      });
+      const retry = await db.from("units").insert(bare);
+      if (retry.error) {
+        return NextResponse.json({ error: retry.error.message }, { status: 400 });
+      }
+    } else if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
   }
   return NextResponse.json({ ok: true, added: rows.length, skipped: wanted.length - rows.length });
 }
