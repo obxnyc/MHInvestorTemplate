@@ -81,6 +81,9 @@ export async function GET() {
     groups: (data ?? []).map((g) => ({
       id: g.id, name: g.name, role: g.role as Role,
       properties: counts.get(g.name) ?? 0,
+      // A park declared here has no property of theirs carrying its name.
+      // Saying so stops "0 properties" reading as a fault.
+      localOnly: !counts.has(g.name),
       decided: Boolean(g.decided_at),
       localName: g.local_name ?? "",
       localAddress: g.local_address ?? "",
@@ -95,7 +98,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "not allowed" }, { status: 403 });
   }
 
-  const { id, role, localName, localAddress } = await req.json().catch(() => ({}));
+  const { id, role, localName, localAddress, createLocal } =
+    await req.json().catch(() => ({}));
+
+  /**
+   * A park that exists here and not in Rent Manager.
+   *
+   * 1142 Northside is a parcel with a handful of lots and no group over
+   * there, and making one would mean writing into their records to answer a
+   * question about ours. So a park can simply be declared here, and lots are
+   * placed into it by hand. Nothing over there changes.
+   *
+   * It is an ordinary rm_groups row. Nothing in Rent Manager carries that
+   * name, so it never matches a property of theirs and its only members are
+   * the ones placed into it -- and if a group by that name ever does appear
+   * over there, the two join up on the next read, which is the behaviour
+   * wanted rather than a collision to guard against.
+   */
+  if (typeof createLocal === "string") {
+    const name = createLocal.trim();
+    if (name.length < 2) {
+      return NextResponse.json({ error: "Give the park a name." }, { status: 400 });
+    }
+    const { error } = await supabaseAdmin().from("rm_groups").upsert({
+      name, role: "park", local_name: name,
+      seen_at: new Date().toISOString(),
+      decided_at: new Date().toISOString(), decided_by: me.id,
+    }, { onConflict: "name" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true, name });
+  }
+
   if (!id) return NextResponse.json({ error: "which group?" }, { status: 400 });
 
   const patch: Record<string, unknown> = {};

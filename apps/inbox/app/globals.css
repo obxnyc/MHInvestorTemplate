@@ -1533,6 +1533,7 @@ a.metric:hover{border-color:var(--accent)}
 .rmshape p{margin:.3rem 0 .2rem;font-family:"IBM Plex Mono",ui-monospace,monospace;
   font-size:.72rem;line-height:1.6;word-break:break-word}
 .rmwhy{flex-basis:100%;font-size:.77rem;color:var(--muted)}
+.subhead{margin:1.3rem 0 .2rem;font-size:.86rem;font-weight:700;letter-spacing:-.005em}
 .rmmake{margin-top:1rem;padding:.9rem 1rem;border:1px solid var(--hair);
   border-radius:10px;background:var(--sunk)}
 .rmmake input[type="text"],.rmmake > input{width:100%;padding:.5rem .65rem;
