@@ -278,6 +278,11 @@ export default function PropertyBoard(
                       <button className="mini" onClick={() => setEditProp(p)}>
                         Edit this property
                       </button>
+                      {/* The picture answers "which one is lot 34", which no
+                          list ever will. */}
+                      <a className="mini" href={`/properties/${p.id}/map`}>
+                        Map of {kindOf(p.kind).holds === "many" ? "the lots" : "it"}
+                      </a>
                       {canDelete && (
                         <button className="mini danger" disabled={busy}
                                 onClick={() => setConfirming({

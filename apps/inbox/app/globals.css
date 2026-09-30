@@ -1637,3 +1637,66 @@ a.metric:hover{border-color:var(--accent)}
 .nwhen{font-weight:500;color:var(--faint);font-size:.68rem}
 .noteslist p{margin:.2rem 0 0;font-size:.84rem;line-height:1.5;color:var(--ink);
   white-space:pre-wrap;overflow-wrap:anywhere}
+
+
+/* ------------------------------------------------------------- the site map
+   A park from above with every lot on it. The picture answers "which one is
+   lot 34" and "which ones are empty" at once, which no list does. */
+.sitepage{padding:1rem 1.25rem 3rem;max-width:80rem;margin-inline:auto;width:100%}
+.sitewrap{display:grid;grid-template-columns:minmax(0,1fr) 22rem;gap:1rem;
+  align-items:start;margin-top:.6rem}
+.sitemain{min-width:0}
+.siteheadrow{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
+  font-size:.86rem;color:var(--ink-2);margin-bottom:.5rem}
+.placing{display:flex;align-items:center;gap:.5rem;color:var(--accent-ink);
+  background:var(--accent-soft);padding:.2rem .5rem;border-radius:7px}
+
+.surface{position:relative;width:100%;border:1px solid var(--hair);
+  border-radius:12px;overflow:hidden;background:var(--sunk)}
+/* A crosshair, because in this mode the whole picture is a target. */
+.surface.placing{cursor:crosshair;border-color:var(--accent)}
+.sitebg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  display:block;user-select:none;pointer-events:none}
+
+/* Centred on the point rather than hanging below-right of it: a pin that
+   sits beside the lot it means is a pin pointing at the wrong lot. */
+.pin{position:absolute;transform:translate(-50%,-50%);
+  min-width:1.5rem;height:1.5rem;padding:0 .35rem;border-radius:999px;
+  border:2px solid #fff;background:var(--accent);color:#fff;
+  font-size:.68rem;font-weight:800;line-height:1;cursor:pointer;
+  box-shadow:0 1px 4px rgba(10,14,18,.45);font-variant-numeric:tabular-nums}
+.pin.empty{background:var(--warn)}
+.pin.on{outline:3px solid var(--accent);outline-offset:2px;z-index:5}
+.pin:hover{z-index:6;transform:translate(-50%,-50%) scale(1.15)}
+
+.siteside{border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:.8rem .9rem;max-height:calc(100dvh - 12rem);overflow-y:auto}
+.siteside h3{margin:0 0 .5rem;font-size:.92rem}
+.toplace{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.3rem}
+.toplace button{display:inline-flex;align-items:center;gap:.3rem;
+  padding:.25rem .5rem;border:1px solid var(--hair);border-radius:7px;
+  background:var(--card);font-size:.78rem;font-weight:600}
+.toplace button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.toplace button:disabled{opacity:.45}
+
+.unitcard h4{margin:1rem 0 .3rem;font-size:.72rem;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--faint)}
+.ucardtop{display:flex;align-items:center;gap:.5rem}
+.ucardtop h3{flex:1;margin:0}
+.uline{margin:.25rem 0;font-size:.85rem;display:flex;align-items:center;
+  gap:.45rem;flex-wrap:wrap}
+.umeters{display:grid;gap:.4rem;margin-top:.6rem}
+.umeters label{font-size:.74rem;font-weight:600;color:var(--muted)}
+.umeters input{width:100%;margin-top:.15rem;padding:.35rem .5rem;
+  border:1px solid var(--hair);border-radius:7px;background:var(--page);
+  font:inherit;font-size:.82rem;font-family:"IBM Plex Mono",ui-monospace,monospace}
+.ujob{margin:.2rem 0;font-size:.8rem;color:var(--ink-2);line-height:1.45}
+.ujob.open b{color:var(--crit)}
+.unote{background:var(--warn-soft);border-left:3px solid var(--warn);
+  border-radius:7px;padding:.35rem .5rem;margin:.3rem 0}
+.unote p{margin:.15rem 0 0;font-size:.82rem;line-height:1.45}
+
+@media (max-width:900px){
+  .sitewrap{grid-template-columns:minmax(0,1fr)}
+  .siteside{max-height:none}
+}
