@@ -5,6 +5,7 @@ import RentManagerProbe from "@/components/RentManagerProbe";
 import RmGroups from "@/components/RmGroups";
 import RmWriteProbe from "@/components/RmWriteProbe";
 import RmMakeGroup from "@/components/RmMakeGroup";
+import RmFiling from "@/components/RmFiling";
 import { rmSettings, candidateBases } from "@/lib/rentmanager";
 
 export const runtime = "nodejs";
@@ -103,6 +104,18 @@ export default async function RentManager() {
               Group." Name and members in one call, or nothing -- which means
               there is no half-made state to clean up. */}
           <RmMakeGroup />
+        </li>
+
+        <li>
+          <h2>Lots filed in the wrong place</h2>
+          <p>
+            A lot in no group becomes a house standing on its own; a lot in
+            the wrong park sits in the wrong park for ever. Neither is visible
+            once imported, and both get commoner as the parks fill. This finds
+            them by street number and files them properly — proposing by name
+            first, because a street number can be wrong.
+          </p>
+          <RmFiling />
         </li>
 
         <li>

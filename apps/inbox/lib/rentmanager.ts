@@ -389,3 +389,39 @@ export const rmPost = (path: string, session: RmSession, payload: unknown) =>
   rmSend("POST", path, session, payload);
 export const rmDelete = (path: string, session: RmSession) =>
   rmSend("DELETE", path, session);
+
+export const rmPut = (path: string, session: RmSession, payload: unknown) =>
+  rmSend("PUT", path, session, payload);
+
+/** Everything currently in a group, by property id.
+ *
+ *  Read before every change, and not as a nicety: the likeliest way to edit
+ *  a group is to send it back with a new list of members, and a list built
+ *  from only the properties being ADDED would silently empty the group of
+ *  everything else. Sixty-four lots would leave a park and nobody would know
+ *  until somebody went looking for one. */
+export async function groupMembers(
+  id: number, session: RmSession,
+): Promise<{ ok: boolean; name: string | null; ids: number[]; detail: string }> {
+  try {
+    const res = await fetch(
+      `${session.base}/PropertyGroups/${id}?embeds=Properties`,
+      { headers: { [session.header]: session.token, Accept: "application/json" },
+        cache: "no-store", signal: AbortSignal.timeout(25_000) });
+    const text = await res.text();
+    if (!res.ok) return { ok: false, name: null, ids: [], detail: text.slice(0, 220) };
+
+    const body = JSON.parse(text) as unknown;
+    const g = (Array.isArray(body) ? body[0] : body) as
+      { Name?: string; Properties?: { PropertyID?: number }[] } | null;
+    return {
+      ok: true,
+      name: g?.Name ?? null,
+      ids: (g?.Properties ?? [])
+        .map((p) => Number(p.PropertyID)).filter(Number.isFinite),
+      detail: "",
+    };
+  } catch (e) {
+    return { ok: false, name: null, ids: [], detail: (e as Error).message };
+  }
+}
