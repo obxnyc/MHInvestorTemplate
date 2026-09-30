@@ -117,6 +117,7 @@ export async function POST(req: Request) {
       await db.from("notes").insert({
         conversation_id: convo.id,
         author_id: null,
+        kind: "event",
         body: `Moved to ${move.category.replace("_", " ")}${move.urgent ? " — urgent" : ""}`
           + ` because of: "${readable.slice(0, 80)}"`,
       });

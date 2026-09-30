@@ -429,7 +429,9 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .empty .ic svg{width:1.35rem;height:1.35rem;stroke:var(--muted);fill:none;stroke-width:1.8}
 .empty h3{margin:0 0 .35rem;font-size:1.02rem;font-weight:700;letter-spacing:-.015em}
 .empty p{margin:0;color:var(--muted);font-size:.87rem;max-width:17rem;line-height:1.5}
-.chead{display:flex;align-items:center;gap:.6rem;padding:.75rem 1rem;
+/* position:relative so the notes sheet hangs off the header rather than
+   off the whole pane. */
+.chead{position:relative;display:flex;align-items:center;gap:.6rem;padding:.75rem 1rem;
   border-bottom:1px solid var(--hair);background:var(--card)}
 .chevron{color:var(--accent);font-size:1.35rem;line-height:1;
   background:none;border:none;padding:0 .2rem;cursor:pointer}
@@ -1604,3 +1606,33 @@ a.metric:hover{border-color:var(--accent)}
 .rmshape strong{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.72rem;
   color:var(--ink-2)}
 @media (max-width:520px){ .rmpath{min-width:0;flex-basis:100%} }
+
+
+/* --------------------------------------------------------- notes, gathered
+   The thread keeps notes where they were written. This is the same notes in
+   one place, because a scroll is not somewhere you find things. */
+.noteslink{display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .6rem;
+  border:1px solid var(--hair);border-radius:999px;background:var(--card);
+  font-size:.76rem;font-weight:700;color:var(--muted)}
+.noteslink:hover{border-color:var(--warn);color:var(--ink)}
+.noteslink.has{border-color:var(--warn);color:var(--ink);background:var(--warn-soft)}
+.notecount{font-variant-numeric:tabular-nums;background:var(--warn);color:#fff;
+  border-radius:999px;min-width:1.05rem;padding:0 .25rem;font-size:.66rem;
+  line-height:1.05rem;text-align:center}
+
+.notesheet{position:absolute;top:100%;right:0;z-index:30;width:min(24rem,88vw);
+  margin-top:.4rem;background:var(--card);border:1px solid var(--hair);
+  border-radius:12px;box-shadow:0 12px 32px rgba(10,14,18,.14);
+  padding:.7rem .8rem .8rem;max-height:60vh;overflow-y:auto}
+.noteslist{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.55rem}
+.noteslist li{background:var(--warn-soft);border-left:3px solid var(--warn);
+  border-radius:8px;padding:.45rem .6rem}
+/* A logged action is the record of a thing that happened, not somebody
+   talking. It reads quieter so the written ones stay findable even when
+   both are shown. */
+.noteslist li.logged{background:var(--sunk);border-left-color:var(--hair)}
+.nwho{display:flex;flex-wrap:wrap;gap:.4rem;align-items:baseline;
+  font-size:.72rem;font-weight:700;color:var(--ink-2)}
+.nwhen{font-weight:500;color:var(--faint);font-size:.68rem}
+.noteslist p{margin:.2rem 0 0;font-size:.84rem;line-height:1.5;color:var(--ink);
+  white-space:pre-wrap;overflow-wrap:anywhere}

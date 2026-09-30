@@ -64,9 +64,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     supabase.from("messages")
       .select("id, direction, body, body_en, lang, status, channel, created_at, media_paths, staff:sent_by(full_name)")
       .eq("conversation_id", id).order("created_at"),
+    // `kind` arrives with migration 022 and is asked for tolerantly: a column
+    // that is not there yet must not take the whole thread down with it. The
+    // fallback treats everything as a note, which is what it was before.
     supabase.from("notes")
-      .select("id, body, created_at, staff:author_id(full_name)")
-      .eq("conversation_id", id).order("created_at"),
+      .select("id, body, created_at, kind, staff:author_id(full_name)")
+      .eq("conversation_id", id).order("created_at")
+      .then((r) => r.error
+        ? supabase.from("notes")
+            .select("id, body, created_at, staff:author_id(full_name)")
+            .eq("conversation_id", id).order("created_at")
+        : r),
     // Who has seen this thread, and how far down. A message is "read by" every
     // person whose last read is at or after it -- one timestamp each, rather
     // than a row per person per message for a distinction nobody uses.
