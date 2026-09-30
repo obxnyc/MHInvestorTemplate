@@ -1550,6 +1550,9 @@ a.metric:hover{border-color:var(--accent)}
 
 .rmpull{margin-top:1.3rem;padding-top:1rem;border-top:1px solid var(--hair)}
 .rmpull h3{margin:0 0 .5rem;font-size:.95rem;letter-spacing:-.01em}
+.rmundo{margin-top:.9rem;padding:.6rem .8rem;border:1px solid var(--hair);
+  border-left:3px solid var(--crit);border-radius:9px;background:var(--card)}
+.rmundo summary{cursor:pointer;font-size:.86rem;font-weight:700;color:var(--crit)}
 .rmnotes{margin:.4rem 0 0;padding-left:1.1rem;font-size:.8rem;color:var(--ink-2);
   line-height:1.6;max-height:14rem;overflow-y:auto}
 .rmgroups{list-style:none;margin:.6rem 0;padding:0}

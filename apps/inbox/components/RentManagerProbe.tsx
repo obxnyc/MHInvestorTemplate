@@ -18,6 +18,13 @@ type Row = {
   owner: string | null; address: string | null; existing: boolean;
   groups: string[];
 };
+type Undone = {
+  ok: boolean; dryRun: boolean; error?: string;
+  units: { removed: number };
+  properties: { removed: number; unlinked: number };
+  parks: { removed: number };
+  kept: string[];
+};
 type Import = {
   ok: boolean; dryRun: boolean; error?: string;
   owners: Tally; properties: Tally; units: Tally; notes: string[];
@@ -45,6 +52,8 @@ export default function RentManagerProbe() {
   const [digging, setDigging] = useState(false);
   const [pulled, setPulled] = useState<Import | null>(null);
   const [pulling, setPulling] = useState<"" | "dry" | "real">("");
+  const [undone, setUndone] = useState<Undone | null>(null);
+  const [undoing, setUndoing] = useState<"" | "dry" | "real">("");
 
   async function run() {
     setBusy(true); setFailed(null); setOut(null); setCopied(false);
@@ -88,6 +97,21 @@ export default function RentManagerProbe() {
     } finally {
       setPulling("");
     }
+  }
+
+  /** Taking it back out, with the same rehearse-then-commit rule. */
+  async function undo(go: boolean) {
+    setUndoing(go ? "real" : "dry"); setUndone(null); setFailed(null);
+    try {
+      const res = await fetch("/api/rentmanager/undo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ go }),
+      });
+      setUndone(await res.json());
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally { setUndoing(""); }
   }
 
   /** So the result can be pasted as text rather than photographed. A
@@ -208,6 +232,60 @@ export default function RentManagerProbe() {
           </p>
 
           {pulled && !pulled.ok && <p className="err">{pulled.error}</p>}
+
+          {/* Offered only once a real import has happened, because there is
+              nothing to take out before then. */}
+          {pulled?.ok && !pulled.dryRun && (
+            <details className="rmundo">
+              <summary>Take it back out</summary>
+              <p className="hint">
+                Removes what an import created and nothing else. Anything with
+                a conversation or a job filed against it is kept and simply
+                unlinked, and properties you typed in by hand are never
+                touched. Owner LLCs stay — a company is a fact about the
+                business, not a row an import invented.
+              </p>
+              <div className="acts" style={{ justifyContent: "flex-start" }}>
+                <button className="btn" disabled={undoing !== ""}
+                        onClick={() => undo(false)}>
+                  {undoing === "dry" ? "Checking…" : "Preview the undo"}
+                </button>
+                {undone?.ok && undone.dryRun && (
+                  <button className="btn danger" disabled={undoing !== ""}
+                          onClick={() => undo(true)}>
+                    {undoing === "real" ? "Removing…" : "Remove it"}
+                  </button>
+                )}
+              </div>
+
+              {undone?.ok && (
+                <>
+                  <p className={undone.dryRun ? "notice" : "okmsg"}>
+                    {undone.dryRun ? "Preview only — nothing removed. " : "Removed. "}
+                    {undone.units.removed} unit{undone.units.removed === 1 ? "" : "s"},{" "}
+                    {undone.properties.removed} propert
+                    {undone.properties.removed === 1 ? "y" : "ies"},{" "}
+                    {undone.parks.removed} park{undone.parks.removed === 1 ? "" : "s"}
+                    {undone.properties.unlinked
+                      ? `, and ${undone.properties.unlinked} kept but unlinked`
+                      : ""}.
+                  </p>
+                  {undone.kept.length > 0 && (
+                    <>
+                      <p className="hint">
+                        Kept because something is filed against {undone.kept.length === 1
+                          ? "it" : "them"}:
+                      </p>
+                      <ul className="rmnotes">
+                        {undone.kept.map((k, i) => <li key={i}>{k}</li>)}
+                      </ul>
+                    </>
+                  )}
+                </>
+              )}
+              {undone && !undone.ok && <p className="err">{undone.error}</p>}
+            </details>
+          )}
 
           {pulled?.ok && (
             <>
