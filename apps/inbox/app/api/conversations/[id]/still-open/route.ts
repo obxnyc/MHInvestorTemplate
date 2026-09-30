@@ -32,7 +32,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const db = supabaseAdmin();
   await db.from("notes").insert({
-    conversation_id: id, author_id: staff.id,
+    conversation_id: id, author_id: staff.id, kind: "event",
     body: `Still open: ${note.trim()}`,
   });
 

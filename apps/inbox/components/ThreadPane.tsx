@@ -17,6 +17,7 @@ import { languageName } from "@/lib/translate";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 import { continues } from "@/lib/runs";
+import NotesPanel, { type Note } from "@/components/NotesPanel";
 
 type Thread = {
   convo: Record<string, unknown>;
@@ -180,6 +181,11 @@ export default function ThreadPane(
             <span className="dim">via {convo.source}</span>
           </span>
         </span>
+        {/* Gathered as well as inline. A note lives in the thread where it
+            was written -- context is most of what it means -- but a thread is
+            a scroll, and the line that matters is four hundred messages up by
+            the time it does. */}
+        <NotesPanel notes={(data.notes ?? []) as unknown as Note[]} />
         <ClaimPill conversationId={convo.id}
                    holderName={convo.staff?.full_name ?? null}
                    isMine={convo.assigned_to === data.me} />

@@ -207,6 +207,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   await db.from("notes").insert({
     conversation_id: convo.id,
     author_id: staff.id,
+    kind: "event",
     body: `Forwarded to ${recipientName}${workOrderId ? " — work order opened" : ""}`
       + (note?.trim() ? `\n${note.trim()}` : ""),
   });
