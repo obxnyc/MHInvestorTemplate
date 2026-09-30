@@ -112,8 +112,10 @@ export default async function RentManager() {
             A lot in no group becomes a house standing on its own; a lot in
             the wrong park sits in the wrong park for ever. Neither is visible
             once imported, and both get commoner as the parks fill. This finds
-            them by street number and files them properly — proposing by name
-            first, because a street number can be wrong.
+            them by street number and records where they belong — here, not
+            in Rent Manager. Their records are left alone, because a filing
+            that looks like an oversight is sometimes a decision whose reason
+            has been forgotten. Every placement is reversible in a click.
           </p>
           <RmFiling />
         </li>

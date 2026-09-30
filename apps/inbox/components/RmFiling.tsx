@@ -7,31 +7,38 @@ type Move = {
   outOf: number | null; outOfName: string | null;
   why: string;
 };
-type Found = { signedIn: boolean; moves?: Move[]; hint?: string;
-               parks?: { label: string; lots: number; runsOn: string | null }[] };
-type Result = {
-  dryRun: boolean;
-  results: { groupId: number; name?: string | null; ok: boolean; already?: boolean;
-             was?: number; now?: number | null; expected?: number; reason?: string;
-             tried?: { shape: string; status: number; body: string }[] }[];
+type Placed = {
+  property: number; propertyName: string;
+  intoName: string | null; why: string | null; wasIn: string | null;
 };
+type Found = {
+  signedIn: boolean; moves?: Move[]; hint?: string; placed?: Placed[];
+  parks?: { label: string; lots: number; runsOn: string | null }[];
+};
+type Result = { ok?: boolean; placed?: number; removed?: number; error?: string };
 
 /**
- * Lots filed in the wrong place, and a button that files them right.
+ * Lots filed in the wrong place, and where they actually sit.
  *
- * The twelve orphans and the one stray are a five-minute job in Rent
- * Manager's own group editor, once. The reason this exists is that it is not
- * once: 1140 is filling up, Pamalee is being built, and a lot added over
- * there with nobody remembering to put it in a group is the normal case
- * rather than the exception. This finds them every time and fixes them in a
- * click.
+ * Nothing here is written to Rent Manager. Twelve lots are in no park group
+ * over there and one is in the park next door, and the obvious fix -- correct
+ * Rent Manager -- is wrong while nobody remembers why they were filed that
+ * way. A filing that looks like an oversight is sometimes a decision whose
+ * reason has been forgotten.
  *
- * It proposes by name, in words, before it writes anything, because the
- * evidence is a street number and a street number can be wrong.
+ * So placement is ours. A row says "whatever Rent Manager thinks, treat this
+ * as a lot of that park", it remembers what Rent Manager said at the time,
+ * and undoing it falls straight back to their answer. If it later turns out
+ * their filing was right, one click and it is.
+ *
+ * Which park a lot belongs to is decided by its street number against the
+ * numbers already in each park, which is the only evidence there is and here
+ * is conclusive. It proposes by name, in words, and every one can be
+ * unticked.
  */
 export default function RmFiling() {
   const [found, setFound] = useState<Found | null>(null);
-  const [busy, setBusy] = useState<"" | "look" | "fix">("");
+  const [busy, setBusy] = useState<"" | "look" | "place">("");
   const [done, setDone] = useState<Result | null>(null);
   const [sure, setSure] = useState(false);
   const [skip, setSkip] = useState<Set<number>>(new Set());
@@ -43,36 +50,42 @@ export default function RmFiling() {
     } finally { setBusy(""); }
   }
 
-  async function fix(go: boolean) {
-    const moves = (found?.moves ?? []).filter((m) => !skip.has(m.property) && m.into);
-    // Grouped per destination, because the write replaces a group's member
-    // list and doing that once per lot would be nine writes to one group.
-    const byGroup = new Map<number, { add: number[]; remove: number[] }>();
-    for (const m of moves) {
-      const into = byGroup.get(m.into!) ?? { add: [], remove: [] };
-      into.add.push(m.property);
-      byGroup.set(m.into!, into);
-      if (m.outOf) {
-        const out = byGroup.get(m.outOf) ?? { add: [], remove: [] };
-        out.remove.push(m.property);
-        byGroup.set(m.outOf, out);
-      }
-    }
-    setBusy("fix");
+  async function place() {
+    const chosen = (found?.moves ?? []).filter((m) => !skip.has(m.property));
+    setBusy("place");
     try {
-      const res = await fetch("/api/rentmanager/groups/members", {
+      const res = await fetch("/api/rentmanager/filing", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          go,
-          moves: [...byGroup.entries()].map(([groupId, m]) => ({ groupId, ...m })),
+          place: chosen.map((m) => ({
+            property: m.property, intoName: m.intoName,
+            why: m.why, wasIn: m.outOfName,
+          })),
         }),
       });
       setDone(await res.json());
-      if (go) await look();
+      await look();
     } finally { setBusy(""); setSure(false); }
   }
 
-  const moves = (found?.moves ?? []).filter((m) => m.into);
+  async function unplace(ids: number[]) {
+    setBusy("place");
+    try {
+      await fetch("/api/rentmanager/filing", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ undo: ids }),
+      });
+      await look();
+    } finally { setBusy(""); }
+  }
+
+  const toggle = (id: number) => setSkip((s) => {
+    const next = new Set(s);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const moves = (found?.moves ?? []).filter((m) => m.intoName);
   const todo = moves.filter((m) => !skip.has(m.property));
 
   return (
@@ -84,12 +97,14 @@ export default function RmFiling() {
       </div>
 
       {found?.hint && <p className="notice">{found.hint}</p>}
+      {done?.error && <p className="err">{done.error}</p>}
 
       {found?.parks && found.parks.length > 0 && (
         <p className="hint">
           {found.parks.map((p) =>
             `${p.label}: ${p.lots} lot${p.lots === 1 ? "" : "s"}`
-            + (p.runsOn ? ` on ${p.runsOn}` : " (no common street number)")).join(" · ")}
+            + (p.runsOn ? ` on ${p.runsOn}` : " (no common street number)"))
+            .join(" · ")}
         </p>
       )}
 
@@ -104,12 +119,7 @@ export default function RmFiling() {
               <li key={m.property}>
                 <label>
                   <input type="checkbox" checked={!skip.has(m.property)}
-                         onChange={() => setSkip((s) => {
-                           const next = new Set(s);
-                           if (next.has(m.property)) next.delete(m.property);
-                           else next.add(m.property);
-                           return next;
-                         })} />
+                         onChange={() => toggle(m.property)} />
                   <span>
                     <b>{m.propertyName}</b> → {m.intoLabel}
                     <span className="unames">{m.why}</span>
@@ -119,62 +129,61 @@ export default function RmFiling() {
             ))}
           </ul>
 
-          {!done && (sure ? (
+          {sure ? (
             <div className="rmsure">
               <p>
-                This writes to Rent Manager. It moves <b>{todo.length}</b>{" "}
-                propert{todo.length === 1 ? "y" : "ies"} between groups and changes
-                nothing else about them — no addresses, no owners, no rent. Each
-                group is read first and written back with its existing members
-                plus these, so nothing already in a group is lost.
+                This records <b>{todo.length}</b> placement
+                {todo.length === 1 ? "" : "s"} <b>here only</b>. Rent
+                Manager&rsquo;s records are left exactly as they are, and each
+                of these can be undone in a click — at which point we fall
+                straight back to whatever Rent Manager says.
               </p>
               <div className="acts">
                 <button className="btn" autoFocus onClick={() => setSure(false)}>
                   Not yet
                 </button>
-                <button className="btn danger" disabled={busy !== "" || !todo.length}
-                        onClick={() => fix(true)}>
-                  {busy === "fix" ? "Filing…" : `File these ${todo.length}`}
+                <button className="btn pri" disabled={busy !== "" || !todo.length}
+                        onClick={place}>
+                  {busy === "place" ? "Placing…" : `Place these ${todo.length} here`}
                 </button>
               </div>
             </div>
           ) : (
             <button className="btn pri" disabled={!todo.length}
                     onClick={() => setSure(true)}>
-              File {todo.length} in Rent Manager
+              Place {todo.length} here — Rent Manager untouched
             </button>
-          ))}
+          )}
         </>
       )}
 
-      {done && (
-        <div className="rmresult">
-          <ul className="rmlist">
-            {done.results.map((r) => (
-              <li key={r.groupId} className={r.ok ? "ok" : "no"}>
-                <span className="rmpath">{r.name ?? `Group ${r.groupId}`}</span>
-                <span className="rmstatus">
-                  {r.already ? "already right"
-                    : r.ok ? `${r.was} → ${r.now}`
-                    : "refused"}
-                </span>
-                {r.reason && <span className="rmwhy">{r.reason}</span>}
-                {r.tried && r.tried.length > 0 && !r.ok && (
-                  <details className="rmshape">
-                    <summary>what Rent Manager said</summary>
-                    {r.tried.map((t, i) => (
-                      <p key={i}><strong>{t.shape}</strong> — HTTP {t.status} {t.body}</p>
-                    ))}
-                  </details>
-                )}
+      {found?.placed && found.placed.length > 0 && (
+        <details className="rehodd" open>
+          <summary>{found.placed.length} placed here, overriding Rent Manager</summary>
+          <ul className="rmpick">
+            {found.placed.map((p) => (
+              <li key={p.property}>
+                <label style={{ cursor: "default" }}>
+                  <span>
+                    <b>{p.propertyName}</b> → {p.intoName ?? "standing on its own"}
+                    <span className="unames">
+                      {p.why}{p.wasIn ? ` · Rent Manager had it in ${p.wasIn}` : ""}
+                    </span>
+                  </span>
+                  <button type="button" className="mini" disabled={busy !== ""}
+                          style={{ marginLeft: "auto" }}
+                          onClick={() => unplace([p.property])}>
+                    Undo
+                  </button>
+                </label>
               </li>
             ))}
           </ul>
           <p className="whosnote">
-            Each group was read again afterwards. The numbers above are what it
-            actually holds now, not what the call claimed.
+            Undoing one falls straight back to whatever Rent Manager says about
+            it. Nothing here has ever changed their records.
           </p>
-        </div>
+        </details>
       )}
     </div>
   );
