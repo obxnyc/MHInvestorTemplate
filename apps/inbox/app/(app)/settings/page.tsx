@@ -31,6 +31,7 @@ export default async function Settings() {
       ["/audit", "Audit trail", "Every change, written by the database itself", admin],
       ["/setup", "Setup check", "Whether everything is actually wired up", admin],
       ["/rentmanager", "Rent Manager", "Leases, rent and balances — the connection to them", admin],
+      ["/maps", "Map sources", "What sits behind the lots on a property map", admin],
     ]],
   ];
 
