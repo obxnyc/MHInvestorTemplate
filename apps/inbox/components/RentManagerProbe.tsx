@@ -16,7 +16,7 @@ type Row = {
   code: string; name: string; kind: string; units: number;
   unitNames: string[]; vacant: number;
   owner: string | null; address: string | null; existing: boolean;
-  groups: string[];
+  groups: string[]; flags: string[];
 };
 type Undone = {
   ok: boolean; dryRun: boolean; error?: string;
@@ -370,10 +370,22 @@ function Rehearsal({ rows }: { rows: Row[] }) {
   for (const r of rows) byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + 1);
 
   const noUnits = rows.filter((r) => r.units === 0);
+
+  // One row can have several things wrong with it, and each wants a
+  // different fix, so it appears under each.
+  const byFlag = new Map<string, Row[]>();
+  for (const r of rows) {
+    for (const f of r.flags ?? []) {
+      (byFlag.get(f) ?? byFlag.set(f, []).get(f)!).push(r);
+    }
+  }
   const noAddress = rows.filter((r) => !r.address);
   const noOwner = rows.filter((r) => !r.owner);
   const multi = rows.filter((r) => r.units > 1);
   const shown = all ? rows : rows.slice(0, 25);
+
+  const orphanLots = rows.filter((r) =>
+    (r.flags ?? []).some((f) => f.startsWith("looks like a lot"))).length;
 
   const groupCount = new Map<string, number>();
   for (const r of rows) {
@@ -395,6 +407,9 @@ function Rehearsal({ rows }: { rows: Row[] }) {
         <li className={noUnits.length ? "warn" : ""}>
           <b>{noUnits.length}</b> with no units at all
         </li>
+        <li className={orphanLots ? "warn" : ""}>
+          <b>{orphanLots}</b> lots outside any park
+        </li>
         <li className={noAddress.length ? "warn" : ""}>
           <b>{noAddress.length}</b> with no address
         </li>
@@ -408,15 +423,15 @@ function Rehearsal({ rows }: { rows: Row[] }) {
         did not come across and this should not be run for real yet.
       </p>
 
-      {/* The two sets that decide whether this is safe, pulled out by name.
-          A count of twenty-six tells you nothing; twenty-six names tell you
-          immediately whether they are the parks. */}
-      {noUnits.length > 0 && (
-        <details className="rehodd" open>
-          <summary>{noUnits.length} with no units — are these your parks?</summary>
-          <p className="mono">{noUnits.map((r) => r.name).join(" · ")}</p>
+      {/* Grouped by what is actually wrong with them rather than by a
+          symptom. "Twenty-four with no units" was one list holding three
+          different problems, each with a different fix. */}
+      {[...byFlag.entries()].map(([flag, list]) => (
+        <details key={flag} className="rehodd" open>
+          <summary>{list.length} {flag}</summary>
+          <p className="mono">{list.map((r) => r.name).join(" · ")}</p>
         </details>
-      )}
+      ))}
       {multi.length > 0 && (
         <details className="rehodd" open>
           <summary>{multi.length} with more than one unit</summary>
@@ -454,8 +469,8 @@ function Rehearsal({ rows }: { rows: Row[] }) {
       {groupNames.length > 0 && (
         <details className="rehodd" open>
           <summary>
-            {groupNames.length} property group{groupNames.length === 1 ? "" : "s"} in
-            Rent Manager
+            {groupNames.length} group{groupNames.length === 1 ? "" : "s"} across these
+            rows — a park counts once however many lots it holds
           </summary>
           <p className="mono">
             {groupNames.map(([g, n]) => `${g} (${n})`).join(" · ")}

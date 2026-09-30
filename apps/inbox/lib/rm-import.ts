@@ -45,6 +45,11 @@ export type Row = {
   owner: string | null;
   address: string | null;
   existing: boolean;
+  /** Things worth a second look before this is written: a lot that never
+   *  made it into its park's group, a record that is a company rather than
+   *  a building. Neither is an error here -- both are facts about Rent
+   *  Manager that are easier to fix over there. */
+  flags: string[];
   /** Rent Manager's own grouping. The dashboard's property filter reads
    *  "LarabeeHomesParent", which is a group -- so if the parks are modelled
    *  anywhere, this is the likeliest place, and it is the difference between
@@ -135,6 +140,40 @@ function addressOf(list: RmAddress[] | undefined): string | null {
 }
 
 /**
+ * Anything about this record that deserves a look before it is imported.
+ *
+ * Two patterns turned up on the first real preview and neither is a bug in
+ * the mapping -- they are both true things about the Rent Manager data that
+ * are cheaper to fix there than to work around here.
+ *
+ * A property called "1140 Northside Rd, Lot #16" with no units is a lot of a
+ * park that never got added to the park's group. Imported as it stands it
+ * becomes a single-family house on its own, which is wrong and will look
+ * wrong on the properties screen.
+ *
+ * A property called "Larabee Homes" or "Dutch Doors" is an administrative
+ * record named after a company, not a building. It has no units because
+ * there is nothing to let.
+ */
+function flagsFor(
+  p: RmProperty, code: string, name: string,
+  companies: Set<string>, inPark: boolean,
+): string[] {
+  const flags: string[] = [];
+  const units = (p.Units ?? []).length;
+
+  if (!inPark && /\blot\b\s*#?\s*\w/i.test(name)) {
+    flags.push("looks like a lot of a park, but is not in a park group");
+  }
+  if (companies.has(name.trim().toLowerCase())) {
+    flags.push("named after a company, not a building");
+  }
+  if (!units) flags.push("no units — nothing to let, nothing to charge");
+  if (!code) flags.push("no Short Name in Rent Manager, so no code");
+  return flags;
+}
+
+/**
  * What kind of place this is, guessed from its shape.
  *
  * Rent Manager does not record "this is a mobile home park" in a way that
@@ -163,6 +202,10 @@ export async function importFromRentManager(
 ): Promise<Outcome> {
   const notes: Note[] = [];
   const preview: Row[] = [];
+  // Every owner and every group name, so a property called "Dutch Doors" can
+  // be recognised as the company it is named after rather than imported as a
+  // house with nothing in it.
+  const companies = new Set<string>();
   const tally = {
     owners: { seen: 0, written: 0 },
     properties: { seen: 0, written: 0 },
@@ -196,6 +239,7 @@ export async function importFromRentManager(
       const name = (o.DisplayName || o.Name || "").trim();
       if (!name) { notes.push(`Owner ${o.OwnerID} has no name in Rent Manager.`); continue; }
       ownerNameByRm.set(o.OwnerID, name);
+      companies.add(name.trim().toLowerCase());
 
       // Matched on their id first, then on a name somebody typed here before
       // the two systems were introduced -- so an LLC entered by hand gets
@@ -241,6 +285,7 @@ export async function importFromRentManager(
     const { data } = await db.from("rm_groups")
       .select("name, role, local_name, local_address, property_id");
     for (const g of data ?? []) {
+      companies.add(String(g.name).trim().toLowerCase());
       roleOf.set(String(g.name), {
         role: String(g.role ?? "unset"),
         localName: (g.local_name as string | null) ?? null,
@@ -257,7 +302,9 @@ export async function importFromRentManager(
   // ------------------------------------------------------------ properties
   const rmProps = await all<RmProperty>(
     session, "/Properties?embeds=Addresses,Units,PrimaryOwner,PropertyGroups");
-  tally.properties.seen = rmProps.length;
+  // Counted by the loops below, not from the Rent Manager total: a park's
+  // sixty-four lots are one property here, so their count and ours are
+  // different numbers and adding both gave 382 for 123 things.
 
   // Rent, in one pass over every unit, joined back by id. MarketRent does
   // not come down on the copies embedded in a property.
@@ -373,6 +420,7 @@ export async function importFromRentManager(
         address: g.localAddress,
         existing: Boolean(g.propertyId),
         groups: [groupName],
+        flags: lots.length ? [] : ["no lots are in this group yet"],
       });
     }
 
@@ -450,6 +498,7 @@ export async function importFromRentManager(
         address: addressOf(p.Addresses),
         existing: Boolean(existing),
         groups: named(p),
+        flags: flagsFor(p, code, name, companies, false),
       });
     }
 
