@@ -134,7 +134,19 @@ export function isImagePath(path: string): boolean {
  *  conversation while naming another conversation's path would text a
  *  stranger's photographs to your own phone -- an authorization hole that
  *  reads, in the code, as merely passing a string along. */
+export function belongsUnder(path: string, prefix: string): boolean {
+  return path.startsWith(`${prefix}/`) && !path.includes("..");
+}
+
 export function belongsToConversation(path: string, conversationId: string): boolean {
-  return path.startsWith(`conversations/${conversationId}/`)
-    && !path.includes("..");
+  return belongsUnder(path, `conversations/${conversationId}`);
+}
+
+/** The team's own threads keep their files under a different prefix, granted
+ *  by a different rule -- membership of the thread, not of the office. A
+ *  private message between two colleagues is not company correspondence, and
+ *  filing its attachments beside a tenant conversation's would quietly make it
+ *  so. */
+export function belongsToThread(path: string, threadId: string): boolean {
+  return belongsUnder(path, `dm/${threadId}`);
 }
