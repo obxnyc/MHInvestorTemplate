@@ -472,5 +472,67 @@ export function routeEmail(mail: RawEmail): Intake | null {
   }
   if (to.includes("maintenance")) return parseRentManager(mail);
   if (to.includes("leads")) return parseZillow(mail);
-  return null;
+
+  // Anything else a person deliberately forwarded.
+  //
+  // This used to return null, and null meant the email was logged and thrown
+  // away. That is the right answer for a mailbox you cannot control and the
+  // wrong one here, because nothing reaches this endpoint by accident: every
+  // message arrived through a Gmail filter somebody wrote. The filter is the
+  // decision about what matters, and second-guessing it in code meant a
+  // tenant who wrote a paragraph to info@ instead of using the portal
+  // vanished without trace.
+  if (isNoise(from)) return null;
+
+  // Court filings are the one thing that must never become a conversation --
+  // see ingestCourtFiling(). Both callers check this before asking the
+  // router, and the check is repeated here anyway: the moment an unmatched
+  // email became a thread instead of nothing, "the caller checks first"
+  // stopped being a safe thing to rely on. A summons in the shared inbox is
+  // not a bug anybody wants to find twice.
+  if (isCourtFilingEmail(mail)) return null;
+
+  return parseGeneric(mail);
+}
+
+/** Mail that exists only to administer the pipe itself. A forwarding
+ *  confirmation or a bounce notice is not somebody writing to us, and a
+ *  thread per retry is how an inbox becomes unusable. */
+function isNoise(from: string): boolean {
+  return [
+    "forwarding-noreply@google.com",
+    "mailer-daemon@",
+    "postmaster@",
+    "no-reply@accounts.google.com",
+  ].some((n) => from.includes(n));
+}
+
+/**
+ * An ordinary email, from an ordinary person.
+ *
+ * Opens a thread and nothing more. It deliberately does NOT open a work
+ * order, even when it is plainly about a repair: a portal submission is a
+ * form somebody filled in under a heading that says Issue, and a paragraph of
+ * prose is a conversation. Filing every forwarded email as a job would put
+ * "thanks, that's sorted" on the maintenance board, and a board with four
+ * false entries on it is one people stop reading.
+ */
+export function parseGeneric(mail: RawEmail): Intake {
+  const from = mail.from.trim();
+  // "Winston Miller <winston@example.com>" -- the display name if there is
+  // one, and never the address pretending to be a name.
+  const named = /^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$/.exec(from)?.[1]?.trim() ?? null;
+  const address = EMAIL.exec(from)?.[0] ?? null;
+
+  const body = mail.text.trim();
+  return {
+    source: "website",
+    name: named && named.includes("@") ? null : named,
+    phone: firstPhone(body),
+    email: address,
+    summary: (mail.subject || body.split("\n")[0] || "Email").slice(0, 160),
+    raw: body || mail.subject || "(no message body)",
+    category: "other",
+    externalId: mail.messageId,
+  };
 }

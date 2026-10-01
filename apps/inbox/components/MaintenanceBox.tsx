@@ -48,6 +48,10 @@ export default function MaintenanceBox({ jobs }: { jobs: JobRow[] }) {
                 <span className="jwhere">{j.where ?? "Address not set"}</span>
                 <span className="jwhat">{j.summary}</span>
                 <span className="jtags">
+                  {/* Who has it, where anybody does. A week-old repair with
+                      nobody's name against it is the one worth spotting from
+                      across the room. */}
+                  {j.who && <span className="jwho">{j.who}</span>}
                   {flag && <span className="badge jurgent">{flag}</span>}
                   {late && <span className="badge jlate">Past due</span>}
                   <span className={`badge j-${jobTone(j.status)}`}>
