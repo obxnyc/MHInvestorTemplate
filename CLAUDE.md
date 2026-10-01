@@ -69,5 +69,12 @@ the owner can see; the merge is what ships it. Standing permission to merge
 
 ## Instructions
 
-Click by click, with the thing to type in a code block. Say which screen, which
-button, and what the right answer looks like when it works.
+Short. One task at a time, not a numbered plan with branches in it.
+
+Links go inline in the sentence, as ordinary clickable text. Not in a fenced
+code block -- a block says "this is something to copy", and a link is something
+to click. Code blocks are for what gets typed or pasted: SQL, a variable name,
+a value.
+
+Say which screen, which button, and what the right answer looks like. Leave out
+the reasoning unless it changes what they do.
