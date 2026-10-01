@@ -4,6 +4,8 @@ import { prettyPhone, timeAgo } from "@/lib/format";
 import { money } from "@/lib/prices";
 import { catLabel, type Category } from "@/lib/category";
 import WhosHere from "@/components/WhosHere";
+import MaintenanceBox from "@/components/MaintenanceBox";
+import type { JobRow } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +43,12 @@ export default async function Home() {
     { data: recentDone }, { data: spend }, { count: unclaimed },
     { data: mine },
   ] = await Promise.all([
-    supabase.from("work_orders").select("id, urgency, status, scheduled_for")
+    // Asked for in full rather than counted. The count was already here and a
+    // count is not an answer: "11 open" says there is work and nothing about
+    // which work. The same rows now serve both the number at the top and the
+    // list below it, so they cannot disagree.
+    supabase.from("work_orders")
+      .select("id, summary, urgency, status, scheduled_for, created_at, conversation_id, units(label, properties(name))")
       .not("status", "in", `(${DONE.join(",")})`),
     supabase.from("units").select("id, is_vacant, monthly_rent, available_on"),
     supabase.from("showings").select("id, scheduled_for, attended")
@@ -59,6 +66,26 @@ export default async function Home() {
   ]);
 
   const jobs = openJobs ?? [];
+
+  // Flattened here rather than in the component, so the component takes a
+  // shape it can render and not a shape Supabase happened to return.
+  const jobRows: JobRow[] = jobs.map((j) => {
+    const unit = j.units as unknown as
+      { label: string; properties: { name: string } | null } | null;
+    const property = unit?.properties?.name ?? null;
+    return {
+      id: j.id,
+      summary: j.summary,
+      status: j.status,
+      urgency: j.urgency ?? null,
+      scheduledFor: j.scheduled_for ?? null,
+      createdAt: j.created_at,
+      conversationId: j.conversation_id ?? null,
+      where: unit
+        ? [property, unit.label].filter(Boolean).join(" · ")
+        : property,
+    };
+  });
   const urgent = jobs.filter((j) => (j.urgency ?? 3) <= 2).length;
   const overdue = jobs.filter((j) =>
     j.scheduled_for && j.scheduled_for < now.toISOString()).length;
@@ -135,6 +162,8 @@ export default async function Home() {
         Manager today. They are laid out and empty on purpose — a figure invented
         to fill the space is worse than a gap that says what it is waiting for.
       </p>
+
+      <MaintenanceBox jobs={jobRows} />
 
       <WhosHere />
 
