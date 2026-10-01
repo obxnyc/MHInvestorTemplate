@@ -5,11 +5,17 @@ import { clockTime, dayLabel } from "@/lib/format";
 import Seen, { type Read } from "./Seen";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { continues } from "@/lib/runs";
+import { AttachStrip, AttachButton } from "./Attach";
+import { useAttachments } from "./useAttachments";
+import Attachment from "./Attachment";
 
-type Msg = { id: string; body: string; at: string; who: string };
+type Msg = { id: string; body: string; at: string; who: string; media?: string[] };
 type Person = { id: string; full_name: string };
 type Thread = {
   me: string; members: Person[]; messages: Msg[];
+  /** Signed URLs for every attachment on the thread, by storage path. Minutes
+   *  long, minted per request. */
+  media?: Record<string, string>;
   /** When each person last opened the thread, which is what read receipts are
    *  worked out from. */
   reads: Read[];
@@ -31,6 +37,8 @@ export default function DmPane(
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const files = useAttachments(`/api/team/${id}/attach`);
   const [roster, setRoster] = useState<Person[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -85,16 +93,35 @@ export default function DmPane(
     return () => { supabaseBrowser().removeChannel(channel); };
   }, [id, load]);
 
+  /** Files off a paste or a drop. A clipboard carries a screenshot as an item
+   *  with no name, which is the case this exists for -- most of what gets
+   *  shown to a colleague is a screenshot of something on screen. */
+  function fromTransfer(list: DataTransferItemList | null, fallback: FileList | null): File[] {
+    const out: File[] = [];
+    for (const item of list ?? []) {
+      if (item.kind !== "file") continue;
+      const f = item.getAsFile();
+      if (f) out.push(f);
+    }
+    if (!out.length) out.push(...(fallback ?? []));
+    return out;
+  }
+
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
+    // A screenshot with no words is a whole message.
+    if ((!text.trim() && !files.items.length) || files.busy > 0) return;
     setBusy(true);
     const body = text;
+    const media = files.items.map((f) => f.path);
     setText("");
     await fetch(`/api/team/${id}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, media }),
     });
+    // Cleared only once it has gone. Losing the picture along with the message
+    // would mean finding it again.
+    files.clear();
     setBusy(false);
     await load();
     refreshList();
@@ -189,7 +216,12 @@ export default function DmPane(
                     the person reading is an odd place to stop -- the tenant
                     threads have always named the sender on both sides. */}
                 <span className="attrib">{mine ? "You" : m.who}</span>
-                <div className="bwrap"><div className="b"><Body text={m.body} /></div></div>
+                {m.body && (
+                  <div className="bwrap"><div className="b"><Body text={m.body} /></div></div>
+                )}
+                {(m.media ?? []).map((path) => (
+                  <Attachment key={path} path={path} src={data.media?.[path]} />
+                ))}
                 <span className="delivered">
                   {clockTime(m.at)}
                   {/* Only on our own. Whether THEY have read what we sent is
@@ -210,14 +242,36 @@ export default function DmPane(
           there is nothing to send.
         </p>
       ) : (
-      <form className="composer" onSubmit={send}>
+      <form
+        className={`composer${dragging ? " dragging" : ""}`} onSubmit={send}
+        // Dropped anywhere on the composer, not only on the paperclip:
+        // dragging a file at a 2 cm target is a thing people miss.
+        onDragOver={(e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          if (!e.dataTransfer?.types?.includes("Files")) return;
+          e.preventDefault(); setDragging(false);
+          void files.take(fromTransfer(e.dataTransfer.items, e.dataTransfer.files));
+        }}
+      >
+        {/* Nothing on this thread is ever texted to anybody, so there is no
+            carrier to warn about and nothing to grey out. */}
+        <AttachStrip items={files.items} busy={files.busy} problem={files.problem}
+                     onRemove={files.remove} sendableOnly={false} />
         <div className="inputrow">
+          <AttachButton onPick={(picked) => void files.take(picked)}
+                        disabled={busy || files.busy > 0} />
           <textarea rows={1} value={text} placeholder="Message — stays inside the office"
                     onChange={(e) => setText(e.target.value)}
+                    onPaste={(e) => {
+                      const picked = fromTransfer(e.clipboardData?.items ?? null, e.clipboardData?.files ?? null);
+                      if (picked.length) { e.preventDefault(); void files.take(picked); }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(e); }
                     }} />
-          <button className="sendbtn" disabled={busy || !text.trim()}>↑</button>
+          <button className="sendbtn"
+                  disabled={busy || files.busy > 0 || (!text.trim() && !files.items.length)}>↑</button>
         </div>
       </form>
       )}

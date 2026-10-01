@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { pushToStaff } from "@/lib/push";
+import { signMedia, belongsToThread } from "@/lib/media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,11 +15,26 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { id } = await ctx.params;
   const supabase = await supabaseServer();
-  const { data: messages, error } = await supabase
-    .from("dm_messages")
-    .select("id, body, created_at, staff:author_id(full_name)")
-    .eq("thread_id", id).order("created_at");
-  if (error) return NextResponse.json({ error: error.message }, { status: 403 });
+  // `media_paths` arrives with migration 027 and is asked for tolerantly: a
+  // column that is not there yet must not take the whole thread down with it.
+  const read = (cols: string) => supabase
+    .from("dm_messages").select(cols).eq("thread_id", id).order("created_at");
+
+  // `media_paths` arrives with migration 027 and is asked for tolerantly: a
+  // column that is not there yet must not take the whole thread down with it.
+  let got = await read("id, body, created_at, media_paths, staff:author_id(full_name)");
+  if (got.error) got = await read("id, body, created_at, staff:author_id(full_name)");
+  if (got.error) return NextResponse.json({ error: got.error.message }, { status: 403 });
+  const messages = (got.data ?? []) as unknown as {
+    id: string; body: string; created_at: string;
+    media_paths?: string[] | null; staff: { full_name: string } | null;
+  }[];
+
+  // One signing call for the whole thread rather than one per picture: each is
+  // a round trip, and a thread with a dozen photos would otherwise spend a
+  // second doing nothing else.
+  const signed = await signMedia(supabase,
+    messages.flatMap((m) => m.media_paths ?? []));
 
   // Read BEFORE marking myself read below, or my own receipt is always "now"
   // and I appear to have seen a message the instant it arrives.
@@ -55,9 +71,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         return who ? { staffId: who.id, name: who.full_name, at: m.last_read_at! } : null;
       })
       .filter((r): r is { staffId: string; name: string; at: string } => r !== null),
-    messages: (messages ?? []).map((m) => ({
+    media: Object.fromEntries(signed),
+    messages: messages.map((m) => ({
       id: m.id, body: m.body, at: m.created_at,
-      who: (m.staff as unknown as { full_name: string } | null)?.full_name ?? "Someone",
+      media: m.media_paths ?? [],
+      who: m.staff?.full_name ?? "Someone",
     })),
   });
 }
@@ -67,8 +85,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!me) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const { body } = await req.json();
-  if (!String(body ?? "").trim()) {
+  const { body, media } = await req.json() as { body?: string; media?: unknown };
+
+  // These paths came back through a browser, which means they are not to be
+  // believed. Checked against THIS thread: without it, posting to a thread you
+  // are in while naming another thread's folder would copy a colleague's
+  // private attachment into a thread they are not in.
+  const wanted = Array.isArray(media) ? media.filter((m): m is string => typeof m === "string") : [];
+  const paths = wanted.filter((p) => belongsToThread(p, id));
+  if (paths.length !== wanted.length) {
+    return NextResponse.json({ error: "that attachment isn't this thread's" }, { status: 400 });
+  }
+  if (paths.length > 10) {
+    return NextResponse.json({ error: "ten attachments at most" }, { status: 400 });
+  }
+
+  // A screenshot with no words is a whole message.
+  const text = String(body ?? "").trim();
+  if (!text && !paths.length) {
     return NextResponse.json({ error: "nothing to send" }, { status: 400 });
   }
 
@@ -80,8 +114,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!thread) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const db = supabaseAdmin();
-  const { error } = await db.from("dm_messages")
-    .insert({ thread_id: id, author_id: me.id, body: String(body).trim() });
+  const row = { thread_id: id, author_id: me.id, body: text };
+  // Written with the attachments where the column exists, and without them
+  // where 027 has not been run yet. A message that loses its picture is a
+  // nuisance; one that refuses to send because of a column nobody has added
+  // is somebody's afternoon.
+  let lost = false;
+  let { error } = await db.from("dm_messages").insert({ ...row, media_paths: paths });
+  if (error && missingColumn(error)) {
+    lost = paths.length > 0;
+    ({ error } = await db.from("dm_messages").insert(row));
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await db.from("dm_threads")
@@ -93,11 +136,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     (members ?? []).map((m) => m.staff_id).filter((s) => s !== me.id),
     {
       title: me.full_name,
-      body: String(body).slice(0, 140),
+      body: text.slice(0, 140)
+        || `sent ${paths.length} attachment${paths.length === 1 ? "" : "s"}`,
       url: `/team?t=${id}`,
       tag: `dm:${id}`,
     },
   );
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    // Said out loud rather than swallowed. Somebody attached a file and only
+    // the words were kept; they should hear it from us now, not notice next
+    // week.
+    warning: lost
+      ? "Sent, but without the attachment — migration 027 hasn't been run yet."
+      : null,
+  });
+}
+
+/** The shape Postgres uses to say a column is not there. Matched on the code
+ *  as well as the text because the wording has changed between versions. */
+function missingColumn(e: { code?: string; message?: string } | null) {
+  return !!e && (e.code === "42703" || /column .* does not exist/i.test(e.message ?? ""));
 }

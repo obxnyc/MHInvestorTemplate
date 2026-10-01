@@ -44,6 +44,7 @@ export async function runSetupChecks(
     ...(await guardAsync("Delivery", deliveryChecks)),
     ...(await guardAsync("Database", databaseChecks)),
     ...(await guardAsync("Migrations", migrationChecks)),
+    ...(await guardAsync("Email intake", intakeChecks)),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
 }
@@ -507,6 +508,8 @@ const MIGRATIONS: { id: string; what: string; table: string; column: string }[] 
     table: "properties", column: "parcel_geojson" },
   { id: "026", what: "Photos and files on an internal note",
     table: "notes", column: "media_paths" },
+  { id: "027", what: "Photos and files in the team's own messages",
+    table: "dm_messages", column: "media_paths" },
 ];
 
 /** 021 only widens a constraint, so there is no column to look for. It is
@@ -625,4 +628,89 @@ function buildCheck(): Check {
       ? `Commit ${sha}${msg ? ` — ${msg.split("\n")[0]}` : ""}.`
       : "This deployment does not report a commit (running locally, or built outside the hosting platform).",
   };
+}
+
+/**
+ * Is anything actually arriving by email?
+ *
+ * Zego maintenance requests, Zillow leads and website forms all reach us as
+ * mail, through one pipe, and that pipe has three pieces: a Postmark inbound
+ * server, the secret below, and a forwarding filter in Gmail. All three are
+ * somebody else's dashboard, none of them is in this repository, and until
+ * now this page said nothing about any of them.
+ *
+ * That silence is the failure worth fixing. A maintenance request that never
+ * arrives looks exactly like a quiet week -- there is no error anywhere,
+ * because nothing was ever sent to anything. So this reports two separate
+ * things: whether we COULD accept an email at all, and whether one has
+ * actually turned up lately. The second is the one that catches a pipe that
+ * was connected once and then quietly broke.
+ */
+async function intakeChecks(): Promise<Check[]> {
+  const secret = (process.env.INTAKE_SECRET ?? "").trim();
+  if (!secret) {
+    return [{
+      name: "Email intake is not set up",
+      level: "bad",
+      detail: "INTAKE_SECRET is not set, so /api/intake/postmark refuses every"
+        + " request with a 401. Nothing that arrives as email — Zego"
+        + " maintenance requests, Zillow leads, website forms, voicemail"
+        + " transcripts — can reach the inbox. They are not being filed"
+        + " somewhere else; they are not arriving.",
+      fix: "Pick a long random string, add it to the hosting dashboard as"
+        + " INTAKE_SECRET, redeploy, then create a Postmark inbound server and"
+        + " point its webhook at"
+        + " https://<your-domain>/api/intake/postmark?secret=<INTAKE_SECRET>."
+        + " Postmark does not sign inbound webhooks, so that whole URL is a"
+        + " credential — treat it like a password. Then add Gmail filters that"
+        + " forward the notification mail to the address Postmark gives you.",
+    }];
+  }
+
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  if (!url || !key) return [];
+
+  // Thirty days rather than all time: "one arrived last March" is not an
+  // answer to "is this working now".
+  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/conversations`
+      + `?select=source&channel=neq.sms&created_at=gte.${since}&limit=200`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const rows = (await res.json()) as { source: string | null }[];
+
+    if (!rows.length) {
+      return [{
+        name: "Nothing has arrived by email in 30 days",
+        level: "warn",
+        detail: "INTAKE_SECRET is set, so this end is ready. But no"
+          + " conversation has come in from anything other than a text message"
+          + " in the last month. If you are receiving these notifications in"
+          + " your own mailbox, the forward is what is missing — the mail is"
+          + " reaching you and not reaching here.",
+        fix: "Check two things, in this order. Postmark → your inbound server →"
+          + " Activity: does it show the forwarded mail arriving, and did the"
+          + " webhook return 200? If Postmark shows nothing, the Gmail filter"
+          + " is not forwarding. If it shows a 401, the secret in the webhook"
+          + " URL does not match INTAKE_SECRET. If it shows a 404, the URL is"
+          + " pointing at a domain or path that is not this deployment.",
+      }];
+    }
+
+    const counts = new Map<string, number>();
+    for (const r of rows) counts.set(r.source ?? "unknown", (counts.get(r.source ?? "unknown") ?? 0) + 1);
+    const said = [...counts].map(([k, n]) => `${n} ${k}`).join(", ");
+    return [{
+      name: "Email intake", level: "good",
+      detail: `Arriving. In the last 30 days: ${said}. Each one opens a thread`
+        + " in Messages; turning one into a job is still a person pressing"
+        + " Hand off, which is deliberate.",
+    }];
+  } catch {
+    return [];
+  }
 }

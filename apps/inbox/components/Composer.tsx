@@ -26,7 +26,7 @@ export default function Composer(
   const [dragging, setDragging] = useState(false);
   const [, start] = useTransition();
 
-  const files = useAttachments(conversationId);
+  const files = useAttachments(`/api/conversations/${conversationId}/attach`);
   // A text carries only what a carrier will carry; a note carries anything.
   const unsendable = mode === "reply" && files.items.some((f) => !f.sendable);
   const hasSomething = text.trim().length > 0 || files.items.length > 0;

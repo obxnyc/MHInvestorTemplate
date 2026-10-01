@@ -34,7 +34,7 @@ const LIMIT = 10;
  * one that matters most and is missing from nearly everything -- a screenshot
  * of a ledger goes Cmd+Shift+4, Cmd+V, and never touches a disk.
  */
-export function useAttachments(conversationId: string) {
+export function useAttachments(endpoint: string) {
   const [items, setItems] = useState<Attached[]>([]);
   const [busy, setBusy] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
@@ -70,9 +70,7 @@ export function useAttachments(conversationId: string) {
       const form = new FormData();
       for (const f of ready) form.append("file", f, f.name);
 
-      const res = await fetch(`/api/conversations/${conversationId}/attach`, {
-        method: "POST", body: form,
-      });
+      const res = await fetch(endpoint, { method: "POST", body: form });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) { setProblem(out.error ?? "That didn't upload. Try again."); return; }
 
@@ -100,7 +98,7 @@ export function useAttachments(conversationId: string) {
     } finally {
       setBusy((n) => Math.max(0, n - batch.length));
     }
-  }, [conversationId]);
+  }, [endpoint]);
 
   const remove = useCallback((path: string) => {
     setItems((prev) => prev.filter((f) => f.path !== path));
