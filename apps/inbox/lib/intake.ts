@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { toE164 } from "./twilio";
+import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
 
 export type IntakeSource = "zego" | "zillow" | "website" | "voicemail";
@@ -130,7 +131,107 @@ export async function ingest(item: Intake) {
     actions: CLAIM_ACTIONS,
   });
 
-  return { ok: true, conversationId: convo.id };
+  // A maintenance request becomes a job, not just a thread.
+  //
+  // It used to become only a thread, and somebody had to notice it and press
+  // Hand off. That is the right rule for a text message -- "the heat's a bit
+  // funny" is a conversation, not a work order -- but a Tenant WebAccess
+  // submission is not a conversation. Somebody filled in a form headed Issue
+  // Title and Description, in a portal whose entire purpose is reporting a
+  // repair. Making a person retype that into a ticket is asking them to do
+  // the computer's job, and the ones nobody got round to retyping are exactly
+  // the repairs that went missing.
+  //
+  // Failing here must not cost the thread. The message is already written; a
+  // job that could not be opened is a gap on a dashboard, and a request that
+  // vanished because the job insert threw is a repair nobody knows about.
+  let workOrderId: string | null = null;
+  if (item.category === "maintenance") {
+    try {
+      workOrderId = await openJob(db, item, convo.id);
+    } catch (e) {
+      console.error("intake could not open a work order", { source: item.source, e });
+    }
+  }
+
+  return { ok: true, conversationId: convo.id, workOrderId };
+}
+
+/**
+ * Open the job a maintenance request implies.
+ *
+ * The unit is the hard part. Rent Manager writes the place in the subject --
+ * "1140 Northside #51, 1140 Northside Rd, Lot #51" -- and our own labels are
+ * variously "#51", "Lot 51" and "51" depending on who typed them in, so the
+ * match is on the digits and the property name rather than on the string.
+ *
+ * A job with no unit is still a job. It shows as "Address not set" and the row
+ * still opens the thread, which carries the subject line and the tenant's own
+ * words. That is recoverable in ten seconds; a dropped request is not.
+ */
+async function openJob(
+  db: ReturnType<typeof supabaseAdmin>, item: Intake, conversationId: string,
+): Promise<string | null> {
+  // Whatever the thread already knows beats anything parsed out of a subject
+  // line: it came from a contact record somebody maintains.
+  const { data: convo } = await db.from("conversations")
+    .select("unit_id, contacts(unit_id)").eq("id", conversationId).maybeSingle();
+  let unitId = (convo as { unit_id?: string | null } | null)?.unit_id
+    ?? (convo?.contacts as unknown as { unit_id?: string | null } | null)?.unit_id
+    ?? null;
+
+  if (!unitId && item.unitHint) {
+    unitId = await unitFromHint(db, item.unitHint);
+  }
+
+  const { data, error } = await db.from("work_orders").insert({
+    conversation_id: conversationId,
+    unit_id: unitId,
+    summary: item.summary.slice(0, 200),
+    detail: item.raw,
+    urgency: urgencyFromText(`${item.summary}\n${item.raw}`),
+    status: "new",
+  }).select("id").single();
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
+/** The unit a Rent Manager subject line is pointing at, or null.
+ *
+ *  Both halves have to agree -- the lot number AND the property -- because lot
+ *  51 exists in more than one park, and filing a leak against the wrong park
+ *  is worse than filing it against none. */
+async function unitFromHint(
+  db: ReturnType<typeof supabaseAdmin>, hint: string,
+): Promise<string | null> {
+  const lot = lotDigits(hint);
+  if (!lot) return null;
+
+  const { data: units } = await db.from("units")
+    .select("id, label, properties(name)");
+  if (!units?.length) return null;
+
+  const digits = (s: string) => s.replace(/\D+/g, "");
+  const candidates = units.filter((u) => digits(u.label) === lot);
+  if (candidates.length === 1) return candidates[0].id;
+  if (!candidates.length) return null;
+
+  // More than one park has this lot number, so the property has to break the
+  // tie. Matched loosely because "1140 Northside" in a subject is "1140
+  // Northside Road" in our records about half the time.
+  const place = (propertyHint(hint) ?? "").toLowerCase();
+  if (!place) return null;
+  const words = place.split(/\s+/).filter((w) => w.length > 2);
+  const scored = candidates.map((u) => {
+    const name = ((u.properties as unknown as { name?: string } | null)?.name ?? "")
+      .toLowerCase();
+    return { id: u.id, hits: words.filter((w) => name.includes(w)).length };
+  }).sort((a, b) => b.hits - a.hits);
+
+  // A single clear winner, or nothing. A tie means we cannot tell, and
+  // guessing between two parks is the one outcome worth refusing.
+  return scored[0].hits > 0 && scored[0].hits > (scored[1]?.hits ?? 0)
+    ? scored[0].id : null;
 }
 
 /**
