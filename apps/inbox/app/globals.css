@@ -1226,6 +1226,24 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .jtags{display:flex;gap:.3rem;flex:none;align-items:center}
 .jwhen{margin-left:.2rem;color:var(--faint);font-size:.76rem;font-weight:500;flex:none}
 .jwho{font-size:.72rem;font-weight:600;color:var(--muted);white-space:nowrap}
+
+/* ---- a portal submission, as a card ---- */
+.intake{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--mt);
+  border-radius:10px;padding:.65rem .8rem;max-width:100%}
+.ihead{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;margin-bottom:.35rem}
+.isrc{font-size:.62rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--mt-ink)}
+/* When the tenant reported it, not when somebody forwarded it. The two are
+   routinely days apart and only one of them is the age of the repair. */
+.iwhen{font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.iplace{margin:0;font-size:.8rem;font-weight:700;color:var(--ink)}
+.ititle{margin:.15rem 0 0;font-size:.9rem;font-weight:600;color:var(--ink)}
+.idesc{margin:.25rem 0 0;font-size:.85rem;line-height:1.5;color:var(--ink-2)}
+.iwho{margin:.4rem 0 0;font-size:.76rem;color:var(--muted)}
+.iraw{margin-top:.5rem;padding:0;border:none;background:none;font-size:.7rem;
+  font-weight:600;color:var(--accent);text-decoration:underline}
+.rawmail{margin:.5rem 0 0;font-size:.74rem;line-height:1.45;color:var(--muted);
+  white-space:pre-wrap;word-break:break-word;font-family:inherit}
 .badge.jurgent{background:var(--crit);color:#fff}
 .badge.jlate{background:var(--warn-soft);color:var(--warn)}
 .badge.j-waiting{background:var(--sunk);color:var(--muted)}

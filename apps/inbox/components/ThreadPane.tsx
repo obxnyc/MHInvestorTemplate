@@ -19,6 +19,7 @@ import { joinTyping, TYPING_TTL } from "@/lib/typing";
 import { continues } from "@/lib/runs";
 import NotesPanel, { type Note } from "@/components/NotesPanel";
 import Attachment from "@/components/Attachment";
+import IntakeCard from "@/components/IntakeCard";
 
 type Thread = {
   convo: Record<string, unknown>;
@@ -263,8 +264,14 @@ export default function ThreadPane(
                   </span>
                 )}
                 <div className="bwrap">
-                  <Bubble body={m.body} english={m.body_en} lang={m.lang}
-                          outbound={m.direction === "outbound"} />
+                  {/* A portal submission is a form, not a text message, and a
+                      bubble is the wrong shape for it. The original is one
+                      click away and nothing is discarded -- what changes is
+                      what you read first. */}
+                  {isSystem
+                    ? <IntakeCard body={String(m.body)} label={labelFor(m.channel)} />
+                    : <Bubble body={m.body} english={m.body_en} lang={m.lang}
+                              outbound={m.direction === "outbound"} />}
                   <MessageMenu messageId={m.id} preview={String(m.body).slice(0, 180)} />
                 </div>
                 {(m.media_paths ?? []).map((path) => (
