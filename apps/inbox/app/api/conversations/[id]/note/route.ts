@@ -43,17 +43,27 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }).map((s) => s.id);
   }
 
-  // Written with the attachments where the column exists, and without them
-  // where migration 026 has not been run yet. A note that loses its picture is
-  // a nuisance; a note that refuses to save because of a column nobody has
-  // added yet is somebody's afternoon.
+  // The attachment column is named ONLY when there is something to put in it.
+  //
+  // Naming it unconditionally broke every note in the building, including the
+  // ones with no attachment, because the INSERT grant on this table is
+  // column-level -- `grant insert (conversation_id, author_id, body,
+  // mentions)` -- and Postgres refuses the whole statement for a column
+  // outside that list. The error it gives is "permission denied for table
+  // notes", which reads like a policy problem and is not one: a policy
+  // filters a privilege, it does not grant one.
   const row = { conversation_id: id, author_id: staff.id, body: text, mentions: mentioned };
   let lost = false;
-  let { error } = await supabase.from("notes").insert({ ...row, media_paths: paths });
-  if (error && missingColumn(error) && paths.length) {
+  let { error } = paths.length
+    ? await supabase.from("notes").insert({ ...row, media_paths: paths })
+    : await supabase.from("notes").insert(row);
+
+  // Two different ways the column can be unavailable, and both degrade the
+  // same way: keep the words, lose the picture, say so. 42703 is the column
+  // not existing (028 not run); 42501 is it existing without the grant (028
+  // run as far as the ALTER and no further).
+  if (error && paths.length && (missingColumn(error) || notGranted(error))) {
     lost = true;
-    ({ error } = await supabase.from("notes").insert(row));
-  } else if (error && missingColumn(error)) {
     ({ error } = await supabase.from("notes").insert(row));
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -72,7 +82,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // photograph on it and only the words were kept; they should hear that
     // from us and not discover it next week.
     warning: lost
-      ? "Saved, but without the attachment — migration 026 hasn't been run yet."
+      ? "Saved, but without the attachment — migration 028 hasn't been run yet."
       : null,
   });
 }
@@ -81,4 +91,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
  *  as well as the text because the wording has changed between versions. */
 function missingColumn(e: { code?: string; message?: string } | null) {
   return !!e && (e.code === "42703" || /column .* does not exist/i.test(e.message ?? ""));
+}
+
+/** The column is there, but this role was never granted it. Distinct from a
+ *  row-level policy refusal, which says the row violates a policy. */
+function notGranted(e: { code?: string; message?: string } | null) {
+  return !!e && (e.code === "42501" || /permission denied/i.test(e.message ?? ""));
 }

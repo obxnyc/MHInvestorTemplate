@@ -559,7 +559,12 @@ async function migrationChecks(): Promise<Check[]> {
         + " → Run. A row of green deployments does not run this; deploying ships"
         + " code, and the database is a separate system."
         + (id === "020" ? " Run 021 straight after it — it widens a constraint"
-                        + " and so has no column of its own to check for." : ""),
+                        + " and so has no column of its own to check for." : "")
+        + (id === "026" ? " Run 028 straight after it — it grants the column"
+                        + " this adds, and a granted column cannot be checked"
+                        + " for from here because the service role has every"
+                        + " privilege anyway. Without it every note fails to"
+                        + " save, not just ones with an attachment." : ""),
     };
   });
 }
