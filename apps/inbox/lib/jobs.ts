@@ -68,3 +68,68 @@ export function byWorst(now = Date.now()) {
     return a.createdAt.localeCompare(b.createdAt);
   };
 }
+
+/**
+ * How urgent a reported fault sounds.
+ *
+ * Keywords rather than a model call, for the same reason the classifier leads
+ * with keywords: "no heat" at two in the morning must not wait on somebody
+ * else's API, and must not quietly become "normal" when that API is down.
+ *
+ * Deliberately conservative. Everything unmatched stays at 3, because a
+ * dashboard where half the rows shout is a dashboard where nobody looks at the
+ * top. Only the things that damage a building or endanger somebody in it are
+ * lifted, and a person can always change it afterwards.
+ */
+const EMERGENCY = [
+  "gas leak", "smell gas", "smell of gas", "carbon monoxide", "co detector",
+  "sewage", "sewer back", "flooding", "flooded", "water pouring",
+  "no heat", "without heat", "heat is out", "furnace is out",
+  "electrical fire", "sparking", "smoke", "exposed wire", "no power",
+  "break in", "broken window", "door won't lock", "door wont lock",
+];
+
+const URGENT = [
+  "no hot water", "no water", "water heater", "burst", "leak", "leaking",
+  "toilet", "backed up", "clogged", "overflow",
+  "no air", "no a/c", "no ac", "air conditioning", "refrigerator", "fridge",
+  "stove", "oven", "mold", "roof", "ceiling",
+];
+
+export function urgencyFromText(text: string): number {
+  const t = text.toLowerCase();
+  if (EMERGENCY.some((k) => t.includes(k))) return 1;
+  if (URGENT.some((k) => t.includes(k))) return 2;
+  return 3;
+}
+
+/**
+ * The lot or unit number inside a Rent Manager subject line.
+ *
+ * The subject reads "1140 Northside #51, 1140 Northside Rd, Lot #51" -- the
+ * same number twice, written two ways, with the street address between them.
+ * What is wanted is 51.
+ *
+ * Returned as digits rather than as written, because our own labels are
+ * variously "#51", "Lot 51" and "51" depending on who typed them in, and
+ * comparing the digits is the only comparison that holds across all three.
+ */
+export function lotDigits(hint: string | null | undefined): string | null {
+  if (!hint) return null;
+  // "#51" and "Lot 51" are both the lot; a bare "1140" at the start of the
+  // string is the street number and is not.
+  // No word boundary after the digits: "Unit 3B" is lot 3, and \b between a
+  // digit and a letter does not exist, so requiring one dropped every
+  // letter-suffixed unit on the floor.
+  const m = /(?:#|\blot\s*#?\s*|\bunit\s*#?\s*|\bapt\s*#?\s*)(\d{1,5})/i.exec(hint);
+  return m ? m[1] : null;
+}
+
+/** The property part of the same subject line: everything before the first
+ *  lot marker, which is how Rent Manager writes it. */
+export function propertyHint(hint: string | null | undefined): string | null {
+  if (!hint) return null;
+  const head = hint.split(",")[0].trim();
+  const cut = head.replace(/\s*(?:#|\blot\b|\bunit\b|\bapt\b).*$/i, "").trim();
+  return cut || null;
+}
