@@ -1,8 +1,17 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { dueState, dueLabel } from "@/lib/dispatch";
 
-export type Job = { id: string; summary: string; status: string; dueAt: string | null };
+export type Job = {
+  id: string; summary: string; status: string; dueAt: string | null;
+  /** Who is carrying it out -- a vendor by preference, a member of staff
+   *  otherwise. Null while nobody has it. */
+  who?: string | null;
+  /** The vendor's contact id, which is also their thread. Present only for a
+   *  vendor: a colleague's half of the job is in team chat, not here. */
+  whoId?: string | null;
+};
 
 /**
  * What this person already has outstanding, above the conversation.
@@ -38,6 +47,17 @@ export default function OpenJobs({ jobs }: { jobs: Job[] }) {
             <li key={j.id} className={`due-${dueState(j.dueAt)}`}>
               <span className="js">{j.summary}</span>
               <span className="jd">{dueLabel(j.dueAt)}</span>
+              {/* The plumber's name, and a way through to what he actually
+                  said. Before this, his half of the job lived in a thread
+                  with no route to it from the job itself -- fine with one
+                  plumber and one job, useless with three of each. */}
+              {j.who && (
+                <span className="jv">
+                  {j.whoId
+                    ? <Link href={`/c/by-contact/${j.whoId}`}>{j.who}</Link>
+                    : j.who}
+                </span>
+              )}
             </li>
           ))}
         </ul>

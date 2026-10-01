@@ -10,6 +10,7 @@ import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
 import CategoryPicker from "./CategoryPicker";
 import OpenJobs, { type Job } from "./OpenJobs";
+import VendorJobs, { type VendorJob } from "./VendorJobs";
 import Bubble from "./Bubble";
 import ContactEditor from "./ContactEditor";
 import Avatar from "@/components/Avatar";
@@ -28,6 +29,8 @@ type Thread = {
   media: Record<string, string>;
   reads: Read[];
   jobs: Job[];
+  /** Jobs this person is carrying out for us, where they are a vendor. */
+  doing: VendorJob[];
   me: string;
   meName: string;
 };
@@ -195,6 +198,10 @@ export default function ThreadPane(
       </div>
 
       <OpenJobs jobs={data.jobs ?? []} />
+      {/* Two different questions, and a vendor's thread only has an answer to
+          the second: what is outstanding at this address, and what is this
+          person doing for us. */}
+      <VendorJobs jobs={data.doing ?? []} />
 
       {convo.category_confidence !== null && convo.category_confidence < 0.75 && (
         <div className="unsure">
