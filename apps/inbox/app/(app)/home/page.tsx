@@ -48,7 +48,7 @@ export default async function Home() {
     // which work. The same rows now serve both the number at the top and the
     // list below it, so they cannot disagree.
     supabase.from("work_orders")
-      .select("id, summary, urgency, status, scheduled_for, created_at, conversation_id, units(label, properties(name))")
+      .select("id, summary, urgency, status, scheduled_for, created_at, conversation_id, units(label, properties(name)), staff:assigned_tech(full_name)")
       .not("status", "in", `(${DONE.join(",")})`),
     supabase.from("units").select("id, is_vacant, monthly_rent, available_on"),
     supabase.from("showings").select("id, scheduled_for, attended")
@@ -84,6 +84,7 @@ export default async function Home() {
       where: unit
         ? [property, unit.label].filter(Boolean).join(" · ")
         : property,
+      who: (j.staff as unknown as { full_name: string } | null)?.full_name ?? null,
     };
   });
   const urgent = jobs.filter((j) => (j.urgency ?? 3) <= 2).length;

@@ -29,9 +29,21 @@ const sqNo = routeEmail(SQUARESPACE_NO_CONSENT);
 const sqDecl = routeEmail(SQUARESPACE_DECLINED);
 const sqMaint = routeEmail(SQUARESPACE_MAINTENANCE);
 const cf = parseCourtFiling(COURT_FILING);
-const junk = routeEmail({
-  from: "newsletter@example.com", to: "x@y.com",
-  subject: "Weekly digest", messageId: "<n@x>", text: "Nothing here.",
+// Nothing reaches this router by accident: every message arrived through a
+// Gmail filter somebody wrote. So an unrecognised sender opens a thread --
+// the filter was the decision about what matters, and second-guessing it in
+// code is how a tenant who wrote a paragraph instead of using the portal
+// vanished without trace.
+const plain = routeEmail({
+  from: "Winston Miller <winston@example.com>", to: "info@larabeehomesllc.com",
+  subject: "Gate code", messageId: "<n@x>",
+  text: "Hi, the gate code stopped working for me. My number is (386) 983-1466.",
+});
+// Mail that exists only to administer the pipe is still dropped. A thread per
+// forwarding retry is how an inbox becomes unusable.
+const noise = routeEmail({
+  from: "forwarding-noreply@google.com", to: "x@y.com",
+  subject: "Gmail Forwarding Confirmation", messageId: "<g@x>", text: "code 12345",
 });
 
 const checks = [
@@ -50,7 +62,16 @@ const checks = [
   ["[BLANK_AUDIO] still opens a thread", !!blank],
   ["[BLANK_AUDIO] is labelled, not shown as a transcript",
     !!blank?.summary.includes("no speech recorded")],
-  ["unrecognised sender matches no parser", junk === null],
+  ["an ordinary forwarded email opens a thread", plain !== null],
+  ["it is a conversation, never a job -- prose is not a work order",
+   plain?.category === "other"],
+  ["the sender's name comes from the display name, not the address",
+   plain?.name === "Winston Miller"],
+  ["and the address is kept", plain?.email === "winston@example.com"],
+  ["a phone number in the body is picked up, so it merges with their texts",
+   !!plain?.phone?.includes("983-1466")],
+  ["the subject becomes what the office sees first", plain?.summary === "Gate code"],
+  ["a forwarding confirmation is not somebody writing to us", noise === null],
 
   // Zillow arrives in two templates: first contact uses "<Name> says:",
   // follow-ups use ALL-CAPS block labels with the value on the next line.

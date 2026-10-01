@@ -51,6 +51,10 @@ export type JobRow = {
   conversationId: string | null;
   /** "1140 Northside · Lot #51", or null when nobody has said where it is. */
   where: string | null;
+  /** Who is on it. Null is not "nobody cares" -- a job reported an hour ago
+   *  has nobody on it yet and that is fine -- but a week-old job with nobody
+   *  on it is the thing this column exists to make visible. */
+  who: string | null;
 };
 
 /** Worst first, and "worst" is a sentence rather than a column: an emergency
