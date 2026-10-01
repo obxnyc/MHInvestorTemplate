@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { signMedia } from "@/lib/media";
 import { dueState, dueLabel } from "@/lib/dispatch";
 import JobDone from "@/components/JobDone";
+import InvoiceForm, { type PriorInvoice } from "@/components/InvoiceForm";
+import { currentOf, money, type Invoice } from "@/lib/invoices";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,37 @@ export default async function Jobs({ params }: { params: Promise<{ token: string
   const signed = await signMedia(
     db, (jobs ?? []).flatMap((j) => (j.reported_photos ?? []) as string[]), 900,
   );
+
+  // What they have already billed, so the form offers a correction rather
+  // than a second invoice. Asked tolerantly: this column arrives with
+  // migration 029, and a vendor must be able to see their jobs and send
+  // photographs on a database that has not had it run yet.
+  const billed = new Map<string, PriorInvoice>();
+  const { data: invoices } = await db.from("vendor_invoices")
+    .select("id, work_order_id, amount_cents, invoice_no, description, file_path, replaces, reason, created_at, emailed_at, rm_pushed_at")
+    .in("work_order_id", (jobs ?? []).map((j) => j.id))
+    .eq("vendor_id", vendor.id);
+  for (const job of jobs ?? []) {
+    const chain: Invoice[] = (invoices ?? [])
+      .filter((i) => i.work_order_id === job.id)
+      .map((i) => ({
+        id: i.id, amountCents: i.amount_cents, invoiceNo: i.invoice_no,
+        description: i.description, filePath: i.file_path, replaces: i.replaces,
+        reason: i.reason, createdAt: i.created_at,
+        emailedAt: i.emailed_at, rmPushedAt: i.rm_pushed_at,
+      }));
+    const live = currentOf(chain);
+    if (live) {
+      billed.set(job.id, {
+        id: live.id,
+        amount: money(live.amountCents),
+        invoiceNo: live.invoiceNo,
+        submitted: new Date(live.createdAt).toLocaleDateString("en-US", {
+          timeZone: "America/New_York", month: "short", day: "numeric",
+        }),
+      });
+    }
+  }
 
   return (
     <main className="jobs">
@@ -82,6 +115,7 @@ export default async function Jobs({ params }: { params: Promise<{ token: string
               )}
 
               <JobDone token={token} jobId={j.id} />
+              <InvoiceForm token={token} jobId={j.id} prior={billed.get(j.id) ?? null} />
             </li>
           );
         })}

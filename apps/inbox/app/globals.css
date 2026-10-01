@@ -1253,6 +1253,32 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
    here" to collapse it into, it IS the answer. */
 .vendorjobs button{cursor:default}
 .vendorjobs button:disabled{opacity:1}
+
+/* ---- a vendor billing for a job ---- */
+/* Opens closed. Most visits to this page are to look at a photograph or mark
+   something done, and a form under every job turns it into paperwork. */
+.invrow{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-top:.6rem}
+.invprior{font-size:.78rem;color:var(--muted)}
+.invopen{padding:.35rem .8rem;border:1px solid var(--hair);border-radius:999px;
+  background:var(--card);font-size:.78rem;font-weight:700;color:var(--ink-2)}
+.invopen:hover{border-color:var(--accent);color:var(--accent-ink)}
+.invform{margin-top:.6rem;padding:.8rem;border:1px solid var(--hair);
+  border-radius:10px;background:var(--sunk);display:grid;gap:.6rem}
+.invform label{display:grid;gap:.25rem;font-size:.76rem;font-weight:700;
+  color:var(--ink-2)}
+.invform .opt{font-weight:500;color:var(--faint)}
+.invform input,.invform textarea{padding:.5rem .65rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:.9rem;font-weight:400}
+.invform textarea{resize:vertical}
+/* Said before the button is pressed, not after. A form that implies an
+   amount can be quietly fixed later gets a careless number first time. */
+.invfinal{margin:0;font-size:.74rem;line-height:1.45;color:var(--muted)}
+.invwarn{margin:0;padding:.5rem .65rem;border-radius:8px;background:var(--warn-soft);
+  color:var(--warn);font-size:.78rem;line-height:1.45}
+.invacts{display:flex;gap:.5rem;justify-content:flex-end}
+.invdone{margin-top:.6rem;padding:.5rem .7rem;border-radius:8px;
+  background:var(--tn-soft);color:var(--tn-ink);font-size:.82rem}
 .badge.jurgent{background:var(--crit);color:#fff}
 .badge.jlate{background:var(--warn-soft);color:var(--warn)}
 .badge.j-waiting{background:var(--sunk);color:var(--muted)}

@@ -45,6 +45,7 @@ export async function runSetupChecks(
     ...(await guardAsync("Database", databaseChecks)),
     ...(await guardAsync("Migrations", migrationChecks)),
     ...(await guardAsync("Email intake", intakeChecks)),
+    ...guard("Bookkeeper", bookkeeperCheck),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
 }
@@ -510,6 +511,8 @@ const MIGRATIONS: { id: string; what: string; table: string; column: string }[] 
     table: "notes", column: "media_paths" },
   { id: "027", what: "Photos and files in the team's own messages",
     table: "dm_messages", column: "media_paths" },
+  { id: "029", what: "Vendor invoices that cannot be rewritten",
+    table: "vendor_invoices", column: "amount_cents" },
 ];
 
 /** 021 only widens a constraint, so there is no column to look for. It is
@@ -651,6 +654,33 @@ function buildCheck(): Check {
  * actually turned up lately. The second is the one that catches a pipe that
  * was connected once and then quietly broke.
  */
+/** Where a vendor invoice goes the moment it is submitted.
+ *
+ *  Worth its own line because the failure is silent and expensive: invoices
+ *  keep arriving, the record is perfect, and nobody is told. The vendor sees
+ *  "the office has it" and is right; the bookkeeper simply never hears. */
+function bookkeeperCheck(): Check[] {
+  const to = (process.env.BOOKKEEPER_EMAIL ?? "").trim();
+  if (to) {
+    return [{
+      name: "Invoices reach the bookkeeper", level: "good",
+      detail: `Every invoice a vendor submits is emailed to ${to} as it arrives,`
+        + " and so is every correction, naming what it replaced and why.",
+    }];
+  }
+  return [{
+    name: "Nobody is told when an invoice arrives",
+    level: "warn",
+    detail: "BOOKKEEPER_EMAIL is not set. Vendor invoices are still recorded"
+      + " and still cannot be edited — nothing is lost — but no email goes"
+      + " out, so the first anybody hears of a bill is when somebody opens"
+      + " the job.",
+    fix: "Add BOOKKEEPER_EMAIL to the hosting dashboard with the address that"
+      + " should receive them, then redeploy. POSTMARK_SERVER_TOKEN has to be"
+      + " set as well — it is what actually sends.",
+  }];
+}
+
 async function intakeChecks(): Promise<Check[]> {
   const secret = (process.env.INTAKE_SECRET ?? "").trim();
   if (!secret) {
