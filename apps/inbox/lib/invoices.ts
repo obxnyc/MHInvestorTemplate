@@ -91,3 +91,23 @@ export function whatChanged(from: Invoice, to: Invoice): string[] {
   }
   return out;
 }
+
+/**
+ * Who gets told, out of BOOKKEEPER_EMAIL.
+ *
+ * One address or several, separated however somebody felt like separating
+ * them in a hosting dashboard at nine at night -- commas, semicolons, a
+ * newline from a paste. All of those are the same intention and none of them
+ * should be the reason a bookkeeper stops hearing about invoices.
+ *
+ * Anything without an @ in it is dropped rather than sent to. A typo that
+ * silently becomes a recipient is how a bounce queue starts.
+ */
+export function recipients(raw: string | undefined | null): string[] {
+  return (raw ?? "")
+    .split(/[,;\n]/)
+    .map((a) => a.trim())
+    .filter((a) => a.includes("@") && !a.includes(" "))
+    // The same address twice is one email, not two.
+    .filter((a, i, all) => all.indexOf(a) === i);
+}

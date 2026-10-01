@@ -23,6 +23,7 @@
 import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { recipients } from "./invoices";
 
 type Level = "good" | "bad" | "warn";
 export type Check = { name: string; level: Level; detail: string; fix?: string };
@@ -660,12 +661,12 @@ function buildCheck(): Check {
  *  keep arriving, the record is perfect, and nobody is told. The vendor sees
  *  "the office has it" and is right; the bookkeeper simply never hears. */
 function bookkeeperCheck(): Check[] {
-  const to = (process.env.BOOKKEEPER_EMAIL ?? "").trim();
-  if (to) {
+  const to = recipients(process.env.BOOKKEEPER_EMAIL);
+  if (to.length) {
     return [{
       name: "Invoices reach the bookkeeper", level: "good",
-      detail: `Every invoice a vendor submits is emailed to ${to} as it arrives,`
-        + " and so is every correction, naming what it replaced and why.",
+      detail: `Every invoice a vendor submits is emailed to ${to.join(", ")} as it`
+        + " arrives, and so is every correction, naming what it replaced and why.",
     }];
   }
   return [{
@@ -676,8 +677,9 @@ function bookkeeperCheck(): Check[] {
       + " out, so the first anybody hears of a bill is when somebody opens"
       + " the job.",
     fix: "Add BOOKKEEPER_EMAIL to the hosting dashboard with the address that"
-      + " should receive them, then redeploy. POSTMARK_SERVER_TOKEN has to be"
-      + " set as well — it is what actually sends.",
+      + " should receive them — several, separated by commas, if more than one"
+      + " person should — then redeploy. POSTMARK_SERVER_TOKEN has to be set as"
+      + " well, since it is what actually sends.",
   }];
 }
 
