@@ -8,10 +8,26 @@ export const dynamic = "force-dynamic";
 
 /** Constant-time compare so the shared secret can't be recovered by timing. */
 function secretOk(given: string | null) {
-  const want = process.env.INTAKE_SECRET;
-  if (!want || !given) return false;
-  const a = Buffer.from(given), b = Buffer.from(want);
-  return a.length === b.length && timingSafeEqual(a, b);
+  // Trimmed, because a value pasted into a hosting dashboard collects a
+  // trailing newline more often than anyone admits, and an untrimmed one
+  // rejects every request while looking perfectly correct in the box. The
+  // Twilio token has been trimmed for this reason since the beginning; this
+  // one was not, and spent an afternoon answering 401 to a webhook whose
+  // secret was right.
+  const want = (process.env.INTAKE_SECRET ?? "").trim();
+  const got = (given ?? "").trim();
+  if (!want || !got) return false;
+
+  const a = Buffer.from(got), b = Buffer.from(want);
+  const ok = a.length === b.length && timingSafeEqual(a, b);
+  if (!ok) {
+    // Lengths, never values. "Both 32" says the secrets differ; "32 and 33"
+    // says one of them has something on the end of it, and those are two
+    // different afternoons.
+    console.error("intake: secret did not match",
+      { configured: want.length, received: got.length });
+  }
+  return ok;
 }
 
 /**
