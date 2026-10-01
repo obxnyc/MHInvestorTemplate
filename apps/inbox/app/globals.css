@@ -1199,6 +1199,52 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dwhen{margin-left:auto;color:var(--faint);font-size:.76rem;font-weight:500;flex:none}
 .dashnone{margin:0;color:var(--muted);font-size:.87rem;line-height:1.6}
+
+/* ---- open repairs, on the dashboard ---- */
+/* Shares the shell of .dashlist and parts company over the middle: a repair
+   needs three things said at once -- where, what, and what is happening --
+   where a conversation row needs one line of preview. */
+.joblist{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+.joblist li{min-width:0}
+.joblist a,.joblist .nolink{display:flex;align-items:center;gap:.55rem;
+  padding:.7rem .9rem;border:1px solid var(--hair);border-radius:var(--radius);
+  background:var(--card)}
+.joblist a:hover{border-color:var(--accent)}
+/* An emergency or a job past its date earns an edge, not a fill. A row that
+   shouts in colour stops being read once there are four of them. */
+.joblist li.hot a,.joblist li.hot .nolink{border-left:3px solid var(--crit)}
+/* The address gives way last. A 40% cap looked tidy and cut "The Retreat at
+   Cross Creek · Lady Cheryl 12" down to "The Retreat at Cross Cr…", which is
+   the one field on the row that has to survive -- a repair is a place before
+   it is anything else. So the fault description shrinks three times faster and
+   the address only truncates when there is genuinely nowhere left. */
+.jwhere{font-weight:700;font-size:.9rem;white-space:nowrap;
+  flex:0 1 auto;min-width:0;max-width:min(26rem,70%);
+  overflow:hidden;text-overflow:ellipsis}
+.jwhat{flex:1 3 0;min-width:0;color:var(--ink-2);font-size:.84rem;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jtags{display:flex;gap:.3rem;flex:none;align-items:center}
+.jwhen{margin-left:.2rem;color:var(--faint);font-size:.76rem;font-weight:500;flex:none}
+.badge.jurgent{background:var(--crit);color:#fff}
+.badge.jlate{background:var(--warn-soft);color:var(--warn)}
+.badge.j-waiting{background:var(--sunk);color:var(--muted)}
+.badge.j-moving{background:var(--tn-soft);color:var(--tn-ink)}
+.badge.j-stuck{background:var(--vd-soft);color:var(--vd-ink)}
+.allof{margin-left:auto;font-size:.68rem;font-weight:600;letter-spacing:0;
+  text-transform:none;color:var(--accent)}
+@media (max-width:560px){
+  /* On a phone the three facts stack rather than fight for one line: the
+     address stays on top, the fault gets a line of its own, and the pills sit
+     under both. Truncating all three to nothing is how a list becomes
+     decoration. */
+  .joblist a,.joblist .nolink{flex-wrap:wrap}
+  /* Wraps rather than truncates. On a phone there is no width to win back,
+     and "1140 Northside · Lo…" is not an address -- two lines is. */
+  .jwhere{max-width:100%;flex-basis:100%;white-space:normal}
+  .jwhat{flex-basis:100%;order:3;white-space:normal}
+  .jtags{order:4;flex-wrap:wrap}
+  .jwhen{margin-left:auto}
+}
 .dashgo{color:var(--accent);font-weight:600}
 @media (max-width:560px){
   .dashlist a{flex-wrap:wrap}
