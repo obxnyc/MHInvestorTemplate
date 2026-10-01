@@ -53,14 +53,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const unitId = (convo as { unit_id?: string | null }).unit_id
     ?? (convo.contacts as unknown as { unit_id?: string | null } | null)?.unit_id
     ?? null;
+  const contactId = (convo.contacts as unknown as { id?: string } | null)?.id ?? null;
 
   const jobsQuery = supabase
     .from("work_orders")
-    .select("id, summary, status, due_at, assigned_vendor, assigned_tech")
+    .select("id, summary, status, due_at, assigned_vendor, assigned_tech, conversation_id, vendor:assigned_vendor(id, full_name), tech:assigned_tech(full_name), units(label, properties(name))")
     .neq("status", "done")
     .order("due_at", { ascending: true, nullsFirst: false });
 
-  const [{ data: messages }, { data: notes }, { data: reads }, { data: jobs }] = await Promise.all([
+  const [{ data: messages }, { data: notes }, { data: reads }, { data: jobs }, { data: doing }] =
+    await Promise.all([
     supabase.from("messages")
       .select("id, direction, body, body_en, lang, status, channel, created_at, media_paths, staff:sent_by(full_name)")
       .eq("conversation_id", id).order("created_at"),
@@ -80,6 +82,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // every thread they ever open. By conversation otherwise, which is the
     // best that can be done for a number not yet tied to an address.
     unitId ? jobsQuery.eq("unit_id", unitId) : jobsQuery.eq("conversation_id", id),
+    // Separately: the jobs this person is doing, as opposed to the jobs at
+    // their address. A plumber's thread had neither -- he has no unit and the
+    // job belongs to the tenant's conversation -- so his own thread showed
+    // nothing about the work he was standing in front of.
+    contactId
+      ? supabase.from("work_orders")
+          .select("id, summary, status, due_at, conversation_id, units(label, properties(name)), contacts:conversation_id(id)")
+          .eq("assigned_vendor", contactId).neq("status", "done")
+          .order("due_at", { ascending: true, nullsFirst: false })
+      : Promise.resolve({ data: [] as unknown[] }),
   ]);
 
   // One signing call for the whole thread rather than one per picture: each is
@@ -102,7 +114,28 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     })),
     jobs: (jobs ?? []).map((j) => ({
       id: j.id, summary: j.summary, status: j.status, dueAt: j.due_at,
+      // Who is actually doing it, and where to go to read what they said.
+      // Without this the plumber's half of the job lived in a thread with no
+      // way to reach it from the job.
+      who: (j.vendor as unknown as { full_name: string } | null)?.full_name
+        ?? (j.tech as unknown as { full_name: string } | null)?.full_name ?? null,
+      whoId: (j.vendor as unknown as { id: string } | null)?.id ?? null,
     })),
+    // The jobs this person is carrying out, for a vendor's own thread.
+    doing: ((doing ?? []) as Record<string, unknown>[]).map((j) => {
+      const unit = j.units as unknown as
+        { label: string; properties: { name: string } | null } | null;
+      return {
+        id: j.id as string,
+        summary: j.summary as string,
+        status: j.status as string,
+        dueAt: (j.due_at ?? null) as string | null,
+        conversationId: (j.conversation_id ?? null) as string | null,
+        where: unit
+          ? [unit.properties?.name, unit.label].filter(Boolean).join(" · ")
+          : null,
+      };
+    }),
     me: staff.id,
     meName: staff.full_name,
   });

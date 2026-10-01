@@ -1244,6 +1244,15 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   font-weight:600;color:var(--accent);text-decoration:underline}
 .rawmail{margin:.5rem 0 0;font-size:.74rem;line-height:1.45;color:var(--muted);
   white-space:pre-wrap;word-break:break-word;font-family:inherit}
+
+/* Who is on a job, and the way through to what they said about it. */
+.jv{font-size:.72rem;font-weight:600;color:var(--muted)}
+.jv a{color:var(--accent);text-decoration:none}
+.jv a:hover{text-decoration:underline}
+/* A vendor's strip is always open: there is no "what else is outstanding
+   here" to collapse it into, it IS the answer. */
+.vendorjobs button{cursor:default}
+.vendorjobs button:disabled{opacity:1}
 .badge.jurgent{background:var(--crit);color:#fff}
 .badge.jlate{background:var(--warn-soft);color:var(--warn)}
 .badge.j-waiting{background:var(--sunk);color:var(--muted)}
