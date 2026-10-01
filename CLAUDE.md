@@ -31,9 +31,35 @@ https://mh-investor-template.vercel.app
 and has never resolved. `app.larabeehomesllc.com` already points at Vercel and
 is the domain the owner wants; DNS for `larabeehomesllc.com` is at Squarespace.
 
-Where a deep link needs an account or project id nobody here has — Supabase and
-Vercel dashboards — give the top-level link plus the clicks from there, and say
-why it cannot be exact.
+### Vercel
+
+Team slug `larabee-inbox`, project `mh-investor-template`.
+
+| Screen | Link |
+| --- | --- |
+| Environment variables | https://vercel.com/larabee-inbox/mh-investor-template/settings/environment-variables |
+| Deployments | https://vercel.com/larabee-inbox/mh-investor-template/deployments |
+| Domains | https://vercel.com/larabee-inbox/mh-investor-template/settings/domains |
+| Runtime logs | https://vercel.com/larabee-inbox/mh-investor-template/logs |
+
+Not https://vercel.com/dashboard, and not the team-wide Environment Variables
+page in the left sidebar — that one lists every project's variables and has no
+Add button, which cost a round trip.
+
+`ANTHROPIC_API_KEY` exists three times, one per environment. Production is the
+one that matters; replacing only Development changes nothing and reads as the
+fix having failed.
+
+### Supabase
+
+No project id here yet. Give https://supabase.com/dashboard/projects plus the
+clicks, and say why it cannot be exact. Ask for the address bar once and this
+section stops being a paragraph.
+
+### The rule when an id is missing
+
+Give the top-level link plus the clicks, say why it cannot be exact, and ask
+the owner to paste the address bar when they land. Then write it down here.
 
 ## Shipping
 
