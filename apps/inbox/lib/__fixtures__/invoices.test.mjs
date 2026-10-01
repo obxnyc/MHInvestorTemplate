@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const js = ts.transpileModule(readFileSync(join(here, "..", "invoices.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { parseMoney, money, currentOf, chronological, whatChanged } =
+const { parseMoney, money, currentOf, chronological, whatChanged, recipients } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
 const checks = [];
@@ -89,6 +89,21 @@ t("nothing in, nothing out", currentOf([]) === null);
   t("a newly attached file is noticed",
     whatChanged(from, to).some((s) => s.includes("new file")));
 }
+
+// --- who gets told ---
+t("one address is one address", recipients("books@x.com").join() === "books@x.com");
+// Commas, semicolons or a pasted newline are the same intention, and none of
+// them should be why a bookkeeper stops hearing about invoices.
+t("commas", recipients("a@x.com, b@x.com").length === 2);
+t("semicolons", recipients("a@x.com; b@x.com").length === 2);
+t("a pasted newline", recipients("a@x.com\nb@x.com").length === 2);
+t("stray spaces are trimmed", recipients("  a@x.com ,  b@x.com  ").join() === "a@x.com,b@x.com");
+t("the same person twice is one email", recipients("a@x.com, a@x.com").length === 1);
+// A typo that silently becomes a recipient is how a bounce queue starts.
+t("something with no @ is not an address", recipients("a@x.com, books").length === 1);
+t("and nor is something with a space in it", recipients("a@x.com, b c@x.com").length === 1);
+t("unset means nobody, not an empty string",
+  recipients(undefined).length === 0 && recipients("").length === 0);
 
 let failed = 0;
 for (const [n, ok] of checks) { console.log(`${ok ? "  ok" : "FAIL"}  ${n}`); if (!ok) failed++; }

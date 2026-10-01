@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { BUCKET, MAX_KEEP_BYTES, keepableExtension, safeName } from "@/lib/media";
-import { parseMoney, money } from "@/lib/invoices";
+import { parseMoney, money, recipients } from "@/lib/invoices";
 import { sendEmail } from "@/lib/notify";
 
 export const runtime = "nodejs";
@@ -124,8 +124,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     ? [unit.properties?.name, unit.label].filter(Boolean).join(" · ")
     : "address not set";
 
-  const to = (process.env.BOOKKEEPER_EMAIL ?? "").trim();
-  if (to) {
+  const to = recipients(process.env.BOOKKEEPER_EMAIL);
+  if (to.length) {
     const lines = [
       `${vendor.full_name ?? "A vendor"} submitted an invoice.`,
       "",
@@ -144,7 +144,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       + " one, naming what it replaced and why.",
     ].filter((l) => l !== null);
 
-    await sendEmail(to,
+    // One call with every recipient on it, so they can see each other and
+    // reply to each other rather than three people each assuming one of the
+    // others has dealt with it.
+    await sendEmail(to.join(", "),
       `${replaces ? "Corrected invoice" : "Invoice"} — ${money(amount)} — ${where}`,
       lines.join("\n"));
     await db.from("vendor_invoices")
@@ -153,5 +156,5 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     console.warn("invoice submitted but BOOKKEEPER_EMAIL is not set", { id: row.id });
   }
 
-  return NextResponse.json({ ok: true, id: row.id, amount: money(amount), emailed: !!to });
+  return NextResponse.json({ ok: true, id: row.id, amount: money(amount), emailed: to.length });
 }
