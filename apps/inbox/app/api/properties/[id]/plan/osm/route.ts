@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { RETREAT, boundaryOf } from "@/lib/parkplan";
 import {
-  roadQuery, buildingQuery, boxAround, buildingsOf, roadsOf, areasOf, parkAround,
-  assign, orientedBox, sameStreet, placeFromRoads, midOf,
+  roadQuery, landQuery, buildingQuery, boxAround, buildingsOf, roadsOf, areasOf,
+  parkAround, assign, orientedBox, sameStreet, placeFromRoads, midOf, nearestNames,
+  fitInside,
   type OsmElement, type Box,
 } from "@/lib/osm";
 
@@ -48,7 +49,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     Number(url.searchParams.get("lat")) || RETREAT.centre[1],
   ];
 
-  // --- 1. the streets, and the land they sit on ---
+  // --- 1. the streets ---
   const wide = await ask(roadQuery(boxAround(from, 1500)), note, "the streets");
   if (!wide) {
     return NextResponse.json({
@@ -62,25 +63,37 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   note("Looked for the park's streets", roads.length > 0,
     roads.length
       ? [...new Set(roads.map((r) => r.name))].join(" and ")
-      : `none of ${wanted.join(" or ")} within 1.5 km — ${allRoads.length} other named roads are there`);
+      : `none of ${wanted.join(" or ")}. Nearest named roads: ${nearestNames(allRoads, from).join(", ") || "none at all"}`);
   if (!roads.length) {
     return NextResponse.json({
       steps,
-      error: "OpenStreetMap has no road by those names within a kilometre and a half, so there is nothing to hang the numbering on.",
+      error: `OpenStreetMap has no ${wanted.join(" or ")} within a kilometre and a half of where this park is thought to be. Nearest named roads there: ${nearestNames(allRoads, from).join(", ") || "none at all"}.`,
     });
   }
 
   // From here on the park's real position is known, and the guess is not
   // used again for anything.
   const here = midOf(roads[0].line);
-  const fit = placeFromRoads(RETREAT, roads);
+  let fit = placeFromRoads(RETREAT, roads);
   note("Pinned the plan to those streets", Boolean(fit),
     fit
       ? `rows run at ${Math.round(fit.bearing)}°, streets ${Math.round(fit.streetGap)} m apart`
       : "could not, so the drawn plan stays where it was");
 
   // --- 2. the property line ---
-  const parcel = parkAround(areasOf(wide), roads);
+  //
+  // Asked separately and asked small. Bundled in with the streets over a
+  // three-kilometre box, every back yard in Fayetteville came with it, the
+  // answer ran past Overpass's own time limit, and a server-side timeout
+  // comes back as an ordinary 200 with an empty list -- which read here as
+  // "there are no streets by those names" while the base map was drawing
+  // their street signs on the same screen.
+  const land = await ask(landQuery(boxAround(here, 500)), note, "the property line");
+  const parcel = land ? parkAround(areasOf(land), roads) : null;
+  // A row of thirteen homes is a hundred and twenty-six metres long whether
+  // or not the park is, so the ends hung outside the fence. The spacing is
+  // the only number here that was ever a guess, so it is the one that gives.
+  if (fit && parcel) fit = fitInside(fit, parcel.ring);
   note("Looked for the property line", Boolean(parcel),
     parcel
       ? `${parcel.name} — the real boundary, not a rectangle drawn round the homes`
@@ -139,8 +152,16 @@ async function ask(
         signal: AbortSignal.timeout(14_000),
       });
       if (!res.ok) { note(`Asked ${host} for ${what}`, false, `it answered ${res.status}`); continue; }
-      const json = (await res.json()) as { elements?: OsmElement[] };
+      const json = (await res.json()) as { elements?: OsmElement[]; remark?: string };
       const elements = Array.isArray(json.elements) ? json.elements : [];
+      // Overpass reports its own timeouts and memory limits as a remark on a
+      // perfectly ordinary 200 with an empty list. Read as success, that is
+      // indistinguishable from "this place has nothing in it", which is how
+      // a park with its street signs on screen came back as not existing.
+      if (json.remark) {
+        note(`Asked ${host} for ${what}`, false, `it gave up: ${json.remark}`);
+        continue;
+      }
       note(`Asked ${host} for ${what}`, true, `${elements.length} things came back`);
       return elements;
     } catch (e) {

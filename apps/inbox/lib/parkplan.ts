@@ -417,6 +417,14 @@ export function centreOn(plan: Plan, id: string, at: Tap): Plan {
   };
 }
 
+/** The reverse of localOf: a point so many metres along the rows and across
+ *  them, as a coordinate. */
+export function fromLocal(plan: Plan, along: number, across: number): Tap {
+  const per = degreesPerMetre(plan.centre[1]);
+  const p = toDegrees(plan.centre, along, across, rad(plan.bearing), per, plan.mirror);
+  return [p[0], p[1]];
+}
+
 /** A point in the park's own frame: metres along the rows, metres across
  *  them. The exact inverse of the placement maths above. */
 export function localOf(

@@ -26,12 +26,14 @@ writeFileSync(gen.osm, transpile("osm.ts")
   .replace(/(["'])\.\/parkplan\1/g, '"./.osm.parkplan.gen.mjs"'));
 let buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
     orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
-    areasOf, parkAround, inRing, roadQuery, buildingQuery;
+    areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
+    fitInside;
 let RETREAT, layOut, streetLines;
 try {
   ({ buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
      orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
-     areasOf, parkAround, inRing, roadQuery, buildingQuery } = await import(gen.osm));
+     areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
+     fitInside } = await import(gen.osm));
   ({ RETREAT, layOut, streetLines } = await import(gen.plan));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
@@ -274,6 +276,31 @@ elements.push(home(nextId++, 10, 300));
   t("and a point outside is not", !inRing([15, 5], sq));
 }
 
+// --- squeezed inside the fence ---
+{
+  const placed = placeFromRoads(RETREAT, roadsOf(elements));
+  // A park a hundred metres long cannot hold a hundred-and-twenty-six-metre
+  // row, and the ends were hanging out over the neighbours.
+  const tight = [
+    [LNG - 10 * dLng, LAT - 95 * dLat], [LNG + 100 * dLng, LAT - 95 * dLat],
+    [LNG + 100 * dLng, LAT + 35 * dLat], [LNG - 10 * dLng, LAT + 35 * dLat],
+    [LNG - 10 * dLng, LAT - 95 * dLat],
+  ];
+  const squeezed = fitInside(placed, tight);
+  t("a row too long for its park is squeezed", squeezed.padSpacing < placed.padSpacing);
+
+  const inside = layOut(squeezed).every((h) => inRing([h.lng, h.lat], tight));
+  t("and every home then sits inside the fence", inside);
+
+  // Only ever shrinks: a park with room to spare is drawn at the spacing it
+  // was given, not stretched to touch its own boundary.
+  const roomy = tight.map(([x, y]) => [x + (x - LNG) * 8, y + (y - LAT) * 8]);
+  t("a park with room to spare is left alone",
+    fitInside(placed, roomy).padSpacing === placed.padSpacing);
+  t("and a ring that is not a ring changes nothing",
+    fitInside(placed, [[0, 0]]).padSpacing === placed.padSpacing);
+}
+
 // --- the question asked ---
 {
   const b = boxAround([LNG, LAT], 420);
@@ -290,13 +317,28 @@ elements.push(home(nextId++, 10, 300));
   // Two questions, not one. A kilometre and a half of Fayetteville holds a
   // few named roads and thousands of buildings, and asking for both at that
   // radius is a reply nobody can wait for.
+  // Three small questions, not one big one. Every back yard in Fayetteville
+  // is tagged landuse, so asking for land over a three-kilometre box ran
+  // past Overpass's own time limit -- and a server-side timeout comes back
+  // as an ordinary 200 with an empty list, which reads as "this place has no
+  // streets in it".
   const wide = roadQuery(b);
-  t("the wide question asks for roads and land",
-    wide.includes('way["highway"]["name"]') && wide.includes('way["landuse"]'));
-  t("and not for buildings", !wide.includes('way["building"]'));
-  t("the tight question asks only for buildings",
+  t("the street question asks only for named roads",
+    wide.includes('way["highway"]["name"]')
+    && !wide.includes("landuse") && !wide.includes("building"));
+  t("the land question asks only for land",
+    landQuery(b).includes('way["landuse"]') && !landQuery(b).includes("highway"));
+  t("the building question asks only for buildings",
     buildingQuery(b).includes('way["building"]')
     && !buildingQuery(b).includes("highway"));
+}
+{
+  // When the streets are not there, say what is. An error that lists the
+  // neighbours is a fixable error; "none found" is a week of guessing.
+  const names = nearestNames(roadsOf(elements), [LNG, LAT], 5);
+  t("the nearest roads are named, with distances",
+    names.length === 2 && /Lady \w+ Drive \(\d+ m\)/.test(names[0]));
+  t("and the nearer one comes first", names[0].includes("Viola"));
 }
 
 const bad = checks.filter(([, ok]) => !ok);
