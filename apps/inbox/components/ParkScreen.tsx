@@ -97,11 +97,14 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    *  put on a map. */
   const onMap: MapLot[] = pull?.lots?.length
     ? pull.lots.map((l) => ({
-        id: l.label, label: l.label, lat: l.lat, lng: l.lng,
-        state: keep.has(l.label) ? ("candidate" as const) : ("bare" as const),
+        id: l.label, label: l.label, lat: l.lat, lng: l.lng, street: l.street,
+        // In a pull, the only question is in or out. Everything else about a
+        // home is unknown until it has been kept.
+        state: (keep.has(l.label) ? "bare" : "out") as MapLot["state"],
       }))
     : lots.filter((l) => l.lat !== null && l.lng !== null).map((l) => ({
         id: l.id, label: l.label, lat: l.lat as number, lng: l.lng as number,
+        street: null,
         state: (!l.sale ? (l.tenant ? "ours" : "bare")
           : l.tenant ? "let" : "empty") as MapLot["state"],
       }));
