@@ -1,0 +1,106 @@
+/** Reading a park out of a county map. No network: every function here is
+ *  pure. Run: node lib/__fixtures__/agol.test.mjs */
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import ts from "typescript";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const js = ts.transpileModule(readFileSync(join(here, "..", "agol.ts"), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const { appIdFrom, numberField, houseNumber, boxAround, toFractions } =
+  await import("data:text/javascript," + encodeURIComponent(js));
+
+const checks = [];
+const t = (n, ok) => checks.push([n, ok]);
+const near = (a, b, e = 1e-4) => Math.abs(a - b) < e;
+
+// --- the link somebody pastes ---
+const LINK = "https://www.arcgis.com/apps/webappviewer/index.html?id=a6ea68995c2349e9a177366288589be7";
+t("the id comes out of a webappviewer link",
+  appIdFrom(LINK) === "a6ea68995c2349e9a177366288589be7");
+t("and out of an appid= link",
+  appIdFrom("https://x.maps.arcgis.com/apps/instant/basic/index.html?appid=38fc8f0292b04ba0a300f801f17ae902")
+    === "38fc8f0292b04ba0a300f801f17ae902");
+t("a bare id is an id", appIdFrom("a6ea68995c2349e9a177366288589be7").length === 32);
+t("a link with no id in it gives nothing", appIdFrom("https://example.com/map") === null);
+
+// --- finding the field with the mailbox number in it ---
+t("HOUSE_NUM", numberField(["OBJECTID", "HOUSE_NUM", "ST_NAME"]) === "HOUSE_NUM");
+t("ADDRNUM", numberField(["ADDRNUM", "STREET"]) === "ADDRNUM");
+t("SITE_ADDRESS when that is all there is",
+  numberField(["OBJECTID", "SITE_ADDRESS"]) === "SITE_ADDRESS");
+// A parcel layer has owners and acreage and no number -- it is not the layer
+// we want, and saying so is better than picking the nearest thing.
+t("a parcel layer has no number field",
+  numberField(["OBJECTID", "OWNER", "ACREAGE", "PIN"]) === null);
+
+// --- the number itself ---
+t("a bare number", houseNumber("3107") === "3107");
+t("a number with the street after it", houseNumber("3107 LADY CHERYL DR") === "3107");
+t("a unit letter does not change the lot", houseNumber("3107-A") === "3107");
+t("nothing in, nothing out", houseNumber(null) === null && houseNumber("") === null);
+t("a street with no number is not a lot", houseNumber("LADY VIOLA DR") === null);
+
+// --- the search box ---
+{
+  const b = boxAround(35.09, -78.93, 250);
+  t("the box is centred on the park",
+    near((b.xmin + b.xmax) / 2, -78.93) && near((b.ymin + b.ymax) / 2, 35.09));
+  // Degrees of longitude are shorter this far north, so a square on the
+  // ground is not a square in degrees. Getting this wrong makes the box
+  // narrow and drops half a street.
+  t("longitude is widened for the latitude",
+    (b.xmax - b.xmin) > (b.ymax - b.ymin));
+}
+
+// --- where each lot lands on the plan ---
+{
+  // Four homes: one north-west, one north-east, one south-west, one
+  // south-east. Coordinates chosen so the answers are unambiguous.
+  const found = [
+    { label: "NW", lat: 35.10, lng: -78.94 },
+    { label: "NE", lat: 35.10, lng: -78.92 },
+    { label: "SW", lat: 35.08, lng: -78.94 },
+    { label: "SE", lat: 35.08, lng: -78.92 },
+  ];
+  const out = Object.fromEntries(toFractions(found).map((l) => [l.label, l]));
+
+  t("west is left of east", out.NW.x < out.NE.x);
+  // The one every map gets wrong once: north is UP on a map and DOWN is
+  // positive on a screen. Without the flip the park is drawn upside down and
+  // looks plausible until somebody stands in it.
+  t("north is ABOVE south on screen", out.NW.y < out.SW.y);
+  t("the four corners are the four corners",
+    near(out.NW.x, out.SW.x) && near(out.NE.x, out.SE.x)
+    && near(out.NW.y, out.NE.y) && near(out.SW.y, out.SE.y));
+
+  // Padded off the edge, so no home sits half outside the plan.
+  const all = Object.values(out);
+  t("nothing touches the edge",
+    all.every((l) => l.x > 0.05 && l.x < 0.95 && l.y > 0.05 && l.y < 0.95));
+}
+{
+  // A park on one street is a line, not a box. Dividing by a zero span is
+  // how every lot ends up stacked on one spot.
+  const line = toFractions([
+    { label: "1", lat: 35.09, lng: -78.94 },
+    { label: "2", lat: 35.09, lng: -78.93 },
+    { label: "3", lat: 35.09, lng: -78.92 },
+  ]);
+  t("a single row spreads across and does not collapse",
+    line[0].x < line[1].x && line[1].x < line[2].x);
+  t("and sits level", near(line[0].y, line[2].y));
+}
+t("no homes, no positions", toFractions([]).length === 0);
+{
+  const one = toFractions([{ label: "7", lat: 35.09, lng: -78.93 }]);
+  t("one home does not divide by zero",
+    one.length === 1 && Number.isFinite(one[0].x) && Number.isFinite(one[0].y));
+}
+
+let failed = 0;
+for (const [n, ok] of checks) { console.log(`${ok ? "  ok" : "FAIL"}  ${n}`); if (!ok) failed++; }
+console.log(`\n${checks.length - failed}/${checks.length} passed`);
+process.exit(failed ? 1 : 0);
