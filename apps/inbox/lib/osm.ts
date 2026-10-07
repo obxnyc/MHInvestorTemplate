@@ -314,12 +314,9 @@ function alongOf(line: number[][], seg: number, t: number, flip: boolean): numbe
 
 export type Matched = {
   id: string; label: string; street: string; side: "N" | "S"; ring: number[][];
-  /** No building on the map here: the pad is drawn, continuing the row. */
+  /** No building on the map here at all: position stepped off the row
+   *  rather than read from it. */
   drawn?: boolean;
-  /** A building was here but its outline is not a home -- the office, a
-   *  carport, two pads mapped as one -- so a standard pad was put at its
-   *  middle instead. */
-  redrawn?: boolean;
 };
 
 /** A ring's area in square metres. Measured locally, because a degree is
@@ -516,49 +513,57 @@ export function fillRow(
     ? bearingOf(centres[0], centres[centres.length - 1])
     : (plan.bearing + (back ? 180 : 0)) % 360;
 
-  // How many lots sit before the first building the map has. Every split is
-  // tried; the one whose row lands inside the property line wins, and a tie
-  // goes to the one that sits most evenly within it.
+  // How many lots sit before the first building the map has.
+  //
+  // Searching for the split that lands inside the park could never find
+  // one, because without a property line the park's extent was taken from
+  // the spread of the buildings themselves -- which leaves no room at
+  // either end by construction, so the answer was always nought and the
+  // leftovers always went on the far end. Measured instead: the distance
+  // from the park's western edge to the first building this row has,
+  // divided by the row's own spacing, is the number of lots in between.
   const spareLots = n - found.length;
   let before = 0;
   if (spareLots > 0 && edges) {
-    const margin = plan.size.width;
-    let best = Infinity;
-    for (let b = 0; b <= spareLots; b++) {
-      const start = found[0].along - dir * b * step;
-      const end = found[found.length - 1].along + dir * (spareLots - b) * step;
-      const lo = Math.min(start, end), hi = Math.max(start, end);
-      const out = Math.max(0, edges.lo + margin - lo) + Math.max(0, hi - (edges.hi - margin));
-      // Tie-break on how centred the row is, so a park with room to spare
-      // does not shove every gap to one end.
-      const score = out * 1000 + Math.abs((lo - edges.lo) - (edges.hi - hi));
-      if (score < best) { best = score; before = b; }
-    }
+    const edge = back ? edges.hi : edges.lo;
+    const slots = Math.round(Math.abs(found[0].along - edge) / step);
+    before = Math.max(0, Math.min(spareLots, slots));
   }
 
-  const mid = median(found.map((f) => areaOf(f.shape.ring)));
   const out: Matched[] = [];
   for (let k = 0; k < n; k++) {
     const label = row.numbers[k];
     const i = k - before;
+
     if (i >= 0 && i < found.length) {
-      const ring = found[i].shape.ring;
-      const area = areaOf(ring);
-      // The office, a carport, two pads traced as one: judged against the
-      // middle of its own row, and only where the row has enough homes for
-      // a middle to mean anything.
-      const odd = found.length >= 4 && mid > 0 && (area > mid * 2.2 || area < mid * 0.45);
-      out.push(mk(label, odd
-        ? footprint(centres[i][1], centres[i][0], rowBearing(centres, i) + 90, plan.size)
-        : ring, odd ? { redrawn: true } : {}));
+      // Every home in this park is the same model, so every pad is the
+      // same rectangle. Where the map has a building, it says where the
+      // pad is and which way it points -- not what shape it is. Some of
+      // these outlines are the office, a carport, or two pads traced as
+      // one, and drawing them as homes made a row of identical homes look
+      // like a row of different ones.
+      const axis = axisOf(found[i].shape.ring);
+      const turn = axis && axis.long / Math.max(axis.short, 0.01) > 1.6
+        ? axis.bearing
+        : (rowBearing(centres, i) + 90) % 360;
+      out.push(mk(label, footprint(centres[i][1], centres[i][0], turn, plan.size)));
       continue;
     }
+
     // A lot the map has never had. Stepped off its own row's spacing from
-    // whichever end it belongs to.
-    const from = i < 0 ? centres[0] : centres[centres.length - 1];
-    const steps = i < 0 ? i : i - found.length + 1;
-    const at = stepOn(from, bearing, steps * step, per);
-    out.push(mk(label, footprint(at[1], at[0], (bearing + 90) % 360, plan.size), { drawn: true }));
+    // whichever end it belongs to, along the way the row is going AT THAT
+    // END -- Lady Cheryl bends, so carrying on at the row's average angle
+    // walks the last pads off the street.
+    const head = i < 0;
+    const from = head ? centres[0] : centres[centres.length - 1];
+    const steps = head ? i : i - found.length + 1;
+    const local = centres.length > 1
+      ? (head
+          ? bearingOf(centres[0], centres[1])
+          : bearingOf(centres[centres.length - 2], centres[centres.length - 1]))
+      : bearing;
+    const at = stepOn(from, local, steps * step, per);
+    out.push(mk(label, footprint(at[1], at[0], (local + 90) % 360, plan.size), { drawn: true }));
   }
   return out;
 }
@@ -642,6 +647,30 @@ export function orientedBox(points: number[][], margin = 9): number[][] {
   const ring = best.corners.map(toDeg);
   ring.push(ring[0]);
   return ring;
+}
+
+/**
+ * Which way a building lies, and how long and wide it is.
+ *
+ * The smallest turned rectangle that holds it, which for a mobile home is
+ * the home. The long side's direction is the way the home points, and the
+ * two side lengths say whether the thing is a home at all -- a single-wide
+ * is about three and a half times as long as it is wide, and a shape that
+ * is nearly square is the office, a carport, or two pads traced as one.
+ */
+export function axisOf(ring: number[][]): { bearing: number; long: number; short: number } | null {
+  if (ring.length < 4) return null;
+  const box = orientedBox(ring, 0);
+  if (box.length < 5) return null;
+  const a = metresBetween([box[0][0], box[0][1]], [box[1][0], box[1][1]]);
+  const b = metresBetween([box[1][0], box[1][1]], [box[2][0], box[2][1]]);
+  const longer: [number[], number[]] = a >= b ? [box[0], box[1]] : [box[1], box[2]];
+  return {
+    bearing: half(bearingOf(
+      [longer[0][0], longer[0][1]], [longer[1][0], longer[1][1]],
+    )),
+    long: Math.max(a, b), short: Math.min(a, b),
+  };
 }
 
 /** Andrew's monotone chain, on metres. Closed ring. */
