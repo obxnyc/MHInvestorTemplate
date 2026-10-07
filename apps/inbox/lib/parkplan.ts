@@ -20,7 +20,7 @@
  * photograph answers in one drag.
  */
 
-import { footprint, degreesPerMetre, SINGLE_WIDE } from "./footprint";
+import { footprint, degreesPerMetre, bearingOf, metresBetween, SINGLE_WIDE } from "./footprint";
 
 /** Which side of its street a row sits on. Only used to put the row on the
  *  correct side of the line; north and south are the names because that is
@@ -198,34 +198,42 @@ function toDegrees(
 }
 
 /**
- * The park boundary: everything the homes cover, plus a margin.
+ * The park boundary: a rectangle around the homes, in the park's own frame.
  *
- * The owner drew this by hand on the county map and asked for it on screen,
- * and a hull around the homes is the same line for no upkeep -- add a lot at
- * the end of a row and the boundary follows it, which a typed-in polygon
- * would not.
+ * This was a convex hull with its corners pushed outward, and it came out a
+ * rounded blob -- because the four rows are different lengths, every corner
+ * of the hull was a different home sticking out at a different angle, and a
+ * uniform outward push turned the lot into a pebble. A park block is a
+ * rectangle. Measured along the rows and across them rather than in north
+ * and east, it stays a rectangle at any bearing, which a bounding box in
+ * degrees would not: turn that one by thirty degrees and it grows a quarter
+ * again in both directions.
  */
-export function boundaryOf(plan: Plan, margin = 14): number[][] {
+export function boundaryOf(plan: Plan, margin = 9): number[][] {
   const per = degreesPerMetre(plan.centre[1]);
-  const corners: number[][] = [];
+  const b = rad(plan.bearing);
+
+  let minA = Infinity, maxA = -Infinity, minC = Infinity, maxC = -Infinity;
   for (const h of layOut(plan)) {
-    for (const c of footprint(h.lat, h.lng, h.bearing, plan.size)) corners.push(c);
+    for (const c of footprint(h.lat, h.lng, h.bearing, plan.size)) {
+      const { along, across } = localOf(plan, plan.centre, [c[0], c[1]]);
+      if (along < minA) minA = along;
+      if (along > maxA) maxA = along;
+      if (across < minC) minC = across;
+      if (across > maxC) maxC = across;
+    }
   }
-  const hull = convexHull(corners);
-  if (hull.length < 3) return hull;
+  if (!Number.isFinite(minA)) return [];
 
-  const cx = hull.reduce((a, p) => a + p[0], 0) / hull.length;
-  const cy = hull.reduce((a, p) => a + p[1], 0) / hull.length;
-
-  // Pushed out from the middle by a fixed number of metres. Scaling the hull
-  // by a ratio instead would widen a long park far more at the ends than the
-  // sides, which reads as a mistake.
-  return hull.map(([x, y]) => {
-    const dx = (x - cx) / per.lng;
-    const dy = (y - cy) / per.lat;
-    const d = Math.hypot(dx, dy) || 1;
-    return [x + (dx / d) * margin * per.lng, y + (dy / d) * margin * per.lat];
-  });
+  const box: [number, number][] = [
+    [minA - margin, minC - margin],
+    [maxA + margin, minC - margin],
+    [maxA + margin, maxC + margin],
+    [minA - margin, maxC + margin],
+  ];
+  const ring = box.map(([along, across]) => toDegrees(plan.centre, along, across, b, per));
+  ring.push(ring[0]);
+  return ring;
 }
 
 /** Andrew's monotone chain. Closed ring, counter-clockwise. */
@@ -284,7 +292,130 @@ export function maskOf(plan: Plan, margin = 14): number[][][] {
     [-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85],
   ];
   // The hole must wind the opposite way to the outer ring or it is not a
-  // hole, it is a second filled shape sitting on top of the park.
-  const hole = [...boundaryOf(plan, margin)].reverse();
+  // hole, it is a second filled shape sitting on top of the park. Which way
+  // the boundary happens to come out depends on its bearing, so it is
+  // measured rather than assumed -- reversing unconditionally is right half
+  // the time and silently wrong the other half.
+  const ring = boundaryOf(plan, margin);
+  const hole = Math.sign(signedArea(ring)) === Math.sign(signedArea(world))
+    ? [...ring].reverse() : ring;
   return [world, hole];
+}
+
+/** Twice the signed area of a closed ring. Positive one way round,
+ *  negative the other; only the sign is ever wanted. */
+export function signedArea(ring: number[][]): number {
+  let a = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+  }
+  return a;
+}
+
+/** A point tapped on the aerial. */
+export type Tap = [number, number];
+
+/**
+ * The four pads to tap, in the order they are asked for.
+ *
+ * Four sliders and a drag asks somebody to find a bearing by eye, which is
+ * not a thing anybody can do -- and the answer only looks right when all
+ * four are right at once, so there is no way to tell which one is wrong.
+ * Tapping a pad you can see in the photograph is a thing anybody can do, and
+ * four of them pin the whole block exactly:
+ *
+ *   two along one row  -> which way the rows run, and how far apart the
+ *                         homes are, because the row's length divided by the
+ *                         gaps in it is the spacing
+ *   one across the road -> how wide that street is
+ *   one on the next street -> how far it is to the next street
+ *
+ * No arithmetic for anybody, and every tap is a number on a roof.
+ */
+export function fitTargets(plan: Plan): { id: string; label: string; street: string; say: string }[] {
+  const row = plan.rows[0];
+  if (!row || row.numbers.length < 2) return [];
+  const facing = plan.rows.find((r) => r.street === row.street && r.side !== row.side);
+  const next = plan.rows.find((r) => r.street !== row.street);
+
+  const at = (r: PlanRow, i: number, say: string) => ({
+    id: `${r.street}|${r.numbers[i]}`,
+    label: r.numbers[i], street: r.street, say,
+  });
+
+  const out = [
+    at(row, 0, "the first home on this row"),
+    at(row, row.numbers.length - 1, "the last home on the same row"),
+  ];
+  if (facing) out.push(at(facing, 0, "any home across the street from it"));
+  if (next) out.push(at(next, 0, "any home on the next street"));
+  return out;
+}
+
+/**
+ * The block placed from those taps.
+ *
+ * Applied as far as the taps go, so the park moves into place while it is
+ * being pinned rather than after the fourth one -- two taps already give the
+ * angle and the spacing, which is most of what was wrong.
+ */
+export function fitFromTaps(plan: Plan, taps: Tap[]): Plan {
+  const targets = fitTargets(plan);
+  if (taps.length < 2 || targets.length < 2) return plan;
+
+  const [a, b] = taps;
+  const row = plan.rows[0];
+  const gaps = row.numbers.length - 1;
+  const span = metresBetween(a, b);
+
+  let next: Plan = {
+    ...plan,
+    bearing: bearingOf(a, b),
+    // A row tapped end to end has one fewer gap in it than it has homes.
+    // Dividing by the count instead quietly shrinks the park by one pad,
+    // which reads as "nearly right" and never resolves.
+    padSpacing: gaps > 0 && span > 0 ? span / gaps : plan.padSpacing,
+  };
+
+  // The two cross-measurements are perpendicular distances from the first
+  // tap, which is why they are taken after the bearing is known and not
+  // before: across what, otherwise.
+  if (taps[2]) {
+    const across = Math.abs(localOf(next, a, taps[2]).across);
+    if (across > 1) next = { ...next, pairGap: across };
+  }
+  if (taps[3]) {
+    const across = Math.abs(localOf(next, a, taps[3]).across);
+    if (across > 1) next = { ...next, streetGap: across };
+  }
+
+  // Last, because every change above moves the reference home, and the one
+  // thing that must end up exactly where it was tapped is the home that was
+  // tapped.
+  return centreOn(next, targets[0].id, a);
+}
+
+/** The plan shifted so one named home sits exactly on a point. */
+export function centreOn(plan: Plan, id: string, at: Tap): Plan {
+  const home = layOut(plan).find((h) => h.id === id);
+  if (!home) return plan;
+  return {
+    ...plan,
+    centre: [plan.centre[0] + (at[0] - home.lng), plan.centre[1] + (at[1] - home.lat)],
+  };
+}
+
+/** A point in the park's own frame: metres along the rows, metres across
+ *  them. The exact inverse of the placement maths above. */
+export function localOf(
+  plan: Plan, origin: Tap, point: Tap,
+): { along: number; across: number } {
+  const per = degreesPerMetre(origin[1]);
+  const b = rad(plan.bearing);
+  const east = (point[0] - origin[0]) / per.lng;
+  const north = (point[1] - origin[1]) / per.lat;
+  return {
+    along: east * Math.sin(b) + north * Math.cos(b),
+    across: east * Math.cos(b) - north * Math.sin(b),
+  };
 }

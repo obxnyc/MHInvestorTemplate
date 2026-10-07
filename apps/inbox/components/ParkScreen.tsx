@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Lot } from "./ParkPlan";
-import ParkMap, { type LotFacts, type LotState } from "./ParkMap";
+import ParkMap, { type LotFacts, type LotState, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
-import { RETREAT, layOut, countOf, type Plan, type Placed } from "@/lib/parkplan";
+import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
+         type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { degreesPerMetre } from "@/lib/footprint";
 
 /**
@@ -27,6 +28,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<Plan>(RETREAT);
+  const [real, setReal] = useState<RealPark | null>(null);
+  const [taps, setTaps] = useState<Tap[]>([]);
+  const [osm, setOsm] = useState<{
+    steps?: { did: string; ok: boolean; say: string }[];
+    error?: string;
+    missing?: { street: string; side: string; short: number }[];
+  } | null>(null);
 
   // Where the block was dragged to last time. Kept in the browser rather
   // than the database so fitting works before the layout migrations have
@@ -85,7 +93,38 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   }, [propertyId]);
   useEffect(() => { void load(); }, [load]);
 
-  const placed = useMemo(() => layOut(plan), [plan]);
+  // The outlines OpenStreetMap already has. Asked for once, in the
+  // background: the drawn block is on screen the whole time, so this
+  // arriving late replaces a working map rather than filling an empty one,
+  // and this failing leaves a working map rather than nothing.
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      const res = await fetch(
+        `/api/properties/${propertyId}/plan/osm?lng=${RETREAT.centre[0]}&lat=${RETREAT.centre[1]}`,
+        { cache: "no-store" },
+      ).catch(() => null);
+      const out = await res?.json().catch(() => null);
+      if (gone || !out) { if (!gone) setOsm({ error: "Could not reach OpenStreetMap." }); return; }
+      setOsm(out);
+      if (out.ok && out.homes?.length) {
+        setReal({
+          homes: out.homes, streets: out.streets ?? [],
+          boundary: out.boundary ?? [], spare: out.spare ?? [],
+        });
+      }
+    })();
+    return () => { gone = true; };
+  }, [propertyId]);
+
+  const placed = useMemo<Placed[]>(() => (
+    real
+      ? real.homes.map((h) => ({
+          id: h.id, label: h.label, street: h.street,
+          side: "N" as const, lat: 0, lng: 0, bearing: 0,
+        }))
+      : layOut(plan)
+  ), [plan, real]);
   const match = useMemo(() => pair(placed, lots), [placed, lots]);
 
   const facts: LotFacts = useMemo(() => {
@@ -119,40 +158,82 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       <header className="parkhead">
         <h1>{name || "The park"}</h1>
         <div className="parkacts">
-          <button type="button" className={fitting ? "btn pri" : "btn"}
-                  onClick={() => { setFitting((v) => !v); setSelected(null); }}>
-            {fitting ? "Done fitting" : "Fit to the aerial"}
-          </button>
+          {!real && (
+            <button type="button" className={fitting ? "btn pri" : "btn"}
+                    onClick={() => { setFitting((v) => !v); setSelected(null); setTaps([]); }}>
+              {fitting ? "Done fitting" : "Fit to the aerial"}
+            </button>
+          )}
         </div>
       </header>
 
       {error && <p className="err">{error}</p>}
 
+      {/* Where the outlines came from. Said once, plainly, because a park
+          drawn from a description and a park drawn from the map look alike
+          on screen and are not the same claim. */}
+      {osm?.error && (
+        <p className="parkhint">
+          OpenStreetMap didn&rsquo;t answer, so these are drawn from the
+          park&rsquo;s own layout rather than its real outlines. Press{" "}
+          <strong>Fit to the aerial</strong> to put them over the pads.{" "}
+          <span className="dim">{osm.error}</span>
+        </p>
+      )}
+      {real && (
+        <p className="parkhint">
+          Real outlines, from OpenStreetMap.
+          {osm?.missing?.length
+            ? ` ${osm.missing.map((m) => `${m.street} is ${m.short} short`).join(", ")} — those lots aren't mapped there yet.`
+            : " Every lot found."}
+        </p>
+      )}
+
       {fitting && (
         <div className="parkfit">
           <p className="parkhint">
-            Switch to <strong>Aerial</strong>, then drag anywhere on the map to
-            slide the block onto the pads. Arrow keys move it a metre at a time
-            (hold Shift for five), <kbd>[</kbd> and <kbd>]</kbd> turn it half a
-            degree. The sliders do the rest.
+            Switch to <strong>Aerial</strong>, then tap four homes in the
+            photograph. That is enough to pin the whole park: two along one
+            row give the angle and the spacing, and the other two give the
+            width of the street and the distance to the next one.
           </p>
-          <Slider label="Turn" unit="°" min={0} max={359} step={1}
-                  value={plan.bearing}
-                  onChange={(v) => remember({ ...plan, bearing: v })} />
-          <Slider label="Along the row" unit=" m" min={6} max={20} step={0.25}
-                  value={plan.padSpacing}
-                  onChange={(v) => remember({ ...plan, padSpacing: v })} />
-          <Slider label="Across the street" unit=" m" min={18} max={55} step={0.5}
-                  value={plan.pairGap}
-                  onChange={(v) => remember({ ...plan, pairGap: v })} />
-          <Slider label="Street to street" unit=" m" min={30} max={110} step={0.5}
-                  value={plan.streetGap}
-                  onChange={(v) => remember({ ...plan, streetGap: v })} />
+          <ol className="parktaps">
+            {fitTargets(plan).map((want, i) => (
+              <li key={want.id} className={taps[i] ? "done" : i === taps.length ? "now" : ""}>
+                <strong>{want.label}</strong> {want.street}
+                <span className="dim"> — {want.say}</span>
+              </li>
+            ))}
+          </ol>
           <div className="invacts">
-            <button type="button" className="btn" onClick={() => remember(RETREAT)}>
+            <button type="button" className="btn" disabled={!taps.length}
+                    onClick={() => setTaps((p) => p.slice(0, -1))}>
+              Undo that tap
+            </button>
+            <button type="button" className="btn" onClick={() => { setTaps([]); remember(RETREAT); }}>
               Start over
             </button>
           </div>
+          <details className="parkmanual">
+            <summary>Or move it by hand</summary>
+            <p className="parkhint">
+              Drag anywhere on the map to slide the block. Arrow keys move it
+              a metre at a time, Shift five, <kbd>[</kbd> and <kbd>]</kbd>
+              turn it half a degree.
+            </p>
+            <Slider label="Turn" unit="°" min={0} max={359} step={1}
+                    value={plan.bearing}
+                    onChange={(v) => remember({ ...plan, bearing: v })} />
+            <Slider label="Along the row" unit=" m" min={6} max={20} step={0.25}
+                    value={plan.padSpacing}
+                    onChange={(v) => remember({ ...plan, padSpacing: v })} />
+            <Slider label="Across the street" unit=" m" min={18} max={55} step={0.5}
+                    value={plan.pairGap}
+                    onChange={(v) => remember({ ...plan, pairGap: v })} />
+            <Slider label="Street to street" unit=" m" min={30} max={110} step={0.5}
+                    value={plan.streetGap}
+                    onChange={(v) => remember({ ...plan, streetGap: v })} />
+          </details>
         </div>
       )}
 
@@ -175,8 +256,14 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       <div className={`parkmain${open ? " withcard" : ""}`}>
         <ParkMap
-          plan={plan} facts={facts} selected={selected} onSelect={setSelected}
-          fitting={fitting}
+          plan={plan} real={real} facts={facts}
+          selected={selected} onSelect={setSelected}
+          fitting={fitting} taps={taps}
+          onTap={(at) => {
+            const next = [...taps, at].slice(0, fitTargets(plan).length);
+            setTaps(next);
+            if (next.length >= 2) remember(fitFromTaps(plan, next));
+          }}
           onMove={(lng, lat) => remember({ ...plan, centre: [lng, lat] })}
         />
         {open && <LotCard lot={open} onClose={() => setSelected(null)} onChanged={load} />}
