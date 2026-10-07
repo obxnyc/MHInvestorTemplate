@@ -1846,3 +1846,90 @@ a.metric:hover{border-color:var(--accent)}
   .sitewrap{grid-template-columns:minmax(0,1fr)}
   .siteside{max-height:none}
 }
+
+
+/* ---- a park, drawn ---- */
+.parkpage{padding:1rem 1.1rem 2rem}
+.parkhead{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:.6rem}
+.parkhead h1{margin:0;font-size:1.3rem;font-weight:700;letter-spacing:-.02em}
+.parkacts{margin-left:auto;display:flex;gap:.5rem}
+.parkhint{margin:.5rem 0;font-size:.8rem;line-height:1.5;color:var(--muted)}
+
+/* The plan and the open pad, side by side on a desk and stacked on a phone --
+   where this is actually read, standing in the park. */
+.parkmain{display:grid;grid-template-columns:minmax(0,1fr) 20rem;gap:1rem;align-items:start}
+@media (max-width:860px){ .parkmain{grid-template-columns:minmax(0,1fr)} }
+
+.parkwrap{min-width:0}
+.park{display:block;width:100%;height:auto;aspect-ratio:1;background:var(--sunk);
+  border:1px solid var(--hair);border-radius:12px;touch-action:none}
+.park.editing{cursor:crosshair}
+
+/* One rectangle, four states. The two that cost money are the loud ones; a
+   let home is the ordinary case and should be quiet. */
+.pad rect{stroke:var(--hair);stroke-width:1.5;transition:none}
+.pad text{font-size:13px;font-weight:700;text-anchor:middle;fill:var(--ink-2);
+  pointer-events:none;font-variant-numeric:tabular-nums}
+.pad.let   rect{fill:var(--tn-soft);stroke:var(--tn)}
+.pad.ours  rect{fill:var(--pr-soft);stroke:var(--pr)}
+.pad.empty rect{fill:var(--vd-soft);stroke:var(--vd)}
+.pad.bare  rect{fill:var(--card);stroke:var(--faint);stroke-dasharray:3 2}
+.pad.on rect{stroke:var(--ink);stroke-width:3}
+.park.editing .pad{cursor:grab}
+.ghost{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3;
+  pointer-events:none}
+
+.parkkey{list-style:none;margin:.5rem 0 0;padding:0;display:flex;gap:.9rem;
+  flex-wrap:wrap;font-size:.74rem;color:var(--muted)}
+.parkkey li{display:flex;align-items:center;gap:.35rem}
+.parkkey .sw{width:.7rem;height:.7rem;border-radius:2px;border:1px solid var(--hair)}
+.parkkey .sw.let{background:var(--tn-soft);border-color:var(--tn)}
+.parkkey .sw.ours{background:var(--pr-soft);border-color:var(--pr)}
+.parkkey .sw.empty{background:var(--vd-soft);border-color:var(--vd)}
+.parkkey .sw.bare{background:var(--card);border-color:var(--faint)}
+
+/* ---- one pad, opened ---- */
+.lotcard{border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:.9rem 1rem;position:sticky;top:1rem}
+.lotcard header{display:flex;align-items:baseline;margin-bottom:.6rem}
+.lotcard h2{margin:0;font-size:1.05rem;font-weight:700}
+.lotcard .x{margin-left:auto;border:none;background:none;font-size:1.2rem;
+  color:var(--muted);line-height:1}
+.lotfacts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.3rem .7rem;
+  margin:0 0 .8rem;font-size:.84rem}
+.lotfacts dt{color:var(--faint);font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;padding-top:.15rem}
+.lotfacts dd{margin:0;color:var(--ink-2);min-width:0}
+.lotfacts .dim{color:var(--faint);font-size:.78rem}
+
+.saleform{display:grid;gap:.55rem;margin-top:.7rem;padding-top:.7rem;
+  border-top:1px solid var(--hair)}
+.saleform label{display:grid;gap:.2rem;font-size:.7rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.saleform input,.saleform select,.saleform textarea{padding:.4rem .55rem;
+  border:1px solid var(--hair);border-radius:7px;background:var(--card);
+  color:var(--ink);font:inherit;font-size:.86rem;font-weight:400;
+  text-transform:none;letter-spacing:0}
+.saleform .two{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.saleform .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem}
+.saleform .check{display:flex;align-items:center;gap:.4rem;text-transform:none;
+  letter-spacing:0;font-size:.8rem;color:var(--ink-2)}
+/* What this buyer agreed last time. The point of it is that nobody retypes a
+   rate, and nobody invents a different one by accident. */
+.memory{margin:0;padding:.45rem .6rem;border-radius:7px;background:var(--accent-soft);
+  color:var(--accent-ink);font-size:.76rem;line-height:1.45}
+
+.lothist{margin-top:.9rem;padding-top:.7rem;border-top:1px solid var(--hair)}
+.lothist h3{margin:0 0 .35rem;font-size:.68rem;font-weight:700;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.06em}
+.lothist ul{list-style:none;margin:0;padding:0;display:grid;gap:.3rem}
+.lothist li{font-size:.78rem;color:var(--muted);line-height:1.45}
+
+.rowform{display:grid;gap:.55rem;max-width:34rem;margin:.6rem 0;padding:.8rem;
+  border:1px solid var(--hair);border-radius:10px;background:var(--sunk)}
+.rowform label{display:grid;gap:.2rem;font-size:.7rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.rowform input{padding:.4rem .55rem;border:1px solid var(--hair);border-radius:7px;
+  background:var(--card);color:var(--ink);font:inherit;font-size:.86rem;
+  font-weight:400;text-transform:none;letter-spacing:0}
+.rowform .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem}

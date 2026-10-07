@@ -1,0 +1,157 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import ParkPlan, { type Lot } from "./ParkPlan";
+import LotCard from "./LotCard";
+
+/**
+ * The park screen: the plan, a pad, and the tool that draws a street.
+ *
+ * Laying out fifty homes by dragging fifty rectangles is an afternoon nobody
+ * has. Saying "Lady Cheryl, fourteen pads, 3101 upwards in twos, from here to
+ * here" is a minute, and dragging afterwards is for the three that are not
+ * where the maths put them.
+ */
+export default function ParkScreen({ propertyId }: { propertyId: string }) {
+  const [lots, setLots] = useState<Lot[]>([]);
+  const [name, setName] = useState("");
+  const [pending, setPending] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [laying, setLaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/properties/${propertyId}/plan`, { cache: "no-store" });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) { setError(out.error ?? "Could not load the plan."); return; }
+    setName(out.property?.name ?? "");
+    setPending(Boolean(out.pending));
+    setLots(out.lots ?? []);
+  }, [propertyId]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function post(payload: Record<string, unknown>) {
+    const res = await fetch(`/api/properties/${propertyId}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) { setError(out.error ?? "That didn't save."); return false; }
+    setError(null);
+    await load();
+    return true;
+  }
+
+  // Moved on screen first, saved after. A rectangle that waits for a round
+  // trip before it follows your finger does not feel like dragging, it feels
+  // like the page is broken.
+  const move = useCallback((id: string, x: number, y: number) => {
+    setLots((prev) => prev.map((l) => (l.id === id ? { ...l, x, y } : l)));
+  }, []);
+  const settle = useCallback(async (id: string) => {
+    const lot = lots.find((l) => l.id === id);
+    if (!lot || lot.x === null) return;
+    await post({ action: "move", unitId: id, x: lot.x, y: lot.y });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lots]);
+
+  const open = lots.find((l) => l.id === selected) ?? null;
+  const unplaced = lots.filter((l) => l.x === null);
+
+  if (pending) {
+    return (
+      <div className="dash">
+        <h1>{name || "Park plan"}</h1>
+        <p className="dashnone">
+          Migrations 024 and 030 haven&rsquo;t been run, so there is nowhere to
+          store where a home sits. Run them and this page draws itself.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="parkpage">
+      <header className="parkhead">
+        <h1>{name}</h1>
+        <div className="parkacts">
+          <button type="button" className={editing ? "btn pri" : "btn"}
+                  onClick={() => { setEditing((v) => !v); setLaying(false); }}>
+            {editing ? "Done arranging" : "Arrange"}
+          </button>
+          {editing && (
+            <button type="button" className="btn" onClick={() => setLaying((v) => !v)}>
+              Lay out a street
+            </button>
+          )}
+        </div>
+      </header>
+
+      {editing && !laying && (
+        <p className="parkhint">
+          Drag a home to move it. Click an empty spot to add one.
+        </p>
+      )}
+
+      {laying && (
+        <form className="rowform" onSubmit={async (e) => {
+          e.preventDefault();
+          const f = new FormData(e.currentTarget);
+          const ok = await post({
+            action: "row",
+            count: f.get("count"), startAt: f.get("startAt"), step: f.get("step"),
+            fromX: Number(f.get("fromX")) / 100, fromY: Number(f.get("fromY")) / 100,
+            toX: Number(f.get("toX")) / 100, toY: Number(f.get("toY")) / 100,
+          });
+          if (ok) setLaying(false);
+        }}>
+          <p className="parkhint">
+            Positions are percentages across and down the plan. The homes
+            spread evenly between the two ends and turn to face the street.
+          </p>
+          <div className="three">
+            <label>How many<input name="count" inputMode="numeric" defaultValue="14" required /></label>
+            <label>First number<input name="startAt" inputMode="numeric" defaultValue="3101" required /></label>
+            <label>Counting by<input name="step" inputMode="numeric" defaultValue="2" required /></label>
+          </div>
+          <div className="three">
+            <label>Start across %<input name="fromX" inputMode="numeric" defaultValue="15" /></label>
+            <label>Start down %<input name="fromY" inputMode="numeric" defaultValue="60" /></label>
+            <label />
+          </div>
+          <div className="three">
+            <label>End across %<input name="toX" inputMode="numeric" defaultValue="80" /></label>
+            <label>End down %<input name="toY" inputMode="numeric" defaultValue="45" /></label>
+            <label />
+          </div>
+          <div className="invacts">
+            <button type="button" className="btn" onClick={() => setLaying(false)}>Cancel</button>
+            <button type="submit" className="btn pri">Draw the street</button>
+          </div>
+        </form>
+      )}
+
+      {error && <p className="err">{error}</p>}
+
+      <div className="parkmain" onPointerUp={() => selected && editing && void settle(selected)}>
+        <ParkPlan
+          lots={lots} selected={selected} editing={editing}
+          onSelect={setSelected}
+          onMove={(id, x, y) => { setSelected(id); move(id, x, y); }}
+          onAdd={(label, x, y) => void post({ action: "add", label, x, y })}
+        />
+        {open && (
+          <LotCard lot={open} onClose={() => setSelected(null)} onChanged={load} />
+        )}
+      </div>
+
+      {unplaced.length > 0 && (
+        <p className="parkhint">
+          {unplaced.length} lot{unplaced.length === 1 ? "" : "s"} on file with no
+          place on the plan yet: {unplaced.map((l) => l.label).join(", ")}.
+          Turn on <strong>Arrange</strong> and lay out the street they are on.
+        </p>
+      )}
+    </div>
+  );
+}
