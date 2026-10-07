@@ -47,6 +47,16 @@ export type Plan = {
   /** Metres between one street's centreline and the next. */
   streetGap: number;
   size: { width: number; length: number };
+  /** Whether the rows sit on the other side of the streets.
+   *
+   *  Which way "across" points falls out of the bearing, so a park running
+   *  east-south-east has its first street drawn south of its second one and
+   *  a park running west-north-west has it north. That is right for one of
+   *  them and upside down for the other, and upside down looks exactly like
+   *  right until you read a street name. Rather than make every bearing
+   *  carry the answer, the arrangement is flipped here and chosen by
+   *  measuring against the real roads. */
+  mirror?: boolean;
   rows: PlanRow[];
 };
 
@@ -144,7 +154,7 @@ export function layOut(plan: Plan): Placed[] {
     const n = row.numbers.length;
     row.numbers.forEach((num, i) => {
       const along = (i - (n - 1) / 2) * plan.padSpacing;
-      const [lng, lat] = toDegrees(plan.centre, along, across, b, per);
+      const [lng, lat] = toDegrees(plan.centre, along, across, b, per, plan.mirror);
       out.push({
         id: `${row.street}|${num}`,
         label: num,
@@ -178,8 +188,8 @@ export function streetLines(plan: Plan): { name: string; line: number[][] }[] {
     return {
       name,
       line: [
-        toDegrees(plan.centre, -halfLen, across, b, per),
-        toDegrees(plan.centre, halfLen, across, b, per),
+        toDegrees(plan.centre, -halfLen, across, b, per, plan.mirror),
+        toDegrees(plan.centre, halfLen, across, b, per, plan.mirror),
       ],
     };
   });
@@ -187,9 +197,10 @@ export function streetLines(plan: Plan): { name: string; line: number[][] }[] {
 
 function toDegrees(
   centre: [number, number], along: number, across: number,
-  b: number, per: { lat: number; lng: number },
+  b: number, per: { lat: number; lng: number }, mirror = false,
 ): number[] {
   const sin = Math.sin(b), cos = Math.cos(b);
+  if (mirror) across = -across;
   // Bearing is clockwise from north, so "along" runs (sin, cos) in
   // (east, north) and "across" is that turned a quarter clockwise.
   const east = along * sin + across * cos;
@@ -231,7 +242,8 @@ export function boundaryOf(plan: Plan, margin = 9): number[][] {
     [maxA + margin, maxC + margin],
     [minA - margin, maxC + margin],
   ];
-  const ring = box.map(([along, across]) => toDegrees(plan.centre, along, across, b, per));
+  const ring = box.map(([along, across]) =>
+    toDegrees(plan.centre, along, across, b, per, plan.mirror));
   ring.push(ring[0]);
   return ring;
 }
@@ -414,8 +426,9 @@ export function localOf(
   const b = rad(plan.bearing);
   const east = (point[0] - origin[0]) / per.lng;
   const north = (point[1] - origin[1]) / per.lat;
+  const across = east * Math.cos(b) - north * Math.sin(b);
   return {
     along: east * Math.sin(b) + north * Math.cos(b),
-    across: east * Math.cos(b) - north * Math.sin(b),
+    across: plan.mirror ? -across : across,
   };
 }

@@ -25,12 +25,13 @@ writeFileSync(gen.osm, transpile("osm.ts")
   .replace(/(["'])\.\/footprint\1/g, '"./.osm.footprint.gen.mjs"')
   .replace(/(["'])\.\/parkplan\1/g, '"./.osm.parkplan.gen.mjs"'));
 let buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
-    orientedBox, boxAround, overpassBody, nearestOn;
-let RETREAT;
+    orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf;
+let RETREAT, layOut, streetLines;
 try {
   ({ buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
-     orientedBox, boxAround, overpassBody, nearestOn } = await import(gen.osm));
-  ({ RETREAT } = await import(gen.plan));
+     orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf }
+    = await import(gen.osm));
+  ({ RETREAT, layOut, streetLines } = await import(gen.plan));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
 }
@@ -185,6 +186,54 @@ elements.push(home(nextId++, 10, 300));
   t("north of a street reads as north", p.north === true);
   const q = placeOn({ name: "x", line: [[-78.92, 35.09], [-78.91, 35.09]] }, [-78.915, 35.089]);
   t("and south of it does not", q.north === false);
+}
+
+// --- pinned to the real streets ---
+{
+  const got = placeFromRoads(RETREAT, roadsOf(elements));
+  t("the block takes its angle from the road", near(got.bearing, 90, 0.5));
+  t("and the street spacing from the roads", near(got.streetGap, 57, 1));
+
+  // Each drawn street centreline has to land on the road it is named
+  // after. This is the whole test: a park that is crooked, in the wrong
+  // place or upside down fails it, and all three looked the same on screen.
+  for (const line of streetLines(got)) {
+    const road = roadsOf(elements).find((r) => sameStreet(line.name, r.name));
+    const off = nearestOn(road.line, midOf(line.line)).metres;
+    t(`${line.name} lands on ${road.name}`, off < 3);
+  }
+}
+{
+  // The same park with its streets the other way round. One of the two
+  // arrangements is upside down, and upside down looks exactly like right
+  // until you read a street name.
+  const swapped = elements.map((e) =>
+    e.tags?.name === "Lady Viola Drive" ? { ...e, geometry: e.geometry.map((p) => ({ ...p, lat: p.lat - 57 * dLat })) }
+    : e.tags?.name === "Lady Cheryl Drive" ? { ...e, geometry: e.geometry.map((p) => ({ ...p, lat: p.lat + 57 * dLat })) }
+    : e);
+  const got = placeFromRoads(RETREAT, roadsOf(swapped));
+  for (const line of streetLines(got)) {
+    const road = roadsOf(swapped).find((r) => sameStreet(line.name, r.name));
+    t(`${line.name} follows its road when the two are swapped`,
+      nearestOn(road.line, midOf(line.line)).metres < 3);
+  }
+}
+{
+  // A volunteer tracing a street east to west instead of west to east must
+  // not reverse the house numbers.
+  const back = elements.map((e) =>
+    e.tags?.highway ? { ...e, geometry: [...e.geometry].reverse() } : e);
+  const got = placeFromRoads(RETREAT, roadsOf(back));
+  t("a road drawn backwards gives the same angle", near(got.bearing, 90, 0.5));
+}
+{
+  t("no road by that name, no placement",
+    placeFromRoads(RETREAT, [{ name: "Nowhere Ave", line: [[0, 0], [1, 1]] }]) === null);
+}
+{
+  const mid = midOf([[0, 0], [10, 0], [10, 10]]);
+  t("the middle of a line is halfway along it, not between its ends",
+    near(mid[0], 10, 1e-9) && near(mid[1], 0, 1e-9));
 }
 
 // --- the question asked ---
