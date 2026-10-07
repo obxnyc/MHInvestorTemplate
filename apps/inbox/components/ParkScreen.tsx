@@ -31,10 +31,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [real, setReal] = useState<RealPark | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
   const [asking, setAsking] = useState(true);
+  const [showSteps, setShowSteps] = useState(false);
   const [osm, setOsm] = useState<{
     steps?: { did: string; ok: boolean; say: string }[];
     error?: string;
     fit?: Plan;
+    parcel?: string | null;
     missing?: { street: string; side: string; short: number }[];
   } | null>(null);
 
@@ -141,10 +143,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           streetGap: out.fit.streetGap, mirror: Boolean(out.fit.mirror),
         });
       }
-      if (out.ok && out.homes?.length) {
+      // The property line and the outlines are two different questions and
+      // one can answer without the other, so whatever came back is used.
+      if (out.boundary?.length || out.homes?.length) {
         const got: RealPark = {
-          homes: out.homes, streets: out.streets ?? [],
+          homes: out.homes ?? [], streets: out.streets ?? [],
           boundary: out.boundary ?? [], spare: out.spare ?? [],
+          parcel: out.parcel ?? null,
         };
         setReal(got);
         try { localStorage.setItem(cache, JSON.stringify(got)); } catch { /* fine */ }
@@ -212,25 +217,38 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       {asking && !real && (
         <p className="parkhint">
           These are drawn from the park&rsquo;s own layout. Asking
-          OpenStreetMap for the real outlines — it can take twenty seconds.
+          OpenStreetMap for the real streets and property line — it can take
+          half a minute.
         </p>
       )}
-      {osm?.error && (
+      {!asking && (osm?.error || real) && (
         <p className="parkhint">
-          OpenStreetMap didn&rsquo;t answer, so these are drawn from the
-          park&rsquo;s own layout rather than its real outlines. Press{" "}
-          <strong>Fit to the aerial</strong> to put them over the pads.{" "}
-          <span className="dim">{osm.error}</span>
-        </p>
-      )}
-      {real && (
-        <p className="parkhint">
-          Real outlines, from OpenStreetMap.
+          {real?.homes?.length
+            ? "Real outlines, from OpenStreetMap."
+            : osm?.error ?? "Drawn from the park's own layout."}
+          {real?.parcel && ` Property line: ${real.parcel}.`}
           {osm?.missing?.length
             ? ` ${osm.missing.map((m) => `${m.street} is ${m.short} short`).join(", ")} — those lots aren't mapped there yet.`
-            : " Every lot found."}
+            : null}
+          {osm?.steps?.length ? (
+            <> <button type="button" className="aslink"
+                       onClick={() => setShowSteps((v) => !v)}>
+              {showSteps ? "hide the steps" : "what it did"}
+            </button></>
+          ) : null}
         </p>
       )}
+      {showSteps && osm?.steps?.length ? (
+        <div className="pullout">
+          <ol>
+            {osm.steps.map((st, i) => (
+              <li key={i} className={st.ok ? "ok" : "no"}>
+                <strong>{st.did}</strong> — {st.say}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
 
       {fitting && (
         <div className="parkfit">

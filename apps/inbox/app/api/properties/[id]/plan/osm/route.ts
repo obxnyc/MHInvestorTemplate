@@ -2,20 +2,18 @@ import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { RETREAT, boundaryOf } from "@/lib/parkplan";
 import {
-  overpassBody, boxAround, buildingsOf, roadsOf, assign, orientedBox, sameStreet,
-  placeFromRoads,
+  roadQuery, buildingQuery, boxAround, buildingsOf, roadsOf, areasOf, parkAround,
+  assign, orientedBox, sameStreet, placeFromRoads, midOf,
+  type OsmElement, type Box,
 } from "@/lib/osm";
-import type { OsmElement } from "@/lib/osm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Overpass is volunteer-run and routinely takes ten or twenty seconds. The
-// default serverless ceiling is well under the time three mirrors need, so
-// the request was being killed before the first one answered.
+// Overpass is volunteer-run and routinely takes ten or twenty seconds, and
+// this asks twice. The default serverless ceiling killed the request before
+// the first mirror had answered once.
 export const maxDuration = 60;
 
-/** Mirrors, in order. Overpass is free and volunteer-run, so one being busy
- *  is ordinary rather than exceptional and is not a reason to give up. */
 const MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
@@ -23,11 +21,18 @@ const MIRRORS = [
 ];
 
 /**
- * The park's real outlines, from OpenStreetMap.
+ * The park's real streets, real boundary and real outlines.
  *
- * Every step is reported whether it worked or not. Six attempts at pulling
- * this park out of the county's GIS failed in six different places, and the
- * only thing that made each one fixable was knowing which step gave up.
+ * Asked in two questions. The first goes out a kilometre and a half for
+ * named roads and pieces of land, because the only coordinate anybody had
+ * for this park was a guess left over from a failed county pull and it was
+ * wrong by further than any sensible search box. The second goes out two
+ * hundred metres around the streets that question found, and asks for the
+ * buildings.
+ *
+ * Every step is reported whether it worked or not. Six attempts at the
+ * county's GIS failed in six different places, and knowing which step gave
+ * up was the only thing that ever made one fixable.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
@@ -38,13 +43,94 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const note = (did: string, ok: boolean, say: string) => steps.push({ did, ok, say });
 
   const url = new URL(req.url);
-  const lng = Number(url.searchParams.get("lng")) || RETREAT.centre[0];
-  const lat = Number(url.searchParams.get("lat")) || RETREAT.centre[1];
-  const box = boxAround([lng, lat], 420);
-  const body = overpassBody(box);
+  const from: [number, number] = [
+    Number(url.searchParams.get("lng")) || RETREAT.centre[0],
+    Number(url.searchParams.get("lat")) || RETREAT.centre[1],
+  ];
 
-  let json: { elements?: OsmElement[] } | null = null;
+  // --- 1. the streets, and the land they sit on ---
+  const wide = await ask(roadQuery(boxAround(from, 1500)), note, "the streets");
+  if (!wide) {
+    return NextResponse.json({
+      steps, error: "No OpenStreetMap mirror answered. The drawn plan is still on screen.",
+    });
+  }
+
+  const allRoads = roadsOf(wide);
+  const wanted = RETREAT.rows.map((r) => r.street);
+  const roads = allRoads.filter((r) => wanted.some((w) => sameStreet(w, r.name)));
+  note("Looked for the park's streets", roads.length > 0,
+    roads.length
+      ? [...new Set(roads.map((r) => r.name))].join(" and ")
+      : `none of ${wanted.join(" or ")} within 1.5 km — ${allRoads.length} other named roads are there`);
+  if (!roads.length) {
+    return NextResponse.json({
+      steps,
+      error: "OpenStreetMap has no road by those names within a kilometre and a half, so there is nothing to hang the numbering on.",
+    });
+  }
+
+  // From here on the park's real position is known, and the guess is not
+  // used again for anything.
+  const here = midOf(roads[0].line);
+  const fit = placeFromRoads(RETREAT, roads);
+  note("Pinned the plan to those streets", Boolean(fit),
+    fit
+      ? `rows run at ${Math.round(fit.bearing)}°, streets ${Math.round(fit.streetGap)} m apart`
+      : "could not, so the drawn plan stays where it was");
+
+  // --- 2. the property line ---
+  const parcel = parkAround(areasOf(wide), roads);
+  note("Looked for the property line", Boolean(parcel),
+    parcel
+      ? `${parcel.name} — the real boundary, not a rectangle drawn round the homes`
+      : "no mapped land here holds both streets, so the boundary is drawn around the homes");
+
+  // --- 3. the homes ---
+  const tight = await ask(buildingQuery(boxAround(here, 260)), note, "the homes");
+  const shapes = tight ? buildingsOf(tight) : [];
+  note("Read the buildings", shapes.length > 0, `${shapes.length} within 260 m of the streets`);
+
+  const { homes, spare, rows } = assign(RETREAT, shapes, roads);
+  note("Numbered them", homes.length > 0,
+    rows.map((r) => `${r.row.street} ${r.row.side}: ${r.found} of ${r.row.numbers.length}`)
+      .join("; "));
+
+  const boundary = parcel?.ring
+    ?? (homes.length ? orientedBox(homes.flatMap((h) => h.ring)) : boundaryOf(fit ?? RETREAT));
+
+  if (!homes.length) {
+    return NextResponse.json({
+      steps, fit, boundary,
+      error: "OpenStreetMap has the streets but not the homes on them, so these are drawn — on the right streets, at the right angle.",
+    });
+  }
+
+  return NextResponse.json({
+    ok: true, steps, fit, boundary,
+    homes,
+    streets: roads.map((r) => ({
+      // The plan's spelling, so one street is one name on screen.
+      name: RETREAT.rows.find((row) => sameStreet(row.street, r.name))!.street,
+      line: r.line,
+    })),
+    spare: spare.map((s) => s.ring),
+    parcel: parcel?.name ?? null,
+    missing: rows
+      .filter((r) => r.found < r.row.numbers.length)
+      .map((r) => ({ street: r.row.street, side: r.row.side, short: r.row.numbers.length - r.found })),
+  });
+}
+
+/** One question, tried at each mirror in turn. Overpass is free and
+ *  volunteer-run, so one being busy is ordinary rather than exceptional. */
+async function ask(
+  body: string,
+  note: (did: string, ok: boolean, say: string) => void,
+  what: string,
+): Promise<OsmElement[] | null> {
   for (const mirror of MIRRORS) {
+    const host = new URL(mirror).hostname;
     try {
       const res = await fetch(mirror, {
         method: "POST",
@@ -52,80 +138,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         body: new URLSearchParams({ data: body }).toString(),
         signal: AbortSignal.timeout(14_000),
       });
-      if (!res.ok) { note("Asked " + host(mirror), false, `it answered ${res.status}`); continue; }
-      json = await res.json();
-      note("Asked " + host(mirror), true, "it answered");
-      break;
+      if (!res.ok) { note(`Asked ${host} for ${what}`, false, `it answered ${res.status}`); continue; }
+      const json = (await res.json()) as { elements?: OsmElement[] };
+      const elements = Array.isArray(json.elements) ? json.elements : [];
+      note(`Asked ${host} for ${what}`, true, `${elements.length} things came back`);
+      return elements;
     } catch (e) {
-      note("Asked " + host(mirror), false, e instanceof Error ? e.message : "no answer");
+      note(`Asked ${host} for ${what}`, false, e instanceof Error ? e.message : "no answer");
     }
   }
-  if (!json) {
-    return NextResponse.json({
-      steps, error: "No OpenStreetMap mirror answered. The drawn plan is still on screen.",
-    });
-  }
-
-  const elements = Array.isArray(json.elements) ? json.elements : [];
-  const shapes = buildingsOf(elements);
-  const roads = roadsOf(elements);
-  note("Read what came back", shapes.length > 0,
-    `${shapes.length} buildings and ${roads.length} named roads within 420 m`);
-
-  const wanted = RETREAT.rows.map((r) => r.street);
-  const found = [...new Set(roads.map((r) => r.name))]
-    .filter((n) => wanted.some((w) => sameStreet(w, n)));
-  note("Found the park's streets", found.length > 0,
-    found.length ? found.join(" and ") : `none of ${wanted.join(" or ")} are on the map here`);
-  if (!found.length) {
-    return NextResponse.json({
-      steps,
-      error: "OpenStreetMap has no road by those names here, so there is nothing to hang the numbering on.",
-    });
-  }
-
-  // The block pinned to the real streets. Worked out before the buildings
-  // are looked at, and returned whatever happens to them: two road
-  // centrelines are enough to stop the drawn park sitting crooked in the
-  // wrong place, and a named street the base map is already drawing is far
-  // likelier to be in OpenStreetMap than a mobile home is.
-  const fit = placeFromRoads(RETREAT, roads);
-  note("Pinned the plan to those streets", Boolean(fit),
-    fit
-      ? `rows run at ${Math.round(fit.bearing)}°, streets ${Math.round(fit.streetGap)} m apart`
-      : "could not, so the drawn plan stays where it was");
-
-  const { homes, spare, rows } = assign(RETREAT, shapes, roads);
-  note("Numbered them", homes.length > 0,
-    rows.map((r) => `${r.row.street} ${r.row.side}: ${r.found} found, ${r.row.numbers.length} expected`)
-      .join("; "));
-  if (!homes.length) {
-    return NextResponse.json({
-      steps, fit,
-      error: "OpenStreetMap has the streets but not the homes on them, so these are drawn — on the right streets, at the right angle.",
-    });
-  }
-
-  const boundary = orientedBox(homes.flatMap((h) => h.ring)) ;
-  const streets = roads
-    .filter((r) => wanted.some((w) => sameStreet(w, r.name)))
-    .map((r) => ({
-      // The plan's spelling, so one street is one name on screen.
-      name: RETREAT.rows.find((row) => sameStreet(row.street, r.name))!.street,
-      line: r.line,
-    }));
-
-  return NextResponse.json({
-    ok: true, steps, fit,
-    homes, streets, spare: spare.map((s) => s.ring),
-    boundary: boundary.length ? boundary : boundaryOf(RETREAT),
-    missing: rows
-      .filter((r) => r.found < r.row.numbers.length)
-      .map((r) => ({
-        street: r.row.street, side: r.row.side,
-        short: r.row.numbers.length - r.found,
-      })),
-  });
+  return null;
 }
 
-const host = (u: string) => new URL(u).hostname;
+export type { Box };
