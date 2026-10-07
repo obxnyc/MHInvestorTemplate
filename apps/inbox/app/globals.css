@@ -1976,3 +1976,15 @@ a.metric:hover{border-color:var(--accent)}
 .pullout li.no::marker{color:var(--crit)}
 .pullout li.no{color:var(--crit)}
 .pullout p{margin:0 0 .7rem;font-size:.84rem;color:var(--ink-2);line-height:1.5}
+
+/* Every layer the county publishes, when the automatic pick came up empty.
+   At that point the list is the diagnosis -- it says whether this map
+   carries address points at all, or whether the link is the planning map
+   rather than the parcel viewer. */
+.pulllayers{margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--hair)}
+.pulllayers p{margin:0 0 .4rem;font-size:.78rem;color:var(--muted)}
+.pulllayers ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.3rem;
+  max-height:14rem;overflow-y:auto}
+.pulllayers button{padding:.22rem .55rem;border:1px solid var(--hair);border-radius:999px;
+  background:var(--card);font-size:.72rem;font-weight:600;color:var(--ink-2)}
+.pulllayers button:hover:not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
