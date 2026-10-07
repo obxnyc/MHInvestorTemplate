@@ -3,7 +3,7 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   appIdFrom, geocode, layersOf, numberField, boxAround, pointsIn,
-  houseNumber, mostLikelyFirst, parcelLayers, parcelAt, inShape,
+  houseNumber, streetOf, mostLikelyFirst, parcelLayers, parcelAt, inShape,
   type Step, type FoundLot,
 } from "@/lib/agol";
 
@@ -119,19 +119,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const found: FoundLot[] = [];
     for (const f of got.features) {
       const label = houseNumber(f.props[field]);
-      if (label) found.push({ label, lat: f.lat, lng: f.lng });
+      if (label) {
+        found.push({ label, lat: f.lat, lng: f.lng, street: streetOf(f.props[field]) });
+      }
     }
     // Duplicates happen where a layer holds a point AND a footprint per home.
     const seen = new Set<string>();
     const unique = found.filter((f) => !seen.has(f.label) && seen.add(f.label));
 
     tried.push(`${layer.title}: ${unique.length} numbered from ${field}`);
-    // Smallest wins, not largest. Picking whichever found MOST is exactly
-    // backwards: a park is a small thing inside a big neighbourhood, so the
-    // layer that came back with 85 is the one covering the neighbours and
-    // the one with 28 is the park. Anything under four is noise rather than
-    // a park.
-    if (unique.length >= 4 && (!best || unique.length < best.found.length)) {
+    // Most wins. I have now had this wrong in both directions: largest
+    // swept in the neighbours, and smallest cut the park in half. The rule
+    // that survives both is completeness, because the two errors are not
+    // symmetrical -- an extra home is visible on the aerial and one tap to
+    // remove, and a missing home is invisible and stays missing. So: bring
+    // everything, and let somebody looking at a photograph subtract.
+    if (unique.length >= 4 && (!best || unique.length > best.found.length)) {
       best = { title: layer.title, field, found: unique };
     }
     candidates.push({ title: layer.title, count: unique.length, found: unique });
