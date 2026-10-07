@@ -74,16 +74,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   // --- 3. what the county publishes ---
-  const layers = await layersOf(appId);
+  const found = await layersOf(appId);
+  const layers = found.layers;
   if (!layers.length) {
     return NextResponse.json({
       steps: [...steps, { did: "Asked the county what it serves", ok: false,
-        say: "ArcGIS answered, but the app names no map layers. It may be private." }],
-      error: "That map does not publish its layers.",
+        say: `The item is a ${found.kind ?? "thing of unknown type"}; ${found.via}.` }],
+      error: "Could not get a layer list out of that link. If the county's site"
+        + " has a 'Layers' or 'Legend' panel, there may be a second link behind"
+        + " it that points straight at the map.",
     }, { status: 400 });
   }
   note("Asked the county what it serves", true,
-    `${layers.length} layers: ${layers.slice(0, 8).map((l) => l.title).join(", ")}`
+    `A ${found.kind ?? "map"} via ${found.via}. ${layers.length} layers: `
+    + layers.slice(0, 8).map((l) => l.title).join(", ")
     + (layers.length > 8 ? "…" : ""));
 
   // --- 4. the layer with house numbers in it ---
@@ -94,7 +98,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   for (const layer of layers) {
     // Sequentially and bounded: this is somebody's public service, and
     // twenty parallel requests is not how to introduce ourselves.
-    if (tried.length >= 12) break;
+    if (tried.length >= 25) break;
     const got = await pointsIn(layer.url, box);
     if (!got) { tried.push(`${layer.title}: no answer`); continue; }
     if (!got.features.length) { tried.push(`${layer.title}: nothing here`); continue; }

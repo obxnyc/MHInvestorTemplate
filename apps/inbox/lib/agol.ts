@@ -50,26 +50,113 @@ export async function geocode(address: string): Promise<{ lat: number; lng: numb
   return m ? { lat: m.y, lng: m.x } : null;
 }
 
-/** Every layer the county's app puts on the map. */
-export async function layersOf(appId: string): Promise<{ title: string; url: string }[]> {
-  const app = await json(`${AGOL}/${appId}/data?f=json`);
-  const values = (app?.values ?? {}) as Record<string, unknown>;
-  const mapId = (values.webmap ?? values.mapItemId ?? null) as string | null;
-  if (!mapId) return [];
+/**
+ * Every layer the county's app puts on the map.
+ *
+ * An ArcGIS item is one of several things and they nest differently. A Web
+ * Map lists its own operationalLayers. A Web Mapping Application points at a
+ * map -- and where it keeps that pointer depends on the template it was
+ * built from: values.webmap in some, map.itemId in others, values.mapItemId
+ * in a third. Looking in one place found nothing for Cumberland County and
+ * reported "the app publishes no layers", which was wrong and unhelpful in
+ * the same sentence.
+ *
+ * So: follow whichever of them is there, and as a last resort take any item
+ * id in the document and ask whether it is a map. Returns what it understood
+ * alongside the layers, so a failure says what the thing actually was.
+ */
+export async function layersOf(appId: string): Promise<{
+  layers: { title: string; url: string }[];
+  kind: string | null;
+  via: string;
+}> {
+  const item = await json(`${AGOL}/${appId}?f=json`);
+  const kind = (item?.type as string) ?? null;
+  const data = await json(`${AGOL}/${appId}/data?f=json`);
+  if (!data) return { layers: [], kind, via: "ArcGIS returned no data for that item" };
 
-  const map = await json(`${AGOL}/${mapId}/data?f=json`);
-  const out: { title: string; url: string }[] = [];
-  for (const l of (map?.operationalLayers ?? []) as Record<string, unknown>[]) {
-    if (typeof l.url === "string") out.push({ title: String(l.title ?? "—"), url: l.url });
-    // A group layer hides its real layers one level down, and the address
-    // points are nearly always inside one.
-    for (const sub of (l.layers ?? []) as Record<string, unknown>[]) {
-      if (typeof sub.url === "string") {
-        out.push({ title: `${l.title ?? "—"} · ${sub.title ?? "—"}`, url: sub.url });
-      }
+  // The item IS the map.
+  if (Array.isArray(data.operationalLayers)) {
+    return { layers: await expand(readMap(data)), kind, via: "the item is a web map" };
+  }
+
+  const values = (data.values ?? {}) as Record<string, unknown>;
+  const mapBlock = (data.map ?? {}) as Record<string, unknown>;
+  const candidates = [
+    values.webmap, values.mapItemId, mapBlock.itemId,
+    (values.map as Record<string, unknown> | undefined)?.itemId,
+  ].filter((v): v is string => typeof v === "string" && /^[0-9a-f]{32}$/i.test(v));
+
+  // Last resort: any item id in the document. A template nobody has seen
+  // before still names its map somewhere, and asking costs one request.
+  if (!candidates.length) {
+    const ids = [...new Set((JSON.stringify(data).match(/[0-9a-f]{32}/gi) ?? []))]
+      .filter((x) => x.toLowerCase() !== appId.toLowerCase()).slice(0, 4);
+    candidates.push(...ids);
+  }
+
+  for (const id of candidates) {
+    const map = await json(`${AGOL}/${id}/data?f=json`);
+    if (map && Array.isArray(map.operationalLayers)) {
+      return { layers: await expand(readMap(map)), kind,
+               via: `the map it points at (${id})` };
     }
   }
+
+  return {
+    layers: [], kind,
+    via: candidates.length
+      ? `followed ${candidates.length} item id(s), none of which was a web map`
+      : "no map id anywhere in the app's definition",
+  };
+}
+
+/** The layers out of a web map, including the ones inside groups -- address
+ *  points are nearly always one level down. */
+function readMap(map: Record<string, unknown>): { title: string; url: string }[] {
+  const out: { title: string; url: string }[] = [];
+  const walk = (list: unknown, prefix: string) => {
+    for (const l of (list ?? []) as Record<string, unknown>[]) {
+      const title = `${prefix}${String(l.title ?? "—")}`;
+      if (typeof l.url === "string") out.push({ title, url: l.url });
+      if (Array.isArray(l.layers)) walk(l.layers, `${title} · `);
+    }
+  };
+  walk(map.operationalLayers, "");
   return out;
+}
+
+/**
+ * Turn whole services into the layers inside them.
+ *
+ * A web map routinely references ".../MapServer" rather than
+ * ".../MapServer/3". That URL describes a service and refuses a query, so
+ * asking it for address points comes back empty and looks exactly like a
+ * county that does not publish any -- which is the wrong conclusion drawn
+ * from the right evidence.
+ */
+async function expand(layers: { title: string; url: string }[]) {
+  const out: { title: string; url: string }[] = [];
+  for (const l of layers) {
+    if (/\/\d+$/.test(l.url)) { out.push(l); continue; }
+    if (!/(Map|Feature)Server\/?$/i.test(l.url)) { out.push(l); continue; }
+
+    const base = l.url.replace(/\/$/, "");
+    const meta = await json(`${base}?f=json`);
+    const subs = (meta?.layers ?? []) as { id?: number; name?: string; subLayerIds?: unknown }[];
+    if (!subs.length) { out.push(l); continue; }
+
+    for (const sub of subs) {
+      // A group layer inside a service has subLayerIds and no geometry of its
+      // own; querying it is a request that cannot succeed.
+      if (sub.subLayerIds) continue;
+      if (typeof sub.id !== "number") continue;
+      out.push({ title: `${l.title} · ${sub.name ?? sub.id}`, url: `${base}/${sub.id}` });
+    }
+  }
+  // Bounded: a county map can reference six services of forty layers each,
+  // and the point is to find address points, not to crawl their estate.
+  return out.slice(0, 60);
 }
 
 /** The field in a layer that holds the number on the mailbox.
