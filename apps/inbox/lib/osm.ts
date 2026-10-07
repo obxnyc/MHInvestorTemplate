@@ -16,7 +16,7 @@
  * the part that has to be right, so it is the part that can be tested.
  */
 
-import { metresBetween, bearingOf, half } from "./footprint";
+import { metresBetween, bearingOf, half, footprint, degreesPerMetre } from "./footprint";
 import { streetLines, layOut, localOf, fromLocal } from "./parkplan";
 import type { Plan, PlanRow, Tap } from "./parkplan";
 
@@ -305,20 +305,62 @@ function alongOf(line: number[][], seg: number, t: number, flip: boolean): numbe
 
 export type Matched = {
   id: string; label: string; street: string; side: "N" | "S"; ring: number[][];
+  /** No building on the map here: the pad is drawn, continuing the row. */
+  drawn?: boolean;
+  /** A building was here but its outline is not a home -- the office, a
+   *  carport, two pads mapped as one -- so a standard pad was put at its
+   *  middle instead. */
+  redrawn?: boolean;
+};
+
+/** A ring's area in square metres. Measured locally, because a degree is
+ *  not a metre and is a different not-a-metre east than it is north. */
+export function areaOf(ring: number[][]): number {
+  if (ring.length < 4) return 0;
+  const lat0 = ring[0][1];
+  const kLat = 111_320, kLng = 111_320 * Math.cos((lat0 * Math.PI) / 180);
+  const ox = ring[0][0], oy = ring[0][1];
+  let a = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const x1 = (ring[i][0] - ox) * kLng, y1 = (ring[i][1] - oy) * kLat;
+    const x2 = (ring[i + 1][0] - ox) * kLng, y2 = (ring[i + 1][1] - oy) * kLat;
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a / 2);
+}
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? s[Math.floor(s.length / 2)] : 0;
 };
 
 /**
  * The park's numbering laid onto the map's buildings.
  *
- * Each building is put on the nearest of the park's own streets, sorted
- * along it, and handed the next number from that row. Where the map has
- * more buildings than the row has numbers the extras are left unnumbered
- * rather than renumbered, because a shed behind lot 3110 is not lot 3126
- * and labelling it as one is worse than leaving it grey.
+ * Four things this has to get right, each of which was wrong:
+ *
+ * Direction. Each row is ordered along its street, and which end the
+ * numbering starts at is the plan's to say -- here the high numbers are at
+ * the Pamalee entrance and count down to the loop, so sorting west to east
+ * reversed all four rows at once.
+ *
+ * What counts. A building the far side of Pamalee Dr is not lot 3100. When
+ * the property line is known, nothing outside it is a candidate.
+ *
+ * What a home looks like. Some of what the map holds here is the office, a
+ * carport, or two pads traced as one shape, and they arrive two or three
+ * times the size of a home. The outline is replaced with a standard pad at
+ * the same spot rather than drawn as a home the size of four.
+ *
+ * And the gaps. A row with five homes the map has never had still has five
+ * lots, and a lot that is not on screen is a lot nobody can record a sale
+ * against. The rest of the row is continued at its own spacing and angle.
  */
 export function assign(
-  plan: Plan, shapes: Shape[], roads: Road[], within = 45,
+  plan: Plan, shapes: Shape[], roads: Road[],
+  opts: { within?: number; inside?: number[][] } = {},
 ): { homes: Matched[]; spare: Shape[]; rows: { row: PlanRow; found: number }[] } {
+  const within = opts.within ?? 45;
   const mine = roads.filter((r) => plan.rows.some((row) => sameStreet(row.street, r.name)));
 
   type Sorted = { shape: Shape; street: string; north: boolean; along: number };
@@ -326,6 +368,10 @@ export function assign(
   const spare: Shape[] = [];
 
   for (const s of shapes) {
+    // Outside the property line is outside the park, whatever street it
+    // happens to sit near.
+    if (opts.inside?.length && !inRing(s.centre, opts.inside)) continue;
+
     let best: { road: Road; p: ReturnType<typeof placeOn> } | null = null;
     for (const road of mine) {
       const p = placeOn(road, s.centre);
@@ -334,29 +380,132 @@ export function assign(
     if (!best || best.p.metres > within) { spare.push(s); continue; }
     sorted.push({
       shape: s,
-      // Named from the plan, not the map, so one street is one spelling.
       street: plan.rows.find((r) => sameStreet(r.street, best!.road.name))!.street,
       north: best.p.north, along: best.p.along,
     });
   }
 
+  const back = plan.countFrom === "east";
   const homes: Matched[] = [];
   const rows: { row: PlanRow; found: number }[] = [];
+
   for (const row of plan.rows) {
     const inRow = sorted
       .filter((x) => x.street === row.street && (x.north ? "N" : "S") === row.side)
-      .sort((a, b) => a.along - b.along);
+      .sort((a, b) => (back ? b.along - a.along : a.along - b.along));
     rows.push({ row, found: inRow.length });
+
+    const mid = median(inRow.map((x) => areaOf(x.shape.ring)));
+    const pads: Matched[] = [];
+
     inRow.forEach((x, i) => {
       const label = row.numbers[i];
       if (label === undefined) { spare.push(x.shape); return; }
-      homes.push({
-        id: `${row.street}|${label}`, label, street: row.street,
-        side: row.side, ring: x.shape.ring,
+      // Judged against its own row, and only where the row has enough
+      // homes for a middle to mean anything.
+      const area = areaOf(x.shape.ring);
+      const odd = inRow.length >= 4 && mid > 0 && (area > mid * 2.2 || area < mid * 0.45);
+      pads.push({
+        id: `${row.street}|${label}`, label, street: row.street, side: row.side,
+        ring: x.shape.ring, redrawn: odd || undefined,
       });
+      if (odd) pads[pads.length - 1].ring = padAt(x.shape.centre, inRow, i, plan);
     });
+
+    // The rest of the row, continued at its own spacing and angle.
+    const drawnFrom = row.numbers.length - pads.length;
+    if (drawnFrom > 0) pads.push(...continueRow(row, pads, inRow, plan));
+
+    homes.push(...pads);
   }
   return { homes, spare, rows };
+}
+
+/** A standard pad where a building is, square to the row it is in. */
+function padAt(
+  at: [number, number],
+  row: { shape: Shape }[], i: number, plan: Plan,
+): number[][] {
+  return footprint(at[1], at[0], rowBearing(row, i) + 90, plan.size);
+}
+
+/** Which way the row runs at one of its homes, from its neighbours. */
+function rowBearing(row: { shape: Shape }[], i: number): number {
+  const a = row[i - 1]?.shape.centre ?? row[i]?.shape.centre;
+  const b = row[i + 1]?.shape.centre ?? row[i]?.shape.centre;
+  if (!a || !b || (a[0] === b[0] && a[1] === b[1])) {
+    const first = row[0]?.shape.centre, last = row[row.length - 1]?.shape.centre;
+    if (!first || !last || (first[0] === last[0] && first[1] === last[1])) return 0;
+    return bearingOf(first, last);
+  }
+  return bearingOf(a, b);
+}
+
+/**
+ * The lots the map has never heard of, drawn on the end of their row.
+ *
+ * Five of these are real: the west end of Lady Viola's odd side and of
+ * Lady Cheryl's even side simply have no buildings in the map. They are
+ * still lots, they still get sold, and a lot that is not on the screen is
+ * a lot nobody can record a sale against.
+ */
+function continueRow(
+  row: PlanRow, placed: Matched[], found: { shape: Shape }[], plan: Plan,
+): Matched[] {
+  const left = row.numbers.slice(placed.length);
+  if (!left.length) return [];
+
+  const per = degreesPerMetre(plan.centre[1]);
+  const centres = found.map((f) => f.shape.centre);
+
+  // Where the row ends and how it is spaced, from the row itself where
+  // there is a row, and from the plan where there is not.
+  let last: [number, number];
+  let step: number;
+  let bearing: number;
+  if (centres.length >= 2) {
+    last = centres[centres.length - 1];
+    const gaps: number[] = [];
+    for (let i = 1; i < centres.length; i++) gaps.push(metresBetween(centres[i - 1], centres[i]));
+    step = median(gaps) || plan.padSpacing;
+    bearing = bearingOf(centres[centres.length - 2], last);
+  } else {
+    const drawn = layOut(plan).filter((h) => h.street === row.street && h.side === row.side);
+    const from = drawn[Math.max(0, placed.length - 1)] ?? drawn[0];
+    if (!from) return [];
+    last = [from.lng, from.lat];
+    step = plan.padSpacing;
+    bearing = (plan.bearing + (plan.countFrom === "east" ? 180 : 0)) % 360;
+    // With nothing found, the first unplaced lot sits where the plan puts
+    // it rather than one step past it.
+    return left.map((label, k) => {
+      const d = drawn[placed.length + k];
+      const at: [number, number] = d ? [d.lng, d.lat] : stepOn(last, bearing, step * (k + 1), per);
+      return {
+        id: `${row.street}|${label}`, label, street: row.street, side: row.side,
+        ring: footprint(at[1], at[0], (bearing + 90) % 360, plan.size), drawn: true,
+      };
+    });
+  }
+
+  return left.map((label, k) => {
+    const at = stepOn(last, bearing, step * (k + 1), per);
+    return {
+      id: `${row.street}|${label}`, label, street: row.street, side: row.side,
+      ring: footprint(at[1], at[0], (bearing + 90) % 360, plan.size), drawn: true,
+    };
+  });
+}
+
+function stepOn(
+  from: [number, number], bearing: number, metres: number,
+  per: { lat: number; lng: number },
+): [number, number] {
+  const b = (bearing * Math.PI) / 180;
+  return [
+    from[0] + Math.sin(b) * metres * per.lng,
+    from[1] + Math.cos(b) * metres * per.lat,
+  ];
 }
 
 /**

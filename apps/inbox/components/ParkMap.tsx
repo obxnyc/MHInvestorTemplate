@@ -12,7 +12,10 @@ export type LotFacts = Record<string, { state: LotState; who?: string }>;
 
 /** The park as the map actually has it. */
 export type RealPark = {
-  homes: { id: string; label: string; street: string; ring: number[][] }[];
+  homes: {
+    id: string; label: string; street: string; ring: number[][];
+    drawn?: boolean; redrawn?: boolean;
+  }[];
   streets: { name: string; line: number[][] }[];
   boundary: number[][];
   spare?: number[][][];
@@ -165,8 +168,8 @@ export default function ParkMap(
     const m = map.current;
     if (!m || !ready) return;
     if (m.getLayer("sat")) m.setLayoutProperty("sat", "visibility", sat ? "visible" : "none");
-    if (m.getLayer("home-line")) {
-      m.setPaintProperty("home-line", "line-color", sat ? "#ffffff" : "#17212E");
+    for (const id of ["home-line", "home-drawn"]) {
+      if (m.getLayer(id)) m.setPaintProperty(id, "line-color", sat ? "#ffffff" : "#17212E");
     }
     if (m.getLayer("outside-veil")) {
       // Enough to push the surroundings back, not enough to remove them,
@@ -200,6 +203,10 @@ export default function ParkMap(
         properties: {
           id: h.id, label: h.label, street: h.street,
           state: f.state, colour: FILL[f.state],
+          // A pad the map has never had is still a lot, and still has to
+          // be clickable -- but saying so is the difference between a
+          // drawing and a claim about the ground.
+          drawn: Boolean((h as { drawn?: boolean }).drawn),
         },
         geometry: { type: "Polygon", coordinates: [h.ring] },
       };
@@ -256,8 +263,15 @@ export default function ParkMap(
         paint: { "fill-color": "#AFB7C2", "fill-opacity": 0.45 } });
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
         paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.9 } });
+      // Two layers rather than one with an expression: line-dasharray is
+      // a constant-only property in MapLibre, and a data-driven one throws
+      // on style load and takes the whole map with it.
       m.addLayer({ id: "home-line", type: "line", source: "homes",
+        filter: ["!", ["get", "drawn"]],
         paint: { "line-color": "#17212E", "line-width": 1.2 } });
+      m.addLayer({ id: "home-drawn", type: "line", source: "homes",
+        filter: ["get", "drawn"],
+        paint: { "line-color": "#17212E", "line-width": 1.2, "line-dasharray": [2, 1.5] } });
       m.addLayer({ id: "home-on", type: "line", source: "homes",
         filter: ["==", ["get", "id"], ""],
         paint: { "line-color": "#0F1729", "line-width": 3.5 } });
