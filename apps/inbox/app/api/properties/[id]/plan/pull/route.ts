@@ -3,7 +3,7 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   appIdFrom, geocode, layersOf, numberField, boxAround, pointsIn,
-  houseNumber, toFractions, mostLikelyFirst, parcelLayers, parcelAt, inShape,
+  houseNumber, mostLikelyFirst, parcelLayers, parcelAt, inShape,
   type Step, type FoundLot,
 } from "@/lib/agol";
 
@@ -93,6 +93,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // --- 4. the layer with house numbers in it ---
   const box = boxAround(centre.lat, centre.lng, Number(body.metres) || 250);
   const tried: string[] = [];
+  const candidates: { title: string; count: number; found: FoundLot[] }[] = [];
   let best: { title: string; field: string; found: FoundLot[] } | null = null;
 
   // In order of likelihood, because the budget is spent in order. The last
@@ -125,9 +126,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const unique = found.filter((f) => !seen.has(f.label) && seen.add(f.label));
 
     tried.push(`${layer.title}: ${unique.length} numbered from ${field}`);
-    if (!best || unique.length > best.found.length) {
+    // Smallest wins, not largest. Picking whichever found MOST is exactly
+    // backwards: a park is a small thing inside a big neighbourhood, so the
+    // layer that came back with 85 is the one covering the neighbours and
+    // the one with 28 is the park. Anything under four is noise rather than
+    // a park.
+    if (unique.length >= 4 && (!best || unique.length < best.found.length)) {
       best = { title: layer.title, field, found: unique };
     }
+    candidates.push({ title: layer.title, count: unique.length, found: unique });
   }
 
   note("Looked for house numbers",
@@ -190,15 +197,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
-  // --- 6. where each one sits on the plan ---
-  const placed = toFractions(kept).sort((a, b) =>
+  // --- 6. what came back ---
+  //
+  // Real coordinates, not fractions of a canvas. The map needs them, and a
+  // fraction throws away the one thing that makes an aerial photograph
+  // useful: the ability to see whether these homes are yours.
+  const placed = [...kept].sort((a, b) =>
     a.label.localeCompare(b.label, undefined, { numeric: true }));
   note("Laid them out", true,
     `${placed.length} lots from "${best.title}", numbered ${placed[0].label}`
     + ` to ${placed[placed.length - 1].label}.`);
 
   if (!body.commit) {
-    return NextResponse.json({ steps, preview: true, lots: placed });
+    return NextResponse.json({
+      steps, preview: true, lots: placed,
+      // Every layer that found something, so the wrong pick is one click to
+      // correct rather than a conversation.
+      others: candidates
+        .filter((c) => c.title !== best!.title && c.count >= 4)
+        .map((c) => ({ title: c.title, count: c.count })),
+    });
   }
 
   // --- 7. write them ---
@@ -206,24 +224,32 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { data: existing } = await db.from("units").select("id, label").eq("property_id", id);
   const byLabel = new Map((existing ?? []).map((u) => [String(u.label), u.id as string]));
 
+  // Only what was asked for. In picking mode somebody has already looked at
+  // the aerial and said which of these are theirs, and ignoring that would
+  // make the picking decorative.
+  const want = Array.isArray(body.keep) && body.keep.length
+    ? new Set((body.keep as unknown[]).map(String))
+    : null;
+  const writing = want ? placed.filter((l) => want.has(l.label)) : placed;
+
   let made = 0, moved = 0;
-  for (const lot of placed) {
+  for (const lot of writing) {
     const known = byLabel.get(lot.label);
     if (known) {
       const { error } = await db.from("units")
-        .update({ map_x: lot.x, map_y: lot.y }).eq("id", known);
+        .update({ lat: lot.lat, lng: lot.lng }).eq("id", known);
       if (error) return NextResponse.json({ steps, error: error.message }, { status: 500 });
       moved++;
     } else {
       const { error } = await db.from("units").insert({
         property_id: id, label: lot.label,
-        map_x: lot.x, map_y: lot.y, map_rot: 0, is_vacant: true,
+        lat: lot.lat, lng: lot.lng, is_vacant: true,
       });
       if (error) return NextResponse.json({ steps, error: error.message }, { status: 500 });
       made++;
     }
   }
-  await db.from("properties").update({ map_kind: "plan" }).eq("id", id);
+  await db.from("properties").update({ map_kind: "aerial" }).eq("id", id);
 
   return NextResponse.json({ steps, ok: true, created: made, moved });
 }

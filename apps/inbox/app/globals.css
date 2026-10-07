@@ -1988,3 +1988,22 @@ a.metric:hover{border-color:var(--accent)}
 .pulllayers button{padding:.22rem .55rem;border:1px solid var(--hair);border-radius:999px;
   background:var(--card);font-size:.72rem;font-weight:600;color:var(--ink-2)}
 .pulllayers button:hover:not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
+
+
+/* ---- the park, on an aerial ---- */
+.parkmapbox{width:100%;aspect-ratio:16/10;border-radius:12px;overflow:hidden;
+  border:1px solid var(--hair);background:var(--sunk)}
+@media (max-width:760px){ .parkmapbox{aspect-ratio:4/5} }
+
+/* A lot number on the photograph. Readable against grass, a roof or a road,
+   which is why it carries its own background rather than trusting contrast
+   against whatever happens to be underneath it. */
+.mapdot{display:grid;place-items:center;min-width:1.9rem;height:1.45rem;padding:0 .3rem;
+  border-radius:999px;border:2px solid #fff;background:var(--dot);color:#fff;
+  font-size:.68rem;font-weight:800;font-variant-numeric:tabular-nums;
+  box-shadow:0 1px 4px rgba(0,0,0,.45);cursor:pointer;line-height:1}
+.mapdot.on{outline:3px solid #fff;outline-offset:1px;transform:scale(1.15)}
+/* Left out of a pull: still visible, so putting it back is one tap, but
+   plainly not counted. */
+.mapdot.bare{opacity:.42;border-style:dashed}
+.maplibregl-ctrl-attrib{font-size:.62rem}

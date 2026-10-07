@@ -5,6 +5,11 @@ import { HOME, clamp, nextLabel } from "@/lib/park";
 export type Lot = {
   id: string;
   label: string;
+  /** Where it really is, when the county told us. The aerial uses these. */
+  lat: number | null;
+  lng: number | null;
+  /** Where it sits on a hand-drawn plan, as fractions. Used when there are
+   *  no coordinates -- a park arranged over an uploaded site plan. */
   x: number | null;
   y: number | null;
   rot: number;
