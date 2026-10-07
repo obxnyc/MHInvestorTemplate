@@ -86,9 +86,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }, { status: 400 });
   }
   note("Asked the county what it serves", true,
-    `A ${found.kind ?? "map"} via ${found.via}. ${layers.length} layers: `
-    + layers.slice(0, 8).map((l) => l.title).join(", ")
-    + (layers.length > 8 ? "…" : ""));
+    `A ${found.kind ?? "map"} via ${found.via}. ${layers.length} layers with`
+    + " something queryable in them.");
 
   // --- 4. the layer with house numbers in it ---
   const box = boxAround(centre.lat, centre.lng, Number(body.metres) || 250);
@@ -98,7 +97,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // In order of likelihood, because the budget is spent in order. The last
   // run tried twenty-five aerial photographs and never reached the address
   // points, which were sitting there the whole time.
-  for (const layer of mostLikelyFirst(layers)) {
+  // A layer somebody already picked beats any amount of guessing.
+  const only = String(body.layerUrl ?? "").trim();
+  const order = only
+    ? layers.filter((l) => l.url === only)
+    : mostLikelyFirst(layers);
+
+  for (const layer of order) {
     // Sequentially and bounded: this is somebody's public service, and
     // twenty parallel requests is not how to introduce ourselves.
     if (tried.length >= 25) break;
@@ -127,11 +132,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   note("Looked for house numbers", Boolean(best?.found.length), tried.join(" · "));
 
   if (!best || !best.found.length) {
+    // Every layer by name, because at this point the list IS the diagnosis:
+    // it says whether this map carries address points at all, or whether the
+    // link points at the planning map rather than the parcel viewer.
     return NextResponse.json({
-      steps,
-      error: "None of the county's layers returned numbered points around this"
-        + " address. Either the park is somewhere else than its address"
-        + " suggests, or this map does not carry address points.",
+      steps, layers: layers.map((l) => ({ title: l.title, url: l.url })),
+      error: "None of the layers this map publishes carries house numbers near"
+        + " the park. Pick one below if you can see the right one, or find the"
+        + " county's parcel or address viewer — this looks like their planning"
+        + " map.",
     }, { status: 400 });
   }
 

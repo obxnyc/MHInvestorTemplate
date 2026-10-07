@@ -22,6 +22,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [pull, setPull] = useState<{
     steps: { did: string; ok: boolean; say: string }[];
     lots?: { label: string; x: number; y: number }[];
+    layers?: { title: string; url: string }[];
     error?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,11 +69,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   /** Ask the county. Preview first, always: forty lots appearing with the
    *  neighbours' numbers among them and no way to tell which is which is
    *  worse than no lots at all. */
-  async function askCounty(url: string, commit: boolean) {
+  async function askCounty(url: string, commit: boolean, layerUrl?: string) {
     setPulling(true); setError(null);
     const res = await fetch(`/api/properties/${propertyId}/plan/pull`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, commit }),
+      body: JSON.stringify({ url, commit, layerUrl }),
     });
     const out = await res.json().catch(() => ({}));
     setPulling(false);
@@ -193,6 +194,20 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             ))}
           </ol>
           {pull.error && <p className="err">{pull.error}</p>}
+          {pull.layers?.length ? (
+            <div className="pulllayers">
+              <p>Everything this map publishes — pick one to try on its own:</p>
+              <ul>
+                {pull.layers.map((l) => (
+                  <li key={l.url}>
+                    <button type="button" disabled={pulling} onClick={() => void askCounty(
+                      (document.querySelector('input[name="url"]') as HTMLInputElement)?.value ?? "",
+                      false, l.url)}>{l.title}</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {pull.lots?.length ? (
             <>
               <p>
