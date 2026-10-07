@@ -9,7 +9,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const js = ts.transpileModule(readFileSync(join(here, "..", "agol.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { appIdFrom, numberField, houseNumber, boxAround, toFractions, mostLikelyFirst } =
+const { appIdFrom, numberField, houseNumber, boxAround, toFractions, mostLikelyFirst,
+        inRing, inShape, parcelLayers } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
 const checks = [];
@@ -120,6 +121,66 @@ t("no homes, no positions", toFractions([]).length === 0);
   // Not excluded -- a county might surprise us -- but last, behind everything
   // that could plausibly answer.
   t("street centrelines come last", order[order.length - 1] === "Street Centerlines");
+}
+
+// --- inside the parcel, or the neighbours' ---
+// "Within 250 metres" swept in Capri Street and Rosemary Drive and came back
+// with eighty-five lots for a park that has twenty-eight. The parcel boundary
+// is the real answer.
+{
+  const square = [[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]];
+  t("a point in the middle is inside", inRing(5, 5, square));
+  t("a point outside is outside", inRing(15, 5, square) === false);
+  t("and so is one just past the edge", inRing(5, 10.5, square) === false);
+  // A vertex exactly level with the point must not be counted twice, which
+  // is the classic way this test silently inverts.
+  t("a point level with a vertex is still judged correctly",
+    inRing(10, 5, square) === false && inRing(0, 5, square) === true);
+}
+{
+  // A parcel with a right of way through it. A home in the hole is not on
+  // the parcel.
+  const withHole = {
+    type: "Polygon",
+    coordinates: [
+      [[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]],
+      [[4, 4], [4, 6], [6, 6], [6, 4], [4, 4]],
+    ],
+  };
+  t("inside the parcel counts", inShape(2, 2, withHole));
+  t("inside a hole does not", inShape(5, 5, withHole) === false);
+  t("outside altogether does not", inShape(20, 20, withHole) === false);
+}
+{
+  // A park split either side of a road is two polygons, and both are ours.
+  const two = {
+    type: "MultiPolygon",
+    coordinates: [
+      [[[0, 0], [0, 5], [5, 5], [5, 0], [0, 0]]],
+      [[[10, 10], [10, 15], [15, 15], [15, 10], [10, 10]]],
+    ],
+  };
+  t("both halves of a split parcel count",
+    inShape(2, 2, two) && inShape(12, 12, two));
+  t("the gap between them does not", inShape(7, 7, two) === false);
+}
+t("nothing in, nothing inside", inShape(1, 1, null) === false);
+
+{
+  // Cumberland publishes several things with "parcel" in the name that are
+  // not the parcel boundary.
+  const all = [
+    { title: "Parcels", url: "a" },
+    { title: "Voluntary Agriculture Districts · Vol_Ag_Dist_Parcels", url: "b" },
+    { title: "Voluntary Agriculture Districts · Vol_Ag_Parcels_Buffer", url: "c" },
+    { title: "Mineral Rights Parcels", url: "d" },
+    { title: "Zoning", url: "e" },
+  ];
+  const picked = parcelLayers(all).map((l) => l.title);
+  t("the real parcel layer is kept", picked.includes("Parcels"));
+  t("agriculture districts are not parcels", !picked.some((p) => /Vol_Ag/.test(p)));
+  t("nor are buffers", !picked.some((p) => /Buffer/.test(p)));
+  t("nor mineral rights", !picked.some((p) => /Mineral/.test(p)));
 }
 
 let failed = 0;

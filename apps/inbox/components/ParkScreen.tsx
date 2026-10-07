@@ -62,6 +62,14 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lots]);
 
+  // What a preview looks like ON the plan. A count tells you nothing about
+  // whether the right homes came back; the shape tells you immediately.
+  const preview: Lot[] = (pull?.lots ?? []).map((l) => ({
+    id: `preview:${l.label}`, label: l.label, x: l.x, y: l.y, rot: 0,
+    vacant: true, rent: null, tenant: null, sale: null,
+  }));
+  const shown = preview.length ? preview : lots;
+
   const open = lots.find((l) => l.id === selected) ?? null;
   const unplaced = lots.filter((l) => l.x === null);
   const placed = lots.filter((l) => l.x !== null);
@@ -158,7 +166,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       {/* A grey rectangle with nothing in it is indistinguishable from a
           broken page, which is exactly how it was read. */}
-      {placed.length === 0 && !laying && (
+      {placed.length === 0 && !laying && !preview.length && (
         <div className="parkempty">
           <h2>No lots on the plan yet</h2>
           <p>
@@ -211,9 +219,17 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           {pull.lots?.length ? (
             <>
               <p>
-                {pull.lots.length} lots found: {pull.lots.slice(0, 12).map((l) => l.label).join(", ")}
-                {pull.lots.length > 12 ? "…" : ""}
+                <strong>{pull.lots.length} lots</strong>, drawn below so you can
+                see them before anything is saved: {pull.lots.slice(0, 10).map((l) => l.label).join(", ")}
+                {pull.lots.length > 10 ? "…" : ""}
               </p>
+              {pull.lots.length > 40 && (
+                <p className="err">
+                  That is a lot of lots. If the shape below is a whole
+                  neighbourhood rather than your park, press <strong>Not
+                  these</strong> — the parcel boundary did not clip it.
+                </p>
+              )}
               <div className="invacts">
                 <button type="button" className="btn" onClick={() => setPull(null)}>
                   Not these
@@ -232,7 +248,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       <div className={`parkmain${open ? " withcard" : ""}`} onPointerUp={() => selected && editing && void settle(selected)}>
         <ParkPlan
-          lots={lots} selected={selected} editing={editing}
+          lots={shown} selected={selected} editing={editing && !preview.length}
           onSelect={setSelected}
           onMove={(id, x, y) => { setSelected(id); move(id, x, y); }}
           onAdd={(label, x, y) => void post({ action: "add", label, x, y })}
