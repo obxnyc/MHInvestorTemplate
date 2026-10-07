@@ -3,13 +3,24 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { footprint } from "@/lib/footprint";
-import { layOut, boundaryOf, maskOf, streetLines, countOf, type Plan } from "@/lib/parkplan";
+import { layOut, boundaryOf, maskOf, streetLines, countOf, type Plan, type Tap } from "@/lib/parkplan";
 
 export type LotState = "let" | "empty" | "bare" | "ours";
 
 /** What is known about a pad beyond where it is. Keyed by the plan's id,
  *  so a park with nothing on file still draws. */
 export type LotFacts = Record<string, { state: LotState; who?: string }>;
+
+/** The park as OpenStreetMap actually has it: real outlines, real roads.
+ *  When this is here the drawn block is not used at all. */
+export type RealPark = {
+  homes: { id: string; label: string; street: string; ring: number[][] }[];
+  streets: { name: string; line: number[][] }[];
+  boundary: number[][];
+  /** Buildings on the park that no lot number claimed -- sheds, the office,
+   *  a carport. Drawn, in grey, because they are there. */
+  spare?: number[][][];
+};
 
 const FILL: Record<LotState, string> = {
   let: "#2E8B68", ours: "#3E6BB0", empty: "#C2703A", bare: "#8FA3BE",
@@ -33,9 +44,10 @@ const FILL: Record<LotState, string> = {
  * are big enough to hold them.
  */
 export default function ParkMap(
-  { plan, facts, selected, onSelect, fitting, onMove }:
+  { plan, real, facts, selected, onSelect, fitting, onMove, taps, onTap }:
   {
     plan: Plan;
+    real?: RealPark | null;
     facts: LotFacts;
     selected: string | null;
     onSelect: (id: string | null) => void;
@@ -43,6 +55,9 @@ export default function ParkMap(
      *  over the pads on the aerial. */
     fitting?: boolean;
     onMove?: (lng: number, lat: number) => void;
+    /** Pads tapped on the photograph, while being pinned. */
+    taps?: Tap[];
+    onTap?: (at: Tap) => void;
   },
 ) {
   const box = useRef<HTMLDivElement>(null);
@@ -52,8 +67,8 @@ export default function ParkMap(
 
   // Read inside map handlers that are registered once. A handler closing
   // over the first render's props would still be moving the first plan.
-  const live = useRef({ plan, fitting, onMove, onSelect });
-  live.current = { plan, fitting, onMove, onSelect };
+  const live = useRef({ plan, fitting, onMove, onSelect, onTap });
+  live.current = { plan, fitting, onMove, onSelect, onTap };
 
   useEffect(() => {
     if (!box.current || map.current) return;
@@ -109,11 +124,11 @@ export default function ParkMap(
     //
     // The map's own pan stands down for the duration, or the park and the
     // photograph move together and nothing ever lines up.
-    let from: { lng: number; lat: number; centre: [number, number] } | null = null;
+    let from: { lng: number; lat: number; centre: [number, number]; moved: boolean } | null = null;
     const start = (e: { lngLat: maplibregl.LngLat; preventDefault: () => void }) => {
-      if (!live.current.fitting) return;
+      if (!live.current.fitting || tapping()) return;
       from = {
-        lng: e.lngLat.lng, lat: e.lngLat.lat,
+        lng: e.lngLat.lng, lat: e.lngLat.lat, moved: false,
         centre: [...live.current.plan.centre] as [number, number],
       };
       m.dragPan.disable();
@@ -121,12 +136,21 @@ export default function ParkMap(
     };
     const drag = (e: { lngLat: maplibregl.LngLat }) => {
       if (!from || !live.current.onMove) return;
+      // A tap is a press that did not move. Without this, every attempt to
+      // tap a pad nudges the park by whatever the hand wobbled, and tapping
+      // and dragging cannot both live on the same gesture.
+      const moved = Math.abs(e.lngLat.lng - from.lng) + Math.abs(e.lngLat.lat - from.lat);
+      if (!from.moved && moved < 1e-6) return;
+      from.moved = true;
       live.current.onMove(
         from.centre[0] + (e.lngLat.lng - from.lng),
         from.centre[1] + (e.lngLat.lat - from.lat),
       );
     };
     const stop = () => { from = null; m.dragPan.enable(); };
+    // Suppress the drag entirely while pads are being tapped: the two
+    // gestures are the same gesture, and the taps are the exact one.
+    const tapping = () => Boolean(live.current.fitting && live.current.onTap);
     m.on("mousedown", start);
     m.on("mousemove", drag);
     m.on("mouseup", stop);
@@ -153,20 +177,39 @@ export default function ParkMap(
     // A photograph has far more in it than a street map, so it takes a
     // heavier veil to go quiet; over the grey plan the same opacity would
     // erase the surrounding streets entirely and leave the park floating.
+    //
+    // And while the block is being fitted the veil comes off altogether.
+    // It was covering the one thing being aimed at: you cannot line the
+    // park up with pads you cannot see, which is most of why fitting felt
+    // impossible.
     if (m.getLayer("outside-veil")) {
-      m.setPaintProperty("outside-veil", "fill-opacity", sat ? 0.9 : 0.78);
+      m.setPaintProperty("outside-veil", "fill-opacity",
+        fitting ? 0 : sat ? 0.9 : 0.78);
     }
-    // And the park reads as a tint over grass, not a wash over paper.
     if (m.getLayer("park-fill")) {
-      m.setPaintProperty("park-fill", "fill-opacity", sat ? 0.12 : 0.45);
+      m.setPaintProperty("park-fill", "fill-opacity",
+        fitting ? 0 : sat ? 0.12 : 0.4);
     }
-  }, [sat, ready]);
+    // See-through while fitting, for the same reason.
+    if (m.getLayer("home-fill")) {
+      m.setPaintProperty("home-fill", "fill-opacity", fitting ? 0.35 : 0.9);
+    }
+  }, [sat, ready, fitting]);
 
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
 
-    const homes: GeoJSON.Feature[] = layOut(plan).map((h) => {
+    // Real outlines when OpenStreetMap has them, the drawn block when it
+    // does not. Everything below this point is the same either way, which
+    // is the point: one set of layers, two sources of geometry.
+    const homes: GeoJSON.Feature[] = (real
+      ? real.homes.map((h) => ({ ...h, ring: h.ring }))
+      : layOut(plan).map((h) => ({
+          id: h.id, label: h.label, street: h.street,
+          ring: footprint(h.lat, h.lng, h.bearing, plan.size),
+        }))
+    ).map((h) => {
       const f = facts[h.id] ?? { state: "bare" as LotState };
       return {
         type: "Feature",
@@ -175,20 +218,32 @@ export default function ParkMap(
           id: h.id, label: h.label, street: h.street,
           state: f.state, colour: FILL[f.state],
         },
-        geometry: { type: "Polygon", coordinates: [footprint(h.lat, h.lng, h.bearing, plan.size)] },
+        geometry: { type: "Polygon", coordinates: [h.ring] },
       };
     });
 
+    const ring = real?.boundary?.length ? real.boundary : boundaryOf(plan);
     const bounds: GeoJSON.Feature = {
       type: "Feature", properties: {},
-      geometry: { type: "Polygon", coordinates: [boundaryOf(plan)] },
+      geometry: { type: "Polygon", coordinates: [ring] },
     };
 
     const streets: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
-      features: streetLines(plan).map(({ name, line }) => ({
-        type: "Feature", properties: { name },
-        geometry: { type: "LineString", coordinates: line },
+      features: (real?.streets ?? streetLines(plan)).map((st) => ({
+        type: "Feature", properties: { name: st.name },
+        geometry: { type: "LineString", coordinates: st.line },
+      })),
+    };
+
+    // Everything else standing on the park. Drawn flat and grey: leaving
+    // them out makes the park look emptier than it is, and colouring them
+    // says they are lots.
+    const others: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: (real?.spare ?? []).map((r) => ({
+        type: "Feature", properties: {},
+        geometry: { type: "Polygon", coordinates: [r] },
       })),
     };
 
@@ -198,10 +253,24 @@ export default function ParkMap(
     };
     const mask: GeoJSON.Feature = {
       type: "Feature", properties: {},
-      geometry: { type: "Polygon", coordinates: maskOf(plan) },
+      geometry: {
+        type: "Polygon",
+        coordinates: real?.boundary?.length
+          ? [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
+             [...real.boundary].reverse()]
+          : maskOf(plan),
+      },
     };
     set("outside", mask);
     set("park", bounds);
+    set("others", others);
+    set("taps", {
+      type: "FeatureCollection",
+      features: (taps ?? []).map((p, i) => ({
+        type: "Feature", properties: { n: String(i + 1) },
+        geometry: { type: "Point", coordinates: p },
+      })),
+    });
     set("homes", { type: "FeatureCollection", features: homes });
     set("streets", streets);
 
@@ -221,6 +290,8 @@ export default function ParkMap(
       m.addLayer({ id: "park-line", type: "line", source: "park",
         paint: { "line-color": "#1F5BA6", "line-width": 2.5 } });
 
+      m.addLayer({ id: "other-fill", type: "fill", source: "others",
+        paint: { "fill-color": "#AFB7C2", "fill-opacity": 0.45 } });
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
         paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.9 } });
       m.addLayer({ id: "home-line", type: "line", source: "homes",
@@ -252,26 +323,55 @@ export default function ParkMap(
         paint: { "text-color": "#1F3C66", "text-halo-color": "#ffffff", "text-halo-width": 2.5 } });
 
       m.on("click", (e) => {
-        if (live.current.fitting) return;
+        if (live.current.fitting) {
+          if (live.current.onTap) live.current.onTap([e.lngLat.lng, e.lngLat.lat]);
+          return;
+        }
         const f = m.queryRenderedFeatures(e.point, { layers: ["home-fill"] })[0];
         live.current.onSelect(f ? String(f.properties?.id ?? "") : null);
       });
+      // Where each tap landed, numbered, so a misplaced one is obvious
+      // before three more are put on top of it.
+      m.addLayer({ id: "tap-dot", type: "circle", source: "taps",
+        paint: { "circle-radius": 9, "circle-color": "#D1453B",
+                 "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
+      m.addLayer({ id: "tap-n", type: "symbol", source: "taps",
+        layout: { "text-field": ["get", "n"], "text-size": 11,
+                  "text-font": ["Open Sans Bold"], "text-allow-overlap": true },
+        paint: { "text-color": "#ffffff" } });
+
       m.on("mouseenter", "home-fill", () => { m.getCanvas().style.cursor = "pointer"; });
       m.on("mouseleave", "home-fill", () => { m.getCanvas().style.cursor = ""; });
     }
 
     m.setFilter("home-on", ["==", ["get", "id"], selected ?? ""]);
-  }, [plan, facts, ready, selected]);
+  }, [plan, real, facts, ready, selected, taps]);
 
-  // Framed once, on what is drawn. Re-framing on every nudge would yank the
-  // map out from under somebody dragging the block into place.
-  const framed = useRef(false);
+  // Framed on what is drawn, once per set of geometry. Re-framing on every
+  // nudge would yank the map out from under somebody dragging the block into
+  // place; never re-framing leaves the park a blob in a field of grey when
+  // the real outlines arrive a second after the page opens.
+  const framed = useRef("");
   useEffect(() => {
     const m = map.current;
-    if (!m || !ready || framed.current) return;
-    framed.current = true;
-    frame();
+    if (!m || !ready) return;
+    const what = real?.boundary?.length ? "real" : "drawn";
+    if (framed.current === what) return;
+    framed.current = what;
+    // After paint, so the container has the height its CSS gives it.
+    const id = requestAnimationFrame(() => frame());
+    return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, real]);
+
+  // A phone rotating, or the card opening beside the map, changes the box
+  // the park has to fit in. MapLibre does not notice on its own.
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !ready) return;
+    const ro = new ResizeObserver(() => map.current?.resize());
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [ready]);
 
   function frame() {

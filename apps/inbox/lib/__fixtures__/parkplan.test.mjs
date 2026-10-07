@@ -22,10 +22,11 @@ writeFileSync(tmpFoot, transpile("footprint.ts"));
 writeFileSync(tmp, transpile("parkplan.ts")
   .replace(/(["'])\.\/footprint\1/g, '"./.parkplan.footprint.gen.mjs"'));
 let RETREAT, layOut, boundaryOf, maskOf, streetLines, streetsOf, countOf, convexHull;
+let fitTargets, fitFromTaps, localOf;
 let footprint, metresBetween;
 try {
-  ({ RETREAT, layOut, boundaryOf, maskOf, streetLines, streetsOf, countOf, convexHull } =
-    await import(tmp));
+  ({ RETREAT, layOut, boundaryOf, maskOf, streetLines, streetsOf, countOf, convexHull,
+     fitTargets, fitFromTaps, localOf } = await import(tmp));
   ({ footprint, metresBetween } = await import(tmpFoot));
 } finally {
   unlinkSync(tmp);
@@ -125,6 +126,82 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) < e;
 {
   const square = convexHull([[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0.5]]);
   t("a hull drops the point in the middle", square.length === 5);
+}
+{
+  // A park block is a rectangle. The hull version came out a rounded blob
+  // because every corner of it was a different row sticking out at a
+  // different angle, which is what "the shape is off" was looking at.
+  const ring = boundaryOf(RETREAT);
+  t("the boundary has four corners", ring.length === 5);
+  const side = (i) => metresBetween(ring[i], ring[i + 1]);
+  t("opposite sides are equal", near(side(0), side(2), 0.1) && near(side(1), side(3), 0.1));
+  // And it stays a rectangle of the same size when the park is turned,
+  // which a bounding box measured in north and east would not.
+  const turned = boundaryOf({ ...RETREAT, bearing: (RETREAT.bearing + 41) % 360 });
+  t("turning the park does not inflate its boundary",
+    near(metresBetween(turned[0], turned[1]), side(0), 0.5)
+    && near(metresBetween(turned[1], turned[2]), side(1), 0.5));
+}
+
+// --- pinned by tapping pads on the photograph ---
+{
+  const want = fitTargets(RETREAT);
+  t("four pads to tap", want.length === 4);
+  t("the first two are the ends of one row",
+    want[0].street === want[1].street && want[0].label !== want[1].label);
+  t("they are real pads on the drawing",
+    want.every((w) => layOut(RETREAT).some((h) => h.id === w.id)));
+}
+{
+  // Take a park we know, read off where four of its pads actually are,
+  // feed those back as taps, and the answer has to be the park we started
+  // with. If this drifts, fitting makes the map worse every time it is used.
+  const truth = {
+    ...RETREAT, bearing: 97, padSpacing: 12.4, pairGap: 34, streetGap: 61,
+    centre: [-78.9188, 35.0931],
+  };
+  const where = (id) => {
+    const h = layOut(truth).find((x) => x.id === id);
+    return [h.lng, h.lat];
+  };
+  const taps = fitTargets(RETREAT).map((w) => where(w.id));
+  const got = fitFromTaps(RETREAT, taps);
+
+  t("tapping recovers the bearing", near(got.bearing, truth.bearing, 0.2));
+  t("and the spacing along a row", near(got.padSpacing, truth.padSpacing, 0.1));
+  t("and the width of the street", near(got.pairGap, truth.pairGap, 0.3));
+  t("and the distance to the next street", near(got.streetGap, truth.streetGap, 0.3));
+
+  // Every home within a few centimetres of where it should be.
+  const after = layOut(got), before = layOut(truth);
+  const worst = Math.max(...after.map((h, i) =>
+    metresBetween([h.lng, h.lat], [before[i].lng, before[i].lat])));
+  t("and every home lands where it belongs", worst < 0.5);
+}
+{
+  // Two taps are enough to be worth applying -- the angle and the spacing
+  // are most of what is wrong -- so the park must move before the fourth.
+  const truth = { ...RETREAT, bearing: 80, padSpacing: 9 };
+  const where = (id) => {
+    const h = layOut(truth).find((x) => x.id === id);
+    return [h.lng, h.lat];
+  };
+  const two = fitTargets(RETREAT).slice(0, 2).map((w) => where(w.id));
+  const got = fitFromTaps(RETREAT, two);
+  t("two taps already set the angle", near(got.bearing, 80, 0.2));
+  t("and the spacing", near(got.padSpacing, 9, 0.05));
+  t("and leave the cross-street gaps alone", got.pairGap === RETREAT.pairGap);
+}
+{
+  t("one tap changes nothing", fitFromTaps(RETREAT, [[-78.9, 35.09]]) === RETREAT);
+}
+{
+  // The park's own frame, and its inverse. Everything in fitting rests on
+  // these two agreeing.
+  const h = layOut(RETREAT)[0];
+  const l = localOf(RETREAT, RETREAT.centre, [h.lng, h.lat]);
+  t("a home sits at sane local coordinates",
+    Math.abs(l.along) < 200 && Math.abs(l.across) < 200);
 }
 
 // --- everything that is not the park ---
