@@ -18,6 +18,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [laying, setLaying] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [pull, setPull] = useState<{
+    steps: { did: string; ok: boolean; say: string }[];
+    lots?: { label: string; x: number; y: number }[];
+    error?: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -57,6 +63,22 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
   const open = lots.find((l) => l.id === selected) ?? null;
   const unplaced = lots.filter((l) => l.x === null);
+  const placed = lots.filter((l) => l.x !== null);
+
+  /** Ask the county. Preview first, always: forty lots appearing with the
+   *  neighbours' numbers among them and no way to tell which is which is
+   *  worse than no lots at all. */
+  async function askCounty(url: string, commit: boolean) {
+    setPulling(true); setError(null);
+    const res = await fetch(`/api/properties/${propertyId}/plan/pull`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, commit }),
+    });
+    const out = await res.json().catch(() => ({}));
+    setPulling(false);
+    setPull(out);
+    if (out.ok) { setPull(null); await load(); }
+  }
 
   if (pending) {
     return (
@@ -132,6 +154,66 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       )}
 
       {error && <p className="err">{error}</p>}
+
+      {/* A grey rectangle with nothing in it is indistinguishable from a
+          broken page, which is exactly how it was read. */}
+      {placed.length === 0 && !laying && (
+        <div className="parkempty">
+          <h2>No lots on the plan yet</h2>
+          <p>
+            The county already knows where every home in this park is and what
+            number is on it. Paste the link to their map site and we&rsquo;ll
+            ask — nothing is saved until you have seen what came back.
+          </p>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const url = String(new FormData(e.currentTarget).get("url") ?? "");
+            if (url.trim()) void askCounty(url.trim(), false);
+          }}>
+            <input name="url" placeholder="https://www.arcgis.com/apps/…?id=…"
+                   defaultValue="https://www.arcgis.com/apps/webappviewer/index.html?id=a6ea68995c2349e9a177366288589be7" />
+            <button type="submit" className="btn pri" disabled={pulling}>
+              {pulling ? "Asking…" : "Pull from the county"}
+            </button>
+          </form>
+          <p className="dim">
+            Or press <strong>Arrange</strong> above and lay the streets out by
+            hand.
+          </p>
+        </div>
+      )}
+
+      {pull && (
+        <div className="pullout">
+          <ol>
+            {pull.steps.map((s, i) => (
+              <li key={i} className={s.ok ? "ok" : "no"}>
+                <strong>{s.did}</strong> — {s.say}
+              </li>
+            ))}
+          </ol>
+          {pull.error && <p className="err">{pull.error}</p>}
+          {pull.lots?.length ? (
+            <>
+              <p>
+                {pull.lots.length} lots found: {pull.lots.slice(0, 12).map((l) => l.label).join(", ")}
+                {pull.lots.length > 12 ? "…" : ""}
+              </p>
+              <div className="invacts">
+                <button type="button" className="btn" onClick={() => setPull(null)}>
+                  Not these
+                </button>
+                <button type="button" className="btn pri" disabled={pulling}
+                        onClick={() => void askCounty(
+                          (document.querySelector('input[name="url"]') as HTMLInputElement)?.value ?? "",
+                          true)}>
+                  {pulling ? "Saving…" : `Add these ${pull.lots.length} lots`}
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      )}
 
       <div className={`parkmain${open ? " withcard" : ""}`} onPointerUp={() => selected && editing && void settle(selected)}>
         <ParkPlan

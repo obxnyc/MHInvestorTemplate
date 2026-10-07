@@ -1953,3 +1953,26 @@ a.metric:hover{border-color:var(--accent)}
   background:var(--card);color:var(--ink);font:inherit;font-size:.86rem;
   font-weight:400;text-transform:none;letter-spacing:0}
 .rowform .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem}
+
+
+/* ---- an empty plan says what to do about it ---- */
+.parkempty{border:1px dashed var(--hair);border-radius:12px;padding:1.4rem 1.5rem;
+  margin-bottom:1rem;background:var(--card);max-width:40rem}
+.parkempty h2{margin:0 0 .4rem;font-size:1rem;font-weight:700}
+.parkempty p{margin:0 0 .8rem;font-size:.86rem;line-height:1.55;color:var(--muted)}
+.parkempty form{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem}
+.parkempty input{flex:1;min-width:14rem;padding:.5rem .65rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.82rem}
+.parkempty .dim{margin:0;font-size:.78rem;color:var(--faint)}
+
+/* What the county was asked, and what it said. Every step shown whether it
+   worked or not: when this fails in the field, the only thing between
+   somebody and a lost afternoon is knowing which step gave up. */
+.pullout{border:1px solid var(--hair);border-radius:12px;padding:1rem 1.1rem;
+  margin-bottom:1rem;background:var(--sunk);max-width:46rem}
+.pullout ol{margin:0 0 .7rem;padding-left:1.1rem;display:grid;gap:.3rem}
+.pullout li{font-size:.8rem;line-height:1.5;color:var(--ink-2)}
+.pullout li.ok::marker{color:var(--tn)}
+.pullout li.no::marker{color:var(--crit)}
+.pullout li.no{color:var(--crit)}
+.pullout p{margin:0 0 .7rem;font-size:.84rem;color:var(--ink-2);line-height:1.5}
