@@ -4,6 +4,7 @@ import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type LotState } from "./ParkMap";
 import LotCard from "./LotCard";
 import { RETREAT, layOut, countOf, type Plan, type Placed } from "@/lib/parkplan";
+import { degreesPerMetre } from "@/lib/footprint";
 
 /**
  * The park screen.
@@ -48,6 +49,32 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       }));
     } catch { /* unsaved is survivable; unmovable is not */ }
   }, [key]);
+
+  // Dragging gets the block within a few feet. Arrow keys get it onto the
+  // concrete: a mouse cannot reliably move a map one metre, and one metre is
+  // the difference between a home sitting on its pad and sitting on the road.
+  useEffect(() => {
+    if (!fitting) return;
+    const on = (e: KeyboardEvent) => {
+      const step = e.shiftKey ? 5 : 1;
+      const per = degreesPerMetre(plan.centre[1]);
+      const go = (east: number, north: number) => {
+        e.preventDefault();
+        remember({ ...plan, centre: [
+          plan.centre[0] + east * step * per.lng,
+          plan.centre[1] + north * step * per.lat,
+        ] });
+      };
+      if (e.key === "ArrowLeft") go(-1, 0);
+      else if (e.key === "ArrowRight") go(1, 0);
+      else if (e.key === "ArrowUp") go(0, 1);
+      else if (e.key === "ArrowDown") go(0, -1);
+      else if (e.key === "[") remember({ ...plan, bearing: (plan.bearing + 359.5) % 360 });
+      else if (e.key === "]") remember({ ...plan, bearing: (plan.bearing + 0.5) % 360 });
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [fitting, plan, remember]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/properties/${propertyId}/plan`, { cache: "no-store" });
@@ -105,9 +132,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         <div className="parkfit">
           <p className="parkhint">
             Switch to <strong>Aerial</strong>, then drag anywhere on the map to
-            slide the block onto the pads. Turn it until the rows line up and
-            stretch it until the homes sit on the concrete. Nothing else on the
-            page changes while you do this.
+            slide the block onto the pads. Arrow keys move it a metre at a time
+            (hold Shift for five), <kbd>[</kbd> and <kbd>]</kbd> turn it half a
+            degree. The sliders do the rest.
           </p>
           <Slider label="Turn" unit="°" min={0} max={359} step={1}
                   value={plan.bearing}

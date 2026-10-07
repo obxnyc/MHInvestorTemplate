@@ -21,10 +21,10 @@ const tmpFoot = join(here, "..", ".parkplan.footprint.gen.mjs");
 writeFileSync(tmpFoot, transpile("footprint.ts"));
 writeFileSync(tmp, transpile("parkplan.ts")
   .replace(/(["'])\.\/footprint\1/g, '"./.parkplan.footprint.gen.mjs"'));
-let RETREAT, layOut, boundaryOf, streetLines, streetsOf, countOf, convexHull;
+let RETREAT, layOut, boundaryOf, maskOf, streetLines, streetsOf, countOf, convexHull;
 let footprint, metresBetween;
 try {
-  ({ RETREAT, layOut, boundaryOf, streetLines, streetsOf, countOf, convexHull } =
+  ({ RETREAT, layOut, boundaryOf, maskOf, streetLines, streetsOf, countOf, convexHull } =
     await import(tmp));
   ({ footprint, metresBetween } = await import(tmpFoot));
 } finally {
@@ -125,6 +125,28 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) < e;
 {
   const square = convexHull([[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0.5]]);
   t("a hull drops the point in the middle", square.length === 5);
+}
+
+// --- everything that is not the park ---
+{
+  const mask = maskOf(RETREAT);
+  t("the mask is an outer ring and one hole", mask.length === 2);
+  t("the outer ring covers the world",
+    mask[0].some(([x]) => x <= -180) && mask[0].some(([x]) => x >= 180));
+  // A hole has to wind against its outer ring. Wound the same way it is not
+  // a hole, it is a second filled shape sitting on top of the park -- which
+  // looks like the veil simply failed to cut out.
+  const area = (ring) => {
+    let a = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+    }
+    return a / 2;
+  };
+  t("and the hole winds the other way",
+    Math.sign(area(mask[0])) !== Math.sign(area(mask[1])));
+  t("the hole is the park boundary",
+    mask[1].length === boundaryOf(RETREAT).length);
 }
 
 // --- the street labels ---

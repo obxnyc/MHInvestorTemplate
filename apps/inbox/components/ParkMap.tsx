@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { footprint } from "@/lib/footprint";
-import { layOut, boundaryOf, streetLines, countOf, type Plan } from "@/lib/parkplan";
+import { layOut, boundaryOf, maskOf, streetLines, countOf, type Plan } from "@/lib/parkplan";
 
 export type LotState = "let" | "empty" | "bare" | "ours";
 
@@ -100,23 +100,41 @@ export default function ParkMap(
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     m.on("load", () => setReady(true));
 
-    // Moving the block. The gesture is a drag on the map, so the map's own
-    // pan has to stand down for the duration or the park and the background
-    // both move and nothing lines up with anything.
-    let dragging = false;
-    m.on("mousedown", (e) => {
+    // Moving the block.
+    //
+    // By how far the finger moved, not to where it is. Setting the centre to
+    // the cursor teleports the whole park under the pointer on the first
+    // pixel of movement, which makes "it is off by twenty feet" impossible to
+    // correct -- you can never grab a corner, only re-drop the middle.
+    //
+    // The map's own pan stands down for the duration, or the park and the
+    // photograph move together and nothing ever lines up.
+    let from: { lng: number; lat: number; centre: [number, number] } | null = null;
+    const start = (e: { lngLat: maplibregl.LngLat; preventDefault: () => void }) => {
       if (!live.current.fitting) return;
-      dragging = true;
+      from = {
+        lng: e.lngLat.lng, lat: e.lngLat.lat,
+        centre: [...live.current.plan.centre] as [number, number],
+      };
       m.dragPan.disable();
       e.preventDefault();
-    });
-    m.on("mousemove", (e) => {
-      if (!dragging || !live.current.onMove) return;
-      live.current.onMove(e.lngLat.lng, e.lngLat.lat);
-    });
-    const stop = () => { dragging = false; m.dragPan.enable(); };
+    };
+    const drag = (e: { lngLat: maplibregl.LngLat }) => {
+      if (!from || !live.current.onMove) return;
+      live.current.onMove(
+        from.centre[0] + (e.lngLat.lng - from.lng),
+        from.centre[1] + (e.lngLat.lat - from.lat),
+      );
+    };
+    const stop = () => { from = null; m.dragPan.enable(); };
+    m.on("mousedown", start);
+    m.on("mousemove", drag);
     m.on("mouseup", stop);
     m.on("mouseout", stop);
+    m.on("touchstart", start);
+    m.on("touchmove", drag);
+    m.on("touchend", stop);
+    m.on("touchcancel", stop);
 
     map.current = m;
     return () => { m.remove(); map.current = null; };
@@ -131,6 +149,16 @@ export default function ParkMap(
     // White outlines read on a photograph; on a pale street map they vanish.
     if (m.getLayer("home-line")) {
       m.setPaintProperty("home-line", "line-color", sat ? "#ffffff" : "#2A3A4F");
+    }
+    // A photograph has far more in it than a street map, so it takes a
+    // heavier veil to go quiet; over the grey plan the same opacity would
+    // erase the surrounding streets entirely and leave the park floating.
+    if (m.getLayer("outside-veil")) {
+      m.setPaintProperty("outside-veil", "fill-opacity", sat ? 0.9 : 0.78);
+    }
+    // And the park reads as a tint over grass, not a wash over paper.
+    if (m.getLayer("park-fill")) {
+      m.setPaintProperty("park-fill", "fill-opacity", sat ? 0.12 : 0.45);
     }
   }, [sat, ready]);
 
@@ -168,10 +196,23 @@ export default function ParkMap(
       const src = m.getSource(id) as maplibregl.GeoJSONSource | undefined;
       if (src) src.setData(data); else m.addSource(id, { type: "geojson", data });
     };
+    const mask: GeoJSON.Feature = {
+      type: "Feature", properties: {},
+      geometry: { type: "Polygon", coordinates: maskOf(plan) },
+    };
+    set("outside", mask);
     set("park", bounds);
     set("homes", { type: "FeatureCollection", features: homes });
     set("streets", streets);
 
+    if (!m.getLayer("outside-veil")) {
+      // Everything that is not the park, behind glass. On the aerial this is
+      // what takes the trees, the neighbour's yard and the scrapyard over the
+      // fence out of the picture -- there is nothing to switch off in a
+      // photograph, so the only way to remove them is to cover them.
+      m.addLayer({ id: "outside-veil", type: "fill", source: "outside",
+        paint: { "fill-color": "#E3E7EC", "fill-opacity": 0.88 } });
+    }
     if (!m.getLayer("park-fill")) {
       // The boundary, under everything. Pale enough to lift the park off the
       // grey without colouring the homes that sit on it.

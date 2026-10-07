@@ -265,3 +265,26 @@ export function nudge(plan: Plan, change: Partial<Plan>): Plan {
 export function movedTo(plan: Plan, lng: number, lat: number): Plan {
   return { ...plan, centre: [lng, lat] };
 }
+
+/**
+ * Everything that is not the park.
+ *
+ * A polygon the size of the world with the park cut out of it. Painted pale
+ * grey over the top of whatever base map is showing, it does to an aerial
+ * photograph what a marina chart does to the water around the slips: the
+ * trees, the neighbour's yard and the scrapyard over the fence go behind
+ * glass, and the only thing in front of it is the park.
+ *
+ * Done as a hole rather than by hiding things because there is nothing to
+ * hide -- the base map is one picture, and the only way to take the trees
+ * out of a photograph is to cover them.
+ */
+export function maskOf(plan: Plan, margin = 14): number[][][] {
+  const world = [
+    [-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85],
+  ];
+  // The hole must wind the opposite way to the outer ring or it is not a
+  // hole, it is a second filled shape sitting on top of the park.
+  const hole = [...boundaryOf(plan, margin)].reverse();
+  return [world, hole];
+}
