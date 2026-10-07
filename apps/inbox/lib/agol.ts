@@ -160,9 +160,12 @@ async function expand(layers: { title: string; url: string }[]) {
       out.push({ title: `${l.title} · ${sub.name ?? sub.id}`, url: `${base}/${sub.id}` });
     }
   }
-  // Bounded: a county map can reference six services of forty layers each,
-  // and the point is to find address points, not to crawl their estate.
-  return out.slice(0, 60);
+  // Still bounded, but the old ceiling of 60 was set when photographs were
+  // still in the list and was quietly throwing away everything past it.
+  // Cumberland publishes well over a hundred layers; the parcels and the
+  // address points sit below the planning ones, which is exactly where a cap
+  // of 60 cut.
+  return out.slice(0, 250);
 }
 
 /** A layer that holds a picture rather than things with fields on them.
