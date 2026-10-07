@@ -17,6 +17,8 @@ export type RealPark = {
   homes: { id: string; label: string; street: string; ring: number[][] }[];
   streets: { name: string; line: number[][] }[];
   boundary: number[][];
+  /** What OpenStreetMap calls the piece of land, when it has one. */
+  parcel?: string | null;
   /** Buildings on the park that no lot number claimed -- sheds, the office,
    *  a carport. Drawn, in grey, because they are there. */
   spare?: number[][][];
@@ -207,7 +209,10 @@ export default function ParkMap(
     // Real outlines when OpenStreetMap has them, the drawn block when it
     // does not. Everything below this point is the same either way, which
     // is the point: one set of layers, two sources of geometry.
-    const homes: GeoJSON.Feature[] = (real
+    // Real outlines when there are any. The boundary and the outlines come
+    // from different questions and one can answer without the other, so the
+    // real property line is used even when the homes on it are drawn.
+    const homes: GeoJSON.Feature[] = (real?.homes?.length
       ? real.homes.map((h) => ({ ...h, ring: h.ring }))
       : layOut(plan).map((h) => ({
           id: h.id, label: h.label, street: h.street,
@@ -359,7 +364,7 @@ export default function ParkMap(
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
-    const what = real?.boundary?.length ? "real" : "drawn";
+    const what = `${real?.boundary?.length ? "real" : "drawn"}:${real?.homes?.length ?? 0}`;
     if (framed.current === what) return;
     framed.current = what;
     // After paint, so the container has the height its CSS gives it.
@@ -368,15 +373,12 @@ export default function ParkMap(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, real]);
 
-  // A phone rotating, or the card opening beside the map, changes the box
-  // the park has to fit in. MapLibre does not notice on its own.
-  useEffect(() => {
-    const el = box.current;
-    if (!el || !ready) return;
-    const ro = new ResizeObserver(() => map.current?.resize());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ready]);
+  // There was a ResizeObserver here that called the map's own resize. Each
+  // resize changed the canvas, which changed the box, which fired the
+  // observer again: the canvas grew every frame until it covered the whole
+  // page, over the header and the text. MapLibre already follows the window
+  // on its own, and the one case it misses -- the card opening beside the
+  // map -- is handled by framing explicitly instead.
 
   function frame() {
     const m = map.current;

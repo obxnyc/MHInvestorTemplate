@@ -30,10 +30,34 @@ export type OsmElement = {
 export type Shape = { id: string; ring: number[][]; centre: [number, number] };
 export type Road = { name: string; line: number[][] };
 
-/** The Overpass query. Buildings and named roads in a box, with their
- *  geometry inline so no second round trip is needed to resolve nodes. */
-export function overpassBody(box: { s: number; w: number; n: number; e: number }): string {
-  const b = `${box.s},${box.w},${box.n},${box.e}`;
+export type Box = { s: number; w: number; n: number; e: number };
+const bbox = (b: Box) => `${b.s},${b.w},${b.n},${b.e}`;
+
+/**
+ * Finding the park, asked in two questions rather than one.
+ *
+ * The first goes out wide, because the only coordinate anybody had for this
+ * park was a guess left over from a failed county pull, and it was wrong by
+ * further than any sensible search box -- which is why the streets were
+ * never found and the block sat crooked in the wrong place. Wide, but only
+ * for streets and land: a kilometre of Fayetteville holds a few named roads
+ * and thousands of buildings, and asking for both at that radius is a reply
+ * nobody can wait for.
+ *
+ * The second goes out tight, around the streets the first one found, and
+ * asks for the buildings.
+ */
+export function roadQuery(box: Box): string {
+  const b = bbox(box);
+  return `[out:json][timeout:25];(way["highway"]["name"](${b});way["landuse"](${b});way["place"](${b}););out geom;`;
+}
+export function buildingQuery(box: Box): string {
+  return `[out:json][timeout:25];(way["building"](${bbox(box)}););out geom;`;
+}
+/** Kept for the single-question form, still used where the park's position
+ *  is already known. */
+export function overpassBody(box: Box): string {
+  const b = bbox(box);
   return `[out:json][timeout:25];(way["building"](${b});way["highway"]["name"](${b}););out geom;`;
 }
 
@@ -59,6 +83,80 @@ export function buildingsOf(elements: OsmElement[]): Shape[] {
     out.push({ id: `osm${el.id ?? out.length}`, ring, centre: centroid(ring) });
   }
   return out;
+}
+
+/**
+ * The park as a piece of land, which is what the owner asked for: the
+ * property line, not a rectangle drawn around the homes.
+ *
+ * A mobile home park is mapped as an area in OpenStreetMap -- this one as
+ * "Ethel's Mobile Home Park", the name it had before -- and that area is the
+ * real boundary, notch and all. Closed ways only: an open one is a fence or
+ * a stream, not a parcel.
+ */
+export function areasOf(elements: OsmElement[]): { name: string; ring: number[][] }[] {
+  const out: { name: string; ring: number[][] }[] = [];
+  for (const el of elements) {
+    const tags = el.tags ?? {};
+    if (!tags.landuse && !tags.place && !tags.residential) continue;
+    if (!el.geometry || el.geometry.length < 4) continue;
+    const ring = el.geometry.map((p) => [p.lon, p.lat]);
+    const [fx, fy] = ring[0], [lx, ly] = ring[ring.length - 1];
+    if (fx !== lx || fy !== ly) continue;
+    out.push({ name: tags.name ?? tags.landuse ?? "land", ring });
+  }
+  return out;
+}
+
+/**
+ * Which of those pieces of land is this park: the one that holds the most of
+ * its streets.
+ *
+ * Not the nearest, and not the smallest. A park sits inside a residential
+ * district which sits inside a city limit, and all three are "near" it; only
+ * one of them has both of its streets inside it and is no bigger than it
+ * needs to be.
+ */
+export function parkAround(
+  areas: { name: string; ring: number[][] }[], roads: Road[],
+): { name: string; ring: number[][] } | null {
+  const points = roads.flatMap((r) => r.line);
+  if (!points.length) return null;
+
+  let best: { a: { name: string; ring: number[][] }; held: number; size: number } | null = null;
+  for (const a of areas) {
+    const held = points.filter((p) => inRing([p[0], p[1]], a.ring)).length;
+    if (!held) continue;
+    const size = Math.abs(ringArea(a.ring));
+    // More of the streets wins; among those that hold all of them, the
+    // tightest wins, because the city limit holds them too.
+    if (!best || held > best.held || (held === best.held && size < best.size)) {
+      best = { a, held, size };
+    }
+  }
+  return best?.a ?? null;
+}
+
+/** Ray casting. A point exactly on an edge may answer either way, which for
+ *  a parcel boundary is nobody's problem. */
+export function inRing(at: [number, number], ring: number[][]): boolean {
+  let hit = false;
+  for (let i = 0, j = ring.length - 2; i < ring.length - 1; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > at[1]) !== (yj > at[1])
+      && at[0] < ((xj - xi) * (at[1] - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+function ringArea(ring: number[][]): number {
+  const ox = ring[0][0], oy = ring[0][1];
+  let a = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    a += (ring[i][0] - ox) * (ring[i + 1][1] - oy)
+       - (ring[i + 1][0] - ox) * (ring[i][1] - oy);
+  }
+  return a / 2;
 }
 
 /** Named roads, as lines. */

@@ -25,12 +25,13 @@ writeFileSync(gen.osm, transpile("osm.ts")
   .replace(/(["'])\.\/footprint\1/g, '"./.osm.footprint.gen.mjs"')
   .replace(/(["'])\.\/parkplan\1/g, '"./.osm.parkplan.gen.mjs"'));
 let buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
-    orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf;
+    orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
+    areasOf, parkAround, inRing, roadQuery, buildingQuery;
 let RETREAT, layOut, streetLines;
 try {
   ({ buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
-     orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf }
-    = await import(gen.osm));
+     orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
+     areasOf, parkAround, inRing, roadQuery, buildingQuery } = await import(gen.osm));
   ({ RETREAT, layOut, streetLines } = await import(gen.plan));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
@@ -236,6 +237,43 @@ elements.push(home(nextId++, 10, 300));
     near(mid[0], 10, 1e-9) && near(mid[1], 0, 1e-9));
 }
 
+// --- the property line ---
+{
+  // A park inside a residential district inside a city limit. All three
+  // hold the streets; only one of them is the park.
+  const ringOf = (w, e, s2, n2) => [
+    { lat: s2, lon: w }, { lat: s2, lon: e }, { lat: n2, lon: e },
+    { lat: n2, lon: w }, { lat: s2, lon: w },
+  ];
+  const land = [
+    { tags: { landuse: "residential", name: "City of Fayetteville" },
+      geometry: ringOf(LNG - 0.05, LNG + 0.05, LAT - 0.05, LAT + 0.05) },
+    { tags: { landuse: "residential", name: "Ethel's Mobile Home Park" },
+      geometry: ringOf(LNG - 20 * dLng, LNG + 160 * dLng, LAT - 95 * dLat, LAT + 35 * dLat) },
+    { tags: { landuse: "industrial", name: "The scrapyard over the fence" },
+      geometry: ringOf(LNG + 400 * dLng, LNG + 600 * dLng, LAT, LAT + 100 * dLat) },
+  ];
+  const areas = areasOf(land);
+  t("three pieces of land", areas.length === 3);
+  // An open way is a fence or a stream, not a parcel.
+  t("an unclosed way is not a parcel",
+    areasOf([{ tags: { landuse: "residential" },
+               geometry: ringOf(0, 1, 0, 1).slice(0, 4) }]).length === 0);
+
+  const got = parkAround(areas, roadsOf(elements));
+  t("the park is the tightest land that holds its streets",
+    got?.name === "Ethel's Mobile Home Park");
+  t("and it is a closed ring",
+    got.ring[0][0] === got.ring[got.ring.length - 1][0]);
+  t("land that holds nothing is not the park",
+    parkAround(areasOf([land[2]]), roadsOf(elements)) === null);
+}
+{
+  const sq = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]];
+  t("a point inside is inside", inRing([5, 5], sq));
+  t("and a point outside is not", !inRing([15, 5], sq));
+}
+
 // --- the question asked ---
 {
   const b = boxAround([LNG, LAT], 420);
@@ -248,6 +286,17 @@ elements.push(home(nextId++, 10, 300));
   t("the query asks for buildings and named roads",
     q.includes('way["building"]') && q.includes('way["highway"]["name"]'));
   t("and for geometry inline", q.includes("out geom"));
+
+  // Two questions, not one. A kilometre and a half of Fayetteville holds a
+  // few named roads and thousands of buildings, and asking for both at that
+  // radius is a reply nobody can wait for.
+  const wide = roadQuery(b);
+  t("the wide question asks for roads and land",
+    wide.includes('way["highway"]["name"]') && wide.includes('way["landuse"]'));
+  t("and not for buildings", !wide.includes('way["building"]'));
+  t("the tight question asks only for buildings",
+    buildingQuery(b).includes('way["building"]')
+    && !buildingQuery(b).includes("highway"));
 }
 
 const bad = checks.filter(([, ok]) => !ok);
