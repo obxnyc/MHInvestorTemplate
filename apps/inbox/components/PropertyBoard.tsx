@@ -280,7 +280,11 @@ export default function PropertyBoard(
                       </button>
                       {/* The picture answers "which one is lot 34", which no
                           list ever will. */}
-                      <a className="mini" href={`/properties/${p.id}/map`}>
+                      {/* The plan, not the pin map. A park is drawn from its
+                          own streets; the aerial-backed version is for a
+                          single house where the pin IS the answer. */}
+                      <a className="mini"
+                         href={`/properties/${p.id}/${kindOf(p.kind).holds === "many" ? "plan" : "map"}`}>
                         Map of {kindOf(p.kind).holds === "many" ? "the lots" : "it"}
                       </a>
                       {canDelete && (
