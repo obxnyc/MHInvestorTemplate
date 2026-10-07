@@ -14,7 +14,7 @@ export type LotFacts = Record<string, { state: LotState; who?: string }>;
 export type RealPark = {
   homes: {
     id: string; label: string; street: string; ring: number[][];
-    drawn?: boolean; redrawn?: boolean;
+    drawn?: boolean;
   }[];
   streets: { name: string; line: number[][] }[];
   boundary: number[][];

@@ -38,7 +38,6 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     fit?: Plan;
     parcel?: string | null;
     drawn?: number;
-    redrawn?: number;
     missing?: { street: string; side: string; short: number }[];
   } | null>(null);
 
@@ -160,7 +159,6 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     });
     setOsm({
       drawn: homes.filter((h) => h.drawn).length,
-      redrawn: homes.filter((h) => h.redrawn).length,
       missing: rows
         .filter((r) => r.found < r.row.numbers.length)
         .map((r) => ({ street: r.row.street, side: r.row.side, short: r.row.numbers.length - r.found })),
@@ -236,10 +234,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           {real?.homes?.length ? (
             <>
               <strong>All {real.homes.length} lots.</strong>{" "}
-              {real.homes.length - (osm?.drawn ?? 0)} are the map&rsquo;s own
-              outlines.
+              {real.homes.length - (osm?.drawn ?? 0)} sit where the map has a
+              building.
               {osm?.drawn ? ` ${osm.drawn} drawn, dashed, where the map has none.` : ""}
-              {osm?.redrawn ? ` ${osm.redrawn} replaced with a standard pad.` : ""}
+              {" "}Every pad is the same rectangle, because every home here
+              is the same model.
             </>
           ) : osm?.error ?? "Drawn from the park's own layout."}
         </p>

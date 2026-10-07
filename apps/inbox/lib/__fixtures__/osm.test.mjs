@@ -278,10 +278,16 @@ elements.push(home(nextId++, 10, 300));
           lat: LAT + (p.lat - LAT) * 3, lon: LNG + (p.lon - LNG) * 3 })) }
       : e);
   const { homes } = assign(RETREAT, buildingsOf(big), roadsOf(big));
-  const odd = homes.filter((h) => h.redrawn);
-  t("an outline that is not a home is redrawn as a pad", odd.length >= 1);
-  t("at about the size of a home",
-    odd.every((h) => areaOf(h.ring) > 60 && areaOf(h.ring) < 120));
+  // Every home in this park is the same model, so every pad is the same
+  // rectangle. The map says where a pad is and which way it points, not
+  // what shape it is -- drawing the outlines made a row of identical homes
+  // look like a row of different ones, and made the office look like a lot
+  // the size of four.
+  const areas = homes.map((h) => areaOf(h.ring));
+  t("every pad is the same size",
+    Math.max(...areas) - Math.min(...areas) < 0.5);
+  t("and that size is a single-wide",
+    areas.every((a) => a > 80 && a < 95));
 }
 {
   // A building the far side of Pamalee Dr is not lot 3100.
@@ -357,6 +363,34 @@ elements.push(home(nextId++, 10, 300));
   t("a row short at both ends still has every lot",
     homes.filter((h) => h.street === "Lady Cheryl Dr" && h.side === "N").length === 12);
   t("and the park still has fifty one", homes.length === 51);
+}
+
+{
+  // The real case: no property line in the map at all. The park's extent
+  // then came from the spread of the buildings themselves, which leaves no
+  // room at either end by construction -- so the search for a split that
+  // fits inside it always answered nought, and the missing lots always
+  // went on the far end. Counted against the park's western edge instead,
+  // which the other rows establish.
+  const short = elements.filter((e) =>
+    !(e.tags?.building && (e.id === 1 || e.id === 2)));
+  const { homes } = assign(RETREAT, buildingsOf(short), roadsOf(short));
+  const row = homes.filter((h) => h.street === "Lady Viola Dr" && h.side === "N");
+  t("without any property line, the gap is still at the entrance",
+    row[0].label === "3124" && row[0].drawn === true && row[1].drawn === true);
+  t("and 3120 is the first one the map actually has",
+    row[2].label === "3120" && !row[2].drawn);
+  // Measured between the middles of the pads. A corner is not a position:
+  // two pads at the same spacing but different angles have corners at
+  // different distances, which is a property of rectangles rather than of
+  // the park.
+  const xs = row.map((h) => centroid(h.ring)[0]);
+  t("the row still runs west to east in order",
+    xs.every((x, i) => i === 0 || x > xs[i - 1]));
+  t("evenly spaced, including the drawn ones", (() => {
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+    return Math.max(...gaps) / Math.min(...gaps) < 1.05;
+  })());
 }
 
 // --- the tightest run ---
