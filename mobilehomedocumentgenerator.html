@@ -77,7 +77,7 @@
 <div class="app">
   <!-- ============ FORM PANEL ============ -->
   <div class="panel">
-    <h1>Mobile Home Document Generator <span style="font-size:11px;font-weight:700;color:#1f5c46;background:#e7f0ec;border-radius:999px;padding:2px 8px;vertical-align:middle;white-space:nowrap">v2 · North Carolina</span></h1>
+    <h1>Mobile Home Document Generator <span style="font-size:11px;font-weight:700;color:#1f5c46;background:#e7f0ec;border-radius:999px;padding:2px 8px;vertical-align:middle;white-space:nowrap">v3 · North Carolina</span></h1>
     <p class="sub">Fill in the fields once — the Purchase Agreement (seller‑financed Bill of Sale) and the Park Land Lease build themselves, do the loan math for you, then print to PDF. Your entries stay saved in this browser.</p>
 
     <div class="tabs">
@@ -140,7 +140,7 @@
       <div class="row3">
         <div><label>Lot rent ($/mo)</label><input type="number" id="rent" value="500" step="25"></div>
         <div><label>Consulting ($/mo)</label><input type="number" id="consult" value="50" step="25"></div>
-        <div><label>Reserve ($)</label><input type="number" id="reserve" value="750" step="50"></div>
+        <div><label>Reserve ($ per home)</label><input type="number" id="reserve" value="500" step="50"></div>
       </div>
       <div class="row">
         <div><label>Notice period (days)</label><input type="number" id="notice" value="60" step="15"></div>
@@ -162,7 +162,14 @@
         </div>
       </div>
 
-      <div class="check"><input type="checkbox" id="incLate" checked><label for="incLate">Late fee &amp; default / repossession on the loan</label></div>
+      <div class="check"><input type="checkbox" id="incRentLate" checked><label for="incRentLate">Late fee on lot rent &amp; consulting fee <span class="hint">(lease)</span></label></div>
+      <div class="row" id="rentLateRow">
+        <div><label>Grace (days)</label><input type="number" id="rentGrace" value="5" step="1"></div>
+        <div><label>Late fee ($)</label><input type="number" id="rentLateFee" value="25" step="5"></div>
+      </div>
+      <div class="hint" style="margin:2px 0 6px">NC caps residential late fees at the greater of $15 or 5% of the monthly rent, and no charge until rent is 5+ days late. For $500 rent that cap is $25.</div>
+
+      <div class="check"><input type="checkbox" id="incLate" checked><label for="incLate">Late fee &amp; default / repossession on the loan <span class="hint">(purchase)</span></label></div>
       <div class="row" id="lateRow">
         <div><label>Grace (days)</label><input type="number" id="graceDays" value="10" step="1"></div>
         <div><label>Late fee ($)</label><input type="number" id="lateFee" value="50" step="5"></div>
@@ -229,8 +236,8 @@ function payment(P,apr,yrs,freq){
 }
 
 /* ---------- state / persistence ---------- */
-const FIELDS=['seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','escPct','escApplies','graceDays','lateFee'];
-const CHECKS=['incFinance','incAmort','incEscalate','incLate','incSecurity','incInsure','incNotary'];
+const FIELDS=['seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','escPct','escApplies','rentGrace','rentLateFee','graceDays','lateFee'];
+const CHECKS=['incFinance','incAmort','incEscalate','incRentLate','incLate','incSecurity','incInsure','incNotary'];
 let docMode='both';
 
 function saveState(){
@@ -349,6 +356,10 @@ function render(){
   const escClause = escOn ? `<h3>4A. Annual Rent Escalation</h3>
     <p>Beginning on the first anniversary of the effective date and on each anniversary thereafter, the ${escApplies} shall automatically increase by <span class="fill">${escPct}%</span> over the amount in effect during the preceding year, to account for inflation and rising operating costs. This automatic adjustment is in addition to, and does not limit, the Park Owner's right to adjust rent under Section 4 upon ${notice} days' written notice.</p>`:'';
 
+  const rentLateClause = chk('incRentLate') ? `<h3>4B. Late Payment of Rent</h3>
+    <p>If any lot rent or consulting fee is not received within <span class="fill">${num('rentGrace')||5}</span> days of its due date, Homeowner shall pay a late charge of <span class="fill">$${money0(num('rentLateFee'))}</span>. Repeated or continued late payment shall constitute cause for termination under Section 9. Any late charge shall not exceed the maximum permitted by applicable law.</p>`:'';
+  $('rentLateRow').style.opacity=chk('incRentLate')?1:.4;
+
   const lease = `
     <h2>MOBILE HOME PARK LAND LEASE AGREEMENT</h2>
     <p>This Mobile Home Park Land Lease Agreement (“Agreement”) is made and entered into as of the <span class="fill">${longDate(v('lDate'))}</span>, by and between:</p>
@@ -368,9 +379,10 @@ function render(){
     <h3>4. Rent Adjustment</h3>
     <p>The monthly lot rent is <span class="fill">$${money(num('rent'))}</span>. Any increase in rent shall be effective ${notice} days following written notice from Park Owner to Homeowner.</p>
     ${escClause}
+    ${rentLateClause}
 
     <h3>5. Monthly Consulting Fee</h3>
-    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(num('consult'))}</span> (${dollarsWords(num('consult'))}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintains an interest in the mobile home park land owned by ${parkOwner} or any of his affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days' written notice to the Homeowner.</p>
+    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(num('consult'))}</span> (${dollarsWords(num('consult'))}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintains an interest in the mobile home park land owned by ${parkOwner} or any of its affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days' written notice to the Homeowner.</p>
 
     <h3>6. Park Rules and Regulations</h3>
     <p>Both the Homeowner and the Park Owner agree to comply with all rules and regulations of the Park, as they may be amended from time to time. These rules and regulations will be provided to the Homeowner upon execution of this Agreement and may be updated with reasonable notice. Homeowner is responsible for ensuring that their guests, tenants, and any other occupants of the mobile home also comply with these rules.</p>
@@ -382,7 +394,7 @@ function render(){
     <p>The Homeowner is responsible for maintaining the mobile home in a safe and sanitary condition, including all plumbing, electrical, and mechanical systems within the mobile home. The Park Owner shall maintain the common areas of the Park, including roads, utilities, and any shared amenities, unless otherwise agreed.</p>
 
     <h3>9. Termination</h3>
-    <p>Either party may terminate this Agreement by providing ${notice} days' written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws.</p>
+    <p>Either party may terminate this Agreement by providing ${notice} days' written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws. Homeowner shall not remove the mobile home from the Lot while any amount is owed to Park Owner or its affiliates without Park Owner's consent.</p>
 
     <h3>10. Indemnification</h3>
     <p>Homeowner agrees to indemnify and hold harmless the Park Owner from any loss, damage, or liability arising from Homeowner's use of the Lot or any violation of this Agreement or Park rules and regulations.</p>
@@ -395,13 +407,16 @@ function render(){
 
     <h3>13. Right of First Refusal, Sale of Mobile Home, and Renter Approval</h3>
     <p>(a) <b>Right of First Refusal:</b> In the event the Homeowner wishes to sell the mobile home, the Park Owner shall have the first right of refusal to purchase the mobile home. The Homeowner must provide written notice to the Park Owner of the intent to sell, including the terms of the sale, and the Park Owner shall have ${rofr} days to respond with an offer to purchase the mobile home on the same terms. If the Park Owner does not exercise the right of first refusal, the Homeowner may proceed with the sale to a third party.</p>
-    <p>(b) <b>Park Owner’s Right to Block Sale:</b> The Park Owner may block the sale of the mobile home if the potential buyer is deemed unfit to purchase the home or fails to meet the qualifications for residency in the Park, including but not limited to the buyer’s ability to comply with the Park’s rules and regulations. The Park Owner’s decision shall be final and binding.</p>
+    <p>(b) <b>Park Owner’s Right to Block Sale:</b> The Park Owner may block the sale of the mobile home if the potential buyer is deemed unfit to purchase the home or fails to meet the qualifications for residency in the Park, including but not limited to the buyer’s ability to comply with the Park’s rules and regulations. The Park Owner shall not exercise this right unreasonably.</p>
     <p>(c) <b>Outstanding Debt on Home:</b> Any sale of the mobile home by the Homeowner is contingent upon the payment in full of any existing debt or financial obligations owed on the mobile home. The Homeowner must ensure that all such debts are satisfied prior to completing the sale.</p>
     <p>(d) <b>Renter Approval:</b> Any new renter or tenant selected by the Homeowner to occupy the mobile home must be approved by the Park Owner. The Park Owner may approve or reject any potential tenant at their sole discretion unless the Park Owner has expressly granted written consent for an exception.</p>
-    <p>(e) <b>Reserve Fund:</b> The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(num('reserve'))}</span> (${dollarsWords(num('reserve'))}) to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund’s availability upon request.</p>
+    <p>(e) <b>Reserve Fund:</b> The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(num('reserve'))}</span> (${dollarsWords(num('reserve'))}) for each mobile home owned by Homeowner in the Park to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund’s availability upon request.</p>
 
     <h3>14. Notices</h3>
     <p>Any notices required to be given under this Agreement shall be delivered in writing. Notices to the Park Owner must be delivered in writing at least ${notice} days prior to any proposed action, such as termination, rent adjustment, or other significant changes. Notices to the Homeowner may be delivered by mail, in person, or by electronic means if agreed upon by both parties.</p>
+
+    <h3>15. Counterparts and Electronic Signatures</h3>
+    <p>This Agreement may be executed in counterparts, each of which shall constitute an original and all of which together shall constitute one agreement. Electronic and PDF signatures shall be deemed originals and shall be binding upon the parties to the fullest extent permitted by law.</p>
 
     <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
     <div class="sig">
