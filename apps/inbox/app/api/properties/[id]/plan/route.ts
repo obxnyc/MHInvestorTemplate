@@ -35,7 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .select(cols).eq("property_id", id).order("label");
 
   let pending = false;
-  let got = await read("id, label, map_x, map_y, map_rot, is_vacant, monthly_rent");
+  let got = await read("id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent");
   if (got.error && missing(got.error)) {
     pending = true;
     got = await read("id, label, is_vacant, monthly_rent");
@@ -46,6 +46,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const rows = (got.data ?? []) as unknown as {
     id: string; label: string; is_vacant: boolean; monthly_rent: number | null;
     map_x?: number | null; map_y?: number | null; map_rot?: number | null;
+    lat?: number | null; lng?: number | null;
   }[];
   const unitIds = rows.map((u) => u.id);
 
@@ -94,6 +95,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     lots: rows.map((u) => ({
       id: u.id,
       label: u.label,
+      lat: u.lat === null || u.lat === undefined ? null : Number(u.lat),
+      lng: u.lng === null || u.lng === undefined ? null : Number(u.lng),
       x: u.map_x ?? null,
       y: u.map_y ?? null,
       rot: u.map_rot ?? 0,

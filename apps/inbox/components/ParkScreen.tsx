@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import ParkPlan, { type Lot } from "./ParkPlan";
+import ParkMap, { type MapLot } from "./ParkMap";
 import LotCard from "./LotCard";
 
 /**
@@ -21,11 +22,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [pulling, setPulling] = useState(false);
   const [pull, setPull] = useState<{
     steps: { did: string; ok: boolean; say: string }[];
-    lots?: { label: string; x: number; y: number }[];
+    lots?: { label: string; lat: number; lng: number }[];
+    others?: { title: string; count: number }[];
     layers?: { title: string; url: string }[];
     error?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** In a preview, which of the found homes are actually ours. Everything
+   *  starts in; the aerial makes the ones that are not obvious. */
+  const [keep, setKeep] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/properties/${propertyId}/plan`, { cache: "no-store" });
@@ -64,11 +69,20 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
   // What a preview looks like ON the plan. A count tells you nothing about
   // whether the right homes came back; the shape tells you immediately.
-  const preview: Lot[] = (pull?.lots ?? []).map((l) => ({
-    id: `preview:${l.label}`, label: l.label, x: l.x, y: l.y, rot: 0,
-    vacant: true, rent: null, tenant: null, sale: null,
-  }));
-  const shown = preview.length ? preview : lots;
+  /** Homes with real coordinates go on the aerial. The drawn plan stays for
+   *  a park somebody arranged by hand, where there are no coordinates to
+   *  put on a map. */
+  const onMap: MapLot[] = pull?.lots?.length
+    ? pull.lots.map((l) => ({
+        id: l.label, label: l.label, lat: l.lat, lng: l.lng,
+        state: keep.has(l.label) ? ("candidate" as const) : ("bare" as const),
+      }))
+    : lots.filter((l) => l.lat !== null && l.lng !== null).map((l) => ({
+        id: l.id, label: l.label, lat: l.lat as number, lng: l.lng as number,
+        state: (!l.sale ? (l.tenant ? "ours" : "bare")
+          : l.tenant ? "let" : "empty") as MapLot["state"],
+      }));
+  const drawn = lots.filter((l) => l.x !== null && l.lat === null);
 
   const open = lots.find((l) => l.id === selected) ?? null;
   const unplaced = lots.filter((l) => l.x === null);
@@ -77,16 +91,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   /** Ask the county. Preview first, always: forty lots appearing with the
    *  neighbours' numbers among them and no way to tell which is which is
    *  worse than no lots at all. */
-  async function askCounty(url: string, commit: boolean, layerUrl?: string) {
+  async function askCounty(
+    url: string, commit: boolean, layerUrl?: string, keepLabels?: string[],
+  ) {
     setPulling(true); setError(null);
     const res = await fetch(`/api/properties/${propertyId}/plan/pull`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, commit, layerUrl }),
+      body: JSON.stringify({ url, commit, layerUrl, keep: keepLabels }),
     });
     const out = await res.json().catch(() => ({}));
     setPulling(false);
     setPull(out);
-    if (out.ok) { setPull(null); await load(); }
+    setKeep(new Set((out.lots ?? []).map((l: { label: string }) => l.label)));
+    if (out.ok) { setPull(null); setKeep(new Set()); await load(); }
   }
 
   if (pending) {
@@ -166,7 +183,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       {/* A grey rectangle with nothing in it is indistinguishable from a
           broken page, which is exactly how it was read. */}
-      {placed.length === 0 && !laying && !preview.length && (
+      {lots.length === 0 && !laying && !pull?.lots?.length && (
         <div className="parkempty">
           <h2>No lots on the plan yet</h2>
           <p>
@@ -219,26 +236,26 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           {pull.lots?.length ? (
             <>
               <p>
-                <strong>{pull.lots.length} lots</strong>, drawn below so you can
-                see them before anything is saved: {pull.lots.slice(0, 10).map((l) => l.label).join(", ")}
-                {pull.lots.length > 10 ? "…" : ""}
+                <strong>{keep.size} of {pull.lots.length}</strong> on the aerial
+                below. Tap any home to take it out or put it back — the
+                photograph makes it obvious which are yours.
               </p>
-              {pull.lots.length > 40 && (
-                <p className="err">
-                  That is a lot of lots. If the shape below is a whole
-                  neighbourhood rather than your park, press <strong>Not
-                  these</strong> — the parcel boundary did not clip it.
+              {pull.others?.length ? (
+                <p className="dim">
+                  Other layers found: {pull.others.map((o) => `${o.title} (${o.count})`).join(", ")}.
+                  Pick one from the list below if this is the wrong set.
                 </p>
-              )}
+              ) : null}
               <div className="invacts">
                 <button type="button" className="btn" onClick={() => setPull(null)}>
                   Not these
                 </button>
-                <button type="button" className="btn pri" disabled={pulling}
+                <button type="button" className="btn pri"
+                        disabled={pulling || keep.size === 0}
                         onClick={() => void askCounty(
                           (document.querySelector('input[name="url"]') as HTMLInputElement)?.value ?? "",
-                          true)}>
-                  {pulling ? "Saving…" : `Add these ${pull.lots.length} lots`}
+                          true, undefined, [...keep])}>
+                  {pulling ? "Saving…" : `Keep these ${keep.size}`}
                 </button>
               </div>
             </>
@@ -247,12 +264,24 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       )}
 
       <div className={`parkmain${open ? " withcard" : ""}`} onPointerUp={() => selected && editing && void settle(selected)}>
-        <ParkPlan
-          lots={shown} selected={selected} editing={editing && !preview.length}
-          onSelect={setSelected}
-          onMove={(id, x, y) => { setSelected(id); move(id, x, y); }}
-          onAdd={(label, x, y) => void post({ action: "add", label, x, y })}
-        />
+        {onMap.length ? (
+          <ParkMap
+            lots={onMap} selected={selected} onSelect={setSelected}
+            picking={Boolean(pull?.lots?.length)}
+            onToggle={(label) => setKeep((prev) => {
+              const next = new Set(prev);
+              if (next.has(label)) next.delete(label); else next.add(label);
+              return next;
+            })}
+          />
+        ) : (
+          <ParkPlan
+            lots={drawn} selected={selected} editing={editing}
+            onSelect={setSelected}
+            onMove={(id, x, y) => { setSelected(id); move(id, x, y); }}
+            onAdd={(label, x, y) => void post({ action: "add", label, x, y })}
+          />
+        )}
         {open && (
           <LotCard lot={open} onClose={() => setSelected(null)} onChanged={load} />
         )}
