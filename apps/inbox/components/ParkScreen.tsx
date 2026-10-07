@@ -225,8 +225,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         <p className="parkhint">
           {real?.homes?.length
             ? "Real outlines, from OpenStreetMap."
+            : real?.boundary?.length && osm?.error
+            ? "Showing the property line found earlier; this attempt did not get that far."
             : osm?.error ?? "Drawn from the park's own layout."}
           {real?.parcel && ` Property line: ${real.parcel}.`}
+          {osm?.error && real?.boundary?.length ? ` ${osm.error}` : null}
           {osm?.missing?.length
             ? ` ${osm.missing.map((m) => `${m.street} is ${m.short} short`).join(", ")} — those lots aren't mapped there yet.`
             : null}

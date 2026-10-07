@@ -17,7 +17,7 @@
  */
 
 import { metresBetween, bearingOf, half } from "./footprint";
-import { streetLines } from "./parkplan";
+import { streetLines, layOut, localOf, fromLocal } from "./parkplan";
 import type { Plan, PlanRow, Tap } from "./parkplan";
 
 export type OsmElement = {
@@ -48,11 +48,35 @@ const bbox = (b: Box) => `${b.s},${b.w},${b.n},${b.e}`;
  * asks for the buildings.
  */
 export function roadQuery(box: Box): string {
+  return `[out:json][timeout:25];way["highway"]["name"](${bbox(box)});out geom;`;
+}
+
+/** Pieces of land, asked separately and asked small.
+ *
+ *  This was bundled in with the roads over a three-kilometre box. Every
+ *  back yard in Fayetteville is tagged landuse, so the answer ran past
+ *  Overpass's own time limit -- and a query that times out server-side comes
+ *  back as a perfectly ordinary 200 with an empty list and a remark, which
+ *  read here as "there are no streets by those names", which is why the park
+ *  could never be found even though the base map was drawing its street
+ *  signs on the same screen. */
+export function landQuery(box: Box): string {
   const b = bbox(box);
-  return `[out:json][timeout:25];(way["highway"]["name"](${b});way["landuse"](${b});way["place"](${b}););out geom;`;
+  return `[out:json][timeout:25];(way["landuse"](${b});way["place"](${b}););out geom;`;
 }
 export function buildingQuery(box: Box): string {
-  return `[out:json][timeout:25];(way["building"](${bbox(box)}););out geom;`;
+  return `[out:json][timeout:25];way["building"](${bbox(box)});out geom;`;
+}
+
+/** The named roads nearest a point, for saying what IS there when the ones
+ *  being looked for are not. An error that lists the neighbours is a fixable
+ *  error; "none found" is a week of guessing. */
+export function nearestNames(roads: Road[], to: Tap, howMany = 8): string[] {
+  return [...new Map(roads.map((r) => [r.name, r])).values()]
+    .map((r) => ({ name: r.name, d: nearestOn(r.line, to).metres }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, howMany)
+    .map((r) => `${r.name} (${Math.round(r.d)} m)`);
 }
 /** Kept for the single-question form, still used where the park's position
  *  is already known. */
@@ -495,3 +519,58 @@ export function midOf(line: number[][]): [number, number] {
 
 const segLen = (line: number[][], i: number) =>
   Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
+
+/**
+ * The rows squeezed to fit inside the property line.
+ *
+ * A row of thirteen homes at ten and a half metres is a hundred and
+ * twenty-six metres long whether or not the park is that long, so the ends
+ * of every row hung outside the boundary. The spacing is the one number in
+ * the description that was always a guess -- the street positions come from
+ * the roads and the home size is a measurement -- so it is the one that
+ * gives.
+ *
+ * Only ever shrinks. A park with room to spare is drawn at the spacing it
+ * was given rather than stretched to touch its own fence.
+ */
+export function fitInside(plan: Plan, ring: number[][], margin = 8): Plan {
+  if (ring.length < 4 || !plan.rows.length) return plan;
+  const homes = layOut(plan);
+  if (!homes.length) return plan;
+
+  const spread = (points: Tap[], of: Plan) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const p of points) {
+      const { along } = localOf(of, of.centre, p);
+      if (along < lo) lo = along;
+      if (along > hi) hi = along;
+    }
+    return { lo, hi, width: hi - lo, mid: (lo + hi) / 2 };
+  };
+
+  const park = spread(ring.map((p) => [p[0], p[1]] as Tap), plan);
+  const room = park.width - 2 * margin;
+  if (!(room > 0)) return plan;
+
+  // The homes themselves take up room at each end of the row, not just
+  // their centres: a row measured centre to centre is one home narrower
+  // than the row actually is.
+  const rows = spread(homes.map((h) => [h.lng, h.lat] as Tap), plan);
+  const taken = rows.width + plan.size.width;
+
+  let out = plan;
+  if (taken > room) {
+    // Only ever shrinks. A park with room to spare is drawn at the spacing
+    // it was given rather than stretched to touch its own fence.
+    const scale = (room - plan.size.width) / rows.width;
+    out = { ...plan, padSpacing: plan.padSpacing * Math.max(0.2, scale) };
+  }
+
+  // And centred in the park along the rows. The street midpoint the rows
+  // were hung from is wherever the road happens to have been traced from
+  // and to, which is not the middle of the park -- so even a row that fits
+  // was sitting off one end of it.
+  const now = spread(layOut(out).map((h) => [h.lng, h.lat] as Tap), out);
+  const parkNow = spread(ring.map((p) => [p[0], p[1]] as Tap), out);
+  return { ...out, centre: fromLocal(out, parkNow.mid - now.mid, 0) };
+}
