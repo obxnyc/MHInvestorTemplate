@@ -3,7 +3,8 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   appIdFrom, geocode, layersOf, numberField, boxAround, pointsIn,
-  houseNumber, toFractions, mostLikelyFirst, type Step, type FoundLot,
+  houseNumber, toFractions, mostLikelyFirst, parcelLayers, parcelAt, inShape,
+  type Step, type FoundLot,
 } from "@/lib/agol";
 
 export const runtime = "nodejs";
@@ -147,8 +148,50 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }, { status: 400 });
   }
 
-  // --- 5. where each one sits on the plan ---
-  const placed = toFractions(best.found).sort((a, b) =>
+  // --- 5. clip to the parcel ---
+  //
+  // "Within 250 metres" is not the question. It swept in Capri Street,
+  // Gary Street and Rosemary Drive and came back with eighty-five lots for a
+  // park that has twenty-eight. A park IS a parcel, the county publishes the
+  // boundary, and a point is either inside it or it is somebody else's.
+  //
+  // Skipped rather than fatal when no parcel can be found: eighty-five lots
+  // you can see and reject beats nothing at all, and the report says which
+  // happened.
+  let kept = best.found;
+  if (!body.noClip) {
+    let parcel: { geometry: unknown; props: Record<string, unknown> } | null = null;
+    let from = "";
+    for (const layer of parcelLayers(layers)) {
+      parcel = await parcelAt(layer.url, centre.lat, centre.lng);
+      if (parcel?.geometry) { from = layer.title; break; }
+    }
+
+    if (parcel?.geometry) {
+      const inside = best.found.filter((f) => inShape(f.lat, f.lng, parcel!.geometry));
+      if (inside.length) {
+        note("Clipped to your parcel", true,
+          `${inside.length} of ${best.found.length} are inside the parcel from`
+          + ` "${from}". The rest are the neighbours'.`);
+        kept = inside;
+      } else {
+        // The park spans several parcels, or the address points sit on the
+        // road rather than on the pad. Either way, clipping to nothing is
+        // worse than not clipping.
+        note("Clipped to your parcel", false,
+          `Found the parcel in "${from}", but none of the ${best.found.length}`
+          + " numbered points fall inside it. Keeping all of them —"
+          + " the park may cover more than one parcel.");
+      }
+    } else {
+      note("Clipped to your parcel", false,
+        "No parcel layer on this map returned a boundary at the park's"
+        + " coordinates, so everything within 250 m is still here.");
+    }
+  }
+
+  // --- 6. where each one sits on the plan ---
+  const placed = toFractions(kept).sort((a, b) =>
     a.label.localeCompare(b.label, undefined, { numeric: true }));
   note("Laid them out", true,
     `${placed.length} lots from "${best.title}", numbered ${placed[0].label}`
@@ -158,7 +201,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ steps, preview: true, lots: placed });
   }
 
-  // --- 6. write them ---
+  // --- 7. write them ---
   const db = supabaseAdmin();
   const { data: existing } = await db.from("units").select("id, label").eq("property_id", id);
   const byLabel = new Map((existing ?? []).map((u) => [String(u.label), u.id as string]));

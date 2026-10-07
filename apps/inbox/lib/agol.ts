@@ -301,3 +301,79 @@ export function toFractions(found: FoundLot[]): { label: string; x: number; y: n
     y: Math.round(fit(1 - (f.lat - minLat) / spanLat) * 1e5) / 1e5,
   }));
 }
+
+/**
+ * Is this point inside that ring?
+ *
+ * A park is a parcel, and "within 250 metres" is not the same question --
+ * it sweeps in Capri Street and Rosemary Drive and gives you eighty-five
+ * lots when you have twenty-eight. The parcel boundary is the real answer
+ * and the county publishes it.
+ *
+ * Ray casting, the standard even-odd test: count how many times a ray cast
+ * east from the point crosses an edge. Odd is inside. Written out rather
+ * than pulled in because it is nine lines and a dependency for nine lines
+ * is a dependency to keep updated forever.
+ */
+export function inRing(lat: number, lng: number, ring: number[][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    // The edge has to straddle the point's latitude, and the crossing has to
+    // be east of it. The strict/non-strict mix is deliberate: it stops a
+    // vertex exactly level with the point being counted twice.
+    const straddles = (yi > lat) !== (yj > lat);
+    if (straddles && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** Inside the polygon, holes excluded.
+ *
+ *  A GeoJSON Polygon is an outer ring followed by any number of holes, and a
+ *  MultiPolygon is a list of those. A parcel with a right of way through it
+ *  has a hole, and a home in the hole is not on the parcel. */
+export function inShape(lat: number, lng: number, geometry: unknown): boolean {
+  const g = geometry as { type?: string; coordinates?: unknown } | null;
+  if (!g?.coordinates) return false;
+
+  // A Polygon is rings; a MultiPolygon is a list of those. Normalised to one
+  // list of polygons so the test below has a single shape to walk.
+  const polys: number[][][][] = g.type === "MultiPolygon"
+    ? (g.coordinates as number[][][][])
+    : [g.coordinates as number[][][]];
+
+  for (const poly of polys) {
+    if (!poly?.length) continue;
+    if (!inRing(lat, lng, poly[0])) continue;
+    const inHole = poly.slice(1).some((hole) => inRing(lat, lng, hole));
+    if (!inHole) return true;
+  }
+  return false;
+}
+
+/** The parcel a point falls in, asked of a layer directly. Returns the
+ *  geometry so the address points can be clipped to it. */
+export async function parcelAt(
+  layerUrl: string, lat: number, lng: number,
+): Promise<{ geometry: unknown; props: Record<string, unknown> } | null> {
+  const q = `${layerUrl}/query?where=1%3D1&geometry=${lng},${lat}`
+    + "&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects"
+    + "&outFields=*&outSR=4326&resultRecordCount=5&f=geojson";
+  const out = await json(q);
+  if (!out || out.type !== "FeatureCollection") return null;
+  const f = ((out.features ?? []) as Record<string, unknown>[])[0];
+  if (!f) return null;
+  return { geometry: f.geometry, props: (f.properties ?? {}) as Record<string, unknown> };
+}
+
+/** Layers that look like they hold parcels, most promising first. */
+export function parcelLayers(
+  layers: { title: string; url: string }[],
+): { title: string; url: string }[] {
+  return layers.filter((l) => /parcel|cama|land ?record/i.test(l.title)
+    && !/buffer|vol_ag|agriculture|mineral/i.test(l.title));
+}
