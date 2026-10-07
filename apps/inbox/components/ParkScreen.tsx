@@ -5,6 +5,8 @@ import ParkMap, { type LotFacts, type LotState, type RealPark } from "./ParkMap"
 import LotCard from "./LotCard";
 import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
+import { sameStreet, placeFromRoads, assign, parkAround, orientedBox, fitInside,
+         type Shape, type Road } from "@/lib/osm";
 import { degreesPerMetre } from "@/lib/footprint";
 
 /**
@@ -31,9 +33,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [real, setReal] = useState<RealPark | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
   const [asking, setAsking] = useState(true);
-  const [showSteps, setShowSteps] = useState(false);
   const [osm, setOsm] = useState<{
-    steps?: { did: string; ok: boolean; say: string }[];
     error?: string;
     fit?: Plan;
     parcel?: string | null;
@@ -102,62 +102,61 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   }, [propertyId]);
   useEffect(() => { void load(); }, [load]);
 
-  // The outlines OpenStreetMap already has.
-  //
-  // Asked for once, in the background: the drawn block is on screen the
-  // whole time, so this arriving late replaces a working map rather than
-  // filling an empty one, and this failing leaves a working map rather than
-  // nothing.
-  //
-  // Kept in the browser afterwards. Overpass is volunteer-run and takes ten
-  // or twenty seconds on a good day; waiting that out every time the page
-  // opens would make the real outlines feel worse than the drawn ones.
-  const cache = `parkosm:${propertyId}`;
-  useEffect(() => {
-    let gone = false;
-    try {
-      const saved = localStorage.getItem(cache);
-      if (saved) {
-        const was = JSON.parse(saved) as RealPark & { at?: number };
-        if (was?.homes?.length) { setReal(was); setAsking(false); }
-      }
-    } catch { /* a stale cache is not worth a broken page */ }
-
-    (async () => {
-      const res = await fetch(
-        `/api/properties/${propertyId}/plan/osm?lng=${RETREAT.centre[0]}&lat=${RETREAT.centre[1]}`,
-        { cache: "no-store" },
-      ).catch(() => null);
-      const out = await res?.json().catch(() => null);
-      if (gone) return;
-      setAsking(false);
-      if (!out) { setOsm({ error: "No answer from OpenStreetMap." }); return; }
-      setOsm(out);
-      // Even a partial answer settles where the park sits: the roads alone
-      // give the angle, the position and which street is which. Applied
-      // before the outlines, so a map with no buildings in it still stops
-      // being crooked.
-      if (out.fit?.centre) {
-        remember({
-          ...planNow.current, centre: out.fit.centre, bearing: out.fit.bearing,
-          streetGap: out.fit.streetGap, mirror: Boolean(out.fit.mirror),
+  /**
+   * What the map is carrying, as soon as it has loaded.
+   *
+   * Nothing is fetched here. The base map's own vector tiles bring the
+   * buildings down as polygons and the streets as named lines, so the park
+   * is lifted out of what is already on screen rather than drawn over it.
+   * That is the whole difference: a picture laid over a map can be at the
+   * wrong angle, and a thing taken out of the map cannot.
+   */
+  const took = useRef(false);
+  const onHarvest = useCallback((found: {
+    shapes: Shape[]; roads: Road[]; areas: { name: string; ring: number[][] }[];
+  }) => {
+    const base = planNow.current;
+    const mine = found.roads.filter((r) =>
+      base.rows.some((row) => sameStreet(row.street, r.name)));
+    setAsking(false);
+    if (!mine.length) {
+      if (!took.current) {
+        setOsm({
+          error: `The map here has no ${[...new Set(base.rows.map((r) => r.street))].join(" or ")}. Nearest streets on it: ${nearby(found.roads).join(", ") || "none"}.`,
         });
       }
-      // The property line and the outlines are two different questions and
-      // one can answer without the other, so whatever came back is used.
-      if (out.boundary?.length || out.homes?.length) {
-        const got: RealPark = {
-          homes: out.homes ?? [], streets: out.streets ?? [],
-          boundary: out.boundary ?? [], spare: out.spare ?? [],
-          parcel: out.parcel ?? null,
-        };
-        setReal(got);
-        try { localStorage.setItem(cache, JSON.stringify(got)); } catch { /* fine */ }
-      }
-    })();
-    return () => { gone = true; };
+      return;
+    }
+
+    // Where the park actually is, taken from its own streets.
+    const fitted = placeFromRoads(base, mine);
+    const parcel = parkAround(found.areas, mine);
+    const { homes, spare, rows } = assign(base, found.shapes, mine);
+    const boundary = parcel?.ring
+      ?? (homes.length ? orientedBox(homes.flatMap((h) => h.ring)) : []);
+
+    if (fitted) {
+      remember(parcel ? fitInside(fitted, parcel.ring) : fitted);
+    }
+    setReal({
+      homes,
+      streets: mine.map((r) => ({
+        name: base.rows.find((row) => sameStreet(row.street, r.name))!.street,
+        line: r.line,
+      })),
+      boundary,
+      spare: spare.map((x) => x.ring),
+      parcel: parcel ? "from the map" : null,
+    });
+    setOsm({
+      missing: rows
+        .filter((r) => r.found < r.row.numbers.length)
+        .map((r) => ({ street: r.row.street, side: r.row.side, short: r.row.numbers.length - r.found })),
+    });
+    setAsking(false);
+    took.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyId, cache]);
+  }, [remember]);
 
   const placed = useMemo<Placed[]>(() => (
     real
@@ -216,42 +215,23 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           on screen and are not the same claim. */}
       {asking && !real && (
         <p className="parkhint">
-          These are drawn from the park&rsquo;s own layout. Asking
-          OpenStreetMap for the real streets and property line — it can take
-          half a minute.
+          Reading the park off the map — the homes and the streets come down
+          with the map itself, so give the tiles a moment.
         </p>
       )}
       {!asking && (osm?.error || real) && (
         <p className="parkhint">
           {real?.homes?.length
-            ? "Real outlines, from OpenStreetMap."
-            : real?.boundary?.length && osm?.error
-            ? "Showing the property line found earlier; this attempt did not get that far."
+            ? `${real.homes.length} homes, taken straight off the map.`
             : osm?.error ?? "Drawn from the park's own layout."}
-          {real?.parcel && ` Property line: ${real.parcel}.`}
-          {osm?.error && real?.boundary?.length ? ` ${osm.error}` : null}
-          {osm?.missing?.length
-            ? ` ${osm.missing.map((m) => `${m.street} is ${m.short} short`).join(", ")} — those lots aren't mapped there yet.`
+          {real?.boundary?.length && real?.parcel
+            ? " The outline is the property line the map holds, not a rectangle drawn round the homes."
             : null}
-          {osm?.steps?.length ? (
-            <> <button type="button" className="aslink"
-                       onClick={() => setShowSteps((v) => !v)}>
-              {showSteps ? "hide the steps" : "what it did"}
-            </button></>
-          ) : null}
+          {osm?.missing?.length
+            ? ` ${osm.missing.map((m) => `${m.street} ${m.side} is ${m.short} short`).join(", ")} — those lots aren't on the map yet, so they are drawn.`
+            : null}
         </p>
       )}
-      {showSteps && osm?.steps?.length ? (
-        <div className="pullout">
-          <ol>
-            {osm.steps.map((st, i) => (
-              <li key={i} className={st.ok ? "ok" : "no"}>
-                <strong>{st.did}</strong> — {st.say}
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
 
       {fitting && (
         <div className="parkfit">
@@ -320,7 +300,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       <div className={`parkmain${open ? " withcard" : ""}`}>
         <ParkMap
-          plan={plan} real={real} facts={facts}
+          plan={plan} real={real} facts={facts} onHarvest={onHarvest}
           selected={selected} onSelect={setSelected}
           fitting={fitting} taps={taps}
           onTap={(at) => {
@@ -400,6 +380,12 @@ export function pair(placed: Placed[], lots: Lot[]): Map<string, Lot> {
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** The street names the map does have here. An error that names the
+ *  neighbours is a fixable error; "not found" is another week of guessing. */
+function nearby(roads: Road[], howMany = 6): string[] {
+  return [...new Set(roads.map((r) => r.name))].slice(0, howMany);
+}
 
 function Slider(
   { label, unit, min, max, step, value, onChange }:
