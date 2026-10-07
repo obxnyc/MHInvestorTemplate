@@ -1903,10 +1903,12 @@ a.metric:hover{border-color:var(--accent)}
 .parkkey li{display:flex;align-items:center;gap:.35rem}
 .parkkey .sw{width:.7rem;height:.7rem;border-radius:2px;flex:none;padding:0;
   display:block;border:1px solid var(--hair)}
-.parkkey .sw-let{background:var(--tn-soft);border-color:var(--tn)}
-.parkkey .sw-ours{background:var(--pr-soft);border-color:var(--pr)}
-.parkkey .sw-empty{background:var(--vd-soft);border-color:var(--vd)}
-.parkkey .sw-bare{background:var(--card);border-color:var(--faint)}
+/* The same four colours the map paints, so the key is a key and not an
+   approximation of one. */
+.parkkey .sw-let{background:#2E8B68;border-color:#2E8B68}
+.parkkey .sw-ours{background:#3E6BB0;border-color:#3E6BB0}
+.parkkey .sw-empty{background:#C2703A;border-color:#C2703A}
+.parkkey .sw-bare{background:#8FA3BE;border-color:#8FA3BE}
 
 /* ---- one pad, opened ---- */
 .lotcard{border:1px solid var(--hair);border-radius:12px;background:var(--card);
@@ -2017,3 +2019,40 @@ a.metric:hover{border-color:var(--accent)}
 .streetpick label{display:flex;align-items:center;gap:.35rem;font-size:.8rem;
   font-weight:600;color:var(--ink-2);cursor:pointer}
 .streetpick .dim{color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}
+
+
+/* ---- the park, drawn ---- */
+.parkmapwrap{display:grid;gap:.4rem}
+.parkmapbar{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.parkmapbar .dim{margin-left:auto;font-size:.74rem;color:var(--faint);
+  font-variant-numeric:tabular-nums}
+/* While the block is being placed, a drag moves the park and not the map,
+   and the cursor is the only thing that says so before you try it. */
+.parkmapbox.fitting{cursor:move;outline:2px solid var(--accent);outline-offset:-2px}
+
+/* Putting the block over the pads. Four numbers, every one of them something
+   you can see change while you drag it -- which is the only way to set a
+   bearing without going and measuring one. */
+.parkfit{border:1px solid var(--hair);border-radius:12px;background:var(--sunk);
+  padding:.9rem 1.1rem;margin-bottom:.8rem;max-width:40rem;display:grid;gap:.5rem}
+.parkfit .parkhint{margin:0 0 .3rem}
+.parkslider{display:grid;grid-template-columns:8.5rem minmax(0,1fr) 4rem;
+  align-items:center;gap:.6rem;font-size:.74rem;font-weight:700;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.05em}
+.parkslider input{width:100%}
+.parkslider output{font-size:.8rem;font-weight:600;color:var(--ink-2);
+  text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums;
+  text-align:right}
+@media (max-width:560px){
+  .parkslider{grid-template-columns:minmax(0,1fr) 4rem;grid-template-areas:"l l" "s o"}
+  .parkslider span{grid-area:l}
+  .parkslider input{grid-area:s}
+  .parkslider output{grid-area:o}
+}
+
+/* The park is drawn whether or not the lots exist on file. This is the
+   difference between a picture of a park and a park you can record a sale
+   against, so it says the number and offers the one button. */
+.parkseed{border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:.9rem 1.1rem;margin-bottom:.8rem;max-width:40rem}
+.parkseed p{margin:0 0 .6rem;font-size:.86rem;line-height:1.55;color:var(--muted)}

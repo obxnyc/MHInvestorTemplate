@@ -208,5 +208,33 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true });
   }
 
+  // --- the whole park at once ---
+  //
+  // Fifty one lots typed in one at a time is an afternoon, and an afternoon
+  // nobody spends, so the park sits empty and the map has nothing to say
+  // about any of it. The plan already knows every number; this writes them.
+  // Only the columns that exist before 024 are named, so seeding works on a
+  // database where the layout migrations have not been run yet.
+  if (body.action === "seed") {
+    const given: unknown[] = Array.isArray(body.labels) ? body.labels : [];
+    const labels = [...new Set(
+      given.map((l) => String(l ?? "").trim()).filter(Boolean),
+    )];
+    if (!labels.length) return NextResponse.json({ error: "nothing to add" }, { status: 400 });
+
+    const { data: have } = await db.from("units")
+      .select("label").eq("property_id", id);
+    const known = new Set((have ?? []).map((u: { label: string }) => u.label));
+    const fresh = labels.filter((l) => !known.has(l));
+    if (!fresh.length) return NextResponse.json({ ok: true, added: 0 });
+
+    const { error } = await db.from("units").insert(
+      fresh.map((label) => ({ property_id: id, label, is_vacant: true })),
+    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await db.from("properties").update({ map_kind: "plan" }).eq("id", id);
+    return NextResponse.json({ ok: true, added: fresh.length });
+  }
+
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
 }

@@ -1,346 +1,241 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import ParkPlan, { type Lot } from "./ParkPlan";
-import ParkMap, { type MapLot } from "./ParkMap";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Lot } from "./ParkPlan";
+import ParkMap, { type LotFacts, type LotState } from "./ParkMap";
 import LotCard from "./LotCard";
+import { RETREAT, layOut, countOf, type Plan, type Placed } from "@/lib/parkplan";
 
 /**
- * The park screen: the plan, a pad, and the tool that draws a street.
+ * The park screen.
  *
- * Laying out fifty homes by dragging fifty rectangles is an afternoon nobody
- * has. Saying "Lady Cheryl, fourteen pads, 3101 upwards in twos, from here to
- * here" is a minute, and dragging afterwards is for the three that are not
- * where the maths put them.
+ * The map is drawn from the park's own description rather than fetched from
+ * anywhere, so it is on screen the moment the page opens and is never empty.
+ * What the database adds is who owns each home and who lives in it -- colour
+ * and a card, not position. A park with nothing on file still draws correctly;
+ * it is just all one colour.
+ *
+ * The one thing a description cannot know is where on the earth the block
+ * sits and which way it points. That is "Fit to the aerial": drag the block
+ * onto the pads in the photograph, turn it until the rows line up, done once.
  */
 export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [lots, setLots] = useState<Lot[]>([]);
   const [name, setName] = useState("");
-  const [pending, setPending] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [laying, setLaying] = useState(false);
-  const [pulling, setPulling] = useState(false);
-  const [pull, setPull] = useState<{
-    steps: { did: string; ok: boolean; say: string }[];
-    lots?: { label: string; lat: number; lng: number; street: string | null }[];
-    others?: { title: string; count: number }[];
-    layers?: { title: string; url: string }[];
-    error?: string;
-  } | null>(null);
+  const [fitting, setFitting] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** In a preview, which of the found homes are actually ours. Everything
-   *  starts in; the aerial makes the ones that are not obvious. */
-  const [keep, setKeep] = useState<Set<string>>(new Set());
+  const [plan, setPlan] = useState<Plan>(RETREAT);
+
+  // Where the block was dragged to last time. Kept in the browser rather
+  // than the database so fitting works before the layout migrations have
+  // been run -- the alternative is a map that cannot be corrected until
+  // somebody opens a SQL editor.
+  const key = `parkfit:${propertyId}`;
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) setPlan((p) => ({ ...p, ...JSON.parse(saved) }));
+    } catch { /* a browser with storage switched off still gets a map */ }
+  }, [key]);
+
+  const remember = useCallback((next: Plan) => {
+    setPlan(next);
+    try {
+      localStorage.setItem(key, JSON.stringify({
+        centre: next.centre, bearing: next.bearing,
+        padSpacing: next.padSpacing, pairGap: next.pairGap, streetGap: next.streetGap,
+      }));
+    } catch { /* unsaved is survivable; unmovable is not */ }
+  }, [key]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/properties/${propertyId}/plan`, { cache: "no-store" });
     const out = await res.json().catch(() => ({}));
-    if (!res.ok) { setError(out.error ?? "Could not load the plan."); return; }
+    if (!res.ok) { setError(out.error ?? "Could not load the park."); return; }
     setName(out.property?.name ?? "");
-    setPending(Boolean(out.pending));
     setLots(out.lots ?? []);
   }, [propertyId]);
   useEffect(() => { void load(); }, [load]);
 
+  const placed = useMemo(() => layOut(plan), [plan]);
+  const match = useMemo(() => pair(placed, lots), [placed, lots]);
+
+  const facts: LotFacts = useMemo(() => {
+    const out: LotFacts = {};
+    for (const h of placed) {
+      const lot = match.get(h.id);
+      out[h.id] = { state: lot ? stateOf(lot) : "bare", who: lot?.tenant ?? undefined };
+    }
+    return out;
+  }, [placed, match]);
+
+  const here = placed.find((h) => h.id === selected) ?? null;
+  const open = here ? match.get(here.id) ?? null : null;
+  const missing = placed.filter((h) => !match.has(h.id));
+
   async function post(payload: Record<string, unknown>) {
+    setBusy(true); setError(null);
     const res = await fetch(`/api/properties/${propertyId}/plan`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const out = await res.json().catch(() => ({}));
+    setBusy(false);
     if (!res.ok) { setError(out.error ?? "That didn't save."); return false; }
-    setError(null);
     await load();
     return true;
-  }
-
-  // Moved on screen first, saved after. A rectangle that waits for a round
-  // trip before it follows your finger does not feel like dragging, it feels
-  // like the page is broken.
-  const move = useCallback((id: string, x: number, y: number) => {
-    setLots((prev) => prev.map((l) => (l.id === id ? { ...l, x, y } : l)));
-  }, []);
-  const settle = useCallback(async (id: string) => {
-    const lot = lots.find((l) => l.id === id);
-    if (!lot || lot.x === null) return;
-    await post({ action: "move", unitId: id, x: lot.x, y: lot.y });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lots]);
-
-  // What a preview looks like ON the plan. A count tells you nothing about
-  // whether the right homes came back; the shape tells you immediately.
-  /** The streets the pull found, biggest first. A park is one or two of
-   *  them and the neighbourhood is the rest, so ticking a street is the
-   *  filter that matches how anybody actually thinks about their park. */
-  const streets = (() => {
-    const by = new Map<string, number>();
-    for (const l of pull?.lots ?? []) {
-      const k = l.street ?? "No street given";
-      by.set(k, (by.get(k) ?? 0) + 1);
-    }
-    return [...by].sort((a, b) => b[1] - a[1]);
-  })();
-
-  function toggleStreet(name: string, on: boolean) {
-    const labels = (pull?.lots ?? [])
-      .filter((l) => (l.street ?? "No street given") === name)
-      .map((l) => l.label);
-    setKeep((prev) => {
-      const next = new Set(prev);
-      for (const l of labels) { if (on) next.add(l); else next.delete(l); }
-      return next;
-    });
-  }
-
-  /** Homes with real coordinates go on the aerial. The drawn plan stays for
-   *  a park somebody arranged by hand, where there are no coordinates to
-   *  put on a map. */
-  const onMap: MapLot[] = pull?.lots?.length
-    ? pull.lots.map((l) => ({
-        id: l.label, label: l.label, lat: l.lat, lng: l.lng, street: l.street,
-        // In a pull, the only question is in or out. Everything else about a
-        // home is unknown until it has been kept.
-        state: (keep.has(l.label) ? "bare" : "out") as MapLot["state"],
-      }))
-    : lots.filter((l) => l.lat !== null && l.lng !== null).map((l) => ({
-        id: l.id, label: l.label, lat: l.lat as number, lng: l.lng as number,
-        street: null,
-        state: (!l.sale ? (l.tenant ? "ours" : "bare")
-          : l.tenant ? "let" : "empty") as MapLot["state"],
-      }));
-  const drawn = lots.filter((l) => l.x !== null && l.lat === null);
-
-  const open = lots.find((l) => l.id === selected) ?? null;
-  const unplaced = lots.filter((l) => l.x === null);
-  const placed = lots.filter((l) => l.x !== null);
-
-  /** Ask the county. Preview first, always: forty lots appearing with the
-   *  neighbours' numbers among them and no way to tell which is which is
-   *  worse than no lots at all. */
-  async function askCounty(
-    url: string, commit: boolean, layerUrl?: string, keepLabels?: string[],
-  ) {
-    setPulling(true); setError(null);
-    const res = await fetch(`/api/properties/${propertyId}/plan/pull`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, commit, layerUrl, keep: keepLabels }),
-    });
-    const out = await res.json().catch(() => ({}));
-    setPulling(false);
-    setPull(out);
-    setKeep(new Set((out.lots ?? []).map((l: { label: string }) => l.label)));
-    if (out.ok) { setPull(null); setKeep(new Set()); await load(); }
-  }
-
-  if (pending) {
-    return (
-      <div className="dash">
-        <h1>{name || "Park plan"}</h1>
-        <p className="dashnone">
-          Migrations 024 and 030 haven&rsquo;t been run, so there is nowhere to
-          store where a home sits. Run them and this page draws itself.
-        </p>
-      </div>
-    );
   }
 
   return (
     <div className="parkpage">
       <header className="parkhead">
-        <h1>{name}</h1>
+        <h1>{name || "The park"}</h1>
         <div className="parkacts">
-          <button type="button" className={editing ? "btn pri" : "btn"}
-                  onClick={() => { setEditing((v) => !v); setLaying(false); }}>
-            {editing ? "Done arranging" : "Arrange"}
+          <button type="button" className={fitting ? "btn pri" : "btn"}
+                  onClick={() => { setFitting((v) => !v); setSelected(null); }}>
+            {fitting ? "Done fitting" : "Fit to the aerial"}
           </button>
-          {editing && (
-            <button type="button" className="btn" onClick={() => setLaying((v) => !v)}>
-              Lay out a street
-            </button>
-          )}
         </div>
       </header>
 
-      {editing && !laying && (
-        <p className="parkhint">
-          Drag a home to move it. Click an empty spot to add one.
-        </p>
-      )}
-
-      {laying && (
-        <form className="rowform" onSubmit={async (e) => {
-          e.preventDefault();
-          const f = new FormData(e.currentTarget);
-          const ok = await post({
-            action: "row",
-            count: f.get("count"), startAt: f.get("startAt"), step: f.get("step"),
-            fromX: Number(f.get("fromX")) / 100, fromY: Number(f.get("fromY")) / 100,
-            toX: Number(f.get("toX")) / 100, toY: Number(f.get("toY")) / 100,
-          });
-          if (ok) setLaying(false);
-        }}>
-          <p className="parkhint">
-            Positions are percentages across and down the plan. The homes
-            spread evenly between the two ends and turn to face the street.
-          </p>
-          <div className="three">
-            <label>How many<input name="count" inputMode="numeric" defaultValue="14" required /></label>
-            <label>First number<input name="startAt" inputMode="numeric" defaultValue="3101" required /></label>
-            <label>Counting by<input name="step" inputMode="numeric" defaultValue="2" required /></label>
-          </div>
-          <div className="three">
-            <label>Start across %<input name="fromX" inputMode="numeric" defaultValue="15" /></label>
-            <label>Start down %<input name="fromY" inputMode="numeric" defaultValue="60" /></label>
-            <label />
-          </div>
-          <div className="three">
-            <label>End across %<input name="toX" inputMode="numeric" defaultValue="80" /></label>
-            <label>End down %<input name="toY" inputMode="numeric" defaultValue="45" /></label>
-            <label />
-          </div>
-          <div className="invacts">
-            <button type="button" className="btn" onClick={() => setLaying(false)}>Cancel</button>
-            <button type="submit" className="btn pri">Draw the street</button>
-          </div>
-        </form>
-      )}
-
       {error && <p className="err">{error}</p>}
 
-      {/* A grey rectangle with nothing in it is indistinguishable from a
-          broken page, which is exactly how it was read. */}
-      {lots.length === 0 && !laying && !pull?.lots?.length && (
-        <div className="parkempty">
-          <h2>No lots on the plan yet</h2>
-          <p>
-            The county already knows where every home in this park is and what
-            number is on it. Paste the link to their map site and we&rsquo;ll
-            ask — nothing is saved until you have seen what came back.
+      {fitting && (
+        <div className="parkfit">
+          <p className="parkhint">
+            Switch to <strong>Aerial</strong>, then drag anywhere on the map to
+            slide the block onto the pads. Turn it until the rows line up and
+            stretch it until the homes sit on the concrete. Nothing else on the
+            page changes while you do this.
           </p>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            const url = String(new FormData(e.currentTarget).get("url") ?? "");
-            if (url.trim()) void askCounty(url.trim(), false);
-          }}>
-            <input name="url" placeholder="https://www.arcgis.com/apps/…?id=…"
-                   defaultValue="https://www.arcgis.com/apps/webappviewer/index.html?id=a6ea68995c2349e9a177366288589be7" />
-            <button type="submit" className="btn pri" disabled={pulling}>
-              {pulling ? "Asking…" : "Pull from the county"}
+          <Slider label="Turn" unit="°" min={0} max={359} step={1}
+                  value={plan.bearing}
+                  onChange={(v) => remember({ ...plan, bearing: v })} />
+          <Slider label="Along the row" unit=" m" min={6} max={20} step={0.25}
+                  value={plan.padSpacing}
+                  onChange={(v) => remember({ ...plan, padSpacing: v })} />
+          <Slider label="Across the street" unit=" m" min={18} max={55} step={0.5}
+                  value={plan.pairGap}
+                  onChange={(v) => remember({ ...plan, pairGap: v })} />
+          <Slider label="Street to street" unit=" m" min={30} max={110} step={0.5}
+                  value={plan.streetGap}
+                  onChange={(v) => remember({ ...plan, streetGap: v })} />
+          <div className="invacts">
+            <button type="button" className="btn" onClick={() => remember(RETREAT)}>
+              Start over
             </button>
-          </form>
-          <p className="dim">
-            Or press <strong>Arrange</strong> above and lay the streets out by
-            hand.
+          </div>
+        </div>
+      )}
+
+      {missing.length > 0 && !fitting && (
+        <div className="parkseed">
+          <p>
+            <strong>{missing.length} of {countOf(plan)}</strong> lots aren&rsquo;t
+            on file yet, so there is nowhere to record who bought the home on
+            them. Add them all and every pad on the map becomes clickable.
           </p>
+          <button type="button" className="btn pri" disabled={busy}
+                  onClick={() => void post({
+                    action: "seed",
+                    labels: missing.map((h) => `${h.label} ${h.street}`),
+                  })}>
+            {busy ? "Adding…" : `Add these ${missing.length} lots`}
+          </button>
         </div>
       )}
 
-      {pull && (
-        <div className="pullout">
-          <ol>
-            {pull.steps.map((s, i) => (
-              <li key={i} className={s.ok ? "ok" : "no"}>
-                <strong>{s.did}</strong> — {s.say}
-              </li>
-            ))}
-          </ol>
-          {pull.error && <p className="err">{pull.error}</p>}
-          {pull.layers?.length ? (
-            <div className="pulllayers">
-              <p>Everything this map publishes — pick one to try on its own:</p>
-              <ul>
-                {pull.layers.map((l) => (
-                  <li key={l.url}>
-                    <button type="button" disabled={pulling} onClick={() => void askCounty(
-                      (document.querySelector('input[name="url"]') as HTMLInputElement)?.value ?? "",
-                      false, l.url)}>{l.title}</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {pull.lots?.length ? (
-            <>
-              <p>
-                <strong>{keep.size} of {pull.lots.length}</strong> on the aerial
-                below. Tap any home to take it out or put it back — the
-                photograph makes it obvious which are yours.
-              </p>
-              {streets.length > 1 && (
-                <div className="streetpick">
-                  <p>By street — tick the ones that are yours:</p>
-                  <ul>
-                    {streets.map(([name, n]) => {
-                      const all = (pull.lots ?? [])
-                        .filter((l) => (l.street ?? "No street given") === name);
-                      const on = all.every((l) => keep.has(l.label));
-                      return (
-                        <li key={name}>
-                          <label>
-                            <input type="checkbox" checked={on}
-                                   onChange={(e) => toggleStreet(name, e.target.checked)} />
-                            {name} <span className="dim">{n}</span>
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-              {pull.others?.length ? (
-                <p className="dim">
-                  Other layers found: {pull.others.map((o) => `${o.title} (${o.count})`).join(", ")}.
-                  Pick one from the list below if this is the wrong set.
-                </p>
-              ) : null}
-              <div className="invacts">
-                <button type="button" className="btn" onClick={() => setPull(null)}>
-                  Not these
-                </button>
-                <button type="button" className="btn pri"
-                        disabled={pulling || keep.size === 0}
-                        onClick={() => void askCounty(
-                          (document.querySelector('input[name="url"]') as HTMLInputElement)?.value ?? "",
-                          true, undefined, [...keep])}>
-                  {pulling ? "Saving…" : `Keep these ${keep.size}`}
-                </button>
-              </div>
-            </>
-          ) : null}
-        </div>
-      )}
-
-      <div className={`parkmain${open ? " withcard" : ""}`} onPointerUp={() => selected && editing && void settle(selected)}>
-        {onMap.length ? (
-          <ParkMap
-            lots={onMap} selected={selected} onSelect={setSelected}
-            picking={Boolean(pull?.lots?.length)}
-            onToggle={(label) => setKeep((prev) => {
-              const next = new Set(prev);
-              if (next.has(label)) next.delete(label); else next.add(label);
-              return next;
-            })}
-          />
-        ) : (
-          <ParkPlan
-            lots={drawn} selected={selected} editing={editing}
-            onSelect={setSelected}
-            onMove={(id, x, y) => { setSelected(id); move(id, x, y); }}
-            onAdd={(label, x, y) => void post({ action: "add", label, x, y })}
-          />
-        )}
-        {open && (
-          <LotCard lot={open} onClose={() => setSelected(null)} onChanged={load} />
+      <div className={`parkmain${open ? " withcard" : ""}`}>
+        <ParkMap
+          plan={plan} facts={facts} selected={selected} onSelect={setSelected}
+          fitting={fitting}
+          onMove={(lng, lat) => remember({ ...plan, centre: [lng, lat] })}
+        />
+        {open && <LotCard lot={open} onClose={() => setSelected(null)} onChanged={load} />}
+        {here && !open && (
+          <aside className="lotcard">
+            <header>
+              <h2>Lot {here.label}</h2>
+              <button type="button" className="x" onClick={() => setSelected(null)}
+                      aria-label="Close">×</button>
+            </header>
+            <p className="dim">{here.label} {here.street}</p>
+            <p>
+              This pad isn&rsquo;t on file, so nothing can be recorded against
+              it yet.
+            </p>
+            <button type="button" className="btn pri" disabled={busy}
+                    onClick={() => void post({
+                      action: "seed", labels: [`${here.label} ${here.street}`],
+                    })}>
+              {busy ? "Adding…" : "Add this lot"}
+            </button>
+          </aside>
         )}
       </div>
 
-      {unplaced.length > 0 && (
-        <p className="parkhint">
-          {unplaced.length} lot{unplaced.length === 1 ? "" : "s"} on file with no
-          place on the plan yet: {unplaced.map((l) => l.label).join(", ")}.
-          Turn on <strong>Arrange</strong> and lay out the street they are on.
-        </p>
-      )}
+      <ul className="parkkey">
+        <li><i className="sw sw-let" /> Owned and let</li>
+        <li><i className="sw sw-empty" /> Owned, nobody in it</li>
+        <li><i className="sw sw-ours" /> Our home, let</li>
+        <li><i className="sw sw-bare" /> Bare pad</li>
+      </ul>
     </div>
+  );
+}
+
+/** A pad, at a glance. Four states and not more: the two that cost money --
+ *  an empty home and a bare pad -- are the ones worth seeing from across the
+ *  office without reading anything. */
+function stateOf(lot: Lot): LotState {
+  if (!lot.sale) return lot.tenant ? "ours" : "bare";
+  return lot.tenant ? "let" : "empty";
+}
+
+/**
+ * Which unit on file is which pad on the drawing.
+ *
+ * Both streets number from 3100, so a bare number matches two pads and
+ * matching on it alone would put Lady Cheryl's owner on Lady Viola's home.
+ * The full label wins; a bare number is only accepted when no other pad has
+ * already claimed it, and in street order, so the answer does not depend on
+ * what the database felt like returning first.
+ */
+export function pair(placed: Placed[], lots: Lot[]): Map<string, Lot> {
+  const out = new Map<string, Lot>();
+  const left = new Map<string, Lot>();
+  for (const l of lots) left.set(norm(l.label), l);
+
+  for (const h of placed) {
+    const full = norm(`${h.label} ${h.street}`);
+    const hit = left.get(full);
+    if (hit) { out.set(h.id, hit); left.delete(full); }
+  }
+  for (const h of placed) {
+    if (out.has(h.id)) continue;
+    const bare = norm(h.label);
+    const hit = left.get(bare);
+    if (hit) { out.set(h.id, hit); left.delete(bare); }
+  }
+  return out;
+}
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+function Slider(
+  { label, unit, min, max, step, value, onChange }:
+  {
+    label: string; unit: string; min: number; max: number; step: number;
+    value: number; onChange: (v: number) => void;
+  },
+) {
+  return (
+    <label className="parkslider">
+      <span>{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value}
+             onChange={(e) => onChange(Number(e.target.value))} />
+      <output>{Math.round(value * 10) / 10}{unit}</output>
+    </label>
   );
 }
