@@ -27,13 +27,13 @@ writeFileSync(gen.osm, transpile("osm.ts")
 let buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
     orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
     areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
-    fitInside;
+    fitInside, areaOf;
 let RETREAT, layOut, streetLines;
 try {
   ({ buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
      orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
      areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
-     fitInside } = await import(gen.osm));
+     fitInside, areaOf } = await import(gen.osm));
   ({ RETREAT, layOut, streetLines } = await import(gen.plan));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
@@ -119,8 +119,19 @@ elements.push(home(nextId++, 10, 300));
 
   const violaN = homes.filter((h) => h.street === "Lady Viola Dr" && h.side === "N");
   t("the north row of Lady Viola has thirteen", violaN.length === 13);
-  t("numbered from the west end",
-    violaN[0].label === "3100" && violaN[12].label === "3124");
+  // 3100 is at the loop in the east and the numbers climb west towards
+  // Pamalee, which is how the addresses actually run. Sorted the other way
+  // -- which is what "along the street" means on its own -- every row in
+  // the park reads backwards.
+  // The county map is unambiguous: 3124 is at the Pamalee entrance in the
+  // west and the numbers count down to 3100 at the loop. Sorted the other
+  // way -- which is what "along the street" gives on its own -- every row
+  // in the park reads backwards, which looks plausible until somebody
+  // reads a house number.
+  t("the row starts at the entrance with its highest number",
+    violaN[0].label === "3124" && violaN[12].label === "3100");
+  const xs = violaN.map((h) => h.ring[0][0]);
+  t("so the low numbers are the eastern ones", xs[12] > xs[0]);
   const cherylS = homes.filter((h) => h.street === "Lady Cheryl Dr" && h.side === "S");
   t("and the south row of Lady Cheryl has twelve", cherylS.length === 12);
   t("the two streets did not swap sides",
@@ -137,7 +148,7 @@ elements.push(home(nextId++, 10, 300));
   const { homes } = assign(RETREAT, buildingsOf(flipped), roadsOf(flipped));
   const n = homes.filter((h) => h.street === "Lady Viola Dr" && h.side === "N");
   t("a road drawn backwards still sorts the same way",
-    n.length === 13 && n[0].label === "3100" && n[12].label === "3124");
+    n.length === 13 && n[0].label === "3124" && n[12].label === "3100");
 }
 {
   // More buildings than numbers: the extras stay grey rather than being
@@ -237,6 +248,64 @@ elements.push(home(nextId++, 10, 300));
   const mid = midOf([[0, 0], [10, 0], [10, 10]]);
   t("the middle of a line is halfway along it, not between its ends",
     near(mid[0], 10, 1e-9) && near(mid[1], 0, 1e-9));
+}
+
+// --- what is not a home, and what is not there at all ---
+{
+  // A row missing its last five buildings still has five lots. A lot that
+  // is not on the screen is a lot nobody can record a sale against.
+  // The last five buildings of Lady Viola's odd row, which is the east end
+  // once the row is read from the entrance.
+  const short = elements.filter((e) =>
+    !(e.tags?.building && e.id >= 23 && e.id <= 27));
+  const { homes } = assign(RETREAT, buildingsOf(short), roadsOf(elements));
+  t("a row the map is short of still has all its lots", homes.length === 51);
+  const drawn = homes.filter((h) => h.drawn);
+  t("and the ones the map lacks are marked as drawn", drawn.length === 5);
+  t("they continue their own row, not somebody else's",
+    drawn.every((h) => h.street === "Lady Viola Dr" && h.side === "S"));
+  // Carrying on past the end of a row, not piling up on the last home.
+  const centres = drawn.map((h) => h.ring[0]);
+  t("spread out rather than stacked",
+    new Set(centres.map((c) => c[0].toFixed(6))).size === drawn.length);
+}
+{
+  // The office, a carport, or two pads traced as one shape: three times
+  // the size of a home, and drawn as a home the size of four.
+  const big = elements.map((e) =>
+    e.id === 3 && e.tags?.building
+      ? { ...e, geometry: e.geometry.map((p) => ({
+          lat: LAT + (p.lat - LAT) * 3, lon: LNG + (p.lon - LNG) * 3 })) }
+      : e);
+  const { homes } = assign(RETREAT, buildingsOf(big), roadsOf(big));
+  const odd = homes.filter((h) => h.redrawn);
+  t("an outline that is not a home is redrawn as a pad", odd.length >= 1);
+  t("at about the size of a home",
+    odd.every((h) => areaOf(h.ring) > 60 && areaOf(h.ring) < 120));
+}
+{
+  // A building the far side of Pamalee Dr is not lot 3100.
+  const fence = [
+    [LNG - 12 * dLng, LAT - 95 * dLat], [LNG + 150 * dLng, LAT - 95 * dLat],
+    [LNG + 150 * dLng, LAT + 35 * dLat], [LNG - 12 * dLng, LAT + 35 * dLat],
+    [LNG - 12 * dLng, LAT - 95 * dLat],
+  ];
+  // West of the entrance, across Pamalee Dr, so it sorts first and takes
+  // the first number in the row -- which is exactly what happened.
+  const strays = [...elements, home(800, -22, 15)];
+  const where = (r) => r.homes
+    .find((h) => h.label === "3124" && h.street === "Lady Viola Dr").ring[0][0];
+  const loose = assign(RETREAT, buildingsOf(strays), roadsOf(strays));
+  const tight = assign(RETREAT, buildingsOf(strays), roadsOf(strays), { inside: fence });
+  t("without a property line, a building over the road takes the first lot",
+    where(loose) < LNG - 15 * dLng);
+  t("with one, that lot is back inside the park", where(tight) > LNG - 12 * dLng);
+  t("and the park still has all its lots",
+    tight.homes.length === 51 && new Set(tight.homes.map((h) => h.id)).size === 51);
+}
+{
+  t("a pad is about a hundred square metres",
+    Math.round(areaOf([[0, 0], [0.0001, 0], [0.0001, 0.0001], [0, 0.0001], [0, 0]])) > 0);
 }
 
 // --- the property line ---

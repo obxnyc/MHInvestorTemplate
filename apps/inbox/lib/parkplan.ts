@@ -57,6 +57,16 @@ export type Plan = {
    *  carry the answer, the arrangement is flipped here and chosen by
    *  measuring against the real roads. */
   mirror?: boolean;
+  /** Which end of the street the first number in each row sits at.
+   *
+   *  Addresses do not agree on this and no rule derives it: here the high
+   *  numbers are at the Pamalee entrance in the west and they count down to
+   *  3100 at the loop in the east, so every row reads backwards if you walk
+   *  it the other way. Sorting west to east -- which is what "along the
+   *  street" means once the bearing is folded eastward -- put 3100 at the
+   *  entrance and 3124 at the loop, exactly reversed, on all four rows at
+   *  once. */
+  countFrom?: "west" | "east";
   rows: PlanRow[];
 };
 
@@ -84,35 +94,31 @@ const rad = (d: number) => (d * Math.PI) / 180;
 export const RETREAT: Plan = {
   centre: [-78.91932, 35.09249],
   bearing: 112,
+  // Each row is written the way the county map reads it: west to east,
+  // starting at the Pamalee Dr entrance. The high numbers are there and
+  // they count down to 3100 and 3101 at the loop in the east, which is the
+  // opposite of what "along the street" gives you on its own -- and getting
+  // it the wrong way round reverses all four rows at once, which looks
+  // plausible until somebody reads a house number.
+  countFrom: "west",
   padSpacing: 10.5,
   pairGap: 31,
   streetGap: 57,
   size: SINGLE_WIDE,
   rows: [
-    {
-      street: "Lady Viola Dr", side: "N",
-      numbers: evens(3100, 13),
-    },
-    {
-      street: "Lady Viola Dr", side: "S",
-      numbers: ["1800", "1808", ...odds(3101, 12)],
-    },
-    {
-      street: "Lady Cheryl Dr", side: "N",
-      numbers: evens(3100, 12),
-    },
-    {
-      street: "Lady Cheryl Dr", side: "S",
-      numbers: odds(3101, 12),
-    },
+    { street: "Lady Viola Dr", side: "N", numbers: down(3124, 13) },
+    // 1800 is the park's own site address and 1808 the office, both at the
+    // entrance. They are not pads, but they are there, so they are drawn.
+    { street: "Lady Viola Dr", side: "S", numbers: ["1800", "1808", ...down(3123, 12)] },
+    { street: "Lady Cheryl Dr", side: "N", numbers: down(3122, 12) },
+    { street: "Lady Cheryl Dr", side: "S", numbers: down(3123, 12) },
   ],
 };
 
-function evens(first: number, count: number): string[] {
-  return Array.from({ length: count }, (_, i) => String(first + i * 2));
-}
-function odds(first: number, count: number): string[] {
-  return Array.from({ length: count }, (_, i) => String(first + i * 2));
+/** A run of house numbers counting down in twos, which is how a row reads
+ *  walking east from the entrance. */
+function down(first: number, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => String(first - i * 2));
 }
 
 /** The streets in the order the plan names them, each once. */
@@ -153,7 +159,8 @@ export function layOut(plan: Plan): Placed[] {
 
     const n = row.numbers.length;
     row.numbers.forEach((num, i) => {
-      const along = (i - (n - 1) / 2) * plan.padSpacing;
+      const step = plan.countFrom === "east" ? (n - 1) / 2 - i : i - (n - 1) / 2;
+      const along = step * plan.padSpacing;
       const [lng, lat] = toDegrees(plan.centre, along, across, b, per, plan.mirror);
       out.push({
         id: `${row.street}|${num}`,
@@ -380,9 +387,13 @@ export function fitFromTaps(plan: Plan, taps: Tap[]): Plan {
   const gaps = row.numbers.length - 1;
   const span = metresBetween(a, b);
 
+  // The rows run the way "along" increases, which is from the last number
+  // to the first when a street counts down -- tap the first home and the
+  // last home of a row that starts at its east end and the line between
+  // them points the other way.
   let next: Plan = {
     ...plan,
-    bearing: bearingOf(a, b),
+    bearing: plan.countFrom === "east" ? bearingOf(b, a) : bearingOf(a, b),
     // A row tapped end to end has one fewer gap in it than it has homes.
     // Dividing by the count instead quietly shrinks the park by one pad,
     // which reads as "nearly right" and never resolves.

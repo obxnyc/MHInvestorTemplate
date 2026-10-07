@@ -140,7 +140,8 @@ const road = (id, name, off, from, to) => ({
   t("fifty one homes, counted once each", homes.length === 51);
   t("every row full", found.every((r) => r.found === r.row.numbers.length));
   const violaN = homes.filter((h) => h.street === "Lady Viola Dr" && h.side === "N");
-  t("numbered from the west", violaN[0].label === "3100" && violaN[12].label === "3124");
+  t("numbered from the entrance, high to low",
+    violaN[0].label === "3124" && violaN[12].label === "3100");
 }
 
 const bad = checks.filter(([, ok]) => !ok);

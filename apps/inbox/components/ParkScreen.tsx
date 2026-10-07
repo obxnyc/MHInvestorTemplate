@@ -37,6 +37,8 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     error?: string;
     fit?: Plan;
     parcel?: string | null;
+    drawn?: number;
+    redrawn?: number;
     missing?: { street: string; side: string; short: number }[];
   } | null>(null);
 
@@ -131,7 +133,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // Where the park actually is, taken from its own streets.
     const fitted = placeFromRoads(base, mine);
     const parcel = parkAround(found.areas, mine);
-    const { homes, spare, rows } = assign(base, found.shapes, mine);
+    // The property line first, because it decides what counts: a building
+    // the far side of Pamalee Dr is not lot 3100, however near the street
+    // it happens to sit.
+    const { homes, spare, rows } = assign(
+      fitted ?? base, found.shapes, mine, { inside: parcel?.ring },
+    );
     const boundary = parcel?.ring
       ?? (homes.length ? orientedBox(homes.flatMap((h) => h.ring)) : []);
 
@@ -149,6 +156,8 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       parcel: parcel ? "from the map" : null,
     });
     setOsm({
+      drawn: homes.filter((h) => h.drawn).length,
+      redrawn: homes.filter((h) => h.redrawn).length,
       missing: rows
         .filter((r) => r.found < r.row.numbers.length)
         .map((r) => ({ street: r.row.street, side: r.row.side, short: r.row.numbers.length - r.found })),
@@ -227,8 +236,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           {real?.boundary?.length && real?.parcel
             ? " The outline is the property line the map holds, not a rectangle drawn round the homes."
             : null}
-          {osm?.missing?.length
-            ? ` ${osm.missing.map((m) => `${m.street} ${m.side} is ${m.short} short`).join(", ")} — those lots aren't on the map yet, so they are drawn.`
+          {osm?.drawn
+            ? ` ${osm.drawn} more the map has never had, drawn on the end of their row — ${osm.missing?.map((m) => `${m.street} ${m.side === "N" ? "even" : "odd"} side`).join(" and ")}.`
+            : null}
+          {osm?.redrawn
+            ? ` ${osm.redrawn} outline${osm.redrawn === 1 ? " was" : "s were"} nothing like a home — the office, a carport, two pads traced as one — and ${osm.redrawn === 1 ? "has" : "have"} been replaced with a standard pad.`
             : null}
         </p>
       )}

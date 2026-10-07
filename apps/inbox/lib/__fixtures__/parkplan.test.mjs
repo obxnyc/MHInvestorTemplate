@@ -42,6 +42,18 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) < e;
   // The number the owner counted inside the boundary they drew on the county
   // map. If this drifts, the drawing has stopped being the park.
   t("fifty one lots", countOf(RETREAT) === 51);
+  // Counted off the county map, west to east, starting at the Pamalee
+  // entrance. If these drift the drawing has stopped being the park.
+  const [vn, vs, cn, cs] = RETREAT.rows;
+  t("Lady Viola's even row runs 3124 down to 3100",
+    vn.numbers[0] === "3124" && vn.numbers.at(-1) === "3100" && vn.numbers.length === 13);
+  t("its odd row starts at the site address and the office",
+    vs.numbers[0] === "1800" && vs.numbers[1] === "1808" && vs.numbers[2] === "3123");
+  t("and ends at 3101", vs.numbers.at(-1) === "3101" && vs.numbers.length === 14);
+  t("Lady Cheryl's even row runs 3122 down to 3100",
+    cn.numbers[0] === "3122" && cn.numbers.at(-1) === "3100" && cn.numbers.length === 12);
+  t("and its odd row 3123 down to 3101",
+    cs.numbers[0] === "3123" && cs.numbers.at(-1) === "3101" && cs.numbers.length === 12);
   t("two streets", streetsOf(RETREAT).length === 2);
   const labels = layOut(RETREAT).map((h) => h.id);
   t("every lot has its own id", new Set(labels).size === labels.length);
