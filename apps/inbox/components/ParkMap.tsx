@@ -1,63 +1,64 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { footprint } from "@/lib/footprint";
-import { layOut, boundaryOf, maskOf, streetLines, countOf, type Plan, type Tap } from "@/lib/parkplan";
+import { layOut, boundaryOf, streetLines, countOf, type Plan, type Tap } from "@/lib/parkplan";
+import { shapesFrom, roadsFrom, type TileFeature } from "@/lib/harvest";
+import type { Shape, Road } from "@/lib/osm";
 
 export type LotState = "let" | "empty" | "bare" | "ours";
-
-/** What is known about a pad beyond where it is. Keyed by the plan's id,
- *  so a park with nothing on file still draws. */
 export type LotFacts = Record<string, { state: LotState; who?: string }>;
 
-/** The park as OpenStreetMap actually has it: real outlines, real roads.
- *  When this is here the drawn block is not used at all. */
+/** The park as the map actually has it. */
 export type RealPark = {
   homes: { id: string; label: string; street: string; ring: number[][] }[];
   streets: { name: string; line: number[][] }[];
   boundary: number[][];
-  /** What OpenStreetMap calls the piece of land, when it has one. */
-  parcel?: string | null;
-  /** Buildings on the park that no lot number claimed -- sheds, the office,
-   *  a carport. Drawn, in grey, because they are there. */
   spare?: number[][][];
+  parcel?: string | null;
 };
 
 const FILL: Record<LotState, string> = {
   let: "#2E8B68", ours: "#3E6BB0", empty: "#C2703A", bare: "#6B7F99",
 };
 
+/** OpenFreeMap serves the whole planet as vector tiles, free and with no
+ *  key. Positron is its grey one, which is the look this screen wanted
+ *  anyway -- and, far more importantly, it delivers the buildings and the
+ *  streets as shapes rather than as a picture of shapes. */
+const STYLE = "https://tiles.openfreemap.org/styles/positron";
+
 /**
- * The park, drawn the way a marina draws its slips.
+ * The park, taken out of the map rather than drawn over it.
  *
- * Everything around the park is grey and the park is not. A satellite
- * photograph gives a neighbour's shed the same weight as your own row of
- * homes; a greyed street map puts the surroundings behind glass and leaves
- * one coloured thing on the screen, which is what you own.
+ * Every earlier version of this put a picture on top: fifty one identical
+ * rectangles at an angle I had guessed, laid over a photograph of the real
+ * homes. It never lined up, and no amount of dragging was going to make a
+ * guess the right shape.
  *
- * A home is a rectangle on the ground, not a pin. They are all the same
- * model, so they are all the same rectangle -- and at the zoom where a lot
- * number is readable you can see which pad it belongs to. A pin says roughly
- * where. An outline says which one.
- *
- * The labels arrive in the order somebody orients themselves: the street
- * names from the base map straight away, then the lot numbers once the homes
- * are big enough to hold them.
+ * The homes were in the map all along. The base map draws every one of
+ * them, at the right angle, with both streets curving the way they curve --
+ * but as a raster tile, where nothing can be coloured, numbered or clicked.
+ * Vector tiles are the same map delivered as geometry, so the park is
+ * lifted straight out of what is already on screen. It cannot be out of
+ * alignment with the map underneath, because it is the map underneath.
  */
 export default function ParkMap(
-  { plan, real, facts, selected, onSelect, fitting, onMove, taps, onTap }:
+  { plan, real, facts, selected, onSelect, onHarvest, fitting, onMove, taps, onTap }:
   {
     plan: Plan;
     real?: RealPark | null;
     facts: LotFacts;
     selected: string | null;
     onSelect: (id: string | null) => void;
-    /** Dragging moves the park rather than the map, so the block can be put
-     *  over the pads on the aerial. */
+    /** The buildings and named streets the tiles are carrying, handed up
+     *  as soon as they have loaded. */
+    onHarvest?: (found: {
+      shapes: Shape[]; roads: Road[]; areas: { name: string; ring: number[][] }[];
+    }) => void;
     fitting?: boolean;
     onMove?: (lng: number, lat: number) => void;
-    /** Pads tapped on the photograph, while being pinned. */
     taps?: Tap[];
     onTap?: (at: Tap) => void;
   },
@@ -67,65 +68,69 @@ export default function ParkMap(
   const [ready, setReady] = useState(false);
   const [sat, setSat] = useState(false);
 
-  // Read inside map handlers that are registered once. A handler closing
-  // over the first render's props would still be moving the first plan.
-  const live = useRef({ plan, fitting, onMove, onSelect, onTap });
-  live.current = { plan, fitting, onMove, onSelect, onTap };
+  const live = useRef({ plan, fitting, onMove, onSelect, onTap, onHarvest });
+  live.current = { plan, fitting, onMove, onSelect, onTap, onHarvest };
+
+  // Harvested once the tiles have settled. Tried again on each idle until
+  // something turns up, because the first idle can arrive with the
+  // buildings still on their way.
+  const reaped = useRef(0);
+  const reap = useCallback((m: MlMap) => {
+    if (reaped.current > 6) return;
+    const style = m.getStyle();
+    const vector = Object.entries(style.sources ?? {})
+      .find(([, s]) => (s as { type?: string }).type === "vector")?.[0];
+    if (!vector) return;
+
+    const get = (layer: string): TileFeature[] => {
+      try {
+        return m.querySourceFeatures(vector, { sourceLayer: layer }) as unknown as TileFeature[];
+      } catch { return []; }
+    };
+    const roads = roadsFrom(get("transportation_name"));
+    if (!roads.length) return;
+    const shapes = shapesFrom(get("building"));
+    // Pieces of land, for the property line. A mobile home park is a
+    // landuse polygon in the same tiles, so the real boundary comes down
+    // with everything else.
+    const areas = shapesFrom(get("landuse")).map((a) => ({
+      name: "land", ring: a.ring,
+    }));
+    reaped.current += 1;
+    live.current.onHarvest?.({ shapes, roads, areas });
+  }, []);
 
   useEffect(() => {
     if (!box.current || map.current) return;
     const m = new maplibregl.Map({
       container: box.current,
-      style: {
-        version: 8,
-        glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
-        sources: {
-          // OpenStreetMap, drained of colour in the paint below. Carto's
-          // free Positron endpoint started serving API KEY REQUIRED
-          // watermarks across the whole map, which is what "this is all
-          // messed up" was looking at. This one needs no key, carries the
-          // street names, and goes to the zoom where a pad is readable.
-          plain: {
-            type: "raster", tileSize: 256, maxzoom: 19,
-            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-            attribution: "© OpenStreetMap contributors",
-          },
-          // For the one question a drawing cannot answer: is there a home on
-          // that pad today.
-          sat: {
-            type: "raster", tileSize: 256, maxzoom: 19,
-            tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-            attribution: "Imagery © Esri",
-          },
-        },
-        layers: [
-          {
-            id: "plain", type: "raster", source: "plain",
-            // Drained of colour and nothing else. Dimming it as well was
-            // belt and braces that erased the surroundings twice over --
-            // once here and once under the veil -- and left the park
-            // floating on blank paper with no landmarks to place it by.
-            paint: { "raster-saturation": -1 },
-          },
-          { id: "sat", type: "raster", source: "sat", layout: { visibility: "none" } },
-        ],
-      },
+      style: STYLE,
       center: plan.centre,
-      zoom: 17.6,
+      // Wide enough that the park's streets are inside the tiles that load,
+      // which is what the harvest reads. Framed properly a moment later.
+      zoom: 15.2,
+      attributionControl: { compact: true },
     });
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    m.on("load", () => setReady(true));
+    m.on("load", () => {
+      // For the one question a drawing cannot answer: is there a home on
+      // that pad today. Added under our own layers, which go on after.
+      if (!m.getSource("sat")) {
+        m.addSource("sat", {
+          type: "raster", tileSize: 256, maxzoom: 19,
+          tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+          attribution: "Imagery © Esri",
+        });
+        m.addLayer({ id: "sat", type: "raster", source: "sat", layout: { visibility: "none" } });
+      }
+      setReady(true);
+      reap(m);
+    });
+    m.on("idle", () => reap(m));
 
-    // Moving the block.
-    //
-    // By how far the finger moved, not to where it is. Setting the centre to
-    // the cursor teleports the whole park under the pointer on the first
-    // pixel of movement, which makes "it is off by twenty feet" impossible to
-    // correct -- you can never grab a corner, only re-drop the middle.
-    //
-    // The map's own pan stands down for the duration, or the park and the
-    // photograph move together and nothing ever lines up.
+    // Moving the block by how far the finger moved, not to where it is.
     let from: { lng: number; lat: number; centre: [number, number]; moved: boolean } | null = null;
+    const tapping = () => Boolean(live.current.fitting && live.current.onTap);
     const start = (e: { lngLat: maplibregl.LngLat; preventDefault: () => void }) => {
       if (!live.current.fitting || tapping()) return;
       from = {
@@ -137,9 +142,6 @@ export default function ParkMap(
     };
     const drag = (e: { lngLat: maplibregl.LngLat }) => {
       if (!from || !live.current.onMove) return;
-      // A tap is a press that did not move. Without this, every attempt to
-      // tap a pad nudges the park by whatever the hand wobbled, and tapping
-      // and dragging cannot both live on the same gesture.
       const moved = Math.abs(e.lngLat.lng - from.lng) + Math.abs(e.lngLat.lat - from.lat);
       if (!from.moved && moved < 1e-6) return;
       from.moved = true;
@@ -149,17 +151,10 @@ export default function ParkMap(
       );
     };
     const stop = () => { from = null; m.dragPan.enable(); };
-    // Suppress the drag entirely while pads are being tapped: the two
-    // gestures are the same gesture, and the taps are the exact one.
-    const tapping = () => Boolean(live.current.fitting && live.current.onTap);
-    m.on("mousedown", start);
-    m.on("mousemove", drag);
-    m.on("mouseup", stop);
-    m.on("mouseout", stop);
-    m.on("touchstart", start);
-    m.on("touchmove", drag);
-    m.on("touchend", stop);
-    m.on("touchcancel", stop);
+    m.on("mousedown", start); m.on("mousemove", drag);
+    m.on("mouseup", stop); m.on("mouseout", stop);
+    m.on("touchstart", start); m.on("touchmove", drag);
+    m.on("touchend", stop); m.on("touchcancel", stop);
 
     map.current = m;
     return () => { m.remove(); map.current = null; };
@@ -169,34 +164,20 @@ export default function ParkMap(
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
-    m.setLayoutProperty("sat", "visibility", sat ? "visible" : "none");
-    m.setLayoutProperty("plain", "visibility", sat ? "none" : "visible");
-    // White outlines read on a photograph; on a pale street map they vanish.
+    if (m.getLayer("sat")) m.setLayoutProperty("sat", "visibility", sat ? "visible" : "none");
     if (m.getLayer("home-line")) {
-      m.setPaintProperty("home-line", "line-color", sat ? "#ffffff" : "#2A3A4F");
+      m.setPaintProperty("home-line", "line-color", sat ? "#ffffff" : "#17212E");
     }
-    // A photograph has far more in it than a street map, so it takes a
-    // heavier veil to go quiet; over the grey plan the same opacity would
-    // erase the surrounding streets entirely and leave the park floating.
-    //
-    // And while the block is being fitted the veil comes off altogether.
-    // It was covering the one thing being aimed at: you cannot line the
-    // park up with pads you cannot see, which is most of why fitting felt
-    // impossible.
     if (m.getLayer("outside-veil")) {
-      // Enough to push the surroundings back, not enough to remove them.
-      // The point of greying the neighbours is that you can still see where
-      // the park sits among them; at 0.78 there was nothing left to see.
+      // Enough to push the surroundings back, not enough to remove them,
+      // and off entirely while the block is being placed by hand -- it was
+      // covering the one thing being aimed at.
       m.setPaintProperty("outside-veil", "fill-opacity",
-        fitting ? 0 : sat ? 0.62 : 0.45);
+        fitting ? 0 : sat ? 0.62 : 0.4);
     }
     if (m.getLayer("park-fill")) {
-      // A tint, not a wash. It was covering the park's own roads, which are
-      // the thing that makes a row of homes read as a row.
-      m.setPaintProperty("park-fill", "fill-opacity",
-        fitting ? 0 : sat ? 0.1 : 0.16);
+      m.setPaintProperty("park-fill", "fill-opacity", fitting ? 0 : sat ? 0.1 : 0.14);
     }
-    // See-through while fitting, for the same reason.
     if (m.getLayer("home-fill")) {
       m.setPaintProperty("home-fill", "fill-opacity", fitting ? 0.35 : 0.9);
     }
@@ -206,12 +187,6 @@ export default function ParkMap(
     const m = map.current;
     if (!m || !ready) return;
 
-    // Real outlines when OpenStreetMap has them, the drawn block when it
-    // does not. Everything below this point is the same either way, which
-    // is the point: one set of layers, two sources of geometry.
-    // Real outlines when there are any. The boundary and the outlines come
-    // from different questions and one can answer without the other, so the
-    // real property line is used even when the homes on it are drawn.
     const homes: GeoJSON.Feature[] = (real?.homes?.length
       ? real.homes.map((h) => ({ ...h, ring: h.ring }))
       : layOut(plan).map((h) => ({
@@ -221,8 +196,7 @@ export default function ParkMap(
     ).map((h) => {
       const f = facts[h.id] ?? { state: "bare" as LotState };
       return {
-        type: "Feature",
-        id: h.id,
+        type: "Feature", id: h.id,
         properties: {
           id: h.id, label: h.label, street: h.street,
           state: f.state, colour: FILL[f.state],
@@ -232,47 +206,35 @@ export default function ParkMap(
     });
 
     const ring = real?.boundary?.length ? real.boundary : boundaryOf(plan);
-    const bounds: GeoJSON.Feature = {
-      type: "Feature", properties: {},
-      geometry: { type: "Polygon", coordinates: [ring] },
-    };
-
-    const streets: GeoJSON.FeatureCollection = {
-      type: "FeatureCollection",
-      features: (real?.streets ?? streetLines(plan)).map((st) => ({
-        type: "Feature", properties: { name: st.name },
-        geometry: { type: "LineString", coordinates: st.line },
-      })),
-    };
-
-    // Everything else standing on the park. Drawn flat and grey: leaving
-    // them out makes the park look emptier than it is, and colouring them
-    // says they are lots.
-    const others: GeoJSON.FeatureCollection = {
-      type: "FeatureCollection",
-      features: (real?.spare ?? []).map((r) => ({
-        type: "Feature", properties: {},
-        geometry: { type: "Polygon", coordinates: [r] },
-      })),
-    };
+    const world = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
 
     const set = (id: string, data: GeoJSON.GeoJSON) => {
       const src = m.getSource(id) as maplibregl.GeoJSONSource | undefined;
       if (src) src.setData(data); else m.addSource(id, { type: "geojson", data });
     };
-    const mask: GeoJSON.Feature = {
+    set("outside", {
       type: "Feature", properties: {},
-      geometry: {
-        type: "Polygon",
-        coordinates: real?.boundary?.length
-          ? [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
-             [...real.boundary].reverse()]
-          : maskOf(plan),
-      },
-    };
-    set("outside", mask);
-    set("park", bounds);
-    set("others", others);
+      geometry: { type: "Polygon", coordinates: [world, [...ring].reverse()] },
+    });
+    set("park", {
+      type: "Feature", properties: {},
+      geometry: { type: "Polygon", coordinates: [ring] },
+    });
+    set("homes", { type: "FeatureCollection", features: homes });
+    set("streets", {
+      type: "FeatureCollection",
+      features: (real?.streets ?? streetLines(plan)).map((st) => ({
+        type: "Feature", properties: { name: st.name },
+        geometry: { type: "LineString", coordinates: st.line },
+      })),
+    });
+    set("others", {
+      type: "FeatureCollection",
+      features: (real?.spare ?? []).map((r) => ({
+        type: "Feature", properties: {},
+        geometry: { type: "Polygon", coordinates: [r] },
+      })),
+    });
     set("taps", {
       type: "FeatureCollection",
       features: (taps ?? []).map((p, i) => ({
@@ -280,22 +242,13 @@ export default function ParkMap(
         geometry: { type: "Point", coordinates: p },
       })),
     });
-    set("homes", { type: "FeatureCollection", features: homes });
-    set("streets", streets);
 
     if (!m.getLayer("outside-veil")) {
-      // Everything that is not the park, behind glass. On the aerial this is
-      // what takes the trees, the neighbour's yard and the scrapyard over the
-      // fence out of the picture -- there is nothing to switch off in a
-      // photograph, so the only way to remove them is to cover them.
+      const font = ["Noto Sans Bold"];
       m.addLayer({ id: "outside-veil", type: "fill", source: "outside",
-        paint: { "fill-color": "#DCE1E7", "fill-opacity": 0.45 } });
-    }
-    if (!m.getLayer("park-fill")) {
-      // The boundary, under everything. Pale enough to lift the park off the
-      // grey without colouring the homes that sit on it.
+        paint: { "fill-color": "#DCE1E7", "fill-opacity": 0.4 } });
       m.addLayer({ id: "park-fill", type: "fill", source: "park",
-        paint: { "fill-color": "#BCD6F2", "fill-opacity": 0.16 } });
+        paint: { "fill-color": "#BCD6F2", "fill-opacity": 0.14 } });
       m.addLayer({ id: "park-line", type: "line", source: "park",
         paint: { "line-color": "#1F5BA6", "line-width": 2.5 } });
 
@@ -308,28 +261,22 @@ export default function ParkMap(
       m.addLayer({ id: "home-on", type: "line", source: "homes",
         filter: ["==", ["get", "id"], ""],
         paint: { "line-color": "#0F1729", "line-width": 3.5 } });
-
-      // Numbers appear when a home is wide enough to hold one. Below that
-      // MapLibre drops the ones that would collide, which is the right
-      // answer: a smear of overlapping digits tells you nothing.
       m.addLayer({ id: "home-label", type: "symbol", source: "homes", minzoom: 16.5,
-        layout: {
-          "text-field": ["get", "label"], "text-size": 10,
-          "text-font": ["Open Sans Bold"], "text-rotation-alignment": "map",
-          "text-allow-overlap": false, "text-padding": 1,
-        },
+        layout: { "text-field": ["get", "label"], "text-size": 10, "text-font": font,
+                  "text-allow-overlap": false, "text-padding": 1 },
         paint: { "text-color": "#ffffff", "text-halo-color": "#19202B", "text-halo-width": 1.2 } });
-
-      // Our own street names, written down the middle of each street. The
-      // base map has them too, but not at every zoom and not where the eye
-      // is already looking.
       m.addLayer({ id: "street-label", type: "symbol", source: "streets",
-        layout: {
-          "text-field": ["get", "name"], "text-size": 13,
-          "text-font": ["Open Sans Bold"], "symbol-placement": "line-center",
-          "text-letter-spacing": 0.06,
-        },
+        layout: { "text-field": ["get", "name"], "text-size": 13, "text-font": font,
+                  "symbol-placement": "line-center", "text-letter-spacing": 0.06 },
         paint: { "text-color": "#1F3C66", "text-halo-color": "#ffffff", "text-halo-width": 2.5 } });
+
+      m.addLayer({ id: "tap-dot", type: "circle", source: "taps",
+        paint: { "circle-radius": 9, "circle-color": "#D1453B",
+                 "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
+      m.addLayer({ id: "tap-n", type: "symbol", source: "taps",
+        layout: { "text-field": ["get", "n"], "text-size": 11, "text-font": font,
+                  "text-allow-overlap": true },
+        paint: { "text-color": "#ffffff" } });
 
       m.on("click", (e) => {
         if (live.current.fitting) {
@@ -339,16 +286,6 @@ export default function ParkMap(
         const f = m.queryRenderedFeatures(e.point, { layers: ["home-fill"] })[0];
         live.current.onSelect(f ? String(f.properties?.id ?? "") : null);
       });
-      // Where each tap landed, numbered, so a misplaced one is obvious
-      // before three more are put on top of it.
-      m.addLayer({ id: "tap-dot", type: "circle", source: "taps",
-        paint: { "circle-radius": 9, "circle-color": "#D1453B",
-                 "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
-      m.addLayer({ id: "tap-n", type: "symbol", source: "taps",
-        layout: { "text-field": ["get", "n"], "text-size": 11,
-                  "text-font": ["Open Sans Bold"], "text-allow-overlap": true },
-        paint: { "text-color": "#ffffff" } });
-
       m.on("mouseenter", "home-fill", () => { m.getCanvas().style.cursor = "pointer"; });
       m.on("mouseleave", "home-fill", () => { m.getCanvas().style.cursor = ""; });
     }
@@ -357,9 +294,7 @@ export default function ParkMap(
   }, [plan, real, facts, ready, selected, taps]);
 
   // Framed on what is drawn, once per set of geometry. Re-framing on every
-  // nudge would yank the map out from under somebody dragging the block into
-  // place; never re-framing leaves the park a blob in a field of grey when
-  // the real outlines arrive a second after the page opens.
+  // nudge would yank the map out from under somebody placing the block.
   const framed = useRef("");
   useEffect(() => {
     const m = map.current;
@@ -367,25 +302,21 @@ export default function ParkMap(
     const what = `${real?.boundary?.length ? "real" : "drawn"}:${real?.homes?.length ?? 0}`;
     if (framed.current === what) return;
     framed.current = what;
-    // After paint, so the container has the height its CSS gives it.
     const id = requestAnimationFrame(() => frame());
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, real]);
 
-  // There was a ResizeObserver here that called the map's own resize. Each
-  // resize changed the canvas, which changed the box, which fired the
-  // observer again: the canvas grew every frame until it covered the whole
-  // page, over the header and the text. MapLibre already follows the window
-  // on its own, and the one case it misses -- the card opening beside the
-  // map -- is handled by framing explicitly instead.
-
   function frame() {
     const m = map.current;
     if (!m) return;
+    const ring = real?.boundary?.length ? real.boundary : boundaryOf(plan);
     const b = new maplibregl.LngLatBounds();
-    for (const p of boundaryOf(plan)) b.extend([p[0], p[1]]);
-    m.fitBounds(b, { padding: 40, maxZoom: 19, duration: 400 });
+    for (const p of ring) b.extend([p[0], p[1]]);
+    // Measured again here: the container is sized by CSS that may not have
+    // settled when the map first says it has loaded.
+    m.resize();
+    m.fitBounds(b, { padding: 28, maxZoom: 19, duration: 400 });
   }
 
   return (
@@ -399,7 +330,9 @@ export default function ParkMap(
           Aerial
         </button>
         <button type="button" className="btn" onClick={frame}>Fit view</button>
-        <span className="dim">{countOf(plan)} lots</span>
+        <span className="dim">
+          {real?.homes?.length ? `${real.homes.length} homes` : `${countOf(plan)} lots`}
+        </span>
       </div>
     </div>
   );

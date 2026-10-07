@@ -18,8 +18,16 @@ export const maxDuration = 60;
 const MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
   "https://overpass.osm.ch/api/interpreter",
 ];
+
+/** Every OpenStreetMap service asks callers to identify themselves, and
+ *  several of them answer an anonymous request with an empty result rather
+ *  than an error. Node sends no User-Agent at all unless told to, which
+ *  looks exactly like a scraper and comes back looking exactly like a city
+ *  with no streets in it. */
+const WHO = "LarabeeHomes-ParkMap/1.0 (+https://mh-investor-template.vercel.app)";
 
 /**
  * The park's real streets, real boundary and real outlines.
@@ -147,12 +155,31 @@ async function ask(
     try {
       const res = await fetch(mirror, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": WHO,
+          Accept: "application/json",
+        },
         body: new URLSearchParams({ data: body }).toString(),
-        signal: AbortSignal.timeout(14_000),
+        signal: AbortSignal.timeout(20_000),
       });
-      if (!res.ok) { note(`Asked ${host} for ${what}`, false, `it answered ${res.status}`); continue; }
-      const json = (await res.json()) as { elements?: OsmElement[]; remark?: string };
+      const text = await res.text();
+      if (!res.ok) {
+        note(`Asked ${host} for ${what}`, false,
+          `it answered ${res.status}: ${text.slice(0, 160).replace(/\s+/g, " ")}`);
+        continue;
+      }
+      let json: { elements?: OsmElement[]; remark?: string };
+      try {
+        json = JSON.parse(text) as { elements?: OsmElement[]; remark?: string };
+      } catch {
+        // Not JSON at all. Says so, with the first line, because "it
+        // answered 200" and "it answered 200 with an HTML error page" are
+        // the same event from here and completely different problems.
+        note(`Asked ${host} for ${what}`, false,
+          `it answered ${res.status} but not JSON: ${text.slice(0, 160).replace(/\s+/g, " ")}`);
+        continue;
+      }
       const elements = Array.isArray(json.elements) ? json.elements : [];
       // Overpass reports its own timeouts and memory limits as a remark on a
       // perfectly ordinary 200 with an empty list. Read as success, that is
@@ -162,7 +189,16 @@ async function ask(
         note(`Asked ${host} for ${what}`, false, `it gave up: ${json.remark}`);
         continue;
       }
-      note(`Asked ${host} for ${what}`, true, `${elements.length} things came back`);
+      // An empty answer is not an answer. A kilometre and a half of any
+      // town has roads in it, so nothing coming back means the request was
+      // turned away rather than served, and the next mirror gets a go.
+      if (!elements.length) {
+        note(`Asked ${host} for ${what}`, false,
+          `${(text.length / 1024).toFixed(1)} kB back and nothing in it`);
+        continue;
+      }
+      note(`Asked ${host} for ${what}`, true,
+        `${elements.length} things, ${(text.length / 1024).toFixed(0)} kB`);
       return elements;
     } catch (e) {
       note(`Asked ${host} for ${what}`, false, e instanceof Error ? e.message : "no answer");
