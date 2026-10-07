@@ -136,7 +136,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // The property line first, because it decides what counts: a building
     // the far side of Pamalee Dr is not lot 3100, however near the street
     // it happens to sit.
-    const { homes, spare, rows } = assign(
+    const { homes, rows } = assign(
       fitted ?? base, found.shapes, mine, { inside: parcel?.ring },
     );
     const boundary = parcel?.ring
@@ -152,7 +152,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         line: r.line,
       })),
       boundary,
-      spare: spare.map((x) => x.ring),
+      // Buildings that are not lots are no longer drawn at all. A grey
+      // shape inside the line with no number on it reads as a lot that
+      // failed rather than as a shed, and every one of them cost a round
+      // of "what is that one".
       parcel: parcel ? "from the map" : null,
     });
     setOsm({
@@ -230,18 +233,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       )}
       {!asking && (osm?.error || real) && (
         <p className="parkhint">
-          {real?.homes?.length
-            ? `${real.homes.length} homes, taken straight off the map.`
-            : osm?.error ?? "Drawn from the park's own layout."}
-          {real?.boundary?.length && real?.parcel
-            ? " The outline is the property line the map holds, not a rectangle drawn round the homes."
-            : null}
-          {osm?.drawn
-            ? ` ${osm.drawn} more the map has never had, drawn on the end of their row — ${osm.missing?.map((m) => `${m.street} ${m.side === "N" ? "even" : "odd"} side`).join(" and ")}.`
-            : null}
-          {osm?.redrawn
-            ? ` ${osm.redrawn} outline${osm.redrawn === 1 ? " was" : "s were"} nothing like a home — the office, a carport, two pads traced as one — and ${osm.redrawn === 1 ? "has" : "have"} been replaced with a standard pad.`
-            : null}
+          {real?.homes?.length ? (
+            <>
+              <strong>All {real.homes.length} lots.</strong>{" "}
+              {real.homes.length - (osm?.drawn ?? 0)} are the map&rsquo;s own
+              outlines.
+              {osm?.drawn ? ` ${osm.drawn} drawn, dashed, where the map has none.` : ""}
+              {osm?.redrawn ? ` ${osm.redrawn} replaced with a standard pad.` : ""}
+            </>
+          ) : osm?.error ?? "Drawn from the park's own layout."}
         </p>
       )}
 

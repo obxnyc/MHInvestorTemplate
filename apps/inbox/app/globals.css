@@ -1999,7 +1999,7 @@ a.metric:hover{border-color:var(--accent)}
    nobody can get out of. */
 .parkmapbox{width:100%;aspect-ratio:16/10;border-radius:12px;overflow:hidden;
   border:1px solid var(--hair);background:var(--sunk);position:relative;
-  contain:strict;isolation:isolate}
+  contain:layout paint;isolation:isolate}
 .parkmapbox .maplibregl-map{position:absolute;inset:0;width:100%;height:100%}
 @media (max-width:760px){ .parkmapbox{aspect-ratio:4/5} }
 

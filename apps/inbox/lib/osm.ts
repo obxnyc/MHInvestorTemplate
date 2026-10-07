@@ -286,20 +286,29 @@ export function placeOn(road: Road, at: [number, number]) {
   };
 }
 
+/**
+ * How far along a street a point sits, in METRES.
+ *
+ * It used to be in degrees, because adding up hypotenuses of longitude and
+ * latitude is the obvious thing and gives a number that sorts correctly --
+ * which is all it was first used for. Then the row-filling started
+ * comparing it against a spacing in metres, and compared a hundred and
+ * thirty metres of street against one thousandth of a degree. Every answer
+ * that came out of that was wrong in a way that still looked like a row.
+ */
 function alongOf(line: number[][], seg: number, t: number, flip: boolean): number {
-  let d = 0;
-  for (let i = 0; i < seg; i++) {
-    d += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
-  }
-  const segLen = Math.hypot(line[seg + 1]?.[0] - line[seg][0], line[seg + 1]?.[1] - line[seg][1]) || 0;
-  const total = (() => {
-    let s = 0;
-    for (let i = 0; i < line.length - 1; i++) {
-      s += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
-    }
-    return s;
-  })();
-  const forward = d + t * segLen;
+  const m = (a: number[], b: number[]) =>
+    metresBetween([a[0], a[1]], [b[0], b[1]]);
+
+  let before = 0;
+  for (let i = 0; i < seg; i++) before += m(line[i], line[i + 1]);
+
+  const next = line[seg + 1] ?? line[seg];
+  const segLen = m(line[seg], next);
+  let total = 0;
+  for (let i = 0; i < line.length - 1; i++) total += m(line[i], line[i + 1]);
+
+  const forward = before + t * segLen;
   return flip ? total - forward : forward;
 }
 
@@ -390,111 +399,180 @@ export function assign(
   const rows: { row: PlanRow; found: number }[] = [];
 
   for (const row of plan.rows) {
-    const inRow = sorted
+    const all = sorted
       .filter((x) => x.street === row.street && (x.north ? "N" : "S") === row.side)
       .sort((a, b) => (back ? b.along - a.along : a.along - b.along));
-    rows.push({ row, found: inRow.length });
 
-    const mid = median(inRow.map((x) => areaOf(x.shape.ring)));
-    const pads: Matched[] = [];
+    // More buildings than lots means some of them are not lots. The ones
+    // that are sit in an unbroken run at a regular spacing; the ones that
+    // are not sit off on their own, over Pamalee Dr or past the loop. So
+    // the row is the tightest run of the right length, and whatever that
+    // leaves out is set aside.
+    //
+    // This is what the property line was doing, except that the map does
+    // not always have a property line, and the strays turned up anyway.
+    const found = tightest(all, row.numbers.length);
+    for (const x of all) if (!found.includes(x)) spare.push(x.shape);
+    rows.push({ row, found: found.length });
 
-    inRow.forEach((x, i) => {
-      const label = row.numbers[i];
-      if (label === undefined) { spare.push(x.shape); return; }
-      // Judged against its own row, and only where the row has enough
-      // homes for a middle to mean anything.
-      const area = areaOf(x.shape.ring);
-      const odd = inRow.length >= 4 && mid > 0 && (area > mid * 2.2 || area < mid * 0.45);
-      pads.push({
-        id: `${row.street}|${label}`, label, street: row.street, side: row.side,
-        ring: x.shape.ring, redrawn: odd || undefined,
-      });
-      if (odd) pads[pads.length - 1].ring = padAt(x.shape.centre, inRow, i, plan);
-    });
-
-    // The rest of the row, continued at its own spacing and angle.
-    const drawnFrom = row.numbers.length - pads.length;
-    if (drawnFrom > 0) pads.push(...continueRow(row, pads, inRow, plan));
-
-    homes.push(...pads);
+    const road = mine.find((r) => sameStreet(row.street, r.name));
+    homes.push(...fillRow(
+      row, found, plan, back, limits(road, opts.inside, sorted),
+    ));
   }
   return { homes, spare, rows };
 }
 
-/** A standard pad where a building is, square to the row it is in. */
-function padAt(
-  at: [number, number],
-  row: { shape: Shape }[], i: number, plan: Plan,
-): number[][] {
-  return footprint(at[1], at[0], rowBearing(row, i) + 90, plan.size);
+/**
+ * The run of `want` of them that covers the least ground.
+ *
+ * A row of homes is evenly spaced, so the real row is always the tightest
+ * window of the right length: a building across the road is further from
+ * its nearest neighbour than any two homes are from each other, and every
+ * window that contains it is wider than every window that does not.
+ */
+export function tightest<T extends { along: number }>(sorted: T[], want: number): T[] {
+  if (want <= 0 || sorted.length <= want) return sorted;
+  let best = 0;
+  let span = Infinity;
+  for (let i = 0; i + want <= sorted.length; i++) {
+    const w = Math.abs(sorted[i + want - 1].along - sorted[i].along);
+    if (w < span) { span = w; best = i; }
+  }
+  return sorted.slice(best, best + want);
 }
 
-/** Which way the row runs at one of its homes, from its neighbours. */
-function rowBearing(row: { shape: Shape }[], i: number): number {
-  const a = row[i - 1]?.shape.centre ?? row[i]?.shape.centre;
-  const b = row[i + 1]?.shape.centre ?? row[i]?.shape.centre;
-  if (!a || !b || (a[0] === b[0] && a[1] === b[1])) {
-    const first = row[0]?.shape.centre, last = row[row.length - 1]?.shape.centre;
-    if (!first || !last || (first[0] === last[0] && first[1] === last[1])) return 0;
-    return bearingOf(first, last);
+/** How far along its street the park runs: from the property line where
+ *  the map has one, and from the spread of the homes themselves where it
+ *  does not. */
+export function limits(
+  road: Road | undefined,
+  inside: number[][] | undefined,
+  all: { along: number }[],
+): { lo: number; hi: number } | null {
+  if (road && inside?.length) {
+    let lo = Infinity, hi = -Infinity;
+    for (const p of inside) {
+      const { along } = placeOn(road, [p[0], p[1]]);
+      if (along < lo) lo = along;
+      if (along > hi) hi = along;
+    }
+    if (Number.isFinite(lo)) return { lo, hi };
   }
-  return bearingOf(a, b);
+  if (!all.length) return null;
+  const xs = all.map((a) => a.along);
+  return { lo: Math.min(...xs), hi: Math.max(...xs) };
 }
 
 /**
- * The lots the map has never heard of, drawn on the end of their row.
+ * A row's lots, every one of them, in order, with the gaps in the right
+ * place.
  *
- * Five of these are real: the west end of Lady Viola's odd side and of
- * Lady Cheryl's even side simply have no buildings in the map. They are
- * still lots, they still get sold, and a lot that is not on the screen is
- * a lot nobody can record a sale against.
+ * The hard part is not the drawing, it is deciding which numbers the map is
+ * missing. Numbering the buildings it does have in order and putting the
+ * leftovers on the end assumes every gap is at the end, and here they are
+ * not: Lady Viola is missing 3124 and 3122 at the Pamalee entrance, which
+ * is the START of the row. Numbered from the end, every home in the row
+ * wore its neighbour's number and the two spare lots were drawn off the
+ * far side of the property, past the loop.
+ *
+ * So the question asked is how many lots come before the first building the
+ * map has, and it is answered by where the park ends. The row is laid at
+ * its own spacing, every placing of the gaps is tried, and the one that
+ * sits inside the property line wins.
  */
-function continueRow(
-  row: PlanRow, placed: Matched[], found: { shape: Shape }[], plan: Plan,
+export function fillRow(
+  row: PlanRow,
+  found: { shape: Shape; along: number }[],
+  plan: Plan,
+  back: boolean,
+  edges: { lo: number; hi: number } | null,
 ): Matched[] {
-  const left = row.numbers.slice(placed.length);
-  if (!left.length) return [];
-
+  const n = row.numbers.length;
   const per = degreesPerMetre(plan.centre[1]);
-  const centres = found.map((f) => f.shape.centre);
+  const dir = back ? -1 : 1;
 
-  // Where the row ends and how it is spaced, from the row itself where
-  // there is a row, and from the plan where there is not.
-  let last: [number, number];
-  let step: number;
-  let bearing: number;
-  if (centres.length >= 2) {
-    last = centres[centres.length - 1];
-    const gaps: number[] = [];
-    for (let i = 1; i < centres.length; i++) gaps.push(metresBetween(centres[i - 1], centres[i]));
-    step = median(gaps) || plan.padSpacing;
-    bearing = bearingOf(centres[centres.length - 2], last);
-  } else {
+  const mk = (label: string, ring: number[][], extra: Partial<Matched> = {}): Matched => ({
+    id: `${row.street}|${label}`, label, street: row.street, side: row.side,
+    ring, ...extra,
+  });
+
+  // Nothing from the map: the plan's own drawing is all there is.
+  if (!found.length) {
     const drawn = layOut(plan).filter((h) => h.street === row.street && h.side === row.side);
-    const from = drawn[Math.max(0, placed.length - 1)] ?? drawn[0];
-    if (!from) return [];
-    last = [from.lng, from.lat];
-    step = plan.padSpacing;
-    bearing = (plan.bearing + (plan.countFrom === "east" ? 180 : 0)) % 360;
-    // With nothing found, the first unplaced lot sits where the plan puts
-    // it rather than one step past it.
-    return left.map((label, k) => {
-      const d = drawn[placed.length + k];
-      const at: [number, number] = d ? [d.lng, d.lat] : stepOn(last, bearing, step * (k + 1), per);
-      return {
-        id: `${row.street}|${label}`, label, street: row.street, side: row.side,
-        ring: footprint(at[1], at[0], (bearing + 90) % 360, plan.size), drawn: true,
-      };
+    return row.numbers.map((label, k) => {
+      const d = drawn[k];
+      return mk(label, d
+        ? footprint(d.lat, d.lng, d.bearing, plan.size)
+        : footprint(plan.centre[1], plan.centre[0], 0, plan.size), { drawn: true });
     });
   }
 
-  return left.map((label, k) => {
-    const at = stepOn(last, bearing, step * (k + 1), per);
-    return {
-      id: `${row.street}|${label}`, label, street: row.street, side: row.side,
-      ring: footprint(at[1], at[0], (bearing + 90) % 360, plan.size), drawn: true,
-    };
-  });
+  const centres = found.map((f) => f.shape.centre);
+  const gaps: number[] = [];
+  for (let i = 1; i < centres.length; i++) gaps.push(metresBetween(centres[i - 1], centres[i]));
+  const step = median(gaps) || plan.padSpacing;
+  const bearing = centres.length > 1
+    ? bearingOf(centres[0], centres[centres.length - 1])
+    : (plan.bearing + (back ? 180 : 0)) % 360;
+
+  // How many lots sit before the first building the map has. Every split is
+  // tried; the one whose row lands inside the property line wins, and a tie
+  // goes to the one that sits most evenly within it.
+  const spareLots = n - found.length;
+  let before = 0;
+  if (spareLots > 0 && edges) {
+    const margin = plan.size.width;
+    let best = Infinity;
+    for (let b = 0; b <= spareLots; b++) {
+      const start = found[0].along - dir * b * step;
+      const end = found[found.length - 1].along + dir * (spareLots - b) * step;
+      const lo = Math.min(start, end), hi = Math.max(start, end);
+      const out = Math.max(0, edges.lo + margin - lo) + Math.max(0, hi - (edges.hi - margin));
+      // Tie-break on how centred the row is, so a park with room to spare
+      // does not shove every gap to one end.
+      const score = out * 1000 + Math.abs((lo - edges.lo) - (edges.hi - hi));
+      if (score < best) { best = score; before = b; }
+    }
+  }
+
+  const mid = median(found.map((f) => areaOf(f.shape.ring)));
+  const out: Matched[] = [];
+  for (let k = 0; k < n; k++) {
+    const label = row.numbers[k];
+    const i = k - before;
+    if (i >= 0 && i < found.length) {
+      const ring = found[i].shape.ring;
+      const area = areaOf(ring);
+      // The office, a carport, two pads traced as one: judged against the
+      // middle of its own row, and only where the row has enough homes for
+      // a middle to mean anything.
+      const odd = found.length >= 4 && mid > 0 && (area > mid * 2.2 || area < mid * 0.45);
+      out.push(mk(label, odd
+        ? footprint(centres[i][1], centres[i][0], rowBearing(centres, i) + 90, plan.size)
+        : ring, odd ? { redrawn: true } : {}));
+      continue;
+    }
+    // A lot the map has never had. Stepped off its own row's spacing from
+    // whichever end it belongs to.
+    const from = i < 0 ? centres[0] : centres[centres.length - 1];
+    const steps = i < 0 ? i : i - found.length + 1;
+    const at = stepOn(from, bearing, steps * step, per);
+    out.push(mk(label, footprint(at[1], at[0], (bearing + 90) % 360, plan.size), { drawn: true }));
+  }
+  return out;
+}
+
+/** Which way the row runs at one of its homes, from its neighbours. */
+function rowBearing(centres: [number, number][], i: number): number {
+  const a = centres[i - 1] ?? centres[i];
+  const b = centres[i + 1] ?? centres[i];
+  if (a[0] === b[0] && a[1] === b[1]) {
+    const first = centres[0], last = centres[centres.length - 1];
+    if (first[0] === last[0] && first[1] === last[1]) return 0;
+    return bearingOf(first, last);
+  }
+  return bearingOf(a, b);
 }
 
 function stepOn(
