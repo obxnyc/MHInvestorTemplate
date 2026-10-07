@@ -27,13 +27,13 @@ writeFileSync(gen.osm, transpile("osm.ts")
 let buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
     orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
     areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
-    fitInside, areaOf;
+    fitInside, areaOf, tightest;
 let RETREAT, layOut, streetLines;
 try {
   ({ buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
      orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
      areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
-     fitInside, areaOf } = await import(gen.osm));
+     fitInside, areaOf, tightest } = await import(gen.osm));
   ({ RETREAT, layOut, streetLines } = await import(gen.plan));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
@@ -297,15 +297,80 @@ elements.push(home(nextId++, 10, 300));
     .find((h) => h.label === "3124" && h.street === "Lady Viola Dr").ring[0][0];
   const loose = assign(RETREAT, buildingsOf(strays), roadsOf(strays));
   const tight = assign(RETREAT, buildingsOf(strays), roadsOf(strays), { inside: fence });
-  t("without a property line, a building over the road takes the first lot",
-    where(loose) < LNG - 15 * dLng);
-  t("with one, that lot is back inside the park", where(tight) > LNG - 12 * dLng);
+  // The property line settles it when the map has one.
+  t("a property line keeps the first lot inside the park",
+    where(tight) > LNG - 12 * dLng);
+  // And when it does not -- which is most of the time -- the row itself
+  // settles it, because a building across the road is further from its
+  // nearest neighbour than any two homes in a row are from each other.
+  t("and without one, the tightest run does the same job",
+    where(loose) > LNG - 12 * dLng);
   t("and the park still has all its lots",
     tight.homes.length === 51 && new Set(tight.homes.map((h) => h.id)).size === 51);
 }
 {
   t("a pad is about a hundred square metres",
     Math.round(areaOf([[0, 0], [0.0001, 0], [0.0001, 0.0001], [0, 0.0001], [0, 0]])) > 0);
+}
+
+// --- gaps at the start of a row, which is where they actually are ---
+{
+  // Lady Viola's even row with its first two buildings missing, which is
+  // the real case: 3124 and 3122 at the Pamalee entrance are not on the
+  // map. The property line still reaches that far west.
+  const short = elements.filter((e) =>
+    !(e.tags?.building && (e.id === 1 || e.id === 2)));
+  const fence = [
+    [LNG - 12 * dLng, LAT - 95 * dLat], [LNG + 150 * dLng, LAT - 95 * dLat],
+    [LNG + 150 * dLng, LAT + 35 * dLat], [LNG - 12 * dLng, LAT + 35 * dLat],
+    [LNG - 12 * dLng, LAT - 95 * dLat],
+  ];
+  const { homes } = assign(RETREAT, buildingsOf(short), roadsOf(short), { inside: fence });
+  const row = homes.filter((h) => h.street === "Lady Viola Dr" && h.side === "N");
+
+  t("the row still has all thirteen lots", row.length === 13);
+  t("and reads 3124 down to 3100",
+    row[0].label === "3124" && row[12].label === "3100");
+  // The bug this replaces: the two missing lots were numbered onto the
+  // buildings that WERE there, so every home wore its neighbour's number
+  // and the two spares were drawn off the far end, past the loop and
+  // outside the property.
+  if (process.env.DEBUG) console.log(row.map((h) => `${h.label}${h.drawn ? "*" : ""}`).join(" "));
+  t("the missing two are the ones at the entrance",
+    row[0].drawn === true && row[1].drawn === true);
+  t("and the rest are the map's own outlines",
+    row.slice(2).every((h) => !h.drawn));
+  t("3100 is still on the building at the loop", !row[12].drawn);
+
+  // Nothing hanging off the end of the park.
+  const xs = row.map((h) => h.ring[0][0]);
+  t("every lot is inside the property line",
+    xs.every((x) => x > LNG - 14 * dLng && x < LNG + 152 * dLng));
+  t("and they run west to east in order",
+    xs.every((x, i) => i === 0 || x > xs[i - 1]));
+}
+{
+  // Gaps at both ends: two at the entrance, one at the loop.
+  const short = elements.filter((e) =>
+    !(e.tags?.building && (e.id === 28 || e.id === 29 || e.id === 39)));
+  const { homes } = assign(RETREAT, buildingsOf(short), roadsOf(short));
+  t("a row short at both ends still has every lot",
+    homes.filter((h) => h.street === "Lady Cheryl Dr" && h.side === "N").length === 12);
+  t("and the park still has fifty one", homes.length === 51);
+}
+
+// --- the tightest run ---
+{
+  const run = [0, 10, 20, 30, 40].map((along) => ({ along }));
+  t("with nothing spare, the whole row is the row",
+    tightest(run, 5).length === 5);
+  t("a stray at one end is dropped",
+    tightest([{ along: -80 }, ...run], 5).map((x) => x.along).join() === "0,10,20,30,40");
+  t("and one at each end",
+    tightest([{ along: -80 }, ...run, { along: 140 }], 5)
+      .map((x) => x.along).join() === "0,10,20,30,40");
+  t("a short row is left alone", tightest(run, 9).length === 5);
+  t("and asking for none gets none", tightest(run, 0).length === 5);
 }
 
 // --- the property line ---

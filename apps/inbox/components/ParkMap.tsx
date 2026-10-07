@@ -182,7 +182,11 @@ export default function ParkMap(
       m.setPaintProperty("park-fill", "fill-opacity", fitting ? 0 : sat ? 0.1 : 0.14);
     }
     if (m.getLayer("home-fill")) {
-      m.setPaintProperty("home-fill", "fill-opacity", fitting ? 0.35 : 0.9);
+      // Solid. At 0.9 the base map's own grey buildings showed through
+      // underneath and every pad came out mottled, which is what "grainy"
+      // was looking at -- two drawings of the same building, one on top of
+      // the other, almost but not quite aligned.
+      m.setPaintProperty("home-fill", "fill-opacity", fitting ? 0.35 : 1);
     }
   }, [sat, ready, fitting]);
 
@@ -262,7 +266,7 @@ export default function ParkMap(
       m.addLayer({ id: "other-fill", type: "fill", source: "others",
         paint: { "fill-color": "#AFB7C2", "fill-opacity": 0.45 } });
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
-        paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.9 } });
+        paint: { "fill-color": ["get", "colour"], "fill-opacity": 1 } });
       // Two layers rather than one with an expression: line-dasharray is
       // a constant-only property in MapLibre, and a data-driven one throws
       // on style load and takes the whole map with it.
@@ -344,9 +348,7 @@ export default function ParkMap(
           Aerial
         </button>
         <button type="button" className="btn" onClick={frame}>Fit view</button>
-        <span className="dim">
-          {real?.homes?.length ? `${real.homes.length} homes` : `${countOf(plan)} lots`}
-        </span>
+        <span className="dim">{countOf(plan)} lots</span>
       </div>
     </div>
   );
