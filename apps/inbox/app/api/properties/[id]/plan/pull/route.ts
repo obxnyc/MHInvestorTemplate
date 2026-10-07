@@ -3,7 +3,7 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   appIdFrom, geocode, layersOf, numberField, boxAround, pointsIn,
-  houseNumber, toFractions, type Step, type FoundLot,
+  houseNumber, toFractions, mostLikelyFirst, type Step, type FoundLot,
 } from "@/lib/agol";
 
 export const runtime = "nodejs";
@@ -95,7 +95,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const tried: string[] = [];
   let best: { title: string; field: string; found: FoundLot[] } | null = null;
 
-  for (const layer of layers) {
+  // In order of likelihood, because the budget is spent in order. The last
+  // run tried twenty-five aerial photographs and never reached the address
+  // points, which were sitting there the whole time.
+  for (const layer of mostLikelyFirst(layers)) {
     // Sequentially and bounded: this is somebody's public service, and
     // twenty parallel requests is not how to introduce ourselves.
     if (tried.length >= 25) break;

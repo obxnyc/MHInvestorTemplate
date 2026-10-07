@@ -138,6 +138,12 @@ function readMap(map: Record<string, unknown>): { title: string; url: string }[]
 async function expand(layers: { title: string; url: string }[]) {
   const out: { title: string; url: string }[] = [];
   for (const l of layers) {
+    // Photographs, skipped before they cost a request. Cumberland publishes
+    // sixteen years of aerial flights as separate layers, and asking each one
+    // for house numbers burned the entire budget on pictures -- twenty-five
+    // attempts, every one of them a .sid tile, and the address points never
+    // got looked at.
+    if (isImagery(l)) continue;
     if (/\/\d+$/.test(l.url)) { out.push(l); continue; }
     if (!/(Map|Feature)Server\/?$/i.test(l.url)) { out.push(l); continue; }
 
@@ -157,6 +163,38 @@ async function expand(layers: { title: string; url: string }[]) {
   // Bounded: a county map can reference six services of forty layers each,
   // and the point is to find address points, not to crawl their estate.
   return out.slice(0, 60);
+}
+
+/** A layer that holds a picture rather than things with fields on them.
+ *  An ImageServer cannot answer a feature query, and neither can a raster
+ *  tile named after the flight that produced it. */
+function isImagery(l: { title: string; url: string }): boolean {
+  return /ImageServer/i.test(l.url)
+    || /\.sid\b/i.test(l.title)
+    || /^imagery\b|\bimagery\b.*\d{4}|\borthoimagery\b|\baerial\b/i.test(l.title);
+}
+
+/**
+ * Most likely to carry a house number, first.
+ *
+ * The budget is spent in order, so the order is the whole thing. An address
+ * point layer is the answer; a structure or building layer usually carries
+ * the number too; a parcel layer carries owners and acreage and is worth
+ * trying last rather than not at all, because some counties put the situs
+ * address on it.
+ */
+export function mostLikelyFirst(
+  layers: { title: string; url: string }[],
+): { title: string; url: string }[] {
+  const score = (t: string) => {
+    const s = t.toLowerCase();
+    if (/address|situs|e911|site ?addr/.test(s)) return 0;
+    if (/structure|building|footprint|rooftop/.test(s)) return 1;
+    if (/parcel|cama|property|tax/.test(s)) return 2;
+    if (/street|road|centerline|boundary|zoning|flood|soil|contour/.test(s)) return 4;
+    return 3;
+  };
+  return [...layers].sort((a, b) => score(a.title) - score(b.title));
 }
 
 /** The field in a layer that holds the number on the mailbox.

@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const js = ts.transpileModule(readFileSync(join(here, "..", "agol.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { appIdFrom, numberField, houseNumber, boxAround, toFractions } =
+const { appIdFrom, numberField, houseNumber, boxAround, toFractions, mostLikelyFirst } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
 const checks = [];
@@ -98,6 +98,28 @@ t("no homes, no positions", toFractions([]).length === 0);
   const one = toFractions([{ label: "7", lat: 35.09, lng: -78.93 }]);
   t("one home does not divide by zero",
     one.length === 1 && Number.isFinite(one[0].x) && Number.isFinite(one[0].y));
+}
+
+// --- what to try first ---
+// Cumberland publishes sixteen years of aerial flights as separate layers.
+// The first run spent its entire budget on them and never reached the
+// address points, which were there the whole time.
+{
+  const real = [
+    { title: "Imagery · CC2025 6 Inch Resolution", url: "https://x/ImageServer" },
+    { title: "Parcels", url: "https://x/MapServer/1" },
+    { title: "Street Centerlines", url: "https://x/MapServer/2" },
+    { title: "Address Points", url: "https://x/MapServer/3" },
+    { title: "Building Footprints", url: "https://x/MapServer/4" },
+  ];
+  const order = mostLikelyFirst(real).map((l) => l.title);
+  t("address points are tried first", order[0] === "Address Points");
+  t("then buildings, which usually carry the number too",
+    order[1] === "Building Footprints");
+  t("then parcels, which sometimes carry a situs address", order[2] === "Parcels");
+  // Not excluded -- a county might surprise us -- but last, behind everything
+  // that could plausibly answer.
+  t("street centrelines come last", order[order.length - 1] === "Street Centerlines");
 }
 
 let failed = 0;
