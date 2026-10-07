@@ -94,7 +94,7 @@ export default function ParkPlan(
     <div className="parkwrap">
       <svg
         ref={svg} className={`park${editing ? " editing" : ""}`}
-        viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet"
+        viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid meet"
         onPointerMove={(e) => editing && setGhost(at(e))}
         onPointerLeave={() => setGhost(null)}
         onClick={(e) => {
@@ -108,16 +108,16 @@ export default function ParkPlan(
         }}
       >
         {placed.map((lot) => {
-          const cx = lot.x! * 1000;
+          const cx = lot.x! * 1600;
           const cy = lot.y! * 1000;
-          const w = HOME.w * 1000;
+          const w = HOME.w * 1600;
           const h = HOME.h * 1000;
           const state = stateOf(lot);
           const on = lot.id === selected;
           return (
             <g key={lot.id}
                transform={`translate(${cx} ${cy}) rotate(${lot.rot})`}
-               className={`pad ${state}${on ? " on" : ""}`}
+               className={`pad pad-${state}${on ? " on" : ""}`}
                onPointerDown={(e) => {
                  if (!editing) return;
                  e.stopPropagation();
@@ -141,14 +141,14 @@ export default function ParkPlan(
 
         {editing && ghost && (
           <rect className="ghost"
-                x={ghost.x * 1000 - HOME.w * 500} y={ghost.y * 1000 - HOME.h * 500}
-                width={HOME.w * 1000} height={HOME.h * 1000} rx={2} />
+                x={ghost.x * 1600 - HOME.w * 800} y={ghost.y * 1000 - HOME.h * 500}
+                width={HOME.w * 1600} height={HOME.h * 1000} rx={2} />
         )}
       </svg>
 
       <ul className="parkkey">
         {(["let", "empty", "bare", "ours"] as const).map((k) => (
-          <li key={k}><span className={`sw ${k}`} />{LABEL[k]}</li>
+          <li key={k}><span className={`sw sw-${k}`} />{LABEL[k]}</li>
         ))}
       </ul>
     </div>
