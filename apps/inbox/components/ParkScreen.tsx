@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type LotState, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
@@ -30,9 +30,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [plan, setPlan] = useState<Plan>(RETREAT);
   const [real, setReal] = useState<RealPark | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
+  const [asking, setAsking] = useState(true);
   const [osm, setOsm] = useState<{
     steps?: { did: string; ok: boolean; say: string }[];
     error?: string;
+    fit?: Plan;
     missing?: { street: string; side: string; short: number }[];
   } | null>(null);
 
@@ -84,6 +86,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     return () => window.removeEventListener("keydown", on);
   }, [fitting, plan, remember]);
 
+  // The latest plan, for the one-shot effects that must not re-run every
+  // time a slider moves.
+  const planNow = useRef(plan);
+  planNow.current = plan;
+
   const load = useCallback(async () => {
     const res = await fetch(`/api/properties/${propertyId}/plan`, { cache: "no-store" });
     const out = await res.json().catch(() => ({}));
@@ -93,29 +100,59 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   }, [propertyId]);
   useEffect(() => { void load(); }, [load]);
 
-  // The outlines OpenStreetMap already has. Asked for once, in the
-  // background: the drawn block is on screen the whole time, so this
-  // arriving late replaces a working map rather than filling an empty one,
-  // and this failing leaves a working map rather than nothing.
+  // The outlines OpenStreetMap already has.
+  //
+  // Asked for once, in the background: the drawn block is on screen the
+  // whole time, so this arriving late replaces a working map rather than
+  // filling an empty one, and this failing leaves a working map rather than
+  // nothing.
+  //
+  // Kept in the browser afterwards. Overpass is volunteer-run and takes ten
+  // or twenty seconds on a good day; waiting that out every time the page
+  // opens would make the real outlines feel worse than the drawn ones.
+  const cache = `parkosm:${propertyId}`;
   useEffect(() => {
     let gone = false;
+    try {
+      const saved = localStorage.getItem(cache);
+      if (saved) {
+        const was = JSON.parse(saved) as RealPark & { at?: number };
+        if (was?.homes?.length) { setReal(was); setAsking(false); }
+      }
+    } catch { /* a stale cache is not worth a broken page */ }
+
     (async () => {
       const res = await fetch(
         `/api/properties/${propertyId}/plan/osm?lng=${RETREAT.centre[0]}&lat=${RETREAT.centre[1]}`,
         { cache: "no-store" },
       ).catch(() => null);
       const out = await res?.json().catch(() => null);
-      if (gone || !out) { if (!gone) setOsm({ error: "Could not reach OpenStreetMap." }); return; }
+      if (gone) return;
+      setAsking(false);
+      if (!out) { setOsm({ error: "No answer from OpenStreetMap." }); return; }
       setOsm(out);
+      // Even a partial answer settles where the park sits: the roads alone
+      // give the angle, the position and which street is which. Applied
+      // before the outlines, so a map with no buildings in it still stops
+      // being crooked.
+      if (out.fit?.centre) {
+        remember({
+          ...planNow.current, centre: out.fit.centre, bearing: out.fit.bearing,
+          streetGap: out.fit.streetGap, mirror: Boolean(out.fit.mirror),
+        });
+      }
       if (out.ok && out.homes?.length) {
-        setReal({
+        const got: RealPark = {
           homes: out.homes, streets: out.streets ?? [],
           boundary: out.boundary ?? [], spare: out.spare ?? [],
-        });
+        };
+        setReal(got);
+        try { localStorage.setItem(cache, JSON.stringify(got)); } catch { /* fine */ }
       }
     })();
     return () => { gone = true; };
-  }, [propertyId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId, cache]);
 
   const placed = useMemo<Placed[]>(() => (
     real
@@ -172,6 +209,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       {/* Where the outlines came from. Said once, plainly, because a park
           drawn from a description and a park drawn from the map look alike
           on screen and are not the same claim. */}
+      {asking && !real && (
+        <p className="parkhint">
+          These are drawn from the park&rsquo;s own layout. Asking
+          OpenStreetMap for the real outlines — it can take twenty seconds.
+        </p>
+      )}
       {osm?.error && (
         <p className="parkhint">
           OpenStreetMap didn&rsquo;t answer, so these are drawn from the

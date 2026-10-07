@@ -23,7 +23,7 @@ export type RealPark = {
 };
 
 const FILL: Record<LotState, string> = {
-  let: "#2E8B68", ours: "#3E6BB0", empty: "#C2703A", bare: "#8FA3BE",
+  let: "#2E8B68", ours: "#3E6BB0", empty: "#C2703A", bare: "#6B7F99",
 };
 
 /**
@@ -99,12 +99,11 @@ export default function ParkMap(
         layers: [
           {
             id: "plain", type: "raster", source: "plain",
-            paint: {
-              "raster-saturation": -1,
-              "raster-contrast": -0.25,
-              "raster-brightness-min": 0.45,
-              "raster-opacity": 0.75,
-            },
+            // Drained of colour and nothing else. Dimming it as well was
+            // belt and braces that erased the surroundings twice over --
+            // once here and once under the veil -- and left the park
+            // floating on blank paper with no landmarks to place it by.
+            paint: { "raster-saturation": -1 },
           },
           { id: "sat", type: "raster", source: "sat", layout: { visibility: "none" } },
         ],
@@ -183,12 +182,17 @@ export default function ParkMap(
     // park up with pads you cannot see, which is most of why fitting felt
     // impossible.
     if (m.getLayer("outside-veil")) {
+      // Enough to push the surroundings back, not enough to remove them.
+      // The point of greying the neighbours is that you can still see where
+      // the park sits among them; at 0.78 there was nothing left to see.
       m.setPaintProperty("outside-veil", "fill-opacity",
-        fitting ? 0 : sat ? 0.9 : 0.78);
+        fitting ? 0 : sat ? 0.62 : 0.45);
     }
     if (m.getLayer("park-fill")) {
+      // A tint, not a wash. It was covering the park's own roads, which are
+      // the thing that makes a row of homes read as a row.
       m.setPaintProperty("park-fill", "fill-opacity",
-        fitting ? 0 : sat ? 0.12 : 0.4);
+        fitting ? 0 : sat ? 0.1 : 0.16);
     }
     // See-through while fitting, for the same reason.
     if (m.getLayer("home-fill")) {
@@ -280,13 +284,13 @@ export default function ParkMap(
       // fence out of the picture -- there is nothing to switch off in a
       // photograph, so the only way to remove them is to cover them.
       m.addLayer({ id: "outside-veil", type: "fill", source: "outside",
-        paint: { "fill-color": "#E3E7EC", "fill-opacity": 0.88 } });
+        paint: { "fill-color": "#DCE1E7", "fill-opacity": 0.45 } });
     }
     if (!m.getLayer("park-fill")) {
       // The boundary, under everything. Pale enough to lift the park off the
       // grey without colouring the homes that sit on it.
       m.addLayer({ id: "park-fill", type: "fill", source: "park",
-        paint: { "fill-color": "#BCD6F2", "fill-opacity": 0.45 } });
+        paint: { "fill-color": "#BCD6F2", "fill-opacity": 0.16 } });
       m.addLayer({ id: "park-line", type: "line", source: "park",
         paint: { "line-color": "#1F5BA6", "line-width": 2.5 } });
 
@@ -295,7 +299,7 @@ export default function ParkMap(
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
         paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.9 } });
       m.addLayer({ id: "home-line", type: "line", source: "homes",
-        paint: { "line-color": "#2A3A4F", "line-width": 1 } });
+        paint: { "line-color": "#17212E", "line-width": 1.2 } });
       m.addLayer({ id: "home-on", type: "line", source: "homes",
         filter: ["==", ["get", "id"], ""],
         paint: { "line-color": "#0F1729", "line-width": 3.5 } });

@@ -3,11 +3,16 @@ import { requireStaff } from "@/lib/supabase-server";
 import { RETREAT, boundaryOf } from "@/lib/parkplan";
 import {
   overpassBody, boxAround, buildingsOf, roadsOf, assign, orientedBox, sameStreet,
+  placeFromRoads,
 } from "@/lib/osm";
 import type { OsmElement } from "@/lib/osm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Overpass is volunteer-run and routinely takes ten or twenty seconds. The
+// default serverless ceiling is well under the time three mirrors need, so
+// the request was being killed before the first one answered.
+export const maxDuration = 60;
 
 /** Mirrors, in order. Overpass is free and volunteer-run, so one being busy
  *  is ordinary rather than exceptional and is not a reason to give up. */
@@ -45,7 +50,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ data: body }).toString(),
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(14_000),
       });
       if (!res.ok) { note("Asked " + host(mirror), false, `it answered ${res.status}`); continue; }
       json = await res.json();
@@ -79,13 +84,25 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     });
   }
 
+  // The block pinned to the real streets. Worked out before the buildings
+  // are looked at, and returned whatever happens to them: two road
+  // centrelines are enough to stop the drawn park sitting crooked in the
+  // wrong place, and a named street the base map is already drawing is far
+  // likelier to be in OpenStreetMap than a mobile home is.
+  const fit = placeFromRoads(RETREAT, roads);
+  note("Pinned the plan to those streets", Boolean(fit),
+    fit
+      ? `rows run at ${Math.round(fit.bearing)}°, streets ${Math.round(fit.streetGap)} m apart`
+      : "could not, so the drawn plan stays where it was");
+
   const { homes, spare, rows } = assign(RETREAT, shapes, roads);
   note("Numbered them", homes.length > 0,
     rows.map((r) => `${r.row.street} ${r.row.side}: ${r.found} found, ${r.row.numbers.length} expected`)
       .join("; "));
   if (!homes.length) {
     return NextResponse.json({
-      steps, error: "No building sat close enough to either street to be a home on it.",
+      steps, fit,
+      error: "OpenStreetMap has the streets but not the homes on them, so these are drawn — on the right streets, at the right angle.",
     });
   }
 
@@ -99,7 +116,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     }));
 
   return NextResponse.json({
-    ok: true, steps,
+    ok: true, steps, fit,
     homes, streets, spare: spare.map((s) => s.ring),
     boundary: boundary.length ? boundary : boundaryOf(RETREAT),
     missing: rows

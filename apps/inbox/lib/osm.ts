@@ -16,8 +16,9 @@
  * the part that has to be right, so it is the part that can be tested.
  */
 
-import { metresBetween } from "./footprint";
-import type { Plan, PlanRow } from "./parkplan";
+import { metresBetween, bearingOf, half } from "./footprint";
+import { streetLines } from "./parkplan";
+import type { Plan, PlanRow, Tap } from "./parkplan";
 
 export type OsmElement = {
   type?: string;
@@ -33,7 +34,7 @@ export type Road = { name: string; line: number[][] };
  *  geometry inline so no second round trip is needed to resolve nodes. */
 export function overpassBody(box: { s: number; w: number; n: number; e: number }): string {
   const b = `${box.s},${box.w},${box.n},${box.e}`;
-  return `[out:json][timeout:40];(way["building"](${b});way["highway"]["name"](${b}););out geom;`;
+  return `[out:json][timeout:25];(way["building"](${b});way["highway"]["name"](${b}););out geom;`;
 }
 
 /** A box of the given half-size in metres around a point. Degrees of
@@ -313,3 +314,86 @@ export function convexHull(points: [number, number][]): [number, number][] {
   ring.push(ring[0]);
   return ring;
 }
+
+/**
+ * The block pinned to the park's real streets.
+ *
+ * This is the answer to a drawn park sitting crooked and in the wrong place
+ * over the map: it was never told where the streets are. The buildings are
+ * the better source and are used when they come back, but the two road
+ * centrelines alone are enough to settle everything that was wrong -- which
+ * way the rows run, where they start, how far apart the streets are, and
+ * which of them is the north one.
+ *
+ * Roads are also the safer source. A mobile home may or may not be in
+ * OpenStreetMap; a named street that the base map is already drawing
+ * certainly is.
+ */
+export function placeFromRoads(plan: Plan, roads: Road[]): Plan | null {
+  const first = plan.rows[0];
+  const other = plan.rows.find((r) => r.street !== first?.street);
+  if (!first) return null;
+
+  const a = roads.find((r) => sameStreet(first.street, r.name));
+  if (!a || a.line.length < 2) return null;
+  const b = other ? roads.find((r) => sameStreet(other.street, r.name)) : undefined;
+
+  // The way the row runs. Folded into half a turn so a street drawn from
+  // east to west and the same street drawn west to east give one answer --
+  // otherwise the numbering runs backwards for half the parks in the world
+  // depending on which way a volunteer happened to trace the road.
+  const ends: [Tap, Tap] = [
+    [a.line[0][0], a.line[0][1]],
+    [a.line[a.line.length - 1][0], a.line[a.line.length - 1][1]],
+  ];
+  const bearing = half(bearingOf(ends[0], ends[1]));
+
+  const midA = midOf(a.line);
+  let streetGap = plan.streetGap;
+  let centre: [number, number] = midA;
+
+  if (b && b.line.length >= 2) {
+    const near = nearestOn(b.line, midA);
+    streetGap = Math.max(12, near.metres);
+    // Halfway between the two streets, which is where a two-street plan
+    // puts its own centre.
+    centre = [(midA[0] + near.at[0]) / 2, (midA[1] + near.at[1]) / 2];
+  }
+
+  // Finally, which way up. Both arrangements draw the same park; only one
+  // of them has Lady Viola where Lady Viola is.
+  const tryIt = (mirror: boolean): { plan: Plan; wrong: number } => {
+    const p: Plan = { ...plan, bearing, streetGap, centre, mirror };
+    let wrong = 0;
+    for (const line of streetLines(p)) {
+      const road = roads.find((r) => sameStreet(line.name, r.name));
+      if (!road) continue;
+      wrong += nearestOn(road.line, midOf(line.line)).metres;
+    }
+    return { plan: p, wrong };
+  };
+  const up = tryIt(false), down = tryIt(true);
+  return up.wrong <= down.wrong ? up.plan : down.plan;
+}
+
+/** The middle of a polyline, by length along it. */
+export function midOf(line: number[][]): [number, number] {
+  let total = 0;
+  for (let i = 0; i < line.length - 1; i++) total += segLen(line, i);
+  let want = total / 2;
+  for (let i = 0; i < line.length - 1; i++) {
+    const len = segLen(line, i);
+    if (want <= len || i === line.length - 2) {
+      const t = len ? want / len : 0;
+      return [
+        line[i][0] + t * (line[i + 1][0] - line[i][0]),
+        line[i][1] + t * (line[i + 1][1] - line[i][1]),
+      ];
+    }
+    want -= len;
+  }
+  return [line[0][0], line[0][1]];
+}
+
+const segLen = (line: number[][], i: number) =>
+  Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
