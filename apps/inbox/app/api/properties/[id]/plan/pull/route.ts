@@ -106,7 +106,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   for (const layer of order) {
     // Sequentially and bounded: this is somebody's public service, and
     // twenty parallel requests is not how to introduce ourselves.
-    if (tried.length >= 25) break;
+    if (tried.length >= 40) break;
     const got = await pointsIn(layer.url, box);
     if (!got) { tried.push(`${layer.title}: no answer`); continue; }
     if (!got.features.length) { tried.push(`${layer.title}: nothing here`); continue; }
@@ -129,7 +129,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
-  note("Looked for house numbers", Boolean(best?.found.length), tried.join(" · "));
+  note("Looked for house numbers",
+    Boolean(best?.found.length),
+    `Tried ${tried.length} of ${layers.length} layers, most likely first. `
+    + tried.join(" · "));
 
   if (!best || !best.found.length) {
     // Every layer by name, because at this point the list IS the diagnosis:
