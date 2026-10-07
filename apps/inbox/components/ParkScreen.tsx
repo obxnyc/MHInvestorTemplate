@@ -133,7 +133,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       {error && <p className="err">{error}</p>}
 
-      <div className="parkmain" onPointerUp={() => selected && editing && void settle(selected)}>
+      <div className={`parkmain${open ? " withcard" : ""}`} onPointerUp={() => selected && editing && void settle(selected)}>
         <ParkPlan
           lots={lots} selected={selected} editing={editing}
           onSelect={setSelected}

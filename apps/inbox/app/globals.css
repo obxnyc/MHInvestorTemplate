@@ -1849,7 +1849,7 @@ a.metric:hover{border-color:var(--accent)}
 
 
 /* ---- a park, drawn ---- */
-.parkpage{padding:1rem 1.1rem 2rem}
+.parkpage{padding:1rem 0 2rem;max-width:72rem}
 .parkhead{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:.6rem}
 .parkhead h1{margin:0;font-size:1.3rem;font-weight:700;letter-spacing:-.02em}
 .parkacts{margin-left:auto;display:flex;gap:.5rem}
@@ -1857,23 +1857,42 @@ a.metric:hover{border-color:var(--accent)}
 
 /* The plan and the open pad, side by side on a desk and stacked on a phone --
    where this is actually read, standing in the park. */
-.parkmain{display:grid;grid-template-columns:minmax(0,1fr) 20rem;gap:1rem;align-items:start}
-@media (max-width:860px){ .parkmain{grid-template-columns:minmax(0,1fr)} }
+/* One column until a pad is open. Reserving the card's 20rem whether or not
+   anything is in it left a third of the screen empty and squeezed the plan
+   into the rest, which is the opposite of what a plan is for. */
+.parkmain{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
+.parkmain.withcard{grid-template-columns:minmax(0,1fr) 20rem}
+@media (max-width:860px){ .parkmain.withcard{grid-template-columns:minmax(0,1fr)} }
 
 .parkwrap{min-width:0}
-.park{display:block;width:100%;height:auto;aspect-ratio:1;background:var(--sunk);
+/* On a phone the plan pans rather than shrinks. Squeezed to 390 pixels a lot
+   number renders under five pixels tall, which is a drawing of a park rather
+   than a thing you can use standing in one. Panning a map is a gesture
+   everybody already has. */
+@media (max-width:760px){
+  .parkwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .park{min-width:52rem}
+}
+/* Wider than it is tall, because a park is. Two streets running across a
+   square canvas leave the top and bottom thirds empty and make every home
+   smaller than it needs to be. */
+.park{display:block;width:100%;height:auto;aspect-ratio:16/10;background:var(--sunk);
   border:1px solid var(--hair);border-radius:12px;touch-action:none}
 .park.editing{cursor:crosshair}
 
 /* One rectangle, four states. The two that cost money are the loud ones; a
    let home is the ordinary case and should be quiet. */
 .pad rect{stroke:var(--hair);stroke-width:1.5;transition:none}
-.pad text{font-size:13px;font-weight:700;text-anchor:middle;fill:var(--ink-2);
+.pad text{font-size:19px;font-weight:700;text-anchor:middle;fill:var(--ink-2);
   pointer-events:none;font-variant-numeric:tabular-nums}
-.pad.let   rect{fill:var(--tn-soft);stroke:var(--tn)}
-.pad.ours  rect{fill:var(--pr-soft);stroke:var(--pr)}
-.pad.empty rect{fill:var(--vd-soft);stroke:var(--vd)}
-.pad.bare  rect{fill:var(--card);stroke:var(--faint);stroke-dasharray:3 2}
+/* Prefixed, every one of them. A bare `.empty` here collided with the
+   empty-state class this stylesheet has had since the beginning -- which is
+   flex:1 and 2rem of padding -- and turned one legend swatch into a square
+   the size of a postcard. A state name is not a class name. */
+.pad-let   rect{fill:var(--tn-soft);stroke:var(--tn)}
+.pad-ours  rect{fill:var(--pr-soft);stroke:var(--pr)}
+.pad-empty rect{fill:var(--vd-soft);stroke:var(--vd)}
+.pad-bare  rect{fill:var(--card);stroke:var(--faint);stroke-dasharray:3 2}
 .pad.on rect{stroke:var(--ink);stroke-width:3}
 .park.editing .pad{cursor:grab}
 .ghost{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3;
@@ -1882,11 +1901,12 @@ a.metric:hover{border-color:var(--accent)}
 .parkkey{list-style:none;margin:.5rem 0 0;padding:0;display:flex;gap:.9rem;
   flex-wrap:wrap;font-size:.74rem;color:var(--muted)}
 .parkkey li{display:flex;align-items:center;gap:.35rem}
-.parkkey .sw{width:.7rem;height:.7rem;border-radius:2px;border:1px solid var(--hair)}
-.parkkey .sw.let{background:var(--tn-soft);border-color:var(--tn)}
-.parkkey .sw.ours{background:var(--pr-soft);border-color:var(--pr)}
-.parkkey .sw.empty{background:var(--vd-soft);border-color:var(--vd)}
-.parkkey .sw.bare{background:var(--card);border-color:var(--faint)}
+.parkkey .sw{width:.7rem;height:.7rem;border-radius:2px;flex:none;padding:0;
+  display:block;border:1px solid var(--hair)}
+.parkkey .sw-let{background:var(--tn-soft);border-color:var(--tn)}
+.parkkey .sw-ours{background:var(--pr-soft);border-color:var(--pr)}
+.parkkey .sw-empty{background:var(--vd-soft);border-color:var(--vd)}
+.parkkey .sw-bare{background:var(--card);border-color:var(--faint)}
 
 /* ---- one pad, opened ---- */
 .lotcard{border:1px solid var(--hair);border-radius:12px;background:var(--card);
