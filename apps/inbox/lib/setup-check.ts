@@ -514,6 +514,10 @@ const MIGRATIONS: { id: string; what: string; table: string; column: string }[] 
     table: "dm_messages", column: "media_paths" },
   { id: "029", what: "Vendor invoices that cannot be rewritten",
     table: "vendor_invoices", column: "amount_cents" },
+  { id: "030", what: "Who bought which home, and on what terms",
+    table: "home_sales", column: "price_cents" },
+  { id: "030", what: "A park drawn as a plan rather than traced off a map",
+    table: "units", column: "map_rot" },
 ];
 
 /** 021 only widens a constraint, so there is no column to look for. It is

@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:parsers": "node lib/__fixtures__/parsers.test.mjs",
     "test:prequal": "node lib/__fixtures__/prequal.test.mjs",
-    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices",
+    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices && npm run test:park",
     "test:classify": "node lib/__fixtures__/classify.test.mjs",
     "test:category": "node lib/__fixtures__/category.test.mjs",
     "test:media": "node lib/__fixtures__/media.test.mjs",
@@ -21,7 +21,8 @@
     "test:sitemap": "node lib/__fixtures__/sitemap.test.mjs",
     "test:jobs": "node lib/__fixtures__/jobs.test.mjs",
     "test:intake-view": "node lib/__fixtures__/intake-view.test.mjs",
-    "test:invoices": "node lib/__fixtures__/invoices.test.mjs"
+    "test:invoices": "node lib/__fixtures__/invoices.test.mjs",
+    "test:park": "node lib/__fixtures__/park.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
