@@ -10,7 +10,7 @@ const js = ts.transpileModule(readFileSync(join(here, "..", "agol.ts"), "utf8"),
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const { appIdFrom, numberField, houseNumber, boxAround, toFractions, mostLikelyFirst,
-        inRing, inShape, parcelLayers } =
+        inRing, inShape, parcelLayers, streetOf } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
 const checks = [];
@@ -182,6 +182,20 @@ t("nothing in, nothing inside", inShape(1, 1, null) === false);
   t("nor are buffers", !picked.some((p) => /Buffer/.test(p)));
   t("nor mineral rights", !picked.some((p) => /Mineral/.test(p)));
 }
+
+// --- which street a home is on ---
+// A park is one or two streets and the neighbourhood is five others, so this
+// is the filter that matches how somebody describes their own park.
+t("the street comes out from behind the number",
+  streetOf("3107 LADY CHERYL DR") === "Lady Cheryl Dr");
+t("county shouting is calmed down",
+  streetOf("1800 PAMALEE DR") === "Pamalee Dr");
+t("a unit letter on the number does not become the street",
+  streetOf("3107-A LADY VIOLA DR") === "Lady Viola Dr");
+// Honest about not knowing, rather than inventing a street from a number.
+t("a bare number has no street", streetOf("3107") === null);
+t("and nothing at all has none either",
+  streetOf(null) === null && streetOf("") === null);
 
 let failed = 0;
 for (const [n, ok] of checks) { console.log(`${ok ? "  ok" : "FAIL"}  ${n}`); if (!ok) failed++; }

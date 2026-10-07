@@ -19,7 +19,22 @@ export type FoundLot = {
   label: string;
   lat: number;
   lng: number;
+  /** The street it is on, when the address field carried one. A park is one
+   *  or two streets and the neighbourhood is five others, so this is the
+   *  filter that actually matches how somebody thinks about their park. */
+  street: string | null;
 };
+
+/** The street out of an address field, with the number taken off the front.
+ *  "3107 LADY CHERYL DR" is Lady Cheryl Dr; "3107" on its own is nothing,
+ *  which is honest rather than a guess. */
+export function streetOf(v: unknown): string | null {
+  const s = String(v ?? "").trim().replace(/^\d+\s*-?[A-Za-z]?\s+/, "");
+  if (!s || /^\d+$/.test(s)) return null;
+  // Title case, because county data is upper case and a filter full of
+  // shouting is harder to read than it needs to be.
+  return s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()).trim();
+}
 
 const AGOL = "https://www.arcgis.com/sharing/rest/content/items";
 

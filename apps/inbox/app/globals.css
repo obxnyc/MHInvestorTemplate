@@ -2007,3 +2007,13 @@ a.metric:hover{border-color:var(--accent)}
    plainly not counted. */
 .mapdot.bare{opacity:.42;border-style:dashed}
 .maplibregl-ctrl-attrib{font-size:.62rem}
+
+/* Pick a park by its streets. Eighty-five homes across six streets becomes
+   two ticks, which is how somebody describes their own park out loud. */
+.streetpick{margin:.6rem 0;padding:.6rem .7rem;border:1px solid var(--hair);
+  border-radius:9px;background:var(--card)}
+.streetpick p{margin:0 0 .4rem;font-size:.76rem;color:var(--muted)}
+.streetpick ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.4rem .9rem}
+.streetpick label{display:flex;align-items:center;gap:.35rem;font-size:.8rem;
+  font-weight:600;color:var(--ink-2);cursor:pointer}
+.streetpick .dim{color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}

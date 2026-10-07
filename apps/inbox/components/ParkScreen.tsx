@@ -22,7 +22,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [pulling, setPulling] = useState(false);
   const [pull, setPull] = useState<{
     steps: { did: string; ok: boolean; say: string }[];
-    lots?: { label: string; lat: number; lng: number }[];
+    lots?: { label: string; lat: number; lng: number; street: string | null }[];
     others?: { title: string; count: number }[];
     layers?: { title: string; url: string }[];
     error?: string;
@@ -69,6 +69,29 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
   // What a preview looks like ON the plan. A count tells you nothing about
   // whether the right homes came back; the shape tells you immediately.
+  /** The streets the pull found, biggest first. A park is one or two of
+   *  them and the neighbourhood is the rest, so ticking a street is the
+   *  filter that matches how anybody actually thinks about their park. */
+  const streets = (() => {
+    const by = new Map<string, number>();
+    for (const l of pull?.lots ?? []) {
+      const k = l.street ?? "No street given";
+      by.set(k, (by.get(k) ?? 0) + 1);
+    }
+    return [...by].sort((a, b) => b[1] - a[1]);
+  })();
+
+  function toggleStreet(name: string, on: boolean) {
+    const labels = (pull?.lots ?? [])
+      .filter((l) => (l.street ?? "No street given") === name)
+      .map((l) => l.label);
+    setKeep((prev) => {
+      const next = new Set(prev);
+      for (const l of labels) { if (on) next.add(l); else next.delete(l); }
+      return next;
+    });
+  }
+
   /** Homes with real coordinates go on the aerial. The drawn plan stays for
    *  a park somebody arranged by hand, where there are no coordinates to
    *  put on a map. */
@@ -240,6 +263,27 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
                 below. Tap any home to take it out or put it back — the
                 photograph makes it obvious which are yours.
               </p>
+              {streets.length > 1 && (
+                <div className="streetpick">
+                  <p>By street — tick the ones that are yours:</p>
+                  <ul>
+                    {streets.map(([name, n]) => {
+                      const all = (pull.lots ?? [])
+                        .filter((l) => (l.street ?? "No street given") === name);
+                      const on = all.every((l) => keep.has(l.label));
+                      return (
+                        <li key={name}>
+                          <label>
+                            <input type="checkbox" checked={on}
+                                   onChange={(e) => toggleStreet(name, e.target.checked)} />
+                            {name} <span className="dim">{n}</span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               {pull.others?.length ? (
                 <p className="dim">
                   Other layers found: {pull.others.map((o) => `${o.title} (${o.count})`).join(", ")}.
