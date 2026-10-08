@@ -653,6 +653,14 @@ export default function ParkMap(
     const m = map.current;
     if (!m) return;
     const ring = real?.boundary?.length ? real.boundary : boundaryOf(plan);
+    // A park nobody has described has no homes, so no boundary either,
+    // and empty bounds are not something to fit to. Look at the ground
+    // it sits on instead.
+    if (!ring.length) {
+      m.resize();
+      m.easeTo({ center: plan.centre, zoom: 16.5, duration: 400 });
+      return;
+    }
     const b = new maplibregl.LngLatBounds();
     for (const p of ring) b.extend([p[0], p[1]]);
     // Measured again here: the container is sized by CSS that may not have
