@@ -489,7 +489,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true });
   }
 
-  // --- a new owner ---
+  // --- correcting a sale already recorded ---
+  //
+  // A sale is typed once from a bill of sale and gets a digit wrong, or
+  // the rate turns out to be 5.2 and not 5.5. Ending it and recording it
+  // again is the wrong shape: that says the home changed hands, which it
+  // did not, and it puts a false line in the history. So the live sale
+  // is amended in place, and the history keeps saying what happened
+  // rather than what was mistyped.
+  //
+  // Falls through to the same validation as a new sale below, because
+  // the rules about a financed sale needing terms do not change just
+  // because the row already exists.
+  const amending = body.action === "amend";
+
   const ownerId = String(body.ownerId ?? "").trim();
   if (!ownerId) return NextResponse.json({ error: "pick a buyer" }, { status: 400 });
 
@@ -518,9 +531,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // constraints.
   const { data: live } = await db.from("home_sales")
     .select("id").eq("unit_id", id).is("ended_on", null).maybeSingle();
-  if (live) {
+  if (live && !amending) {
     return NextResponse.json({
       error: "This home already has an owner. End that sale first, saying what happened.",
+    }, { status: 400 });
+  }
+  if (amending && !live) {
+    return NextResponse.json({
+      error: "There is no current sale on this home to change.",
     }, { status: 400 });
   }
 
@@ -556,12 +574,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   };
   const any = Object.values(charges).some((v) => v !== null);
 
-  let put = await db.from("home_sales").insert(any ? { ...row, ...charges } : row);
+  // On an amend the charges are left alone unless the form sent them,
+  // because the charges have their own form on the card and the sale
+  // form is not where somebody expects to clear them by omission.
+  const write = (cols: Record<string, unknown>) => (amending
+    ? db.from("home_sales").update(cols).eq("id", live!.id)
+    : db.from("home_sales").insert(cols));
+
+  // `created_by` records who typed it, which stays true of whoever typed
+  // it first; an amendment does not rewrite that.
+  const base = amending
+    ? Object.fromEntries(Object.entries(row).filter(([k]) =>
+        k !== "unit_id" && k !== "created_by"))
+    : row;
+
+  let put = await write(any ? { ...base, ...charges } : base);
   if (put.error && any && /lot_rent|management_cents|warranty|tenant_rent|pet_fee|late_fee/
       .test(put.error.message)) {
     // 032 not run. The sale is the thing that matters; the charges can
     // be added once the migration is.
-    put = await db.from("home_sales").insert(row);
+    put = await write(base);
   }
   if (put.error) return NextResponse.json({ error: put.error.message }, { status: 500 });
 

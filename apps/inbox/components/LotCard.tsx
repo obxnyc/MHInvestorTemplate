@@ -7,7 +7,8 @@ type Owner = { id: string; name: string };
 type Sale = {
   id: string; sold_on: string; price_cents: number; down_cents: number;
   financed: boolean; monthly_cents: number | null; rate_bps: number | null;
-  term_months: number | null; home_year: number | null; home_make: string | null;
+  term_months: number | null; first_due_on: string | null;
+  home_year: number | null; home_make: string | null;
   home_serial: string | null; ended_on: string | null; ended_why: string | null;
   note: string | null; owners: { id: string; name: string } | null;
   // `management_cents` is what the column has been called since 032.
@@ -111,6 +112,8 @@ export default function LotCard(
   const [pending, setPending] = useState(false);
   const [selling, setSelling] = useState(false);
   const [ending, setEnding] = useState(false);
+  /** Correcting a sale already on file, rather than ending it. */
+  const [fixing, setFixing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState("");
@@ -150,7 +153,7 @@ export default function LotCard(
     const out = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) { setError(out.error ?? "That didn't save."); return false; }
-    setSelling(false); setEnding(false);
+    setSelling(false); setEnding(false); setFixing(false);
     await load();
     onChanged();
     return true;
@@ -254,10 +257,25 @@ export default function LotCard(
                 </>
               )}
             </dl>
-            {!ending ? (
-              <button type="button" className="btn" onClick={() => setEnding(true)}>
-                They no longer own it
-              </button>
+            {!ending && !fixing ? (
+              <div className="invacts">
+                {/* Typing a bill of sale gets a digit wrong, and ending
+                    the sale to retype it would put a line in the history
+                    saying the home changed hands when it did not. */}
+                <button type="button" className="btn" onClick={() => setFixing(true)}>
+                  Change these
+                </button>
+                <button type="button" className="btn" onClick={() => setEnding(true)}>
+                  They no longer own it
+                </button>
+              </div>
+            ) : fixing ? (
+              <SaleForm owners={owners} memory={null} lastAny={null} busy={busy}
+                        editing={live}
+                        ownerId={ownerId || live.owners?.id || ""}
+                        onOwner={(o) => { setOwnerId(o); }}
+                        onCancel={() => setFixing(false)}
+                        onSave={(payload) => post({ ...payload, action: "amend" })} />
             ) : (
               <form className="saleform" onSubmit={async (e) => {
                 e.preventDefault();
@@ -556,6 +574,138 @@ function RentForm(
 }
 
 /**
+ * The buyer, found by typing.
+ *
+ * A dropdown is fine with eight owners and useless with eighty: the
+ * list is alphabetical and the person is looking for "Habberstad",
+ * which means scrolling past everything that is not. Typing three
+ * letters is how anybody expects to find a name.
+ *
+ * It is a combobox rather than a plain input with a `datalist`, because
+ * what the form has to carry is the owner's id and a datalist hands
+ * back only the text -- and two investors can be "Smith Holdings" with
+ * different ids.
+ *
+ * Adding a buyer who is not there is folded in rather than being a
+ * separate control. Nobody wants to be told their investor is not on
+ * the list and be left to find a second button.
+ */
+function OwnerPick(
+  { owners, value, onPick, onNew }:
+  {
+    owners: Owner[]; value: string;
+    onPick: (id: string) => void;
+    onNew: (name: string) => Promise<void>;
+  },
+) {
+  const picked = owners.find((o) => o.id === value) ?? null;
+  const [text, setText] = useState(picked?.name ?? "");
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState(0);
+  const box = useRef<HTMLDivElement | null>(null);
+
+  // The name follows the id when the id is set from outside -- recalling
+  // terms, or a buyer just created.
+  useEffect(() => {
+    const now = owners.find((o) => o.id === value);
+    if (now) setText(now.name);
+  }, [value, owners]);
+
+  // Clicking away is how somebody dismisses a list they did not want.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+
+  const typed = text.trim();
+  const hits = typed
+    ? owners.filter((o) => o.name.toLowerCase().includes(typed.toLowerCase())).slice(0, 8)
+    : owners.slice(0, 8);
+  // An exact name already on file is not something to offer to create
+  // again -- that is how a second "Habberstad Norse Ventures LLC" gets
+  // made, and then half the park is filed under each.
+  const known = owners.some((o) => o.name.toLowerCase() === typed.toLowerCase());
+  const canAdd = Boolean(typed) && !known;
+
+  function take(o: Owner) {
+    onPick(o.id);
+    setText(o.name);
+    setOpen(false);
+  }
+
+  return (
+    <div className="ownerpick" ref={box}>
+      <label>Who bought it
+        <input
+          value={text}
+          autoComplete="off"
+          placeholder="Start typing their name or LLC"
+          onChange={(e) => {
+            setText(e.target.value);
+            setOpen(true);
+            setAt(0);
+            // Typing past a chosen buyer un-chooses them, so the form
+            // cannot save an id that no longer matches what is on screen.
+            if (value) onPick("");
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault(); setOpen(true);
+              setAt((i) => Math.min(i + 1, hits.length - (canAdd ? 0 : 1)));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault(); setAt((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Enter") {
+              // Enter picks from the list; it does not submit a form
+              // that has not got a buyer yet.
+              if (open && hits[at]) { e.preventDefault(); take(hits[at]); }
+              else if (open && canAdd && at >= hits.length) {
+                e.preventDefault(); void onNew(typed); setOpen(false);
+              }
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }} />
+      </label>
+      {/* What the form actually carries. The box above is for finding a
+          buyer; this is the answer. */}
+      <input type="hidden" name="ownerId" value={value} />
+
+      {open && (hits.length > 0 || canAdd) && (
+        <ul className="ownerhits">
+          {hits.map((o, i) => (
+            <li key={o.id}>
+              <button type="button" className={i === at ? "on" : ""}
+                      onMouseEnter={() => setAt(i)}
+                      onClick={() => take(o)}>
+                {o.name}
+              </button>
+            </li>
+          ))}
+          {canAdd && (
+            <li>
+              <button type="button"
+                      className={at >= hits.length ? "on make" : "make"}
+                      onMouseEnter={() => setAt(hits.length)}
+                      onClick={() => { void onNew(typed); setOpen(false); }}>
+                Add &ldquo;{typed}&rdquo; as a new buyer
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+      {!value && typed && (
+        <p className="dim">Pick them from the list, or add them.</p>
+      )}
+    </div>
+  );
+}
+
+/**
  * What we have paid for on this home.
  *
  * We front the cost and take it off what we send the owner, so each one
@@ -742,9 +892,11 @@ function Papers(
  *  retyping them is how a rate ends up different on one lot for no reason
  *  anybody can explain two years later. */
 function SaleForm(
-  { owners, memory, lastAny, busy, ownerId, onOwner, onCancel, onSave }:
+  { owners, memory, lastAny, editing, busy, ownerId, onOwner, onCancel, onSave }:
   {
     owners: Owner[]; busy: boolean; ownerId: string;
+    /** A sale already on file, being corrected rather than recorded. */
+    editing?: Sale | null;
     memory: { price_cents: number; down_cents: number; financed: boolean;
               monthly_cents: number | null; rate_bps: number | null;
               term_months: number | null } | null;
@@ -768,11 +920,12 @@ function SaleForm(
    * rather than reaching into the DOM to set values.
    */
   const [recall, setRecall] = useState<LastAny | null>(null);
-  const from = recall ?? null;
-  const was = memory;
+  // Correcting beats recalling beats remembering beats blank.
+  const from = (editing as unknown as LastAny | null) ?? recall ?? null;
+  const was = editing ? null : memory;
 
-  const [financed, setFinanced] = useState(memory?.financed ?? true);
-  const [adding, setAdding] = useState(false);
+  const [financed, setFinanced] = useState(
+    editing ? Boolean(editing.financed) : memory?.financed ?? true);
   const [problem, setProblem] = useState<string | null>(null);
   const d = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2));
 
@@ -783,7 +936,6 @@ function SaleForm(
     });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) { setProblem(out.error ?? "Could not add them."); return; }
-    setAdding(false);
     onOwner(out.owner?.id ?? out.id ?? "");
   }
 
@@ -805,7 +957,14 @@ function SaleForm(
         petFee: f.get("petFee"), lateFee: f.get("lateFee"),
       });
     }}>
-      {lastAny && !recall && (
+      {editing && (
+        <p className="memory">
+          Correcting what is on file. This does not change hands — if the
+          home has been sold on, close this and use{" "}
+          <strong>They no longer own it</strong> instead.
+        </p>
+      )}
+      {lastAny && !recall && !editing && (
         <div className="recall">
           <p>
             Last sale here: <strong>{lastAny.units?.label ?? "another lot"}</strong>
@@ -832,26 +991,7 @@ function SaleForm(
         </p>
       )}
       {problem && <p className="err">{problem}</p>}
-      <label>Who bought it
-        <select name="ownerId" required value={ownerId}
-                onChange={(e) => onOwner(e.target.value)}>
-          <option value="">Pick a buyer…</option>
-          {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-      </label>
-      {!adding ? (
-        <button type="button" className="aslink" onClick={() => setAdding(true)}>
-          add a buyer who isn&rsquo;t on the list
-        </button>
-      ) : (
-        <div className="two">
-          <input id="newowner" placeholder="Their name or LLC" />
-          <button type="button" className="btn" onClick={() => {
-            const el = document.getElementById("newowner") as HTMLInputElement | null;
-            if (el?.value.trim()) void addOwner(el.value.trim());
-          }}>Add them</button>
-        </div>
-      )}
+      <OwnerPick owners={owners} value={ownerId} onPick={onOwner} onNew={addOwner} />
 
       {memory && (
         <p className="memory">
@@ -863,7 +1003,8 @@ function SaleForm(
       )}
 
       <div className="three">
-        <label>Sold on<input name="soldOn" type="date" /></label>
+        <label>Sold on<input name="soldOn" type="date"
+                              defaultValue={editing?.sold_on ?? ""} /></label>
         <label>Price<input name="price" inputMode="decimal" required
                            defaultValue={d(from?.price_cents ?? was?.price_cents)} /></label>
         <label>Down<input name="down" inputMode="decimal"
@@ -887,14 +1028,19 @@ function SaleForm(
             <label>Months<input name="termMonths" inputMode="numeric"
                                 defaultValue={from?.term_months ?? was?.term_months ?? ""} /></label>
           </div>
-          <label>First payment due<input name="firstDueOn" type="date" /></label>
+          <label>First payment due<input name="firstDueOn" type="date"
+                                         defaultValue={editing?.first_due_on ?? ""} /></label>
         </>
       )}
 
       {/* Set here as well as on the card afterwards. On ten homes let on
           the park's standard terms these six are identical every time,
           and filling them in with the sale is the difference between one
-          form and eleven. */}
+          form and eleven.
+          Not while correcting a sale: the charges have their own form
+          further down the card, and showing them twice is two places to
+          change one number. */}
+      {!editing && <>
       <p className="memory">Every month, from the day it sells</p>
       <div className="three">
         <label>Lot fee<input name="lotRent" inputMode="decimal"
@@ -912,17 +1058,21 @@ function SaleForm(
         <label>Late fee<input name="lateFee" inputMode="decimal"
                               defaultValue={d(from?.late_fee_cents)} /></label>
       </div>
+      </>}
 
       <div className="three">
-        <label>Year<input name="homeYear" inputMode="numeric" /></label>
-        <label>Make<input name="homeMake" /></label>
-        <label>Serial<input name="homeSerial" /></label>
+        <label>Year<input name="homeYear" inputMode="numeric"
+                          defaultValue={editing?.home_year ?? ""} /></label>
+        <label>Make<input name="homeMake" defaultValue={editing?.home_make ?? ""} /></label>
+        <label>Serial<input name="homeSerial" defaultValue={editing?.home_serial ?? ""} /></label>
       </div>
-      <label>Note<textarea name="note" rows={2} /></label>
+      <label>Note<textarea name="note" rows={2} defaultValue={editing?.note ?? ""} /></label>
 
       <div className="invacts">
         <button type="button" className="btn" onClick={onCancel}>Cancel</button>
-        <button type="submit" className="btn pri" disabled={busy}>Record the sale</button>
+        <button type="submit" className="btn pri" disabled={busy}>
+          {editing ? "Save the changes" : "Record the sale"}
+        </button>
       </div>
     </form>
   );

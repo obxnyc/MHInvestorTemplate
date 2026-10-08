@@ -39,7 +39,14 @@ const card = `
           $612.00 a month over 84 months.</p>
         <button class="btn">Same terms as that one</button>
       </div>
-      <label>Who bought it<select><option>Jernigan Holdings LLC</option></select></label>
+      <div class="ownerpick">
+        <label>Who bought it<input value="Habb" placeholder="Start typing their name or LLC"></label>
+        <ul class="ownerhits">
+          <li><button class="on">Habberstad Norse Ventures LLC</button></li>
+          <li><button>Habberstad Property Group</button></li>
+          <li><button class="make">Add &ldquo;Habb&rdquo; as a new buyer</button></li>
+        </ul>
+      </div>
       <div class="two"><input placeholder="Their name or LLC"><button class="btn">Add them</button></div>
       <p class="memory">Their last deal: $38,500, financed at $612 a month over 84 months.</p>
       <div class="three"><label>Sold on<input type="date"></label>

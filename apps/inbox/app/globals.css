@@ -2183,3 +2183,21 @@ a.metric:hover{border-color:var(--accent)}
 .recall p{margin:0;font-size:.78rem;line-height:1.45;color:var(--ink-2);
   font-weight:400;text-transform:none;letter-spacing:0}
 .recall strong{color:var(--ink)}
+/* Finding a buyer by typing. The list hangs over whatever is under it,
+   so the form does not jump about as somebody types. */
+.ownerpick{position:relative;display:grid;gap:.2rem}
+.ownerpick>label{display:grid;gap:.2rem}
+.ownerhits{position:absolute;z-index:40;top:100%;left:0;right:0;margin:.15rem 0 0;
+  padding:.2rem;list-style:none;max-height:13rem;overflow-y:auto;
+  background:var(--card);border:1px solid var(--hair);border-radius:9px;
+  box-shadow:0 8px 24px rgba(15,23,41,.12)}
+.ownerhits li{margin:0}
+.ownerhits button{display:block;width:100%;text-align:left;border:none;
+  background:none;padding:.4rem .5rem;border-radius:6px;font:inherit;
+  font-size:.84rem;font-weight:400;text-transform:none;letter-spacing:0;
+  color:var(--ink);cursor:pointer}
+.ownerhits button.on{background:var(--accent-soft);color:var(--accent-ink)}
+/* Making a new buyer is the last resort, not the first option. */
+.ownerhits button.make{color:var(--muted);font-size:.8rem;
+  border-top:1px solid var(--hair-2);border-radius:0 0 6px 6px}
+.ownerhits button.make.on{background:var(--sunk);color:var(--ink-2)}
