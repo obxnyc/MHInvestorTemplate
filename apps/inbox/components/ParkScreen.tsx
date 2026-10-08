@@ -158,7 +158,16 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    */
   const saving = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (saving.current) clearTimeout(saving.current); }, []);
-  const remember = useCallback((next: Plan) => {
+  /**
+   * Whether this park has a layout of its own, for the saving path to
+   * read without waiting for a render.
+   *
+   * A ref as well as state, because the fitting that runs when the map
+   * loads happens before React has caught up, and it was that fitting
+   * that wrote Cross Creek's streets onto a park nobody had described.
+   */
+  const own = useRef(false);
+  const remember = useCallback((next: Plan, auto = false) => {
     setPlan(next);
     try {
       localStorage.setItem(key, JSON.stringify({
@@ -167,14 +176,34 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       }));
     } catch { /* unsaved is survivable; unmovable is not */ }
 
+    // Only a deliberate change is this park's answer. Fitting the block
+    // to whatever the map handed over runs by itself the moment the page
+    // opens, and when that saved, opening a brand new park wrote the
+    // other park's streets and numbers onto it and then reported it as
+    // described -- so the form that would have asked never appeared.
+    if (auto || !own.current) return;
+
     if (saving.current) clearTimeout(saving.current);
     saving.current = setTimeout(() => {
       void fetch(`/api/properties/${propertyId}/plan`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "plan", plan: next }),
-      }).then((r) => { if (r.ok) setDescribed(true); }).catch(() => null);
+      }).catch(() => null);
     }, 800);
   }, [key, propertyId]);
+
+  /** A park described for the first time, or re-described. */
+  const describeIt = useCallback(async (next: Plan) => {
+    own.current = true;
+    setDescribed(true);
+    setPlan(next);
+    planNow.current = next;
+    await fetch(`/api/properties/${propertyId}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "plan", plan: next }),
+    }).catch(() => null);
+    await load();
+  }, [propertyId]);
 
   // Dragging the whole block gets it within a few feet. Arrow keys get
   // it onto the concrete: a mouse cannot reliably move a map one metre,
@@ -255,7 +284,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     setName(out.property?.name ?? "");
     setLots(out.lots ?? []);
     const mine = out.property?.plan as Plan | null | undefined;
-    setDescribed(Boolean(mine));
+    const has = Boolean(mine?.rows?.length);
+    own.current = has;
+    setDescribed(has);
     if (mine?.rows?.length) {
       setPlan(mine);
       planNow.current = mine;
@@ -360,7 +391,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
     const fence = boundary.length ? boundary : null;
 
-    remember(fitInside(fitted, boundary));
+    remember(fitInside(fitted, boundary), true);
     setReal({
       homes: pads.map((h) => ({ ...h, filed: filedAs(base, h.label, h.street) })),
       streets: streetOrder.map((st, i) => ({ name: st, line: ways[i] ?? [] }))
@@ -418,14 +449,27 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     };
   }, [real, moved, lots]);
 
+  /**
+   * The plan as drawn.
+   *
+   * A park nobody has described has no homes, so none are drawn. It held
+   * Cross Creek's plan as a starting point and drew Cross Creek's fifty
+   * one lots on top of a park in another county -- with Lady Viola Dr
+   * labelled across it -- which reads as this park being wrong rather
+   * than as this park being unknown.
+   */
+  const blank = described === false;
+  const drawn = useMemo<Plan>(
+    () => (blank ? { ...plan, rows: [] } : plan), [blank, plan]);
+
   const placed = useMemo<Placed[]>(() => (
     real
       ? real.homes.map((h) => ({
           id: h.id, label: h.label, filed: h.filed, street: h.street,
           side: "N" as const, lat: 0, lng: 0, bearing: 0,
         }))
-      : layOut(plan)
-  ), [plan, real]);
+      : layOut(drawn)
+  ), [drawn, real]);
   const match = useMemo(() => pair(placed, lots), [placed, lots]);
 
   const facts: LotFacts = useMemo(() => {
@@ -724,13 +768,18 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         <p className="parkhint">
           {real?.homes?.length ? (
             <>
-              <strong>All {real.homes.length} lots</strong>, laid along Lady
-              Viola and Lady Cheryl inside the property line, numbered down
-              from the Pamalee entrance. Every pad is the same rectangle,
+              {/* Named from the park's own plan. This sentence used to
+                  read "laid along Lady Viola and Lady Cheryl, numbered
+                  down from the Pamalee entrance" on every park there
+                  was, which on a park in another county is not a
+                  description but a contradiction of what is on screen. */}
+              <strong>All {real.homes.length} lots</strong>, laid along{" "}
+              {[...new Set(plan.rows.map((r) => r.street))].join(" and ")}{" "}
+              inside the property line. Every pad is the same rectangle,
               because every home here is the same model.
               {osm?.built
                 ? ` ${osm.built} of them sit on a building the map has.`
-                : " The map has no buildings here, so they are spread evenly along the streets — drag them onto the pads and they will stay."}
+                : " The map has no buildings here, so they are spread evenly — drag them onto the pads and they will stay."}
             </>
           ) : osm?.error ?? "Drawn from the park's own layout."}
           {gave ? (
@@ -745,6 +794,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               </button>
             </>
           ) : null}
+          {described && (
+            <>
+              {" "}
+              <button type="button" className="aslink"
+                      onClick={() => setDescribed(false)}>
+                describe this park again
+              </button>
+            </>
+          )}
           {synced ? (
             <>
               {" "}
@@ -812,10 +870,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         </div>
       )}
 
-      {missing.length > 0 && !fitting && (
+      {missing.length > 0 && !blank && !fitting && (
         <div className="parkseed">
           <p>
-            <strong>{missing.length} of {countOf(plan)}</strong> lots aren&rsquo;t
+            <strong>{missing.length} of {countOf(drawn)}</strong> lots aren&rsquo;t
             on file yet, so there is nowhere to record who bought the home on
             them. Add them all and every pad on the map becomes clickable.
           </p>
@@ -837,7 +895,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           are theirs -- which is exactly how a wrong lot gets an owner
           recorded against it. */}
       {described === false && !fitting && (
-        <Describe onLay={(next) => { remember(next); setDescribed(true); }} />
+        <Describe
+          onAt={(at) => setPlan((was) => ({ ...was, centre: at }))}
+          onLay={(next) => void describeIt(next)} />
       )}
 
       {unanswered.length > 0 && !missing.length && !fitting && (
@@ -861,7 +921,8 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       <div className={`parkmain${open ? " withcard" : ""}`}>
         <ParkMap
-          plan={plan} real={shown} facts={facts} onHarvest={onHarvest}
+          plan={drawn} real={blank ? null : shown} facts={facts}
+          onHarvest={blank ? undefined : onHarvest}
           arranging={arranging} onNudge={nudge} onDropped={keep}
           selected={selected} onSelect={setSelected}
           fitting={fitting} taps={taps}
@@ -1050,7 +1111,10 @@ function Slider(
  * Northside Rd Lot 1", and nothing can guess which a park uses. A park
  * whose drive has no name -- which is most of them -- is the second.
  */
-function Describe({ onLay }: { onLay: (plan: Plan) => void }) {
+function Describe(
+  { onAt, onLay }:
+  { onAt: (at: [number, number]) => void; onLay: (plan: Plan) => void },
+) {
   const [address, setAddress] = useState("");
   const [at, setAt] = useState<[number, number] | null>(null);
   const [hits, setHits] = useState<{ id: string; label: string }[]>([]);
@@ -1082,7 +1146,12 @@ function Describe({ onLay }: { onLay: (plan: Plan) => void }) {
       const res = await fetch(`/api/places?id=${encodeURIComponent(id)}`);
       const out = await res.json().catch(() => ({}));
       if (out.lat != null && out.lng != null) {
-        setAt([Number(out.lng), Number(out.lat)]);
+        const where: [number, number] = [Number(out.lng), Number(out.lat)];
+        setAt(where);
+        // Move the map now rather than when something is laid out, so
+        // the ground underneath is this park's before any decision is
+        // made about what sits on it.
+        onAt(where);
         if (out.address) setAddress(String(out.address));
       }
     } catch { /* dragging still works */ }
