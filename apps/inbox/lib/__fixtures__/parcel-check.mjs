@@ -19,7 +19,8 @@ const here = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = readFileSync(join(here, "agol.ts"), "utf8").replace(/^import type .*$/gm, "");
 writeFileSync(join(here, "agol.gen.mjs"),
   ts.transpileModule(src, { compilerOptions: { target: 99, module: 99 } }).outputText);
-const { pinFields, parcelByPin, outerRing, asked } = await import(join(here, "agol.gen.mjs"));
+const { pinFields, parcelByPin, parcelByAddress, outerRing, asked } =
+  await import(join(here, "agol.gen.mjs"));
 
 const square = (x, y, s) => [[[x, y], [x + s, y], [x + s, y + s], [x, y + s], [x, y]]];
 const sent = [];
@@ -31,7 +32,7 @@ function county({ fields, pinField, pin, geometry }) {
     if (!url.includes("/query")) {
       return { ok: true, json: async () => ({ fields: fields.map((name) => ({ name })) }) };
     }
-    const where = decodeURIComponent(new URL(url).searchParams.get("where") ?? "");
+    const where = (new URL(url).searchParams.get("where") ?? "");
     // Only the real field, compared the way the caller wrote it, matches.
     const hit = where.startsWith(`UPPER(REPLACE(${pinField},`)
       && where.includes(`'${pin}'`);
@@ -105,7 +106,7 @@ is("a miss on the first field falls through to the next", second?.field, "REID")
 // field and not a different field.
 const tried = sent.filter((u) => u.includes("/query"))
   .map((u) => {
-    const w = decodeURIComponent(new URL(u).searchParams.get("where"));
+    const w = (new URL(u).searchParams.get("where"));
     return [...w.matchAll(/REPLACE\((\w+)[,)]/g)].map((m) => m[1])
       .filter((n) => n !== "REPLACE").pop();
   });
@@ -168,6 +169,55 @@ const none = [];
 await parcelByPin("https://county/1", "P139-50A", undefined, none);
 is("a layer with no parcel column says that",
    none[0], "that layer has no field that looks like a parcel number");
+
+// --- found by address, when the number is not the key ---
+//
+// "P139-50A" off a tax card need not be what the table is indexed on;
+// the county's own file names suggest an internal id and a numeric pin
+// alongside it. An address is the same string in all three places.
+
+/** A county holding one parcel, found only by its address field. */
+function byAddress({ field, value, geometry }) {
+  return async (url) => {
+    if (!String(url).includes("/query")) {
+      return { ok: true, status: 200, json: async () => ({
+        fields: [{ name: "OBJECTID" }, { name: "OWNER" }, { name: field }],
+      }) };
+    }
+    const w = (new URL(url).searchParams.get("where") ?? "");
+    const m = w.match(/UPPER\((\w+)\) LIKE '(\d+) %' AND UPPER\(\1\) LIKE '%([^']+)%'/);
+    const hit = m && m[1] === field
+      && value.toUpperCase().startsWith(`${m[2]} `) && value.toUpperCase().includes(m[3]);
+    return { ok: true, status: 200, json: async () => ({
+      type: "FeatureCollection",
+      features: hit ? [{ geometry, properties: { [field]: value } }] : [],
+    }) };
+  };
+}
+
+global.fetch = byAddress({ field: "SITEADDRESS", value: "1140 NORTHSIDE RD", geometry: geom });
+const byAddr = await parcelByAddress("https://county/1", "1140 Northside Rd, Elizabeth City NC");
+is("found by its address", byAddr?.field, "SITEADDRESS");
+is("with its boundary", outerRing(byAddr?.geometry).length, 5);
+
+// "Road" against "RD", and doubled spaces, are the same place.
+is("the street type does not have to match",
+   Boolean(await parcelByAddress("https://county/1", "1140  Northside  Road")), true);
+
+// The house number must still match, or every house on the road is a hit.
+is("a different house number is not this parcel",
+   await parcelByAddress("https://county/1", "1148 Northside Rd"), null);
+
+const noAddr = [];
+global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ fields: [{ name: "PIN" }] }) });
+await parcelByAddress("https://county/1", "1140 Northside Rd", noAddr);
+is("a layer with no address field says so", noAddr[0], "that layer has no address field either");
+
+const notAddr = [];
+global.fetch = byAddress({ field: "SITEADDRESS", value: "x", geometry: geom });
+await parcelByAddress("https://county/1", "Northside Road", notAddr);
+is("something that is not an address says so",
+   notAddr[0], '"Northside Road" is not a street address');
 
 if (wrong.length) { for (const w of wrong) console.error(" ✗ " + w); process.exit(1); }
 console.log("nothing obviously wrong");

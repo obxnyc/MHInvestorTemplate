@@ -984,6 +984,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       {described && !fitting && (
         <Parcel propertyId={propertyId}
                 pin={plan.pin ?? ""}
+                where={plan.address ?? name}
                 has={Boolean(plan.fence?.length)}
                 onGot={(ring, centre, pin) => {
                   // Not just the line: the block goes inside it. A deed
@@ -1500,15 +1501,19 @@ function Describe(
  * reading what it tried and saying so.
  */
 function Parcel(
-  { propertyId, pin, has, onGot }:
+  { propertyId, pin, where, has, onGot }:
   {
-    propertyId: string; pin: string; has: boolean;
+    propertyId: string; pin: string;
+    /** The park's address, as a second way of finding the parcel. */
+    where: string;
+    has: boolean;
     onGot: (ring: number[][], centre: [number, number], pin: string) => void;
   },
 ) {
   const [open, setOpen] = useState(false);
   const [gis, setGis] = useState("");
   const [no, setNo] = useState(pin);
+  const [addr, setAddr] = useState(where);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
   const [steps, setSteps] = useState<{ did: string; ok: boolean; say: string }[]>([]);
@@ -1519,7 +1524,7 @@ function Parcel(
     try {
       const res = await fetch(`/api/properties/${propertyId}/parcel`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ app: gis, pin: no }),
+        body: JSON.stringify({ app: gis, pin: no, address: addr }),
       });
       const out = await res.json().catch(() => ({}));
       setSteps(out.steps ?? []);
@@ -1557,14 +1562,21 @@ function Parcel(
         own viewer is the fallback if theirs is not in it.
       </p>
       <form className="rowform" onSubmit={(e) => { e.preventDefault(); void ask(); }}>
+        <label>The park&rsquo;s address
+          <input value={addr} placeholder="1140 Northside Rd, Elizabeth City NC"
+                 onChange={(e) => setAddr(e.target.value)} /></label>
         <div className="two">
           <label>Parcel number
             <input value={no} placeholder="P139-50A"
                    onChange={(e) => setNo(e.target.value)} /></label>
-          <button type="submit" className="btn pri" disabled={!no || busy}>
+          <button type="submit" className="btn pri" disabled={(!no && !addr) || busy}>
             {busy ? "Asking…" : "Get the property line"}
           </button>
         </div>
+        <p className="dim">
+          Either will do. A parcel number can be written three ways and
+          indexed on a fourth, so the address is tried as well.
+        </p>
       </form>
       {said && <p className={has ? "parkok" : "parkbad"}>{said}</p>}
       <details className="parkmanual">
