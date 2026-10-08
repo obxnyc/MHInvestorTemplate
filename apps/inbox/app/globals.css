@@ -1903,12 +1903,18 @@ a.metric:hover{border-color:var(--accent)}
 .parkkey li{display:flex;align-items:center;gap:.35rem}
 .parkkey .sw{width:.7rem;height:.7rem;border-radius:2px;flex:none;padding:0;
   display:block;border:1px solid var(--hair)}
-/* The same four colours the map paints, so the key is a key and not an
-   approximation of one. */
-.parkkey .sw-let{background:#2E8B68;border-color:#2E8B68}
-.parkkey .sw-ours{background:#3E6BB0;border-color:#3E6BB0}
-.parkkey .sw-empty{background:#C2703A;border-color:#C2703A}
-.parkkey .sw-bare{background:#8FA3BE;border-color:#8FA3BE}
+/* The same colours the map paints, so the key is a key and not an
+   approximation of one. Three owners, then the two ways a pad can be
+   standing empty, then the badge. */
+.parkkey .sw-poh{background:#2a78d6;border-color:#2a78d6}
+.parkkey .sw-toh{background:#eb6834;border-color:#eb6834}
+.parkkey .sw-ioh{background:#1baf7a;border-color:#1baf7a}
+.parkkey .sw-pale{background:#D4E4F7;border-color:#2a78d6}
+.parkkey .sw-bare{background:#fff;border:1px dashed #9AA5B1}
+.parkkey .dotkey{width:.6rem;height:.6rem;border-radius:999px;flex:none;display:block;
+  background:#17212E;border:1.5px solid #fff;box-shadow:0 0 0 1px var(--hair)}
+.parktally{margin:.45rem 0 0;font-size:.82rem;color:var(--muted);line-height:1.5}
+.parktally strong{color:var(--ink)}
 
 /* ---- one pad, opened ---- */
 .lotcard{border:1px solid var(--hair);border-radius:12px;background:var(--card);

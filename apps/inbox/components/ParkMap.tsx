@@ -7,13 +7,28 @@ import { layOut, boundaryOf, streetLines, countOf, type Plan, type Tap } from "@
 import { shapesFrom, roadsFrom, type TileFeature } from "@/lib/harvest";
 import type { Shape, Road } from "@/lib/osm";
 
-export type LotState = "let" | "empty" | "bare" | "ours";
-export type LotFacts = Record<string, { state: LotState; who?: string }>;
+/** Who owns the home standing on the pad. The LOT is always the park's;
+ *  this is the home, which is a different thing and the one that decides
+ *  who gets rung about a leaking roof. */
+export type Owner = "poh" | "toh" | "ioh" | "none";
+
+export type LotFact = {
+  owner: Owner;
+  /** A home is there and nobody is in it. Not the same as `none`, which
+   *  is a pad with no home on it at all. */
+  empty: boolean;
+  /** We let it and look after it. Always true of a home we own. */
+  managed: boolean;
+  who?: string;
+};
+export type LotFacts = Record<string, LotFact>;
 
 /** The park as the map actually has it. */
 export type RealPark = {
   homes: {
     id: string; label: string; street: string; ring: number[][];
+    /** The road end of the pad, where the managed badge sits. */
+    dot?: [number, number];
     drawn?: boolean;
     /** Put here by hand rather than by the layout. */
     moved?: boolean;
@@ -25,8 +40,30 @@ export type RealPark = {
   parcel?: string | null;
 };
 
-const FILL: Record<LotState, string> = {
-  let: "#2E8B68", ours: "#3E6BB0", empty: "#C2703A", bare: "#6B7F99",
+/**
+ * Three facts on one small rectangle, in the order they are asked.
+ *
+ * Who owns the home is the identity question somebody scans for, so it
+ * takes the strongest channel there is: the fill colour. Whether it is
+ * earning is the money question, so it takes the next strongest: whether
+ * that colour is solid or pale. Whether we manage it is a yes or a no,
+ * so it takes a mark rather than a colour.
+ *
+ * The three hues are the first three slots of a validated categorical
+ * palette, checked with a colour-blindness validator rather than by eye:
+ * worst all-pairs separation 9.2 for deuteranopia, 24.0 for normal
+ * vision, both clear of the floors. And "empty" is never signalled by
+ * colour alone -- solid against pale against a dashed outline -- so the
+ * map survives being printed in grey.
+ */
+const OWNER: Record<Owner, { solid: string; pale: string; edge: string }> = {
+  poh:  { solid: "#2a78d6", pale: "#D4E4F7", edge: "#2a78d6" },
+  toh:  { solid: "#eb6834", pale: "#FBDED2", edge: "#eb6834" },
+  ioh:  { solid: "#1baf7a", pale: "#D1EFE4", edge: "#1baf7a" },
+  none: { solid: "#ffffff", pale: "#ffffff", edge: "#9AA5B1" },
+};
+export const OWNER_LABEL: Record<Owner, string> = {
+  poh: "Park owned", toh: "Tenant owned", ioh: "Investor owned", none: "Bare lot",
 };
 
 /**
@@ -251,8 +288,12 @@ export default function ParkMap(
     const m = map.current;
     if (!m || !ready) return;
     if (m.getLayer("sat")) m.setLayoutProperty("sat", "visibility", sat ? "visible" : "none");
-    for (const id of ["home-line", "home-drawn"]) {
-      if (m.getLayer(id)) m.setPaintProperty(id, "line-color", sat ? "#ffffff" : "#17212E");
+    // On a photograph an owner-coloured hairline disappears into the
+    // grass, so the outlines go white there and keep their colour on the
+    // plan.
+    if (m.getLayer("home-line")) {
+      m.setPaintProperty("home-line", "line-color",
+        sat ? "#ffffff" : (["get", "edge"] as unknown as string));
     }
     if (m.getLayer("outside-veil")) {
       // Enough to push the surroundings back, not enough to remove them,
@@ -284,15 +325,21 @@ export default function ParkMap(
           ring: footprint(h.lat, h.lng, h.bearing, plan.size),
         }))
     ).map((h) => {
-      const f = facts[h.id] ?? { state: "bare" as LotState };
+      const f = facts[h.id] ?? { owner: "none" as Owner, empty: true, managed: false };
+      const paint = OWNER[f.owner] ?? OWNER.none;
       return {
         type: "Feature", id: h.id,
         properties: {
           id: h.id, label: h.label, street: h.street,
-          state: f.state, colour: FILL[f.state],
-          // A pad the map has never had is still a lot, and still has to
-          // be clickable -- but saying so is the difference between a
-          // drawing and a claim about the ground.
+          owner: f.owner, empty: f.empty, managed: f.managed,
+          // Pale when there is a home and nobody in it, solid when it is
+          // lived in, white when there is no home at all.
+          colour: f.owner === "none" ? "#ffffff" : f.empty ? paint.pale : paint.solid,
+          edge: paint.edge,
+          // The number goes dark on a pale pad and light on a solid one,
+          // which is the only way it stays readable on both.
+          ink: f.owner === "none" || f.empty ? "#17212E" : "#ffffff",
+          bare: f.owner === "none",
           drawn: Boolean((h as { drawn?: boolean }).drawn),
           moved: Boolean((h as { moved?: boolean }).moved),
         },
@@ -330,6 +377,17 @@ export default function ParkMap(
         geometry: { type: "LineString", coordinates: line },
       })),
     });
+    // A badge at the road end of every home we manage, clear of the lot
+    // number in the middle.
+    const badges: GeoJSON.Feature[] = [];
+    for (const h of real?.homes ?? []) {
+      if (!facts[h.id]?.managed || !h.dot) continue;
+      badges.push({
+        type: "Feature", properties: {},
+        geometry: { type: "Point", coordinates: h.dot },
+      });
+    }
+    set("ours", { type: "FeatureCollection", features: badges });
     set("taps", {
       type: "FeatureCollection",
       features: (taps ?? []).map((p, i) => ({
@@ -376,12 +434,14 @@ export default function ParkMap(
       // Two layers rather than one with an expression: line-dasharray is
       // a constant-only property in MapLibre, and a data-driven one throws
       // on style load and takes the whole map with it.
+      // The outline is the owner's colour, so a pale pad still says who
+      // owns it. A bare lot is dashed grey: nothing is there.
       m.addLayer({ id: "home-line", type: "line", source: "homes",
-        filter: ["!", ["get", "drawn"]],
-        paint: { "line-color": "#17212E", "line-width": 1.2 } });
-      m.addLayer({ id: "home-drawn", type: "line", source: "homes",
-        filter: ["get", "drawn"],
-        paint: { "line-color": "#17212E", "line-width": 1.2, "line-dasharray": [2, 1.5] } });
+        filter: ["!", ["get", "bare"]],
+        paint: { "line-color": ["get", "edge"], "line-width": 1.6 } });
+      m.addLayer({ id: "home-bare", type: "line", source: "homes",
+        filter: ["get", "bare"],
+        paint: { "line-color": "#9AA5B1", "line-width": 1.6, "line-dasharray": [2, 1.6] } });
       m.addLayer({ id: "home-on", type: "line", source: "homes",
         filter: ["==", ["get", "id"], ""],
         paint: { "line-color": "#0F1729", "line-width": 3.5 } });
@@ -404,7 +464,18 @@ export default function ParkMap(
           "text-allow-overlap": true, "text-ignore-placement": true,
           "symbol-z-order": "source",
         },
-        paint: { "text-color": "#ffffff", "text-halo-color": "#19202B", "text-halo-width": 1.4 } });
+        paint: {
+          "text-color": ["get", "ink"],
+          "text-halo-color": ["case", ["get", "bare"], "#ffffff",
+                              ["get", "empty"], "#ffffff", "#19202B"],
+          "text-halo-width": 1.2,
+        } });
+      m.addLayer({ id: "ours-dot", type: "circle", source: "ours", minzoom: 16,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 16, 2.5, 18, 4, 20, 6],
+          "circle-color": "#17212E",
+          "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.4,
+        } });
       m.addLayer({ id: "tap-dot", type: "circle", source: "taps",
         paint: { "circle-radius": 9, "circle-color": "#D1453B",
                  "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });

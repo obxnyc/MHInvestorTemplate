@@ -31,6 +31,9 @@ import type { Plan, PlanRow } from "./parkplan";
 
 export type Pad = {
   id: string; label: string; street: string; side: "N" | "S"; ring: number[][];
+  /** A point at the road end of the pad, where a badge can sit without
+   *  covering the lot number in the middle. */
+  dot: [number, number];
 };
 
 /** Every lot in the park, in order, evenly along its own street. */
@@ -166,14 +169,15 @@ export function layRows(
     const n = r.row.numbers.length;
     const mk = (label: string, at: number) => {
       const w = walk(r.line, at);
+      const centre = padAt(w.point, r.heading, r.row.side, r.offset);
+      const away = awayFrom(r.heading, r.row.side);
       return {
         id: `${r.row.street}|${label}`, label,
         street: r.row.street, side: r.row.side,
-        ring: footprint(
-          padAt(w.point, r.heading, r.row.side, r.offset)[1],
-          padAt(w.point, r.heading, r.row.side, r.offset)[0],
-          awayFrom(r.heading, r.row.side), plan.size,
-        ),
+        ring: footprint(centre[1], centre[0], away, plan.size),
+        // A third of the way back towards the road from the middle,
+        // which is clear of the lot number and still on the pad.
+        dot: padAt(centre, r.heading, r.row.side, -plan.size.length / 3),
       };
     };
 

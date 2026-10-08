@@ -13,6 +13,11 @@ export type Lot = {
   x: number | null;
   y: number | null;
   rot: number;
+  /** Who owns the home standing on it: 'poh' the park, 'toh' the tenant,
+   *  'ioh' an investor, 'none' no home at all. */
+  kind: "poh" | "toh" | "ioh" | "none" | null;
+  /** We let it and look after it. */
+  manage: boolean;
   vacant: boolean;
   rent: number | null;
   tenant: string | null;
