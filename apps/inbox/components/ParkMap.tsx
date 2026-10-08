@@ -166,7 +166,7 @@ function labelStyle(m: MlMap): { layout: Record<string, unknown>; paint: Record<
  */
 export default function ParkMap(
   { plan, real, facts, selected, onSelect, onHarvest, fitting, onMove,
-    arranging, onNudge, taps, onTap }:
+    arranging, onNudge, onDropped, taps, onTap }:
   {
     plan: Plan;
     real?: RealPark | null;
@@ -184,7 +184,13 @@ export default function ParkMap(
     onMove?: (lng: number, lat: number) => void;
     /** Dragging a single home about, with its angle locked. */
     arranging?: boolean;
-    onNudge?: (id: string, dLng: number, dLat: number) => void;
+    /** Where the home is now, as a position rather than a nudge: a
+     *  correction is a statement about the ground, so it survives the
+     *  layout changing underneath it. */
+    onNudge?: (id: string, at: [number, number]) => void;
+    /** Called once, when the finger comes off, so the position is
+     *  written to the database without a round trip per frame. */
+    onDropped?: (id: string, at: [number, number]) => void;
     taps?: Tap[];
     onTap?: (at: Tap) => void;
   },
@@ -194,8 +200,12 @@ export default function ParkMap(
   const [ready, setReady] = useState(false);
   const [sat, setSat] = useState(false);
 
-  const live = useRef({ plan, fitting, onMove, onSelect, onTap, onHarvest, arranging, onNudge });
-  live.current = { plan, fitting, onMove, onSelect, onTap, onHarvest, arranging, onNudge };
+  const live = useRef({
+    plan, fitting, onMove, onSelect, onTap, onHarvest, arranging, onNudge, onDropped,
+  });
+  live.current = {
+    plan, fitting, onMove, onSelect, onTap, onHarvest, arranging, onNudge, onDropped,
+  };
 
   // Harvested once the tiles have settled. Tried again on each idle until
   // something turns up, because the first idle can arrive with the
@@ -266,21 +276,47 @@ export default function ParkMap(
     // turning it: a park of identical homes standing in line reads as a
     // park, and one pad a few degrees off reads as a mistake. So a drag
     // only ever slides a rectangle; nothing can rotate it.
-    let hold: { id: string; lng: number; lat: number } | null = null;
+    let hold: {
+      id: string; lng: number; lat: number;
+      at: [number, number]; last: [number, number];
+    } | null = null;
     const grab = (e: { point: maplibregl.Point; lngLat: maplibregl.LngLat; preventDefault: () => void }) => {
       if (!live.current.arranging || !live.current.onNudge) return;
       const f = m.queryRenderedFeatures(e.point, { layers: ["home-fill"] })[0];
       if (!f) return;
-      hold = { id: String(f.properties?.id ?? ""), lng: e.lngLat.lng, lat: e.lngLat.lat };
+      // Where the pad is now, so the drag can report a position rather
+      // than a running total of nudges -- a total is only meaningful
+      // against the layout it was accumulated from.
+      const ring = (f.geometry as GeoJSON.Polygon).coordinates?.[0] ?? [];
+      const n = Math.max(1, ring.length - 1);
+      const mid: [number, number] = [
+        ring.slice(0, n).reduce((a, p) => a + p[0], 0) / n,
+        ring.slice(0, n).reduce((a, p) => a + p[1], 0) / n,
+      ];
+      hold = {
+        id: String(f.properties?.id ?? ""),
+        lng: e.lngLat.lng, lat: e.lngLat.lat, at: mid, last: mid,
+      };
       m.dragPan.disable();
       e.preventDefault();
     };
     const haul = (e: { lngLat: maplibregl.LngLat }) => {
       if (!hold || !live.current.onNudge) return;
-      live.current.onNudge(hold.id, e.lngLat.lng - hold.lng, e.lngLat.lat - hold.lat);
-      hold = { ...hold, lng: e.lngLat.lng, lat: e.lngLat.lat };
+      const at: [number, number] = [
+        hold.at[0] + (e.lngLat.lng - hold.lng),
+        hold.at[1] + (e.lngLat.lat - hold.lat),
+      ];
+      hold.last = at;
+      live.current.onNudge(hold.id, at);
     };
-    const letGo = () => { if (hold) { hold = null; m.dragPan.enable(); } };
+    const letGo = () => {
+      if (!hold) return;
+      // Written to the database once, when the finger comes off, rather
+      // than on every frame of the drag.
+      live.current.onDropped?.(hold.id, hold.last);
+      hold = null;
+      m.dragPan.enable();
+    };
     m.on("mousedown", grab); m.on("mousemove", haul);
     m.on("mouseup", letGo); m.on("mouseout", letGo);
     m.on("touchstart", grab); m.on("touchmove", haul);
