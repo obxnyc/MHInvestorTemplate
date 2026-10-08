@@ -5,8 +5,9 @@ import ParkMap, { type LotFacts, type LotState, type RealPark } from "./ParkMap"
 import LotCard from "./LotCard";
 import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
-import { sameStreet, placeFromRoads, assign, parkAround, orientedBox, fitInside,
+import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing,
          type Shape, type Road } from "@/lib/osm";
+import { layRows, clipTo } from "@/lib/rows";
 import { degreesPerMetre } from "@/lib/footprint";
 
 /**
@@ -37,7 +38,6 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     error?: string;
     fit?: Plan;
     parcel?: string | null;
-    drawn?: number;
     missing?: { street: string; side: string; short: number }[];
   } | null>(null);
 
@@ -114,12 +114,14 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    */
   const took = useRef(false);
   const onHarvest = useCallback((found: {
-    shapes: Shape[]; roads: Road[]; areas: { name: string; ring: number[][] }[];
+    shapes: Shape[]; roads: Road[];
+    areas: { name: string; ring: number[][] }[];
+    lanes: number[][][];
   }) => {
     const base = planNow.current;
+    setAsking(false);
     const mine = found.roads.filter((r) =>
       base.rows.some((row) => sameStreet(row.street, r.name)));
-    setAsking(false);
     if (!mine.length) {
       if (!took.current) {
         setOsm({
@@ -129,41 +131,47 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       return;
     }
 
-    // Where the park actually is, taken from its own streets.
-    const fitted = placeFromRoads(base, mine);
+    // Where the park is, and how far it reaches, taken from its own
+    // streets and the property line around them.
+    const fitted = placeFromRoads(base, mine) ?? base;
     const parcel = parkAround(found.areas, mine);
-    // The property line first, because it decides what counts: a building
-    // the far side of Pamalee Dr is not lot 3100, however near the street
-    // it happens to sit.
-    const { homes, rows } = assign(
-      fitted ?? base, found.shapes, mine, { inside: parcel?.ring },
-    );
     const boundary = parcel?.ring
-      ?? (homes.length ? orientedBox(homes.flatMap((h) => h.ring)) : []);
+      ?? orientedBox(found.shapes.flatMap((sh) => sh.ring));
+    const fence = boundary.length ? boundary : null;
 
-    if (fitted) {
-      remember(parcel ? fitInside(fitted, parcel.ring) : fitted);
+    // The lots are laid along the streets rather than read off the map's
+    // buildings. The map is good at streets and boundaries and bad at
+    // this park's homes -- some are missing, some are the office or a
+    // carport, some are two pads traced as one -- and every attempt to
+    // build the park out of them produced a park irregular in exactly the
+    // ways the real one is not.
+    const pads = layRows(fitted, mine, fence, found.shapes);
+    if (!pads.length) {
+      setOsm({ error: "The map has the streets but nothing to lay a row along." });
+      return;
     }
+
+    // The park's own roads, the loop at the east end included. It has no
+    // name of its own, so it never arrived with the named streets and the
+    // park was drawn without the one road that goes round it.
+    const lanes = fence
+      ? found.lanes
+          .map((line) => clipTo(line, fence))
+          .filter((line) => line.length > 1
+            && line.some((p) => inRing([p[0], p[1]], fence)))
+      : [];
+
+    remember(parcel ? fitInside(fitted, parcel.ring) : fitted);
     setReal({
-      homes,
+      homes: pads,
       streets: mine.map((r) => ({
         name: base.rows.find((row) => sameStreet(row.street, r.name))!.street,
-        line: r.line,
+        line: clipTo(r.line, fence),
       })),
-      boundary,
-      // Buildings that are not lots are no longer drawn at all. A grey
-      // shape inside the line with no number on it reads as a lot that
-      // failed rather than as a shed, and every one of them cost a round
-      // of "what is that one".
+      boundary, lanes,
       parcel: parcel ? "from the map" : null,
     });
-    setOsm({
-      drawn: homes.filter((h) => h.drawn).length,
-      missing: rows
-        .filter((r) => r.found < r.row.numbers.length)
-        .map((r) => ({ street: r.row.street, side: r.row.side, short: r.row.numbers.length - r.found })),
-    });
-    setAsking(false);
+    setOsm({});
     took.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remember]);
@@ -233,12 +241,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         <p className="parkhint">
           {real?.homes?.length ? (
             <>
-              <strong>All {real.homes.length} lots.</strong>{" "}
-              {real.homes.length - (osm?.drawn ?? 0)} sit where the map has a
-              building.
-              {osm?.drawn ? ` ${osm.drawn} drawn, dashed, where the map has none.` : ""}
-              {" "}Every pad is the same rectangle, because every home here
-              is the same model.
+              <strong>All {real.homes.length} lots</strong>, laid along Lady
+              Viola and Lady Cheryl inside the property line, numbered down
+              from the Pamalee entrance. Every pad is the same rectangle,
+              because every home here is the same model.
             </>
           ) : osm?.error ?? "Drawn from the park's own layout."}
         </p>
