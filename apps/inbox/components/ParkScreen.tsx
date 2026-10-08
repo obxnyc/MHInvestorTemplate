@@ -20,7 +20,7 @@ import { degreesPerMetre } from "@/lib/footprint";
  * it is just all one colour.
  *
  * The one thing a description cannot know is where on the earth the block
- * sits and which way it points. That is "Fit to the aerial": drag the block
+ * sits and which way it points. That is "Fit to aerial": drag the block
  * onto the pads in the photograph, turn it until the rows line up, done once.
  */
 export default function ParkScreen({ propertyId }: { propertyId: string }) {
@@ -206,7 +206,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       if (missed) {
         setError(
           `Moved on screen, but ${missed === rows.length ? "not saved" : `${missed} not saved`}`
-          + " — these lots are not on file yet. Press Add these lots and move them again.",
+          + " — these lots are not on file yet. Press Add lots and move them again.",
         );
       } else {
         setError(null);
@@ -473,7 +473,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         setError(
           "Your moved homes are back on screen but could not be saved"
           + (why ? ` — ${why}` : "")
-          + ". Don't clear this browser. Press Save a copy, then Add these lots.",
+          + ". Don't clear this browser. Press Download, then Add lots.",
         );
       }
     })();
@@ -572,7 +572,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     }
     setBusy(false);
     if (missed) {
-      setError(`${saved} homes saved, ${missed} could not be. Press Save a copy`
+      setError(`${saved} homes saved, ${missed} could not be. Press Download`
                + " and send me the file before closing this.");
     }
     await load();
@@ -608,7 +608,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           {real && (
             <button type="button" className={arranging ? "btn pri" : "btn"}
                     onClick={() => { setArranging((v) => !v); setSelected(null); }}>
-              {arranging ? "Done moving" : "Move homes"}
+              {arranging ? "Done" : "Move homes"}
             </button>
           )}
           {Object.keys(moved).length > 0 && (
@@ -623,7 +623,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               a.click();
               URL.revokeObjectURL(a.href);
             }}>
-              Save a copy
+              Download
             </button>
           )}
           {real && arranging && Object.keys(moved).length > 0 && (
@@ -638,13 +638,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
                 body: JSON.stringify({ action: "unplace" }),
               }).then(() => load());
             }}>
-              Put them all back
+              Reset positions
             </button>
           )}
           {!real && (
             <button type="button" className={fitting ? "btn pri" : "btn"}
                     onClick={() => { setFitting((v) => !v); setSelected(null); setTaps([]); }}>
-              {fitting ? "Done fitting" : "Fit to the aerial"}
+              {fitting ? "Done" : "Fit to aerial"}
             </button>
           )}
         </div>
@@ -711,7 +711,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               <strong className={synced.saved === synced.of ? "parkok" : "parkbad"}>
                 {synced.saved === synced.of
                   ? `All ${synced.of} of your moved homes are saved to the park.`
-                  : `Only ${synced.saved} of ${synced.of} moved homes saved — press Save a copy and send me the file.`}
+                  : `Only ${synced.saved} of ${synced.of} moved homes saved — press Download and send me the file.`}
               </strong>
             </>
           ) : null}
@@ -775,7 +775,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           </p>
           <button type="button" className="btn pri" disabled={busy}
                   onClick={() => void addThem()}>
-            {busy ? "Adding…" : `Add these ${missing.length} lots`}
+            {busy ? "Adding…" : `Add ${missing.length} lots`}
           </button>
         </div>
       )}
@@ -800,7 +800,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
                   })}>
             {busy
               ? "Marking…"
-              : `Mark these ${unanswered.length} park owned, ours to sell`}
+              : `Mark ${unanswered.length} park owned`}
           </button>
         </div>
       )}
@@ -835,7 +835,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
                     onClick={() => void post({
                       action: "seed", labels: [`${here.label} ${here.street}`],
                     })}>
-              {busy ? "Adding…" : "Add this lot"}
+              {busy ? "Adding…" : "Add lot"}
             </button>
           </aside>
         )}

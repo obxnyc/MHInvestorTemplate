@@ -263,10 +263,10 @@ export default function LotCard(
                     the sale to retype it would put a line in the history
                     saying the home changed hands when it did not. */}
                 <button type="button" className="btn" onClick={() => setFixing(true)}>
-                  Change these
+                  Edit
                 </button>
                 <button type="button" className="btn" onClick={() => setEnding(true)}>
-                  They no longer own it
+                  End ownership
                 </button>
               </div>
             ) : fixing ? (
@@ -287,7 +287,7 @@ export default function LotCard(
                 <label>When<input name="on" type="date" /></label>
                 <div className="invacts">
                   <button type="button" className="btn" onClick={() => setEnding(false)}>Cancel</button>
-                  <button type="submit" className="btn pri" disabled={busy}>Record it</button>
+                  <button type="submit" className="btn pri" disabled={busy}>Save</button>
                 </div>
               </form>
             )}
@@ -296,7 +296,7 @@ export default function LotCard(
           <>
             <p className="dim">Nobody is recorded as owning this home.</p>
             <button type="button" className="btn pri" onClick={() => setSelling(true)}>
-              Record who owns it
+              Add owner
             </button>
           </>
         ) : (
@@ -431,7 +431,7 @@ export default function LotCard(
             <label>Provider<input name="provider" placeholder="PWC" /></label>
           </div>
           <label>Account reference<input name="account" /></label>
-          <button type="submit" className="btn" disabled={busy}>Record the meter</button>
+          <button type="submit" className="btn" disabled={busy}>Add meter</button>
         </form>
         <p className="dim">
           Recording one replaces the one in service and keeps the old number.
@@ -513,7 +513,7 @@ function MoneyForm(
       </div>
       <div className="invacts">
         {saved && <span className="dim">Saved</span>}
-        <button type="submit" className="btn pri" disabled={busy}>Save the charges</button>
+        <button type="submit" className="btn pri" disabled={busy}>Save</button>
       </div>
     </form>
   );
@@ -567,7 +567,7 @@ function RentForm(
       </div>
       <div className="invacts">
         {saved && <span className="dim">Saved</span>}
-        <button type="submit" className="btn pri" disabled={busy}>Save the rent</button>
+        <button type="submit" className="btn pri" disabled={busy}>Save</button>
       </div>
     </form>
   );
@@ -692,7 +692,7 @@ function OwnerPick(
                       className={at >= hits.length ? "on make" : "make"}
                       onMouseEnter={() => setAt(hits.length)}
                       onClick={() => { void onNew(typed); setOpen(false); }}>
-                Add &ldquo;{typed}&rdquo; as a new buyer
+                Add &ldquo;{typed}&rdquo;
               </button>
             </li>
           )}
@@ -762,7 +762,7 @@ function Spending(
                  onChange={(e) => setMine(e.target.checked)} />
           Take it off the owner
         </label>
-        <button type="submit" className="btn" disabled={busy}>Record what we spent</button>
+        <button type="submit" className="btn" disabled={busy}>Add expense</button>
       </form>
     </>
   );
@@ -961,7 +961,7 @@ function SaleForm(
         <p className="memory">
           Correcting what is on file. This does not change hands — if the
           home has been sold on, close this and use{" "}
-          <strong>They no longer own it</strong> instead.
+          <strong>End ownership</strong> instead.
         </p>
       )}
       {lastAny && !recall && !editing && (
@@ -977,7 +977,7 @@ function SaleForm(
             setRecall(lastAny);
             setFinanced(Boolean(lastAny.financed));
           }}>
-            Same terms as that one
+            Copy terms
           </button>
         </div>
       )}
@@ -1071,7 +1071,7 @@ function SaleForm(
       <div className="invacts">
         <button type="button" className="btn" onClick={onCancel}>Cancel</button>
         <button type="submit" className="btn pri" disabled={busy}>
-          {editing ? "Save the changes" : "Record the sale"}
+          {editing ? "Save" : "Save sale"}
         </button>
       </div>
     </form>

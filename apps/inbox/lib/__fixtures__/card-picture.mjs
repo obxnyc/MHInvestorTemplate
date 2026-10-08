@@ -37,14 +37,14 @@ const card = `
       <div class="recall">
         <p>Last sale here: <strong>3107 Lady Cheryl Dr</strong> &mdash; $38,500.00,
           $612.00 a month over 84 months.</p>
-        <button class="btn">Same terms as that one</button>
+        <button class="btn">Copy terms</button>
       </div>
       <div class="ownerpick">
         <label>Who bought it<input value="Habb" placeholder="Start typing their name or LLC"></label>
         <ul class="ownerhits">
           <li><button class="on">Habberstad Norse Ventures LLC</button></li>
           <li><button>Habberstad Property Group</button></li>
-          <li><button class="make">Add &ldquo;Habb&rdquo; as a new buyer</button></li>
+          <li><button class="make">Add &ldquo;Habb&rdquo;</button></li>
         </ul>
       </div>
       <div class="two"><input placeholder="Their name or LLC"><button class="btn">Add them</button></div>
@@ -87,7 +87,7 @@ const card = `
       <label>Cost<input placeholder="485"></label>
       <label>When<input type="date"></label></div>
       <label class="check"><input type="checkbox" checked> Take it off the owner</label>
-      <button class="btn">Record what we spent</button></form></section>
+      <button class="btn">Add expense</button></form></section>
   <section class="lotbit"><h3>What we send them</h3>
     <dl class="lotfacts">
       <dt>Rent in</dt><dd>$1,100.00</dd>
@@ -108,7 +108,7 @@ const card = `
       <label>Number<input placeholder="81-440391"></label>
       <label>Provider<input placeholder="PWC"></label></div>
       <label>Account reference<input></label>
-      <button class="btn">Record the meter</button></form>
+      <button class="btn">Add meter</button></form>
     <p class="dim">Recording one replaces the one in service and keeps the old number.</p></section>
 </aside>`;
 
