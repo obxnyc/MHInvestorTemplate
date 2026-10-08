@@ -15,6 +15,8 @@ export type RealPark = {
   homes: {
     id: string; label: string; street: string; ring: number[][];
     drawn?: boolean;
+    /** Put here by hand rather than by the layout. */
+    moved?: boolean;
   }[];
   streets: { name: string; line: number[][] }[];
   boundary: number[][];
@@ -49,7 +51,8 @@ const STYLE = "https://tiles.openfreemap.org/styles/positron";
  * alignment with the map underneath, because it is the map underneath.
  */
 export default function ParkMap(
-  { plan, real, facts, selected, onSelect, onHarvest, fitting, onMove, taps, onTap }:
+  { plan, real, facts, selected, onSelect, onHarvest, fitting, onMove,
+    arranging, onNudge, taps, onTap }:
   {
     plan: Plan;
     real?: RealPark | null;
@@ -65,6 +68,9 @@ export default function ParkMap(
     }) => void;
     fitting?: boolean;
     onMove?: (lng: number, lat: number) => void;
+    /** Dragging a single home about, with its angle locked. */
+    arranging?: boolean;
+    onNudge?: (id: string, dLng: number, dLat: number) => void;
     taps?: Tap[];
     onTap?: (at: Tap) => void;
   },
@@ -74,8 +80,8 @@ export default function ParkMap(
   const [ready, setReady] = useState(false);
   const [sat, setSat] = useState(false);
 
-  const live = useRef({ plan, fitting, onMove, onSelect, onTap, onHarvest });
-  live.current = { plan, fitting, onMove, onSelect, onTap, onHarvest };
+  const live = useRef({ plan, fitting, onMove, onSelect, onTap, onHarvest, arranging, onNudge });
+  live.current = { plan, fitting, onMove, onSelect, onTap, onHarvest, arranging, onNudge };
 
   // Harvested once the tiles have settled. Tried again on each idle until
   // something turns up, because the first idle can arrive with the
@@ -139,6 +145,32 @@ export default function ParkMap(
       reap(m);
     });
     m.on("idle", () => reap(m));
+
+    // Moving one home.
+    //
+    // By how far the finger moved since the last event, and never by
+    // turning it: a park of identical homes standing in line reads as a
+    // park, and one pad a few degrees off reads as a mistake. So a drag
+    // only ever slides a rectangle; nothing can rotate it.
+    let hold: { id: string; lng: number; lat: number } | null = null;
+    const grab = (e: { point: maplibregl.Point; lngLat: maplibregl.LngLat; preventDefault: () => void }) => {
+      if (!live.current.arranging || !live.current.onNudge) return;
+      const f = m.queryRenderedFeatures(e.point, { layers: ["home-fill"] })[0];
+      if (!f) return;
+      hold = { id: String(f.properties?.id ?? ""), lng: e.lngLat.lng, lat: e.lngLat.lat };
+      m.dragPan.disable();
+      e.preventDefault();
+    };
+    const haul = (e: { lngLat: maplibregl.LngLat }) => {
+      if (!hold || !live.current.onNudge) return;
+      live.current.onNudge(hold.id, e.lngLat.lng - hold.lng, e.lngLat.lat - hold.lat);
+      hold = { ...hold, lng: e.lngLat.lng, lat: e.lngLat.lat };
+    };
+    const letGo = () => { if (hold) { hold = null; m.dragPan.enable(); } };
+    m.on("mousedown", grab); m.on("mousemove", haul);
+    m.on("mouseup", letGo); m.on("mouseout", letGo);
+    m.on("touchstart", grab); m.on("touchmove", haul);
+    m.on("touchend", letGo); m.on("touchcancel", letGo);
 
     // Moving the block by how far the finger moved, not to where it is.
     let from: { lng: number; lat: number; centre: [number, number]; moved: boolean } | null = null;
@@ -220,6 +252,7 @@ export default function ParkMap(
           // be clickable -- but saying so is the difference between a
           // drawing and a claim about the ground.
           drawn: Boolean((h as { drawn?: boolean }).drawn),
+          moved: Boolean((h as { moved?: boolean }).moved),
         },
         geometry: { type: "Polygon", coordinates: [h.ring] },
       };
@@ -294,6 +327,11 @@ export default function ParkMap(
       m.addLayer({ id: "home-on", type: "line", source: "homes",
         filter: ["==", ["get", "id"], ""],
         paint: { "line-color": "#0F1729", "line-width": 3.5 } });
+      // A home that has been moved by hand, so it is clear which ones are
+      // where the map put them and which ones somebody corrected.
+      m.addLayer({ id: "home-moved", type: "line", source: "homes",
+        filter: ["==", ["get", "moved"], true],
+        paint: { "line-color": "#C2703A", "line-width": 2 } });
       // Every pad carries its number, always.
       //
       // Collision detection was dropping the ones that would overlap,
@@ -323,6 +361,9 @@ export default function ParkMap(
         paint: { "text-color": "#ffffff" } });
 
       m.on("click", (e) => {
+        // A drag is not a click: selecting the home you have just put
+        // down opens its card over the map you are arranging.
+        if (live.current.arranging) return;
         if (live.current.fitting) {
           if (live.current.onTap) live.current.onTap([e.lngLat.lng, e.lngLat.lat]);
           return;
@@ -365,7 +406,7 @@ export default function ParkMap(
 
   return (
     <div className="parkmapwrap">
-      <div ref={box} className={`parkmapbox${fitting ? " fitting" : ""}`} />
+      <div ref={box} className={`parkmapbox${fitting || arranging ? " fitting" : ""}`} />
       <div className="parkmapbar">
         <button type="button" className={sat ? "btn" : "btn pri"} onClick={() => setSat(false)}>
           Plan
