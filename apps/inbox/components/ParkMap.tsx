@@ -372,6 +372,11 @@ export default function ParkMap(
     const m = map.current;
     if (!m || !ready) return;
     if (m.getLayer("sat")) m.setLayoutProperty("sat", "visibility", sat ? "visible" : "none");
+    // Which homes were put where by hand is a question you have while
+    // putting them there, and not afterwards.
+    if (m.getLayer("home-moved")) {
+      m.setLayoutProperty("home-moved", "visibility", arranging ? "visible" : "none");
+    }
     // On a photograph an owner-coloured hairline disappears into the
     // grass, so the outlines go white there and keep their colour on the
     // plan.
@@ -396,7 +401,7 @@ export default function ParkMap(
       // the other, almost but not quite aligned.
       m.setPaintProperty("home-fill", "fill-opacity", fitting ? 0.35 : 1);
     }
-  }, [sat, ready, fitting]);
+  }, [sat, ready, fitting, arranging]);
 
   useEffect(() => {
     const m = map.current;
@@ -531,8 +536,14 @@ export default function ParkMap(
         paint: { "line-color": "#0F1729", "line-width": 3.5 } });
       // A home that has been moved by hand, so it is clear which ones are
       // where the map put them and which ones somebody corrected.
+      //
+      // Only while moving them. Once the park is arranged the outline is
+      // answering a question nobody is asking, and it sits in the one
+      // place the map says who owns the home -- so a park where every
+      // home had been nudged read as a park with no owners at all.
       m.addLayer({ id: "home-moved", type: "line", source: "homes",
         filter: ["==", ["get", "moved"], true],
+        layout: { visibility: "none" },
         paint: { "line-color": "#C2703A", "line-width": 2 } });
       // Every pad carries its number, always.
       //
