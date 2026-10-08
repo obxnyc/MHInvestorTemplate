@@ -32,7 +32,34 @@ export type PlanRow = {
   side: Side;
   /** House numbers along the row, in order from the street's first end. */
   numbers: string[];
+  /**
+   * The two ends of this row, where it has been placed by hand.
+   *
+   * The grid below -- one bearing, one spacing, rows either side of a
+   * street -- describes a park laid out by a developer on paper. Plenty
+   * of parks are not that. Northside is three separate groups: a long
+   * loop with a row down each side, a cluster in the middle at its own
+   * angle, and a row across the front. One bearing and one spacing
+   * cannot say that, and every attempt to make them produced a park
+   * that was wrong in a way no slider could fix.
+   *
+   * So a row may carry its own ends instead: the middle of its first
+   * home and the middle of its last. Everything else follows -- the
+   * direction is the line between them, the spacing is its length over
+   * the gaps, and the homes sit on it. Nothing is derived from the
+   * park's bearing or its spacings at all.
+   *
+   * Both, or neither. One end on its own says nothing.
+   */
+  from?: [number, number];
+  to?: [number, number];
 };
+
+/** A row that has been placed by its ends rather than by the grid. */
+export function placed(row: PlanRow): boolean {
+  return Array.isArray(row.from) && Array.isArray(row.to)
+    && row.from.length === 2 && row.to.length === 2;
+}
 
 export type Plan = {
   /** Where the middle of the whole block sits. */
@@ -245,6 +272,31 @@ export function layOut(plan: Plan): Placed[] {
 
   const out: Placed[] = [];
   for (const row of plan.rows) {
+    // A row placed by its ends owes nothing to the grid: not its
+    // direction, not its spacing, not which side of a street it is on.
+    if (placed(row)) {
+      const [x1, y1] = row.from!;
+      const [x2, y2] = row.to!;
+      const n = row.numbers.length;
+      const head = bearingOf([x1, y1], [x2, y2]);
+      row.numbers.forEach((num, i) => {
+        // The ends ARE homes, so n homes have n-1 gaps between them. A
+        // single home sits on its own first end.
+        const t = n > 1 ? i / (n - 1) : 0;
+        out.push({
+          id: `${row.street}|${num}`,
+          label: num,
+          filed: filedAs(plan, num, row.street),
+          street: row.street,
+          side: row.side,
+          lng: x1 + (x2 - x1) * t,
+          lat: y1 + (y2 - y1) * t,
+          bearing: (head + 90 + (plan.homeTurn ?? 0) + 360) % 360,
+        });
+      });
+      continue;
+    }
+
     const s = streets.indexOf(row.street);
     const across = mid - s * plan.streetGap
       + (row.side === "N" ? plan.pairGap / 2 : -plan.pairGap / 2);

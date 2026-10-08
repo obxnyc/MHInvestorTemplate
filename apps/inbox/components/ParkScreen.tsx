@@ -45,6 +45,18 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [fitting, setFitting] = useState(false);
+  /**
+   * Placing each row by tapping its two ends.
+   *
+   * The grid -- one bearing, one spacing -- draws a park somebody laid
+   * out on paper. A park that grew is several groups at their own
+   * angles, and no slider can turn one into the other. Two taps say
+   * where a row begins and ends, and everything about that row follows
+   * from them.
+   */
+  const [laying, setLaying] = useState(false);
+  const [onRow, setOnRow] = useState(0);
+  const [end, setEnd] = useState<Tap | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -802,9 +814,24 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               Reset positions
             </button>
           )}
+          {/* Placing rows one at a time is the answer for a park that
+              grew rather than one that was drawn, so it is offered
+              whether or not the map has handed anything over. */}
+          {plan.rows.length > 0 && (
+            <button type="button" className={laying ? "btn pri" : "btn"}
+                    onClick={() => {
+                      setLaying((v) => !v); setFitting(false);
+                      setSelected(null); setEnd(null); setOnRow(0);
+                    }}>
+              {laying ? "Done" : "Place rows"}
+            </button>
+          )}
           {!real && (
             <button type="button" className={fitting ? "btn pri" : "btn"}
-                    onClick={() => { setFitting((v) => !v); setSelected(null); setTaps([]); }}>
+                    onClick={() => {
+                      setFitting((v) => !v); setLaying(false);
+                      setSelected(null); setTaps([]);
+                    }}>
               {fitting ? "Done" : "Fit to aerial"}
             </button>
           )}
@@ -891,6 +918,50 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             </>
           ) : null}
         </p>
+      )}
+
+      {laying && (
+        <div className="parkfit">
+          <p className="parkhint">
+            Switch to <strong>Aerial</strong>, then tap the <strong>middle of
+            the first home</strong> in a row and the <strong>middle of the
+            last</strong>. That places the whole row — its direction, its
+            spacing and every home between. A park of four rows is eight taps.
+          </p>
+          <ol className="parktaps">
+            {plan.rows.map((r, i) => {
+              const done = Boolean(r.from && r.to);
+              return (
+                <li key={`${r.street}-${i}`}
+                    className={i === onRow ? "now" : done ? "done" : ""}>
+                  <strong>
+                    {r.numbers[0]}–{r.numbers[r.numbers.length - 1]}
+                  </strong>{" "}
+                  {r.street}
+                  <span className="dim">
+                    {" — "}
+                    {r.numbers.length} homes
+                    {i === onRow
+                      ? end ? " · now tap the last one" : " · tap the first one"
+                      : done ? " · placed" : ""}
+                  </span>
+                  {done && (
+                    <button type="button" className="aslink" onClick={() => {
+                      setOnRow(i); setEnd(null);
+                    }}>
+                      do it again
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <p className="dim">
+            The homes all sit at the same angle to their row, which is the{" "}
+            <strong>Angle of homes</strong> slider — set that once and it
+            applies to every row.
+          </p>
+        </div>
       )}
 
       {fitting && (
@@ -1029,8 +1100,21 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           onHarvest={blank ? undefined : onHarvest}
           arranging={arranging} onNudge={nudge} onDropped={keep}
           selected={selected} onSelect={setSelected}
-          fitting={fitting} taps={taps}
+          fitting={fitting || laying} taps={laying ? (end ? [end] : []) : taps}
           onTap={(at) => {
+            if (laying) {
+              // First tap is where the row starts, second where it
+              // ends. On the second the row is placed and the next one
+              // is asked for, so a park of four rows is eight taps and
+              // no typing.
+              if (!end) { setEnd(at); return; }
+              const rows = plan.rows.map((r, i) =>
+                (i === onRow ? { ...r, from: end, to: at } : r));
+              remember({ ...plan, rows });
+              setEnd(null);
+              setOnRow((i) => Math.min(i + 1, plan.rows.length - 1));
+              return;
+            }
             const next = [...taps, at].slice(0, fitTargets(plan).length);
             setTaps(next);
             if (next.length >= 2) remember(fitFromTaps(plan, next));
@@ -1238,8 +1322,13 @@ function Describe(
   const [hits, setHits] = useState<{ id: string; label: string }[]>([]);
   const [named, setNamed] = useState(hadName);
   const [street, setStreet] = useState(hadName ? streets[0] ?? "" : "");
-  const [left, setLeft] = useState(rows[0]?.numbers.length ?? 20);
-  const [right, setRight] = useState(rows[1]?.numbers.length ?? 20);
+  // How many homes in each row, in order, as one line: "8, 9, 21, 21".
+  // Two fields could only ever say two rows, and a park that grew is
+  // however many groups it grew into.
+  const [shape, setShape] = useState(
+    rows.length ? rows.map((r) => r.numbers.length).join(", ") : "20, 20");
+  const counts = shape.split(/[^0-9]+/).map(Number).filter((n) => n > 0);
+  const total = counts.reduce((a, b) => a + b, 0);
   const [first, setFirst] = useState(() => {
     const n = Number(rows[0]?.numbers[0]);
     return Number.isFinite(n) ? n : 1;
@@ -1351,6 +1440,23 @@ function Describe(
     const run = (n: number, from: number) =>
       Array.from({ length: Math.max(0, n) }, (_, i) => String(from + i));
     const name = named && street.trim() ? street.trim() : "The drive";
+    // Numbered straight through, in the order the rows were given --
+    // which is the order somebody walks them. Lot 1 is the first home
+    // of the first row.
+    let next = first;
+    const made = counts.map((n, i) => {
+      const r = {
+        street: counts.length > 2 ? `${name} ${i + 1}` : name,
+        side: (i % 2 ? "S" : "N") as "N" | "S",
+        numbers: run(n, next),
+        // Kept where a row of the same size was already placed, so
+        // changing a count elsewhere does not throw away the taps.
+        from: rows[i]?.numbers.length === n ? rows[i]?.from : undefined,
+        to: rows[i]?.numbers.length === n ? rows[i]?.to : undefined,
+      };
+      next += n;
+      return r;
+    });
     onLay({
       ...EMPTY,
       centre: at,
@@ -1371,10 +1477,7 @@ function Describe(
       // re-describe would quietly shrink the park by a verge.
       frontage: from?.frontage,
       countFrom: "west",
-      rows: [
-        { street: name, side: "N", numbers: run(left, first) },
-        { street: name, side: "S", numbers: run(right, first + left) },
-      ],
+      rows: made,
     });
   }
 
@@ -1463,19 +1566,23 @@ function Describe(
           </p>
         )}
 
-        <div className="three">
-          <label>Lots one side
-            <input inputMode="numeric" value={left}
-                   onChange={(e) => setLeft(Number(e.target.value) || 0)} /></label>
-          <label>Lots the other
-            <input inputMode="numeric" value={right}
-                   onChange={(e) => setRight(Number(e.target.value) || 0)} /></label>
+        <div className="two">
+          <label>Homes in each row, in order
+            <input value={shape} placeholder="8, 9, 21, 21"
+                   onChange={(e) => setShape(e.target.value)} /></label>
           <label>First number
             <input inputMode="numeric" value={first}
                    onChange={(e) => setFirst(Number(e.target.value) || 1)} /></label>
         </div>
         <p className="dim">
-          <strong>{left + right} lots in all.</strong> Rough is fine — lots can
+          One number per row, in the order you would walk them. Two rows
+          either side of one road is <strong>30, 29</strong>; a park in four
+          groups is <strong>8, 9, 21, 21</strong>.
+        </p>
+        <p className="dim">
+          <strong>{counts.length} rows, {total} lots in all</strong>
+          {counts.length ? `, numbered ${first} to ${first + total - 1}` : ""}.
+          {" "}Rough is fine — lots can
           be added and renumbered afterwards, and nothing here is saved against
           a home until you say so.
         </p>
@@ -1504,11 +1611,12 @@ function Describe(
               : rowRun < 113 ? "east" : rowRun < 158 ? "south-east"
               : rowRun < 203 ? "south" : rowRun < 248 ? "south-west"
               : rowRun < 293 ? "west" : "north-west"}.
-            {" "}A row of {left} at {along} m is {Math.round((left - 1) * along)} m long.
+            {counts[0] ? ` A row of ${counts[0]} at ${along} m is `
+              + `${Math.round((counts[0] - 1) * along)} m long.` : ""}
           </p>
         </div>
 
-        <button type="submit" className="btn pri" disabled={!at}>
+        <button type="submit" className="btn pri" disabled={!at || !counts.length}>
           Lay it out
         </button>
         {!at && (
