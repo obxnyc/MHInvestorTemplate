@@ -32,11 +32,51 @@ export async function POST(req: Request) {
   const steps: { did: string; ok: boolean; say: string }[] = [];
 
   if (!pin) return NextResponse.json({ error: "which parcel number" }, { status: 400 });
+
+  /** What to do with a parcel once something has found it. */
+  const answer = (
+    hit: { geometry: unknown; props: Record<string, unknown>; field: string },
+    layer: string,
+  ) => {
+    const ring = outerRing(hit.geometry);
+    if (ring.length < 4) return null;
+    const lng = ring.reduce((a, q) => a + q[0], 0) / ring.length;
+    const lat = ring.reduce((a, q) => a + q[1], 0) / ring.length;
+    steps.push({ did: `found ${pin}`, ok: true,
+                 say: `in ${layer}, on ${hit.field}, ${ring.length} corners` });
+    return NextResponse.json({
+      ok: true, ring, centre: [lng, lat], layer,
+      field: hit.field, props: hit.props, steps,
+    });
+  };
+
+  // North Carolina publishes every county's parcels as one layer,
+  // refreshed weekly, under a standard schema -- so the usual answer to
+  // "where is P139-50A" needs no county link at all, and the same call
+  // works for a park in Cumberland and a park in Pasquotank. Tried
+  // first, because the alternative asks somebody to find a REST
+  // endpoint, which is not a thing to ask.
+  const STATEWIDE = [
+    "https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1",
+    "https://services.gis.nc.gov/secure/rest/services/NC1Map_Parcels/MapServer/1",
+  ];
+  for (const url of STATEWIDE) {
+    const hit = await parcelByPin(url, pin, ["parno", "altparno", "pin"]);
+    if (!hit) continue;
+    const out = answer(hit, "NC OneMap, the statewide parcel layer");
+    if (out) return out;
+  }
+  steps.push({
+    did: "asked NC OneMap's statewide parcels", ok: false,
+    say: `nothing numbered ${pin}, or the service did not answer`,
+  });
+
   if (!app) {
     return NextResponse.json({
-      error: "That doesn't look like a county GIS link. Paste the whole address "
-           + "bar from their parcel viewer.",
-    }, { status: 400 });
+      error: `NC OneMap has no parcel numbered ${pin}. Paste the county's own `
+           + "parcel viewer link and it will ask them directly.",
+      steps,
+    }, { status: 404 });
   }
   steps.push({ did: "read the link", ok: true, say: `app ${app}` });
 
@@ -64,22 +104,10 @@ export async function POST(req: Request) {
   for (const layer of tryThese) {
     const hit = await parcelByPin(layer.url, pin);
     if (!hit) continue;
-    const ring = outerRing(hit.geometry);
-    if (ring.length < 4) {
-      steps.push({ did: `found ${pin} in ${layer.title}`, ok: false,
-                   say: "but it carried no boundary" });
-      continue;
-    }
-    // The middle of the parcel, which is where the park should be drawn
-    // before anybody drags anything.
-    const lng = ring.reduce((a, p) => a + p[0], 0) / ring.length;
-    const lat = ring.reduce((a, p) => a + p[1], 0) / ring.length;
-    steps.push({ did: `found ${pin}`, ok: true,
-                 say: `in ${layer.title}, on ${hit.field}, ${ring.length} corners` });
-    return NextResponse.json({
-      ok: true, ring, centre: [lng, lat], layer: layer.title,
-      field: hit.field, props: hit.props, steps,
-    });
+    const out = answer(hit, layer.title);
+    if (out) return out;
+    steps.push({ did: `found ${pin} in ${layer.title}`, ok: false,
+                 say: "but it carried no boundary" });
   }
 
   // No parcel. An address still puts the park on the right ground, and

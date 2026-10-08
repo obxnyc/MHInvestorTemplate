@@ -418,12 +418,17 @@ export async function pinFields(layerUrl: string): Promise<string[]> {
   // PARCEL_ADDRESS that happens to contain the word parcel.
   const score = (n: string) => {
     const u = n.toUpperCase();
-    if (u === "PIN" || u === "GPIN" || u === "PARCELID" || u === "PARCEL_ID") return 0;
-    if (/^PIN|PIN$|PARCEL.?(ID|NO|NUM)/.test(u)) return 1;
-    if (/PIN|PARCEL|REID|TAXID/.test(u)) return 2;
+    // Exactly the field, under one of the names counties actually use.
+    // PARNO is North Carolina's own standard, which the first version of
+    // this matched on none of -- so the statewide layer, the one that
+    // covers every park here, would have come back "no such parcel".
+    if (["PIN", "GPIN", "PARNO", "PARCELID", "PARCEL_ID", "APN", "PID"].includes(u)) return 0;
+    if (["ALTPARNO", "PIN_NUM", "PINNUM", "TAXPIN", "REID", "PARCEL_NO"].includes(u)) return 1;
+    if (/^(PIN|PARNO|APN|PID)|(PIN|PARNO|APN|PID)$/.test(u)) return 2;
+    if (/PARCEL.?(ID|NO|NUM)|PIN|PARNO|REID|TAXID|PROP.?ID/.test(u)) return 3;
     return 99;
   };
-  return names.filter((n) => score(n) < 99).sort((a, b) => score(a) - score(b)).slice(0, 6);
+  return names.filter((n) => score(n) < 99).sort((a, b) => score(a) - score(b)).slice(0, 8);
 }
 
 export async function parcelByPin(
@@ -431,23 +436,30 @@ export async function parcelByPin(
 ): Promise<{ geometry: unknown; props: Record<string, unknown>; field: string } | null> {
   const want = (fields?.length ? fields : await pinFields(layerUrl));
   const clean = pin.trim().replace(/'/g, "''");
+  const bare = clean.toUpperCase().replace(/\s+/g, "");
   for (const f of want) {
     // Case and spacing differ between the card and the table often
     // enough that an exact match alone comes back empty and looks like
-    // the parcel not existing.
-    const where = encodeURIComponent(
-      `UPPER(REPLACE(${f}, ' ', '')) = '${clean.toUpperCase().replace(/\s+/g, "")}'`);
-    const q = `${layerUrl}/query?where=${where}`
-      + "&outFields=*&outSR=4326&returnGeometry=true&resultRecordCount=5&f=geojson";
-    const out = await json(q);
-    if (!out || out.type !== "FeatureCollection") continue;
-    const hit = ((out.features ?? []) as Record<string, unknown>[])[0];
-    if (hit?.geometry) {
-      return {
-        geometry: hit.geometry,
-        props: (hit.properties ?? {}) as Record<string, unknown>,
-        field: f,
-      };
+    // the parcel not existing. Then the separators: one county writes
+    // P139-50A and the next writes P13950A for the same lot, and the
+    // owner only ever has one of the two in front of them.
+    const tries = [
+      `UPPER(REPLACE(${f}, ' ', '')) = '${bare}'`,
+      `UPPER(REPLACE(REPLACE(${f}, ' ', ''), '-', '')) = '${bare.replace(/-/g, "")}'`,
+    ];
+    for (const where of tries) {
+      const q = `${layerUrl}/query?where=${encodeURIComponent(where)}`
+        + "&outFields=*&outSR=4326&returnGeometry=true&resultRecordCount=5&f=geojson";
+      const out = await json(q);
+      if (!out || out.type !== "FeatureCollection") continue;
+      const hit = ((out.features ?? []) as Record<string, unknown>[])[0];
+      if (hit?.geometry) {
+        return {
+          geometry: hit.geometry,
+          props: (hit.properties ?? {}) as Record<string, unknown>,
+          field: f,
+        };
+      }
     }
   }
   return null;
