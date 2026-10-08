@@ -27,13 +27,13 @@ writeFileSync(gen.osm, transpile("osm.ts")
 let buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
     orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
     areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
-    fitInside, areaOf, tightest;
+    fitInside, areaOf, tightest, alongAxis;
 let RETREAT, layOut, streetLines;
 try {
   ({ buildingsOf, roadsOf, assign, sameStreet, bareName, centroid, placeOn,
      orientedBox, boxAround, overpassBody, nearestOn, placeFromRoads, midOf,
      areasOf, parkAround, inRing, roadQuery, buildingQuery, landQuery, nearestNames,
-     fitInside, areaOf, tightest } = await import(gen.osm));
+     fitInside, areaOf, tightest, alongAxis } = await import(gen.osm));
   ({ RETREAT, layOut, streetLines } = await import(gen.plan));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
@@ -391,6 +391,40 @@ elements.push(home(nextId++, 10, 300));
     const gaps = xs.slice(1).map((x, i) => x - xs[i]);
     return Math.max(...gaps) / Math.min(...gaps) < 1.05;
   })());
+}
+
+{
+  // Projecting onto the street's polyline looked equivalent to projecting
+  // onto the row and is not: the nearest point on a line that STOPS is its
+  // endpoint, so everything past either end collapses onto one value. The
+  // park's western edge and the first home on it came out the same
+  // distance along, and the lots in between came out nought.
+  const o = [LNG, LAT];
+  t("a point behind the origin is behind it",
+    alongAxis(o, 90, [LNG - 20 * dLng, LAT]) < -19);
+  t("and one ahead is ahead",
+    alongAxis(o, 90, [LNG + 20 * dLng, LAT]) > 19);
+  t("measured in metres", near(alongAxis(o, 90, [LNG + 20 * dLng, LAT]), 20, 0.2));
+  t("sideways does not count",
+    near(alongAxis(o, 90, [LNG, LAT + 20 * dLat]), 0, 0.2));
+}
+{
+  // The hard constraint: a drawn pad in the next street is not the answer
+  // however good the arithmetic was.
+  const short = elements.filter((e) =>
+    !(e.tags?.building && (e.id === 1 || e.id === 2)));
+  // A property line that only just reaches past the first building, so the
+  // estimate wants more room at the entrance than there is.
+  const mean = [
+    [LNG + 26 * dLng, LAT - 95 * dLat], [LNG + 150 * dLng, LAT - 95 * dLat],
+    [LNG + 150 * dLng, LAT + 35 * dLat], [LNG + 26 * dLng, LAT + 35 * dLat],
+    [LNG + 26 * dLng, LAT - 95 * dLat],
+  ];
+  const { homes } = assign(RETREAT, buildingsOf(short), roadsOf(short), { inside: mean });
+  const row = homes.filter((h) => h.street === "Lady Viola Dr" && h.side === "N");
+  t("with no room at the entrance, nothing is drawn outside it",
+    row.filter((h) => h.drawn).every((h) => centroid(h.ring)[0] > LNG + 20 * dLng));
+  t("and the row still has every lot", row.length === 13);
 }
 
 // --- the tightest run ---

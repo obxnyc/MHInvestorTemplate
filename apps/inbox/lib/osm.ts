@@ -412,10 +412,7 @@ export function assign(
     for (const x of all) if (!found.includes(x)) spare.push(x.shape);
     rows.push({ row, found: found.length });
 
-    const road = mine.find((r) => sameStreet(row.street, r.name));
-    homes.push(...fillRow(
-      row, found, plan, back, limits(road, opts.inside, sorted),
-    ));
+    homes.push(...fillRow(row, found, plan, back, opts.inside));
   }
   return { homes, spare, rows };
 }
@@ -439,26 +436,25 @@ export function tightest<T extends { along: number }>(sorted: T[], want: number)
   return sorted.slice(best, best + want);
 }
 
-/** How far along its street the park runs: from the property line where
- *  the map has one, and from the spread of the homes themselves where it
- *  does not. */
-export function limits(
-  road: Road | undefined,
-  inside: number[][] | undefined,
-  all: { along: number }[],
-): { lo: number; hi: number } | null {
-  if (road && inside?.length) {
-    let lo = Infinity, hi = -Infinity;
-    for (const p of inside) {
-      const { along } = placeOn(road, [p[0], p[1]]);
-      if (along < lo) lo = along;
-      if (along > hi) hi = along;
-    }
-    if (Number.isFinite(lo)) return { lo, hi };
-  }
-  if (!all.length) return null;
-  const xs = all.map((a) => a.along);
-  return { lo: Math.min(...xs), hi: Math.max(...xs) };
+/**
+ * How far along an axis a point sits, in metres, signed.
+ *
+ * An infinite line through the row, not the street's polyline. Projecting
+ * onto the polyline looked equivalent and is not: the nearest point on a
+ * line that STOPS is its endpoint, so every part of the park beyond either
+ * end of the traced road collapsed onto the same value. The park's western
+ * edge and the first home on it came out the same distance along, the
+ * number of lots in between came out nought, and the missing lots went on
+ * the far end again.
+ */
+export function alongAxis(
+  origin: [number, number], bearing: number, point: [number, number],
+): number {
+  const per = degreesPerMetre(origin[1]);
+  const b = (bearing * Math.PI) / 180;
+  const east = (point[0] - origin[0]) / per.lng;
+  const north = (point[1] - origin[1]) / per.lat;
+  return east * Math.sin(b) + north * Math.cos(b);
 }
 
 /**
@@ -483,7 +479,7 @@ export function fillRow(
   found: { shape: Shape; along: number }[],
   plan: Plan,
   back: boolean,
-  edges: { lo: number; hi: number } | null,
+  inside: number[][] | undefined,
 ): Matched[] {
   const n = row.numbers.length;
   const per = degreesPerMetre(plan.centre[1]);
@@ -512,22 +508,43 @@ export function fillRow(
   const bearing = centres.length > 1
     ? bearingOf(centres[0], centres[centres.length - 1])
     : (plan.bearing + (back ? 180 : 0)) % 360;
+  // Lady Cheryl bends, so carrying on at the row's average angle walks the
+  // end pads off the street. Each end keeps its own direction.
+  const headBearing = centres.length > 1 ? bearingOf(centres[0], centres[1]) : bearing;
+  const tailBearing = centres.length > 1
+    ? bearingOf(centres[centres.length - 2], centres[centres.length - 1]) : bearing;
 
   // How many lots sit before the first building the map has.
   //
-  // Searching for the split that lands inside the park could never find
-  // one, because without a property line the park's extent was taken from
-  // the spread of the buildings themselves -- which leaves no room at
-  // either end by construction, so the answer was always nought and the
-  // leftovers always went on the far end. Measured instead: the distance
-  // from the park's western edge to the first building this row has,
-  // divided by the row's own spacing, is the number of lots in between.
+  // Estimated from the park's western edge -- the distance from it to this
+  // row's first building, over the row's own spacing -- and then checked
+  // against the property line, because an estimate that puts a pad in the
+  // next street is not the answer however good the arithmetic was. Every
+  // split is tried, the ones that keep every drawn pad inside the park win,
+  // and the estimate breaks the tie.
   const spareLots = n - found.length;
   let before = 0;
-  if (spareLots > 0 && edges) {
-    const edge = back ? edges.hi : edges.lo;
-    const slots = Math.round(Math.abs(found[0].along - edge) / step);
-    before = Math.max(0, Math.min(spareLots, slots));
+  if (spareLots > 0) {
+    const origin = centres[0];
+    const alongs = (pts: number[][]) => pts.map((p) => alongAxis(origin, bearing, [p[0], p[1]]));
+    const edgeLo = inside?.length ? Math.min(...alongs(inside)) : -spareLots * step;
+    // A home sits about half a pitch inside the fence, not on it.
+    const guess = Math.round(Math.max(0, -edgeLo - step / 2) / step);
+
+    let best = Infinity;
+    for (let b = 0; b <= spareLots; b++) {
+      let out = 0;
+      if (inside?.length) {
+        for (let k = 1; k <= spareLots; k++) {
+          const at = k <= b
+            ? stepOn(centres[0], headBearing, -k * step, per)
+            : stepOn(centres[centres.length - 1], tailBearing, (k - b) * step, per);
+          if (!inRing(at, inside)) out += 1;
+        }
+      }
+      const score = out * 100 + Math.abs(b - guess);
+      if (score < best) { best = score; before = b; }
+    }
   }
 
   const out: Matched[] = [];
@@ -557,11 +574,7 @@ export function fillRow(
     const head = i < 0;
     const from = head ? centres[0] : centres[centres.length - 1];
     const steps = head ? i : i - found.length + 1;
-    const local = centres.length > 1
-      ? (head
-          ? bearingOf(centres[0], centres[1])
-          : bearingOf(centres[centres.length - 2], centres[centres.length - 1]))
-      : bearing;
+    const local = head ? headBearing : tailBearing;
     const at = stepOn(from, local, steps * step, per);
     out.push(mk(label, footprint(at[1], at[0], (local + 90) % 360, plan.size), { drawn: true }));
   }
