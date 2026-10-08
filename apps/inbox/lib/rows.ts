@@ -103,12 +103,27 @@ export function offsetFor(
   return across[Math.floor(across.length / 2)];
 }
 
-/** The part of a line inside the boundary: the longest unbroken run of it. */
-export function clipTo(line: number[][], ring: number[][] | null): number[][] {
-  if (!ring || ring.length < 4) return line;
+/**
+ * The part of a street inside the boundary.
+ *
+ * Keeping the vertices that fall inside is the obvious way to do this and
+ * it is badly wrong, because a street is not a dense line: OpenStreetMap
+ * traces a straight road as two points a few hundred metres apart. A road
+ * that crosses the whole park can have no vertex inside it at all, or two
+ * at one end, and the row then gets laid along a stub a few metres long --
+ * which is fifty one pads in a heap in the corner of the park.
+ *
+ * So the line is walked at a couple of metres a step first. The kept run is
+ * then within a step of the real crossing, which is closer than anyone can
+ * see, and it cannot depend on where a volunteer happened to click.
+ */
+export function clipTo(line: number[][], ring: number[][] | null, step = 2): number[][] {
+  if (!ring || ring.length < 4 || line.length < 2) return line;
+
+  const dense = densify(line, step);
   let best: number[][] = [];
   let run: number[][] = [];
-  for (const p of line) {
+  for (const p of dense) {
     if (inRing([p[0], p[1]], ring)) {
       run.push(p);
       if (run.length > best.length) best = run;
@@ -116,9 +131,26 @@ export function clipTo(line: number[][], ring: number[][] | null): number[][] {
       run = [];
     }
   }
-  // A street traced with only its ends inside, or none of it, is better
-  // used whole than discarded.
-  return best.length >= 2 ? best : line;
+  // A street with only its ends inside, or none of it, is better used
+  // whole than reduced to a stub.
+  return lengthOf(best) >= 30 ? best : line;
+}
+
+/** The same line with a point every few metres, so that asking whether it
+ *  is inside something is a question about the line and not about how
+ *  somebody chose to trace it. */
+export function densify(line: number[][], step = 2): number[][] {
+  const out: number[][] = [line[0]];
+  for (let i = 0; i < line.length - 1; i++) {
+    const a: [number, number] = [line[i][0], line[i][1]];
+    const b: [number, number] = [line[i + 1][0], line[i + 1][1]];
+    const d = metresBetween(a, b);
+    const n = Math.max(1, Math.ceil(d / step));
+    for (let k = 1; k <= n; k++) {
+      out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+    }
+  }
+  return out;
 }
 
 /** The same line, guaranteed to run west to east, which is the direction
@@ -167,4 +199,38 @@ export function walk(
   const a: [number, number] = [line[0][0], line[0][1]];
   const b: [number, number] = [line[1][0], line[1][1]];
   return { point: a, bearing: bearingOf(a, b) };
+}
+
+/**
+ * The boundary pushed out to the road it fronts.
+ *
+ * The park's parcel runs up to Pamalee Drive -- the owner's own deed line
+ * is the road -- but the landuse polygon the map carries stops short of it,
+ * because somebody traced the back of the verge rather than the right of
+ * way. Left as traced, the property line floats in the air next to the road
+ * it is supposed to meet.
+ *
+ * So any corner already close to the road is put on the road. Close is a
+ * short distance on purpose: the notch near the entrance is a real step
+ * back in the deed, and a generous reach would iron it flat and lose the
+ * one feature of this boundary anybody would recognise.
+ */
+export function reachTo(
+  ring: number[][], road: number[][] | null, within = 30,
+): number[][] {
+  if (!road || road.length < 2 || ring.length < 4) return ring;
+  const dense = densify(road, 3);
+
+  const out = ring.map((p) => {
+    let best: number[] | null = null;
+    let d = Infinity;
+    for (const q of dense) {
+      const m = metresBetween([p[0], p[1]], [q[0], q[1]]);
+      if (m < d) { d = m; best = q; }
+    }
+    return best && d <= within ? [best[0], best[1]] : p;
+  });
+  // Closed ring in, closed ring out.
+  out[out.length - 1] = out[0];
+  return out;
 }
