@@ -188,7 +188,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // one road that turns at the east end; the map traces that turn as an
     // arc, and on the ground it is square.
     const streetOrder = [...new Set(base.rows.map((r) => r.street))];
-    const back = backRoad(pads, streetOrder, fitted.bearing);
+    let back = backRoad(pads, streetOrder, fitted.bearing);
+    // Only drawn if the map has not got it. The park's roads are the
+    // map's to draw -- a line of our own over a styled map looks like
+    // what it is -- so this is the one stretch that is missing, and if
+    // the map turns out to have it after all, nothing is added.
+    const joinAt = back[1]?.[0];
+    if (joinAt) {
+      const mapHasIt = [...mine.map((r) => r.line), ...found.lanes]
+        .flat()
+        .some((q) => Math.hypot(
+          (q[0] - joinAt[0]) / 0.0000110, (q[1] - joinAt[1]) / 0.0000090) < 18);
+      if (mapHasIt) back = [];
+    }
     // The carriageways, drawn down the middle of their own rows. Drawing
     // the traced geometry instead put a volunteer's wobble through a park
     // whose rows are dead straight, and brought the arc at the east end
@@ -215,7 +227,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       homes: pads,
       streets: streetOrder.map((st, i) => ({ name: st, line: ways[i] ?? [] }))
         .filter((st) => st.line.length >= 2),
-      boundary, lanes: [...ways, ...back],
+      boundary, lanes: back,
       parcel: "square to the homes, out to Pamalee Dr",
     });
     setOsm({});
@@ -223,7 +235,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     setGave(JSON.stringify({
       roads: mine.map((x) => ({ name: x.name, line: x.line.map((p) => [r(p[0]), r(p[1])]) })),
       parcel: boundary.map((p) => [r(p[0]), r(p[1])]),
-      lanes: [...ways, ...back].map((line) => line.map((p) => [r(p[0]), r(p[1])])),
+      lanes: back.map((line) => line.map((p) => [r(p[0]), r(p[1])])),
       buildings: found.shapes.length,
     }));
     took.current = true;

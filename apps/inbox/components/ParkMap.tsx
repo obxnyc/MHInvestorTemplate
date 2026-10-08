@@ -29,6 +29,45 @@ const FILL: Record<LotState, string> = {
   let: "#2E8B68", ours: "#3E6BB0", empty: "#C2703A", bare: "#6B7F99",
 };
 
+/**
+ * How the base map paints a residential street, borrowed.
+ *
+ * The park's roads are drawn by the map itself and always were. The only
+ * thing missing is the stretch across the back where the two streets
+ * meet, and a white line drawn over the top of a styled map looks exactly
+ * like what it is. So the map's own road layers are found -- casing and
+ * fill, in that order -- and their paint is reused, which keeps the new
+ * piece the right colour and the right width at every zoom without
+ * guessing at either.
+ */
+function roadPaint(m: MlMap): { id: string; paint: Record<string, unknown>; under?: string }[] {
+  const style = m.getStyle();
+  const layers = style.layers ?? [];
+  const firstLabel = layers.find((l) => l.type === "symbol")?.id;
+
+  const roads = layers.filter((l) =>
+    l.type === "line"
+    && (l as { "source-layer"?: string })["source-layer"] === "transportation"
+    && /minor|residential|street|service|tertiary/i.test(l.id));
+  // Casing before fill, which is the order they are drawn in.
+  const pick = roads.slice(0, 2);
+  if (!pick.length) {
+    return [{
+      id: "plain",
+      paint: {
+        "line-color": "#ffffff",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 14, 2, 18, 8, 20, 16],
+      },
+      under: firstLabel,
+    }];
+  }
+  return pick.map((l) => ({
+    id: l.id.replace(/[^a-z0-9]+/gi, "-"),
+    paint: { ...((l as { paint?: Record<string, unknown> }).paint ?? {}) },
+    under: firstLabel,
+  }));
+}
+
 /** OpenFreeMap serves the whole planet as vector tiles, free and with no
  *  key. Positron is its grey one, which is the look this screen wanted
  *  anyway -- and, far more importantly, it delivers the buildings and the
@@ -305,14 +344,19 @@ export default function ParkMap(
       m.addLayer({ id: "park-line", type: "line", source: "park",
         paint: { "line-color": "#1F5BA6", "line-width": 2.5 } });
 
-      // The park's own roads, drawn over its fill so the loop at the east
-      // end reads as a road rather than as a gap between two rows.
-      m.addLayer({ id: "lane-line", type: "line", source: "lanes",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: {
-          "line-color": "#ffffff", "line-opacity": 0.95,
-          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 3, 18, 9, 20, 16],
-        } });
+      // The piece of road the map is missing, drawn in the map's own
+      // hand. Rather than inventing a white line -- which looked hand
+      // drawn, because it was -- the base map's residential road layers
+      // are found and their paint copied, so the new stretch is the same
+      // colour, the same width at every zoom, and the same casing as
+      // every other street on screen.
+      for (const copy of roadPaint(m)) {
+        m.addLayer({
+          id: `lane-${copy.id}`, type: "line", source: "lanes",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: copy.paint,
+        }, copy.under);
+      }
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
         paint: { "fill-color": ["get", "colour"], "fill-opacity": 1 } });
       // Two layers rather than one with an expression: line-dasharray is
@@ -347,11 +391,6 @@ export default function ParkMap(
           "symbol-z-order": "source",
         },
         paint: { "text-color": "#ffffff", "text-halo-color": "#19202B", "text-halo-width": 1.4 } });
-      m.addLayer({ id: "street-label", type: "symbol", source: "streets",
-        layout: { "text-field": ["get", "name"], "text-size": 13, "text-font": font,
-                  "symbol-placement": "line-center", "text-letter-spacing": 0.06 },
-        paint: { "text-color": "#1F3C66", "text-halo-color": "#ffffff", "text-halo-width": 2.5 } });
-
       m.addLayer({ id: "tap-dot", type: "circle", source: "taps",
         paint: { "circle-radius": 9, "circle-color": "#D1453B",
                  "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
