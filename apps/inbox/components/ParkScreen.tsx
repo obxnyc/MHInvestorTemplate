@@ -1245,6 +1245,14 @@ function Describe(
     return Number.isFinite(n) ? n : 1;
   });
   const [turn, setTurn] = useState(from?.homeTurn ?? 30);
+  // Measured off an aerial, these three are the difference between a
+  // park that lands on its pads and one that needs dragging. There was
+  // nowhere to type them: they existed only as sliders, which appear
+  // after a park has been laid out, by which time it is in the wrong
+  // place and the wrong shape.
+  const [rowRun, setRowRun] = useState(from?.bearing ?? 8);
+  const [along, setAlong] = useState(from?.padSpacing ?? 14);
+  const [across, setAcross] = useState(from?.pairGap ?? 34);
   const [looking, setLooking] = useState(false);
   /** The address lookup is not configured on this deployment. */
   const [off, setOff] = useState(false);
@@ -1349,11 +1357,11 @@ function Describe(
       // Rows running roughly north, which is what a strip park off a
       // road usually is. It is a starting point for the Turn slider,
       // not a measurement.
-      bearing: 8,
+      bearing: rowRun,
       homeTurn: turn,
-      padSpacing: 14,
-      pairGap: 34,
-      streetGap: 60,
+      padSpacing: along,
+      pairGap: across,
+      streetGap: Math.max(60, across + 20),
       naming: named ? "street" : "lot",
       address: named ? undefined : address.trim() || undefined,
       fence: fence ?? undefined,
@@ -1471,6 +1479,34 @@ function Describe(
           be added and renumbered afterwards, and nothing here is saved against
           a home until you say so.
         </p>
+
+        {/* Measured off an aerial these place a park exactly; guessed,
+            they are what makes one land in the wrong shape. Either way
+            they are quicker to type once than to drag afterwards. */}
+        <div className="three">
+          <label>Way the rows run
+            <input inputMode="decimal" value={rowRun}
+                   onChange={(e) => setRowRun(Number(e.target.value) || 0)} /></label>
+          <label>Angle of homes
+            <input inputMode="decimal" value={turn}
+                   onChange={(e) => setTurn(Number(e.target.value) || 0)} /></label>
+          <label>Along the row
+            <input inputMode="decimal" value={along}
+                   onChange={(e) => setAlong(Number(e.target.value) || 0)} /></label>
+        </div>
+        <div className="two">
+          <label>Across the road
+            <input inputMode="decimal" value={across}
+                   onChange={(e) => setAcross(Number(e.target.value) || 0)} /></label>
+          <p className="dim">
+            Degrees, degrees, metres, metres. {rowRun}° is{" "}
+            {rowRun < 23 || rowRun > 337 ? "north" : rowRun < 68 ? "north-east"
+              : rowRun < 113 ? "east" : rowRun < 158 ? "south-east"
+              : rowRun < 203 ? "south" : rowRun < 248 ? "south-west"
+              : rowRun < 293 ? "west" : "north-west"}.
+            {" "}A row of {left} at {along} m is {Math.round((left - 1) * along)} m long.
+          </p>
+        </div>
 
         <button type="submit" className="btn pri" disabled={!at}>
           Lay it out
