@@ -37,12 +37,13 @@ writeFileSync(gen.p, fix(tr("parkplan.ts")));
 writeFileSync(gen.o, fix(tr("osm.ts")));
 writeFileSync(gen.h, fix(tr("harvest.ts")));
 writeFileSync(gen.r, fix(tr("rows.ts")));
-let layRows, clipTo, reachTo, roadsFrom, RETREAT, placeFromRoads, inRing, centroid, footprint;
+let layRows, clipTo, reachTo, roadsFrom, RETREAT, placeFromRoads, inRing, centroid, footprint,
+    orientedBox, lengthOf;
 try {
-  ({ layRows, clipTo, reachTo } = await import(gen.r));
+  ({ layRows, clipTo, reachTo, lengthOf } = await import(gen.r));
   ({ roadsFrom } = await import(gen.h));
   ({ RETREAT } = await import(gen.p));
-  ({ placeFromRoads, inRing, centroid } = await import(gen.o));
+  ({ placeFromRoads, inRing, centroid, orientedBox } = await import(gen.o));
   ({ footprint } = await import(gen.f));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
@@ -120,23 +121,11 @@ const roads = roadsFrom([
 
 // The deed line, with the notch at the entrance, stopping eight metres
 // shy of Pamalee Drive.
-// The step by the entrance, where the county card shows it: the deed
-// line comes in off Pamalee Drive between Lady Viola and Lady Cheryl.
-//
-// This was moved twice to stop the check complaining, which is the wrong
-// way round -- a fixture is the claim about the world, and bending it to
-// make a test pass only hides whatever the test found. It is back where
-// the card puts it, and the check below is the thing that changed.
-// The step by the entrance, where the county card shows it: the deed
-// line comes in off Pamalee Drive in the gap BETWEEN Lady Viola's odd row
-// and Lady Cheryl's even row. It does not cut a row, on the card or here
-// -- every lot in this park is inside the line.
-const parcel = [
-  at(-8, -42), at(165, -42), at(175, 20), at(165, 95), at(-8, 95),
-  at(-8, 32), at(16, 32), at(16, 26), at(-8, 26), at(-8, -42),
-];
+// The deed line is square and its western perimeter is Pamalee Drive.
+// There is no notch: the one in earlier versions of this picture was
+// invented here, and then moved twice to stop this file's own checks
+// complaining, which is exactly backwards.
 const pamalee = [at(-16, -95), at(-16, 130)];
-const fence = reachTo(parcel, pamalee);
 const fitted = placeFromRoads(RETREAT, roads) ?? RETREAT;
 
 // The buildings the map has. Every row but one is short on purpose: a pad
@@ -164,7 +153,20 @@ put(VIOLA + SETBACK, 6, 13, [0, 1]);
 put(CHERYL - SETBACK, 6, 13, [0, 1]);
 put(CHERYL + SETBACK, 6, 12);
 
-const pads = layRows(fitted, roads, fence, built);
+// Laid out first, then fenced: the property line is the tightest square
+// that holds the homes, pushed west onto Pamalee Drive. Drawing it from a
+// traced polygon left a field of empty land behind the loop.
+const pads = layRows(fitted, roads, null, built);
+const padCorners = pads.flatMap((p) => p.ring);
+const tarmac = roads.flatMap((r) => r.line)
+  .filter((q) => padCorners.some((c) =>
+    Math.abs(c[0] - q[0]) < 0.0005 && Math.abs(c[1] - q[1]) < 0.0004));
+const fence = reachTo(orientedBox([...padCorners, ...tarmac], 8), pamalee);
+// Roads trimmed to a looser line than the one that is drawn: the turning
+// circle grazes the boundary, and trimming it to the exact line split the
+// run so only half of it survived and the loop stopped joining the two
+// streets.
+const upTo = reachTo(orientedBox([...padCorners, ...tarmac], 16), pamalee);
 
 // --- what it looks like ---
 const all = [...fence, ...pads.flatMap((p) => p.ring), ...roads.flatMap((r) => r.line)];
@@ -202,7 +204,7 @@ const everyAngle = [];
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <rect width="${W}" height="${H}" fill="#eef1f4"/>
 <path d="${path(fence)} Z" fill="#dce7f5" stroke="#1F5BA6" stroke-width="2.5"/>
-${roads.map((r) => `<path d="${path(clipTo(r.line, fence))}" fill="none" stroke="#fff" stroke-width="8"/>`).join("\n")}
+${roads.map((r) => `<path d="${path(clipTo(r.line, upTo))}" fill="none" stroke="#fff" stroke-width="8"/>`).join("\n")}
 ${built.map((b) => `<path d="${path(b.ring)} Z" fill="none" stroke="#b08968" stroke-width="1.6"/>`).join("\n")}
 ${pads.map((p) => {
   const bad = !inRing(centroid(p.ring), fence);
@@ -302,6 +304,25 @@ if (process.env.DEBUG) {
 if (everyAngle.length) {
   const spread = Math.max(...everyAngle) - Math.min(...everyAngle);
   if (spread > 1) problems.push(`the park's homes are not all parallel (${spread.toFixed(1)}°)`);
+}
+// The turning circle is part of the park. A boundary drawn on the homes
+// alone cuts it off, and a park whose own road leaves the property is
+// wrong in a way that is obvious at a glance.
+{
+  const loopPts = roads.flatMap((r) => r.line)
+    .filter((q) => padCorners.some((c) =>
+      Math.abs(c[0] - q[0]) < 0.0005 && Math.abs(c[1] - q[1]) < 0.0004));
+  const out2 = loopPts.filter((q) => howFarOut([q[0], q[1]]) > 2).length;
+  if (out2) problems.push(`${out2} points of the park's own road are outside the line`);
+  // And it has to arrive as one unbroken road: the loop joining the two
+  // streets is the shape of this park.
+  for (const r of roads) {
+    const kept = clipTo(r.line, upTo);
+    const want = r.line.filter((q) => howFarOut([q[0], q[1]]) <= 16).length;
+    if (kept.length < 2 || want > 2 && lengthOf(kept) < 60) {
+      problems.push(`${r.name} is drawn in pieces`);
+    }
+  }
 }
 console.log(`wrote ${out}`);
 console.log(problems.length ? `PROBLEMS:\n- ${problems.join("\n- ")}` : "nothing obviously wrong");
