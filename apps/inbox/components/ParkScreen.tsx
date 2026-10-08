@@ -5,7 +5,7 @@ import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
 import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
-import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing,
+import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
 import { layRows, reachTo, backRoad, streetLine } from "@/lib/rows";
 import { degreesPerMetre } from "@/lib/footprint";
@@ -44,6 +44,8 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     error?: string;
     fit?: Plan;
     parcel?: string | null;
+    built?: number;
+    buildings?: number;
     missing?: { street: string; side: string; short: number }[];
   } | null>(null);
 
@@ -53,10 +55,32 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   // somebody opens a SQL editor.
   const key = `parkfit:${propertyId}`;
   const byHand = `parkmoved:${propertyId}`;
+  /**
+   * Corrections this browser is holding, in either of the two shapes
+   * they have been stored in.
+   *
+   * They used to be offsets from wherever the layout had put the pad --
+   * a few ten-thousandths of a degree -- and they are now the pad's own
+   * position, which near Fayetteville is about -78.9 and 35.1. The two
+   * are impossible to confuse: no lot on earth sits at a longitude of
+   * 0.0004. Anything that small is an offset from the old scheme and is
+   * converted the first time the park draws, rather than thrown away.
+   */
+  const oldShape = useRef<Record<string, [number, number]> | null>(null);
   useEffect(() => {
     try {
       const saved = localStorage.getItem(byHand);
-      if (saved) setMoved(JSON.parse(saved) as Record<string, [number, number]>);
+      if (!saved) return;
+      const was = JSON.parse(saved) as Record<string, [number, number]>;
+      const nudges: Record<string, [number, number]> = {};
+      const places: Record<string, [number, number]> = {};
+      for (const [id, at] of Object.entries(was)) {
+        if (!Array.isArray(at) || at.length !== 2) continue;
+        if (Math.abs(at[0]) < 1 && Math.abs(at[1]) < 1) nudges[id] = at;
+        else places[id] = at;
+      }
+      if (Object.keys(places).length) setMoved(places);
+      if (Object.keys(nudges).length) oldShape.current = nudges;
     } catch { /* a park that forgets its corrections still draws */ }
   }, [byHand]);
 
@@ -75,9 +99,26 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    * makes dragging feel instant, and as the fallback before the lots
    * exist on file.
    */
-  const nudge = useCallback((id: string, at: [number, number]) => {
+  const shownNow = useRef<RealPark | null>(null);
+  const nudge = useCallback((id: string, at: [number, number], whole?: boolean) => {
     setMoved((was) => {
-      const next = { ...was, [id]: at };
+      const next = { ...was };
+      const now = shownNow.current;
+      const me = now?.homes.find((h) => h.id === id);
+      if (whole && now && me) {
+        // Everything in the same row moves by the same amount, so the
+        // row stays straight, evenly spaced and parallel. Dragging a row
+        // is the common correction; dragging one pad is the exception.
+        const mid = middleOf(me.ring);
+        const dx = at[0] - mid[0], dy = at[1] - mid[1];
+        for (const h of now.homes) {
+          if (h.street !== me.street || sideOf(h.id) !== sideOf(me.id)) continue;
+          const c = middleOf(h.ring);
+          next[h.id] = [c[0] + dx, c[1] + dy];
+        }
+      } else {
+        next[id] = at;
+      }
       try { localStorage.setItem(byHand, JSON.stringify(next)); } catch { /* fine */ }
       return next;
     });
@@ -132,13 +173,21 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const planNow = useRef(plan);
   planNow.current = plan;
 
-  const keep = useCallback((id: string, at: [number, number]) => {
-    const label = id.split("|")[1] ?? "";
-    if (!label) return;
-    void fetch(`/api/properties/${propertyId}/plan`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "place", label, lng: at[0], lat: at[1] }),
-    });
+  const keep = useCallback((id: string, at: [number, number], whole?: boolean) => {
+    const now = shownNow.current;
+    const me = now?.homes.find((h) => h.id === id);
+    const rows = whole && now && me
+      ? now.homes.filter((h) => h.street === me.street && sideOf(h.id) === sideOf(me.id))
+      : now?.homes.filter((h) => h.id === id) ?? [];
+    for (const h of rows) {
+      const label = h.id.split("|")[1] ?? "";
+      if (!label) continue;
+      const c = middleOf(h.ring);
+      void fetch(`/api/properties/${propertyId}/plan`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "place", label, lng: c[0], lat: c[1] }),
+      });
+    }
   }, [propertyId]);
 
   const load = useCallback(async () => {
@@ -255,7 +304,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       boundary, lanes: back,
       parcel: "square to the homes, out to Pamalee Dr",
     });
-    setOsm({});
+    // How much of this is the map's doing and how much is arithmetic.
+    // A row laid on real buildings sits on the pads; a row spread evenly
+    // because the tiles had no buildings in them does not, and saying
+    // which is which beats letting somebody work it out from the screen.
+    const near = found.shapes.filter((sh) =>
+      mine.some((r) => placeOn(r, sh.centre).metres <= 45)).length;
+    setOsm({ built: near, buildings: found.shapes.length });
     const r = (v: number) => Number(v.toFixed(6));
     setGave(JSON.stringify({
       roads: mine.map((x) => ({ name: x.name, line: x.line.map((p) => [r(p[0]), r(p[1])]) })),
@@ -320,6 +375,40 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     return out;
   }, [placed, match]);
 
+  shownNow.current = shown;
+
+  // Offsets saved under the old scheme, turned into positions the first
+  // time there is a layout to measure them against -- and written
+  // straight to the database, so an hour of dragging is not one cleared
+  // cache away from gone a second time.
+  const rescued = useRef(false);
+  useEffect(() => {
+    const was = oldShape.current;
+    if (!was || rescued.current || !real?.homes?.length) return;
+    rescued.current = true;
+    const places: Record<string, [number, number]> = {};
+    for (const h of real.homes) {
+      const by = was[h.id];
+      if (!by) continue;
+      const mid = middleOf(h.ring);
+      places[h.id] = [mid[0] + by[0], mid[1] + by[1]];
+    }
+    if (!Object.keys(places).length) return;
+    setMoved((now) => {
+      const next = { ...places, ...now };
+      try { localStorage.setItem(byHand, JSON.stringify(next)); } catch { /* fine */ }
+      return next;
+    });
+    for (const [id, at] of Object.entries(places)) {
+      const label = id.split("|")[1] ?? "";
+      if (!label) continue;
+      void fetch(`/api/properties/${propertyId}/plan`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "place", label, lng: at[0], lat: at[1] }),
+      });
+    }
+  }, [real, byHand, propertyId]);
+
   const here = placed.find((h) => h.id === selected) ?? null;
   const open = here ? match.get(here.id) ?? null : null;
   const missing = placed.filter((h) => !match.has(h.id));
@@ -373,8 +462,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       {arranging && (
         <p className="parkhint">
-          Drag any home to move it. It stays square to the rest — a drag
-          slides a pad, it never turns one, so the ladder stays a ladder.
+          Drag any home to move it, or hold <kbd>Shift</kbd> and drag to
+          take the whole row with you — four drags instead of fifty one.
+          A drag only ever slides a pad, so the ladder stays a ladder, and
+          what you move is saved the moment you let go.
           {Object.keys(moved).length
             ? ` ${Object.keys(moved).length} moved so far, outlined in orange.`
             : ""}
@@ -398,6 +489,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               Viola and Lady Cheryl inside the property line, numbered down
               from the Pamalee entrance. Every pad is the same rectangle,
               because every home here is the same model.
+              {osm?.built
+                ? ` ${osm.built} of them sit on a building the map has.`
+                : " The map has no buildings here, so they are spread evenly along the streets — drag them onto the pads and they will stay."}
             </>
           ) : osm?.error ?? "Drawn from the park's own layout."}
           {gave ? (
@@ -598,6 +692,13 @@ export function pair(placed: Placed[], lots: Lot[]): Map<string, Lot> {
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** Which side of its street a lot is on, from the row it was laid in.
+ *  Carried on the home rather than looked up, because the id is all the
+ *  map hands back when something is dragged. */
+function sideOf(id: string): string {
+  return id.split("|")[0] ?? "";
+}
 
 /** The middle of a closed ring. */
 function middleOf(ring: number[][]): [number, number] {

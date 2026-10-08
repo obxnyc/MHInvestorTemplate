@@ -187,10 +187,10 @@ export default function ParkMap(
     /** Where the home is now, as a position rather than a nudge: a
      *  correction is a statement about the ground, so it survives the
      *  layout changing underneath it. */
-    onNudge?: (id: string, at: [number, number]) => void;
+    onNudge?: (id: string, at: [number, number], whole?: boolean) => void;
     /** Called once, when the finger comes off, so the position is
      *  written to the database without a round trip per frame. */
-    onDropped?: (id: string, at: [number, number]) => void;
+    onDropped?: (id: string, at: [number, number], whole?: boolean) => void;
     taps?: Tap[];
     onTap?: (at: Tap) => void;
   },
@@ -278,9 +278,12 @@ export default function ParkMap(
     // only ever slides a rectangle; nothing can rotate it.
     let hold: {
       id: string; lng: number; lat: number;
-      at: [number, number]; last: [number, number];
+      at: [number, number]; last: [number, number]; whole: boolean;
     } | null = null;
-    const grab = (e: { point: maplibregl.Point; lngLat: maplibregl.LngLat; preventDefault: () => void }) => {
+    const grab = (e: {
+      point: maplibregl.Point; lngLat: maplibregl.LngLat;
+      originalEvent?: { shiftKey?: boolean }; preventDefault: () => void;
+    }) => {
       if (!live.current.arranging || !live.current.onNudge) return;
       const f = m.queryRenderedFeatures(e.point, { layers: ["home-fill"] })[0];
       if (!f) return;
@@ -296,6 +299,11 @@ export default function ParkMap(
       hold = {
         id: String(f.properties?.id ?? ""),
         lng: e.lngLat.lng, lat: e.lngLat.lat, at: mid, last: mid,
+        // Shift takes the whole row with it. Fifty one pads dragged one
+        // at a time is an evening; four rows dragged once each is a
+        // minute, and the rows are already straight and parallel -- what
+        // is usually wrong is where the whole row sits.
+        whole: Boolean(e.originalEvent?.shiftKey),
       };
       m.dragPan.disable();
       e.preventDefault();
@@ -307,13 +315,13 @@ export default function ParkMap(
         hold.at[1] + (e.lngLat.lat - hold.lat),
       ];
       hold.last = at;
-      live.current.onNudge(hold.id, at);
+      live.current.onNudge(hold.id, at, hold.whole);
     };
     const letGo = () => {
       if (!hold) return;
       // Written to the database once, when the finger comes off, rather
       // than on every frame of the drag.
-      live.current.onDropped?.(hold.id, hold.last);
+      live.current.onDropped?.(hold.id, hold.last, hold.whole);
       hold = null;
       m.dragPan.enable();
     };
