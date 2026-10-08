@@ -47,11 +47,17 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) < e;
   const [vn, vs, cn, cs] = RETREAT.rows;
   t("Lady Viola's even row runs 3124 down to 3100",
     vn.numbers[0] === "3124" && vn.numbers.at(-1) === "3100" && vn.numbers.length === 13);
-  t("its odd row starts at the site address and the office",
-    vs.numbers[0] === "1800" && vs.numbers[1] === "1808" && vs.numbers[2] === "3123");
-  t("and ends at 3101", vs.numbers.at(-1) === "3101" && vs.numbers.length === 14);
-  t("Lady Cheryl's even row runs 3122 down to 3100",
-    cn.numbers[0] === "3122" && cn.numbers.at(-1) === "3100" && cn.numbers.length === 12);
+  // 1808 is at the entrance on Lady Viola's odd side; 1800 is the first
+  // home round on Lady Cheryl's even side. Both are numbered off the road
+  // rather than off their row, which is why neither looks like its
+  // neighbours.
+  t("its odd row starts at the office",
+    vs.numbers[0] === "1808" && vs.numbers[1] === "3123");
+  t("and ends at 3101", vs.numbers.at(-1) === "3101" && vs.numbers.length === 13);
+  t("Lady Cheryl's even row starts at the site address",
+    cn.numbers[0] === "1800" && cn.numbers[1] === "3122");
+  t("and runs down to 3100",
+    cn.numbers.at(-1) === "3100" && cn.numbers.length === 13);
   t("and its odd row 3123 down to 3101",
     cs.numbers[0] === "3123" && cs.numbers.at(-1) === "3101" && cs.numbers.length === 12);
   t("two streets", streetsOf(RETREAT).length === 2);

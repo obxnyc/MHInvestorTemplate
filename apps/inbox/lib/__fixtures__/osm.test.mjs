@@ -73,8 +73,8 @@ const elements = [road("Lady Viola Drive", 0), road("Lady Cheryl Drive", -57)];
 let nextId = 1;
 // Thirteen north of Viola, fourteen south, twelve and twelve on Cheryl.
 for (let i = 0; i < 13; i++) elements.push(home(nextId++, 10 + i * 10.5, 15));
-for (let i = 0; i < 14; i++) elements.push(home(nextId++, 5 + i * 10.5, -15));
-for (let i = 0; i < 12; i++) elements.push(home(nextId++, 10 + i * 10.5, -42));
+for (let i = 0; i < 13; i++) elements.push(home(nextId++, 10 + i * 10.5, -15));
+for (let i = 0; i < 13; i++) elements.push(home(nextId++, 10 + i * 10.5, -42));
 for (let i = 0; i < 12; i++) elements.push(home(nextId++, 10 + i * 10.5, -72));
 // And a shed four hundred metres away that belongs to nobody here.
 elements.push(home(nextId++, 10, 300));
@@ -135,7 +135,7 @@ elements.push(home(nextId++, 10, 300));
   const cherylS = homes.filter((h) => h.street === "Lady Cheryl Dr" && h.side === "S");
   t("and the south row of Lady Cheryl has twelve", cherylS.length === 12);
   t("the two streets did not swap sides",
-    homes.filter((h) => h.street === "Lady Cheryl Dr").length === 24);
+    homes.filter((h) => h.street === "Lady Cheryl Dr").length === 25);
   t("no number is used twice on one street",
     new Set(homes.map((h) => h.id)).size === homes.length);
 }
@@ -257,7 +257,7 @@ elements.push(home(nextId++, 10, 300));
   // The last five buildings of Lady Viola's odd row, which is the east end
   // once the row is read from the entrance.
   const short = elements.filter((e) =>
-    !(e.tags?.building && e.id >= 23 && e.id <= 27));
+    !(e.tags?.building && e.id >= 22 && e.id <= 26));
   const { homes } = assign(RETREAT, buildingsOf(short), roadsOf(elements));
   t("a row the map is short of still has all its lots", homes.length === 51);
   const drawn = homes.filter((h) => h.drawn);
@@ -358,10 +358,10 @@ elements.push(home(nextId++, 10, 300));
 {
   // Gaps at both ends: two at the entrance, one at the loop.
   const short = elements.filter((e) =>
-    !(e.tags?.building && (e.id === 28 || e.id === 29 || e.id === 39)));
+    !(e.tags?.building && (e.id === 27 || e.id === 28 || e.id === 39)));
   const { homes } = assign(RETREAT, buildingsOf(short), roadsOf(short));
   t("a row short at both ends still has every lot",
-    homes.filter((h) => h.street === "Lady Cheryl Dr" && h.side === "N").length === 12);
+    homes.filter((h) => h.street === "Lady Cheryl Dr" && h.side === "N").length === 13);
   t("and the park still has fifty one", homes.length === 51);
 }
 

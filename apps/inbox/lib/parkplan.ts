@@ -107,10 +107,12 @@ export const RETREAT: Plan = {
   size: SINGLE_WIDE,
   rows: [
     { street: "Lady Viola Dr", side: "N", numbers: down(3124, 13) },
-    // 1800 is the park's own site address and 1808 the office, both at the
-    // entrance. They are not pads, but they are there, so they are drawn.
-    { street: "Lady Viola Dr", side: "S", numbers: ["1800", "1808", ...down(3123, 12)] },
-    { street: "Lady Cheryl Dr", side: "N", numbers: down(3122, 12) },
+    // 1808 is at the entrance on Lady Viola's odd side, and 1800 is the
+    // first home round on Lady Cheryl's even side -- the park's own site
+    // address. They are numbered off the road rather than off the row,
+    // which is why neither of them looks like its neighbours.
+    { street: "Lady Viola Dr", side: "S", numbers: ["1808", ...down(3123, 12)] },
+    { street: "Lady Cheryl Dr", side: "N", numbers: ["1800", ...down(3122, 12)] },
     { street: "Lady Cheryl Dr", side: "S", numbers: down(3123, 12) },
   ],
 };

@@ -174,7 +174,7 @@ const road = (id, name, off, from, to) => ({
 {
   const features = [];
   let id = 1;
-  const rows = [[13, 10, 15], [14, 5, -15], [12, 10, -42], [12, 10, -72]];
+  const rows = [[13, 10, 15], [13, 10, -15], [13, 10, -42], [12, 10, -72]];
   for (const [n, start, c] of rows) {
     for (let i = 0; i < n; i++) features.push(poly(id++, start + i * 10.5, c));
   }
