@@ -503,3 +503,108 @@ export function reachTo(
   out[out.length - 1] = out[0];
   return out;
 }
+
+/**
+ * A street, drawn from the park rather than from the tracing.
+ *
+ * The carriageway runs down the middle of its two rows, from a little
+ * before the first home to a little after the last. Drawing the traced
+ * geometry instead put a volunteer's wobble through the middle of a park
+ * whose rows are dead straight, and brought the arc at the east end with
+ * it, which reads as an oval where the ground is square.
+ */
+export function streetLine(
+  pads: Pad[], street: string, heading: number, over = 8,
+): number[][] {
+  const on = pads.filter((p) => p.street === street);
+  if (on.length < 2) return [];
+
+  const mid = (which: "first" | "last"): [number, number] | null => {
+    const ends = ["N", "S"].map((side) => {
+      const row = on.filter((p) => p.side === side);
+      if (!row.length) return null;
+      return centreOf(row[which === "first" ? 0 : row.length - 1].ring);
+    }).filter((x): x is [number, number] => Boolean(x));
+    if (!ends.length) return null;
+    return [
+      ends.reduce((a, p) => a + p[0], 0) / ends.length,
+      ends.reduce((a, p) => a + p[1], 0) / ends.length,
+    ];
+  };
+
+  const a = mid("first"), b = mid("last");
+  if (!a || !b) return [];
+  const per = degreesPerMetre(a[1]);
+  const t = (heading * Math.PI) / 180;
+  const push = (p: [number, number], by: number): number[] => [
+    p[0] + Math.sin(t) * by * per.lng,
+    p[1] + Math.cos(t) * by * per.lat,
+  ];
+  return [push(a, -over), push(b, over)];
+}
+
+/**
+ * The road across the back of the park.
+ *
+ * Lady Viola and Lady Cheryl are one road: it runs east behind 3100,
+ * turns, crosses, turns again and comes back as the other street. The map
+ * traces that turn as an arc and it reads as an oval; on the ground it is
+ * square, which is how a park with pads either side of it has to be built.
+ *
+ * So it is drawn from the park rather than from the tracing: out past the
+ * last home on each street, then straight across. Three segments, two
+ * corners, no arc.
+ */
+export function backRoad(
+  pads: Pad[], streets: string[], heading: number, clear = 15,
+): number[][][] {
+  if (streets.length < 2) return [];
+
+  const endOf = (street: string): [number, number] | null => {
+    const on = pads.filter((p) => p.street === street);
+    if (!on.length) return null;
+    // The far end of the street: the two rows' last pads, averaged, so
+    // the line sits on the carriageway and not on one side of it.
+    const sides = ["N", "S"].map((side) => {
+      const row = on.filter((p) => p.side === side);
+      return row.length ? centreOf(row[row.length - 1].ring) : null;
+    }).filter((x): x is [number, number] => Boolean(x));
+    if (!sides.length) return null;
+    return [
+      sides.reduce((a, p) => a + p[0], 0) / sides.length,
+      sides.reduce((a, p) => a + p[1], 0) / sides.length,
+    ];
+  };
+
+  const a = endOf(streets[0]);
+  const b = endOf(streets[streets.length - 1]);
+  if (!a || !b) return [];
+
+  // Pushed clear of the last home, so the road goes behind the pads
+  // rather than through them.
+  const per = degreesPerMetre(a[1]);
+  const t = (heading * Math.PI) / 180;
+  const out = (p: [number, number]): number[] => [
+    p[0] + Math.sin(t) * clear * per.lng,
+    p[1] + Math.cos(t) * clear * per.lat,
+  ];
+  const ao = out(a), bo = out(b);
+  return [[a, ao], [ao, bo], [bo, b]];
+}
+
+const centreOf = (ring: number[][]): [number, number] => {
+  const n = ring.length - 1;
+  return [
+    ring.slice(0, n).reduce((s, p) => s + p[0], 0) / n,
+    ring.slice(0, n).reduce((s, p) => s + p[1], 0) / n,
+  ];
+};
+
+/** The heading the rows were laid at, so anything drawn alongside them
+ *  can be squared to the same line. */
+export function headingOf(pads: Pad[]): number {
+  if (pads.length < 2) return 0;
+  const a = centreOf(pads[0].ring);
+  const b = centreOf(pads[pads.length - 1].ring);
+  return bearingOf(a, b);
+}

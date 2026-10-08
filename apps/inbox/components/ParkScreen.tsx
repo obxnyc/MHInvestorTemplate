@@ -7,7 +7,7 @@ import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing,
          type Shape, type Road } from "@/lib/osm";
-import { layRows, clipTo, reachTo, densify } from "@/lib/rows";
+import { layRows, reachTo, backRoad, streetLine } from "@/lib/rows";
 import { degreesPerMetre } from "@/lib/footprint";
 
 /**
@@ -184,44 +184,38 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // of the back of a verge: it wandered, it left a field of empty land
     // behind the loop, and every odd corner in it had to be worked around
     // rather than drawn.
+    // The road across the back, behind 3100 and 3101. The two streets are
+    // one road that turns at the east end; the map traces that turn as an
+    // arc, and on the ground it is square.
+    const streetOrder = [...new Set(base.rows.map((r) => r.street))];
+    const back = backRoad(pads, streetOrder, fitted.bearing);
+    // The carriageways, drawn down the middle of their own rows. Drawing
+    // the traced geometry instead put a volunteer's wobble through a park
+    // whose rows are dead straight, and brought the arc at the east end
+    // with it, which reads as an oval where the ground is square.
+    const ways = streetOrder
+      .map((st) => streetLine(pads, st, fitted.bearing))
+      .filter((line) => line.length >= 2);
+
     // Drawn round the homes AND the tarmac they stand on: the turning
     // circle at the east end reaches past the last home, and a box drawn
     // on the homes alone cut it off. Road points far from any home are
     // left out, so the streets running on past the park do not drag the
     // line out with them.
     const corners = pads.flatMap((p) => p.ring);
-    const tarmac = [...mine.map((r) => r.line), ...found.lanes]
-      .flatMap((line) => densify(line, 4))
-      .filter((q) => corners.some((c) =>
-        Math.abs(c[0] - q[0]) < 0.0005 && Math.abs(c[1] - q[1]) < 0.0004));
+    // Both carriageways and the road across the back, all of them drawn
+    // from the park itself, so every point of them belongs inside it.
+    const tarmac = [...ways, ...back].flat();
     const boundary = reachTo(orientedBox([...corners, ...tarmac], 8), frontage);
-    // Roads are trimmed to a slightly looser line than the one that gets
-    // drawn. The turning circle grazes the boundary, and trimming it to
-    // the exact line broke the run in two -- so only the longer half was
-    // kept and the loop stopped joining the two streets.
-    const upTo = reachTo(orientedBox([...corners, ...tarmac], 16), frontage);
-    const fence = boundary.length ? boundary : null;
 
-    // Every road with any part of it in the park, drawn as it is. The
-    // loop at the east end has no name of its own, so it never arrived
-    // with the named streets -- and clipping it first threw it away
-    // again, because a short loop segment with no vertex inside reads as
-    // nothing at all.
-    const lanes = upTo.length
-      ? found.lanes
-          .map((line) => clipTo(line, upTo))
-          .filter((line) => line.length > 1
-            && densify(line, 4).some((p) => inRing([p[0], p[1]], upTo)))
-      : found.lanes;
+    const fence = boundary.length ? boundary : null;
 
     remember(fitInside(fitted, boundary));
     setReal({
       homes: pads,
-      streets: mine.map((r) => ({
-        name: base.rows.find((row) => sameStreet(row.street, r.name))!.street,
-        line: clipTo(r.line, upTo),
-      })),
-      boundary, lanes,
+      streets: streetOrder.map((st, i) => ({ name: st, line: ways[i] ?? [] }))
+        .filter((st) => st.line.length >= 2),
+      boundary, lanes: [...ways, ...back],
       parcel: "square to the homes, out to Pamalee Dr",
     });
     setOsm({});
@@ -229,7 +223,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     setGave(JSON.stringify({
       roads: mine.map((x) => ({ name: x.name, line: x.line.map((p) => [r(p[0]), r(p[1])]) })),
       parcel: boundary.map((p) => [r(p[0]), r(p[1])]),
-      lanes: lanes.map((line) => line.map((p) => [r(p[0]), r(p[1])])),
+      lanes: [...ways, ...back].map((line) => line.map((p) => [r(p[0]), r(p[1])])),
       buildings: found.shapes.length,
     }));
     took.current = true;
