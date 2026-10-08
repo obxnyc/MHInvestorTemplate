@@ -442,7 +442,11 @@ export default function ParkMap(
       };
     });
 
-    const ring = real?.boundary?.length ? real.boundary : boundaryOf(plan);
+    // The county's line first. It is the only one of the three that is
+    // a statement about the deed rather than about where the drawing
+    // happens to have put the homes.
+    const ring = plan.fence?.length ? plan.fence
+      : real?.boundary?.length ? real.boundary : boundaryOf(plan);
     const world = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
 
     const set = (id: string, data: GeoJSON.GeoJSON) => {
@@ -659,7 +663,11 @@ export default function ParkMap(
   function frame() {
     const m = map.current;
     if (!m) return;
-    const ring = real?.boundary?.length ? real.boundary : boundaryOf(plan);
+    // The county's line first. It is the only one of the three that is
+    // a statement about the deed rather than about where the drawing
+    // happens to have put the homes.
+    const ring = plan.fence?.length ? plan.fence
+      : real?.boundary?.length ? real.boundary : boundaryOf(plan);
     // A park nobody has described has no homes, so no boundary either,
     // and empty bounds are not something to fit to. Look at the ground
     // it sits on instead.

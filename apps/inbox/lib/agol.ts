@@ -392,3 +392,91 @@ export function parcelLayers(
   return layers.filter((l) => /parcel|cama|land ?record/i.test(l.title)
     && !/buffer|vol_ag|agriculture|mineral/i.test(l.title));
 }
+
+/**
+ * A parcel, found by the number the county calls it.
+ *
+ * `parcelAt` asks "what is under this point", which needs you to know
+ * where the park is already. This asks "where is P139-50A", which is
+ * the question somebody has the answer to when they are looking at the
+ * tax card -- and the answer carries the deed line with it, so the
+ * property boundary comes from the county rather than from somebody
+ * tracing it with a mouse.
+ *
+ * The field holding the number has a different name in every county --
+ * PIN, PARCELID, GPIN, PIN_NUM -- so the layer is asked what its fields
+ * are rather than guessed at. Every candidate is tried, because a layer
+ * can carry several and only one of them is the one on the card.
+ */
+export async function pinFields(layerUrl: string): Promise<string[]> {
+  const meta = await json(`${layerUrl}?f=json`);
+  const fields = (meta?.fields ?? []) as { name?: string; type?: string }[];
+  const names = fields
+    .filter((f) => typeof f.name === "string")
+    .map((f) => String(f.name));
+  // Most likely first: a field actually called PIN beats one called
+  // PARCEL_ADDRESS that happens to contain the word parcel.
+  const score = (n: string) => {
+    const u = n.toUpperCase();
+    if (u === "PIN" || u === "GPIN" || u === "PARCELID" || u === "PARCEL_ID") return 0;
+    if (/^PIN|PIN$|PARCEL.?(ID|NO|NUM)/.test(u)) return 1;
+    if (/PIN|PARCEL|REID|TAXID/.test(u)) return 2;
+    return 99;
+  };
+  return names.filter((n) => score(n) < 99).sort((a, b) => score(a) - score(b)).slice(0, 6);
+}
+
+export async function parcelByPin(
+  layerUrl: string, pin: string, fields?: string[],
+): Promise<{ geometry: unknown; props: Record<string, unknown>; field: string } | null> {
+  const want = (fields?.length ? fields : await pinFields(layerUrl));
+  const clean = pin.trim().replace(/'/g, "''");
+  for (const f of want) {
+    // Case and spacing differ between the card and the table often
+    // enough that an exact match alone comes back empty and looks like
+    // the parcel not existing.
+    const where = encodeURIComponent(
+      `UPPER(REPLACE(${f}, ' ', '')) = '${clean.toUpperCase().replace(/\s+/g, "")}'`);
+    const q = `${layerUrl}/query?where=${where}`
+      + "&outFields=*&outSR=4326&returnGeometry=true&resultRecordCount=5&f=geojson";
+    const out = await json(q);
+    if (!out || out.type !== "FeatureCollection") continue;
+    const hit = ((out.features ?? []) as Record<string, unknown>[])[0];
+    if (hit?.geometry) {
+      return {
+        geometry: hit.geometry,
+        props: (hit.properties ?? {}) as Record<string, unknown>,
+        field: f,
+      };
+    }
+  }
+  return null;
+}
+
+/** The outer ring of whatever came back, as [lng, lat] pairs.
+ *
+ *  A parcel is a Polygon or, where the county has split it round a
+ *  right of way, a MultiPolygon. The biggest ring is the one somebody
+ *  means by "the property line"; the others are slivers and holes. */
+export function outerRing(geometry: unknown): number[][] {
+  const g = geometry as { type?: string; coordinates?: unknown } | null;
+  if (!g) return [];
+  const rings: number[][][] = [];
+  if (g.type === "Polygon") rings.push(...(g.coordinates as number[][][] ?? []));
+  if (g.type === "MultiPolygon") {
+    for (const poly of (g.coordinates as number[][][][] ?? [])) rings.push(...poly);
+  }
+  if (!rings.length) return [];
+
+  // By area, not by how many corners it has: a traced curve has more
+  // points than the lot it is a notch in.
+  const area = (r: number[][]) => {
+    let a = 0;
+    for (let i = 0; i < r.length - 1; i++) {
+      a += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1];
+    }
+    return Math.abs(a / 2);
+  };
+  return rings.reduce((best, r) => (area(r) > area(best) ? r : best), rings[0])
+    .map((p) => [Number(p[0]), Number(p[1])]);
+}
