@@ -34,6 +34,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [real, setReal] = useState<RealPark | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
   const [asking, setAsking] = useState(true);
+  const [copied, setCopied] = useState(false);
   const [osm, setOsm] = useState<{
     error?: string;
     fit?: Plan;
@@ -112,6 +113,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    * That is the whole difference: a picture laid over a map can be at the
    * wrong angle, and a thing taken out of the map cannot.
    */
+  // What the map actually handed over, kept so it can be copied out.
+  //
+  // Every round of this has been: ship it, look at a screenshot, guess.
+  // The streets and the boundary are a few kilobytes; pasted back once,
+  // they can be tested against here before anything ships, which is the
+  // difference between fixing this and guessing at it again.
+  const [gave, setGave] = useState<string | null>(null);
   const took = useRef(false);
   const onHarvest = useCallback((found: {
     shapes: Shape[]; roads: Road[];
@@ -172,6 +180,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       parcel: parcel ? "from the map" : null,
     });
     setOsm({});
+    const r = (v: number) => Number(v.toFixed(6));
+    setGave(JSON.stringify({
+      roads: mine.map((x) => ({ name: x.name, line: x.line.map((p) => [r(p[0]), r(p[1])]) })),
+      parcel: boundary.map((p) => [r(p[0]), r(p[1])]),
+      lanes: lanes.map((line) => line.map((p) => [r(p[0]), r(p[1])])),
+      buildings: found.shapes.length,
+    }));
     took.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remember]);
@@ -247,6 +262,18 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               because every home here is the same model.
             </>
           ) : osm?.error ?? "Drawn from the park's own layout."}
+          {gave ? (
+            <>
+              {" "}
+              <button type="button" className="aslink" onClick={() => {
+                void navigator.clipboard.writeText(gave).then(
+                  () => setCopied(true), () => setCopied(false),
+                );
+              }}>
+                {copied ? "copied — paste it to me" : "copy the map data"}
+              </button>
+            </>
+          ) : null}
         </p>
       )}
 
