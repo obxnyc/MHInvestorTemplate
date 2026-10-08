@@ -85,6 +85,23 @@ if (/\/pamalee\/i/.test(code.join("\n"))) {
   wrong.push("ParkScreen.tsx matches a road by name -- that belongs on the plan.");
 }
 
+// The browser's cached position must never outlive the park's own plan.
+// That cache was written by the fitting that runs on load, while the
+// screen still held the default park, so it held the DEFAULT park's
+// centre -- and applying it over a plan fetched from the database put a
+// park in Pasquotank back in Fayetteville on every single reload.
+if (!/localStorage\.setItem\(key, JSON\.stringify\(\{\s*\n\s*centre: mine\.centre/.test(screen)) {
+  wrong.push("ParkScreen.tsx: loading a park's plan must overwrite the "
+    + "browser's cached position, or a stale centre comes back on reload.");
+}
+const seed = screen.match(/const saved = localStorage\.getItem\(key\);[\s\S]*?\}, \[([^\]]*)\]\);/);
+if (!seed) {
+  wrong.push("ParkScreen.tsx: could not find the cached-position effect.");
+} else if (seed[1].replace(/\s/g, "") !== "key") {
+  wrong.push("ParkScreen.tsx: the cached position must be seeded once, on the "
+    + `way in. Re-running it puts the stale centre back. Deps are [${seed[1].trim()}].`);
+}
+
 const map = readFileSync(join(root, "components/ParkMap.tsx"), "utf8");
 if (!/if \(!live\.current\.onHarvest\) return;/.test(map)) {
   wrong.push("ParkMap.tsx: a harvest attempt with nobody listening must not "
