@@ -617,13 +617,20 @@ export default function ParkMap(
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
-    const what = `${real?.boundary?.length ? "real" : "drawn"}:${real?.homes?.length ?? 0}`;
+    // Where as well as what. Keyed on the count alone, a park that moved
+    // from Fayetteville to Elizabeth City kept the same key and the map
+    // never re-framed -- so a correctly re-described park went on
+    // showing three hundred miles away, which reads as the describing
+    // having done nothing.
+    const where = plan.centre.map((n) => n.toFixed(5)).join(",");
+    const what = `${real?.boundary?.length ? "real" : "drawn"}`
+      + `:${real?.homes?.length ?? 0}:${where}`;
     if (framed.current === what) return;
     framed.current = what;
     const id = requestAnimationFrame(() => frame());
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, real]);
+  }, [ready, real, plan.centre]);
 
   /**
    * The park put back in frame when the card beside it opens or shuts.

@@ -290,6 +290,18 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   /** A park described for the first time, or re-described. */
   const describeIt = useCallback(async (next: Plan) => {
     setError(null);
+
+    // The park as harvested is the OLD park. The map reads the tiles
+    // once and remembers that it has, so re-describing a property left
+    // the previous park's pads on screen -- Cross Creek's numbers, over
+    // Cross Creek's ground, under a sentence naming the new park's
+    // streets. Throwing it away makes the map read the tiles again,
+    // where the new plan now says to look.
+    setReal(null);
+    setOsm(null);
+    setGave(null);
+    took.current = false;
+
     setPlan(next);
     planNow.current = next;
     const res = await fetch(`/api/properties/${propertyId}/plan`, {
@@ -1205,12 +1217,17 @@ function Describe(
   }
 
   function lay() {
+    // No location, no layout. Falling back to the one park written into
+    // the code put a correctly described park in Fayetteville, three
+    // hundred miles from the ground it was describing, and said nothing
+    // -- which is indistinguishable from the form not working.
+    if (!at) return;
     const run = (n: number, from: number) =>
       Array.from({ length: Math.max(0, n) }, (_, i) => String(from + i));
     const name = named && street.trim() ? street.trim() : "The drive";
     onLay({
       ...RETREAT,
-      centre: at ?? RETREAT.centre,
+      centre: at,
       // Rows running roughly north, which is what a strip park off a
       // road usually is. It is a starting point for the Turn slider,
       // not a measurement.
@@ -1311,7 +1328,15 @@ function Describe(
           nothing here is saved against a home until you say so.
         </p>
 
-        <button type="submit" className="btn pri">Lay it out</button>
+        <button type="submit" className="btn pri" disabled={!at}>
+          Lay it out
+        </button>
+        {!at && (
+          <p className="dim">
+            Waiting on where the park is. Typing the address is not enough —
+            pick it from the list, or paste coordinates.
+          </p>
+        )}
       </form>
     </div>
   );
