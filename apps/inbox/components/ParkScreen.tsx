@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
-import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
+import { RETREAT, filedAs, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
@@ -232,7 +232,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         const res = await fetch(`/api/properties/${propertyId}/plan`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "place", label: `${h.label} ${h.street}`, lng: c[0], lat: c[1],
+            action: "place", label: h.filed, lng: c[0], lat: c[1],
           }),
         }).catch(() => null);
         if (!res?.ok) missed += 1;
@@ -362,7 +362,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
     remember(fitInside(fitted, boundary));
     setReal({
-      homes: pads,
+      homes: pads.map((h) => ({ ...h, filed: filedAs(base, h.label, h.street) })),
       streets: streetOrder.map((st, i) => ({ name: st, line: ways[i] ?? [] }))
         .filter((st) => st.line.length >= 2),
       boundary, lanes: back,
@@ -402,7 +402,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     return {
       ...real,
       homes: real.homes.map((h) => {
-        const at = onFile.get(norm(`${h.label} ${h.street}`))
+        const at = onFile.get(norm(h.filed))
           ?? onFile.get(norm(h.label)) ?? moved[h.id];
         if (!at) return h;
         // The whole pad slid so its middle lands on the saved point.
@@ -421,7 +421,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const placed = useMemo<Placed[]>(() => (
     real
       ? real.homes.map((h) => ({
-          id: h.id, label: h.label, street: h.street,
+          id: h.id, label: h.label, filed: h.filed, street: h.street,
           side: "N" as const, lat: 0, lng: 0, bearing: 0,
         }))
       : layOut(plan)
@@ -481,7 +481,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "seed",
-          labels: real.homes.map((h) => `${h.label} ${h.street}`),
+          labels: real.homes.map((h) => h.filed),
         }),
       }).catch(() => null);
 
@@ -493,7 +493,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         const res = await fetch(`/api/properties/${propertyId}/plan`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "place", label: `${h.label} ${h.street}`, lng: at[0], lat: at[1],
+            action: "place", label: h.filed, lng: at[0], lat: at[1],
           }),
         }).catch(() => null);
         if (res?.ok) saved += 1;
@@ -553,7 +553,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     for (const h of real.homes) {
       const at = moved[h.id];
       if (!at) continue;
-      const label = `${h.label} ${h.street}`;
+      const label = h.filed;
       const have = onFile.get(norm(label));
       if (have && same(have, at)) continue;
       todo.push({ label, at });
@@ -590,7 +590,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     const res = await fetch(`/api/properties/${propertyId}/plan`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action: "seed", labels: missing.map((h) => `${h.label} ${h.street}`),
+        action: "seed", labels: missing.map((h) => h.filed),
       }),
     });
     const out = await res.json().catch(() => ({}));
@@ -605,7 +605,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       const r = await fetch(`/api/properties/${propertyId}/plan`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "place", label: `${h.label} ${h.street}`, lng: c[0], lat: c[1],
+          action: "place", label: h.filed, lng: c[0], lat: c[1],
         }),
       }).catch(() => null);
       if (r?.ok) saved += 1; else missed += 1;
@@ -793,6 +793,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             <Slider label="Turn" unit="°" min={0} max={359} step={1}
                     value={plan.bearing}
                     onChange={(v) => remember({ ...plan, bearing: v })} />
+            {/* Chevroned parks. Reading the angle off an aerial gets it
+                within ten degrees; the last ten are quicker to drag than
+                to describe. */}
+            <Slider label="Angle of homes" unit="°" min={-60} max={60} step={1}
+                    value={plan.homeTurn ?? 0}
+                    onChange={(v) => remember({ ...plan, homeTurn: v })} />
             <Slider label="Along the row" unit=" m" min={6} max={20} step={0.25}
                     value={plan.padSpacing}
                     onChange={(v) => remember({ ...plan, padSpacing: v })} />
@@ -831,19 +837,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           are theirs -- which is exactly how a wrong lot gets an owner
           recorded against it. */}
       {described === false && !fitting && (
-        <div className="parkseed">
-          <p>
-            <strong>This park has no layout of its own yet.</strong> What is
-            drawn is The Retreat at Cross Creek&rsquo;s — its streets, its
-            numbers and its angle — because that is the one written into the
-            code. Nothing here is this park&rsquo;s until somebody describes
-            it.
-          </p>
-          <p className="dim">
-            Tell me the streets, which side the even numbers are, and the
-            house numbers in order from a named end, and I will lay it out.
-          </p>
-        </div>
+        <Describe onLay={(next) => { remember(next); setDescribed(true); }} />
       )}
 
       {unanswered.length > 0 && !missing.length && !fitting && (
@@ -1039,5 +1033,155 @@ function Slider(
              onChange={(e) => onChange(Number(e.target.value))} />
       <output>{Math.round(value * 10) / 10}{unit}</output>
     </label>
+  );
+}
+
+/**
+ * A park, described from nothing.
+ *
+ * Six fields, because six is what it takes and no more. Everything else
+ * about a park -- where exactly each home sits, which pads are empty,
+ * what is actually on them -- is quicker to drag and type than to
+ * specify, and this form exists to get the block onto the right piece
+ * of ground pointing the right way so that dragging is possible at all.
+ *
+ * The two numbering schemes are here because they are the difference
+ * between a lot being filed as "3124 Lady Viola Dr" and as "1140
+ * Northside Rd Lot 1", and nothing can guess which a park uses. A park
+ * whose drive has no name -- which is most of them -- is the second.
+ */
+function Describe({ onLay }: { onLay: (plan: Plan) => void }) {
+  const [address, setAddress] = useState("");
+  const [at, setAt] = useState<[number, number] | null>(null);
+  const [hits, setHits] = useState<{ id: string; label: string }[]>([]);
+  const [named, setNamed] = useState(false);
+  const [street, setStreet] = useState("");
+  const [left, setLeft] = useState(20);
+  const [right, setRight] = useState(20);
+  const [first, setFirst] = useState(1);
+  const [turn, setTurn] = useState(30);
+  const [looking, setLooking] = useState(false);
+
+  // The address lookup is already proxied, so the key stays on the
+  // server. Without it this still works -- the block lands near nothing
+  // and gets dragged -- which is worse but not broken.
+  async function find(q: string) {
+    setLooking(true);
+    try {
+      const res = await fetch(`/api/places?q=${encodeURIComponent(q)}`);
+      const out = await res.json().catch(() => ({}));
+      setHits((out.suggestions ?? []).slice(0, 5));
+    } catch { setHits([]); }
+    setLooking(false);
+  }
+
+  async function pin(id: string, text: string) {
+    setAddress(text);
+    setHits([]);
+    try {
+      const res = await fetch(`/api/places?id=${encodeURIComponent(id)}`);
+      const out = await res.json().catch(() => ({}));
+      if (out.lat != null && out.lng != null) {
+        setAt([Number(out.lng), Number(out.lat)]);
+        if (out.address) setAddress(String(out.address));
+      }
+    } catch { /* dragging still works */ }
+  }
+
+  function lay() {
+    const run = (n: number, from: number) =>
+      Array.from({ length: Math.max(0, n) }, (_, i) => String(from + i));
+    const name = named && street.trim() ? street.trim() : "The drive";
+    onLay({
+      ...RETREAT,
+      centre: at ?? RETREAT.centre,
+      // Rows running roughly north, which is what a strip park off a
+      // road usually is. It is a starting point for the Turn slider,
+      // not a measurement.
+      bearing: 8,
+      homeTurn: turn,
+      padSpacing: 14,
+      pairGap: 34,
+      streetGap: 60,
+      naming: named ? "street" : "lot",
+      address: named ? undefined : address.trim() || undefined,
+      countFrom: "west",
+      rows: [
+        { street: name, side: "N", numbers: run(left, first) },
+        { street: name, side: "S", numbers: run(right, first + left) },
+      ],
+    });
+  }
+
+  return (
+    <div className="parkseed">
+      <p>
+        <strong>This park has not been described yet.</strong> What is drawn
+        below belongs to another park. Say roughly what this one is and I
+        will lay it out — then drag the homes where they really are.
+      </p>
+
+      <form className="rowform" onSubmit={(e) => { e.preventDefault(); lay(); }}>
+        <label>The park&rsquo;s address
+          <input value={address} placeholder="1140 Northside Rd, Elizabeth City NC"
+                 onChange={(e) => {
+                   setAddress(e.target.value);
+                   if (e.target.value.trim().length > 6) void find(e.target.value);
+                 }} />
+        </label>
+        {looking && <p className="dim">Looking…</p>}
+        {hits.length > 0 && (
+          <ul className="ownerhits" style={{ position: "static" }}>
+            {hits.map((h) => (
+              <li key={h.id}>
+                <button type="button" onClick={() => void pin(h.id, h.label)}>
+                  {h.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="dim">
+          {at ? "Found it — the block will land there." :
+            "Pick it from the list so the block lands in the right place. "
+            + "Without it you can still drag the whole block onto the park."}
+        </p>
+
+        <label className="check">
+          <input type="checkbox" checked={named}
+                 onChange={(e) => setNamed(e.target.checked)} />
+          The drive inside the park has a street name
+        </label>
+        {named ? (
+          <label>Its name
+            <input value={street} placeholder="Lady Viola Dr"
+                   onChange={(e) => setStreet(e.target.value)} />
+          </label>
+        ) : (
+          <p className="dim">
+            So a lot is filed as{" "}
+            <strong>{(address.trim() || "the address")} Lot {first}</strong>.
+          </p>
+        )}
+
+        <div className="three">
+          <label>Lots one side
+            <input inputMode="numeric" value={left}
+                   onChange={(e) => setLeft(Number(e.target.value) || 0)} /></label>
+          <label>Lots the other
+            <input inputMode="numeric" value={right}
+                   onChange={(e) => setRight(Number(e.target.value) || 0)} /></label>
+          <label>First number
+            <input inputMode="numeric" value={first}
+                   onChange={(e) => setFirst(Number(e.target.value) || 1)} /></label>
+        </div>
+        <p className="dim">
+          Rough is fine. Lots can be added and renumbered afterwards, and
+          nothing here is saved against a home until you say so.
+        </p>
+
+        <button type="submit" className="btn pri">Lay it out</button>
+      </form>
+    </div>
   );
 }

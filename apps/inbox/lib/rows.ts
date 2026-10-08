@@ -170,7 +170,9 @@ export function layRows(
     const mk = (label: string, at: number) => {
       const w = walk(r.line, at);
       const centre = padAt(w.point, r.heading, r.row.side, r.offset);
-      const away = awayFrom(r.heading, r.row.side);
+      // Turned off square where the park is chevroned, the same amount
+      // on every home so they stay parallel.
+      const away = (awayFrom(r.heading, r.row.side) + (plan.homeTurn ?? 0) + 360) % 360;
       return {
         id: `${r.row.street}|${label}`, label,
         street: r.row.street, side: r.row.side,

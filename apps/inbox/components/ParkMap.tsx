@@ -32,6 +32,12 @@ export type LotFacts = Record<string, LotFact>;
 export type RealPark = {
   homes: {
     id: string; label: string; street: string; ring: number[][];
+    /** What this lot is filed under in the database. Built once, where
+     *  the park is built, because eight call sites each rebuilding it
+     *  from label and street is seven chances to drift -- which has
+     *  already cost an hour here, when a drag saved against "3124" and
+     *  the lot was on file as "3124 Lady Viola Dr". */
+    filed: string;
     /** The road end of the pad, where the managed badge sits. */
     dot?: [number, number];
     drawn?: boolean;

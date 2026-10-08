@@ -67,12 +67,72 @@ export type Plan = {
    *  entrance and 3124 at the loop, exactly reversed, on all four rows at
    *  once. */
   countFrom?: "west" | "east";
+  /**
+   * How a lot here is named.
+   *
+   * Two parks, two schemes, and the difference is not cosmetic -- it is
+   * what the lot is filed under and what has to match when the map and
+   * the database try to recognise each other.
+   *
+   *   "street"  a house number on a named street. Cross Creek's lots are
+   *             "3124 Lady Viola Dr", and the street is a real road the
+   *             map knows by name.
+   *   "lot"     a number within a park that has one address. Northside's
+   *             are "1140 Northside Rd Lot 1". The drive inside the park
+   *             has no name at all, on a map or on an envelope, so there
+   *             is no street for a row to hang on and the row's `street`
+   *             is only a grouping.
+   *
+   * Defaults to "street", because that is what every park described
+   * before this field existed was.
+   */
+  naming?: "street" | "lot";
+  /** The park's own address, when the lots are numbered within it.
+   *  "1140 Northside Rd" -- so a lot is filed as that plus "Lot 1". */
+  address?: string;
+  /**
+   * How far the homes are turned from square to their row, in degrees.
+   *
+   * Cross Creek's homes sit square to the street -- the long axis runs
+   * away from the road -- and nothing needed to say so. Northside's do
+   * not: they are chevroned along a drive, every one at the same angle,
+   * which is how a long home fits on a narrow strip with a car beside
+   * it. Without this the park cannot be drawn at all, only approximated
+   * by a grid that is wrong in a way a picture shows instantly.
+   *
+   * Positive turns them clockwise. Zero, and absent, mean square, so
+   * every park described before this existed is unchanged.
+   *
+   * One number for the park rather than one per row, because the homes
+   * stay parallel to each other whatever the angle -- rungs on a ladder.
+   */
+  homeTurn?: number;
   rows: PlanRow[];
 };
+
+/**
+ * What a lot is filed under.
+ *
+ * One function, because this string is built in eight places -- seeding
+ * the lots, saving a dragged position, matching a unit to a pad, the
+ * sync, the tally -- and eight copies of a rule is seven chances for one
+ * of them to drift and quietly stop matching. That has already cost an
+ * hour here once, when a drag saved against "3124" and the lot was on
+ * file as "3124 Lady Viola Dr".
+ */
+export function filedAs(plan: Plan, label: string, street: string): string {
+  if (plan.naming === "lot") {
+    const at = (plan.address ?? "").trim();
+    return at ? `${at} Lot ${label}` : `Lot ${label}`;
+  }
+  return `${label} ${street}`.trim();
+}
 
 export type Placed = {
   id: string;
   label: string;
+  /** What this lot is filed under. Built by `filedAs`, in one place. */
+  filed: string;
   street: string;
   side: Side;
   lat: number;
@@ -167,12 +227,13 @@ export function layOut(plan: Plan): Placed[] {
       out.push({
         id: `${row.street}|${num}`,
         label: num,
+        filed: filedAs(plan, num, row.street),
         street: row.street,
         side: row.side,
         lat, lng,
-        // Square to the street: a home's long axis runs away from the road,
-        // not along it.
-        bearing: (plan.bearing + 90) % 360,
+        // Square to the street unless the park says otherwise: a home's
+        // long axis runs away from the road, not along it.
+        bearing: (plan.bearing + 90 + (plan.homeTurn ?? 0) + 360) % 360,
       });
     });
   }
