@@ -15,6 +15,10 @@ type Sale = {
   // person reads it, here and on an owner statement. Renaming the column
   // is a migration that buys nothing; renaming it on screen is the whole
   // of what matters.
+  /** The owner carries their own insurance, so there is no warranty fee
+   *  to charge. Not the same as the fee being blank, which means nobody
+   *  has said yet. */
+  owner_insures?: boolean | null;
   lot_rent_cents?: number | null; management_cents?: number | null;
   warranty_cents?: number | null; tenant_rent_cents?: number | null;
   pet_fee_cents?: number | null; late_fee_cents?: number | null;
@@ -30,6 +34,23 @@ type Meter = {
 type Shed = {
   id: string; label: string | null; size: string | null;
   monthly_cents: number; started_on: string;
+};
+/** The last sale recorded in this park, offered as a starting point. */
+type LastAny = {
+  id: string; sold_on: string; price_cents: number; down_cents: number;
+  financed: boolean; monthly_cents: number | null; rate_bps: number | null;
+  term_months: number | null;
+  lot_rent_cents: number | null; management_cents: number | null;
+  warranty_cents: number | null; tenant_rent_cents: number | null;
+  pet_fee_cents: number | null; late_fee_cents: number | null;
+  units: { label: string } | null;
+  owners: { id: string; name: string } | null;
+};
+/** Something we paid for on this home, and whose cheque it comes off. */
+type Spend = {
+  id: string; sale_id: string | null; spent_on: string; what: string;
+  amount_cents: number; from_owner: boolean; bills_on: string | null;
+  note: string | null;
 };
 
 const KIND: Record<string, string> = {
@@ -74,6 +95,10 @@ export default function LotCard(
   const [papers, setPapers] = useState<Paper[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [sheds, setSheds] = useState<Shed[]>([]);
+  const [spends, setSpends] = useState<Spend[]>([]);
+  /** Whether 034 has been run, so the card can say what is missing. */
+  const [spend, setSpend] = useState(true);
+  const [lastAny, setLastAny] = useState<LastAny | null>(null);
   const [kind, setKind] = useState<string>("none");
   const [manage, setManage] = useState(false);
   /** On a home we still own: inventory, a letting, or not a home. */
@@ -104,6 +129,9 @@ export default function LotCard(
     setPapers(out.papers ?? []);
     setMeters(out.meters ?? []);
     setSheds(out.storage ?? []);
+    setSpends(out.expenses ?? []);
+    setSpend(out.spend !== false);
+    setLastAny(out.lastAny ?? null);
     setKind(out.unit?.kind ?? "none");
     setManage(Boolean(out.unit?.manage));
     setUse(out.unit?.use ?? "to_sell");
@@ -254,7 +282,7 @@ export default function LotCard(
             </button>
           </>
         ) : (
-          <SaleForm owners={owners} memory={memory} busy={busy}
+          <SaleForm owners={owners} memory={memory} lastAny={lastAny} busy={busy}
                     onOwner={(o) => { setOwnerId(o); void load(o); }}
                     ownerId={ownerId}
                     onCancel={() => setSelling(false)}
@@ -283,6 +311,29 @@ export default function LotCard(
           <MoneyForm sale={live} busy={busy} onSave={(p) => post({ action: "money", ...p })} />
         </section>
       )}
+
+      {/* What we have spent on the home, and what that leaves the owner.
+          This is the whole arrangement: the tenant's rent comes to us,
+          everything the owner owes comes out of it, what we have paid
+          for comes out of it, and the remainder is theirs. Without the
+          expenses the figure at the bottom is fiction. */}
+      {live && (
+        <section className="lotbit">
+          <h3>What we have spent</h3>
+          <Spending
+            spends={spends} live={Boolean(live)} busy={busy || !spend}
+            onAdd={(p) => post({ action: "spend", ...p })}
+            onDrop={(spendId) => post({ action: "unspend", spendId })} />
+          {!spend && (
+            <p className="parkhint">
+              Migration 034 hasn&rsquo;t been run, so there is nowhere to
+              record this yet.
+            </p>
+          )}
+        </section>
+      )}
+
+      {live && <Settles sale={live} spends={spends} />}
 
       {/* The paper behind the figures. */}
       {live && (
@@ -394,8 +445,10 @@ function MoneyForm(
 ) {
   const d = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2));
   const [saved, setSaved] = useState(false);
+  const [insures, setInsures] = useState(Boolean(sale.owner_insures));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => { setInsures(Boolean(sale.owner_insures)); }, [sale.owner_insures]);
 
   return (
     <form className="saleform" onSubmit={async (e) => {
@@ -403,7 +456,8 @@ function MoneyForm(
       const f = new FormData(e.currentTarget);
       const ok = await onSave({
         lotRent: f.get("lotRent"), management: f.get("management"),
-        warranty: f.get("warranty"), tenantRent: f.get("tenantRent"),
+        warranty: insures ? "" : f.get("warranty"), ownerInsures: insures,
+        tenantRent: f.get("tenantRent"),
         petFee: f.get("petFee"), lateFee: f.get("lateFee"),
       });
       if (ok) {
@@ -412,11 +466,27 @@ function MoneyForm(
       }
     }}>
       <p className="memory">The owner pays the park</p>
+      {sale.financed && sale.monthly_cents ? (
+        <p className="dim">
+          Mortgage {money(sale.monthly_cents)} a month, from the note above.
+        </p>
+      ) : null}
       <div className="three">
-        <label>Lot rent<input name="lotRent" inputMode="decimal" defaultValue={d(sale.lot_rent_cents)} /></label>
+        <label>Lot fee<input name="lotRent" inputMode="decimal" defaultValue={d(sale.lot_rent_cents)} /></label>
         <label>Consultancy<input name="management" inputMode="decimal" defaultValue={d(sale.management_cents)} /></label>
-        <label>Warranty<input name="warranty" inputMode="decimal" defaultValue={d(sale.warranty_cents)} /></label>
+        {!insures && (
+          <label>Warranty<input name="warranty" inputMode="decimal"
+                                defaultValue={d(sale.warranty_cents)} /></label>
+        )}
       </div>
+      {/* Their own insurance is an answer, not a blank. A warranty fee
+          left empty could mean either, and on a statement those are not
+          the same thing. */}
+      <label className="check">
+        <input type="checkbox" name="ownerInsures" checked={insures}
+               onChange={(e) => setInsures(e.target.checked)} />
+        They carry their own insurance
+      </label>
       <p className="memory">The tenant pays</p>
       <div className="three">
         <label>Rent<input name="tenantRent" inputMode="decimal" defaultValue={d(sale.tenant_rent_cents)} /></label>
@@ -482,6 +552,122 @@ function RentForm(
         <button type="submit" className="btn pri" disabled={busy}>Save the rent</button>
       </div>
     </form>
+  );
+}
+
+/**
+ * What we have paid for on this home.
+ *
+ * We front the cost and take it off what we send the owner, so each one
+ * is a line on their statement and has to be in words they will
+ * recognise -- "Water heater", not a job number.
+ *
+ * Not everything is theirs. A repair covered by the warranty they are
+ * paying us for is ours, and so is damage we caused, so the tick is
+ * asked separately rather than assumed from the fact that we paid it.
+ */
+function Spending(
+  { spends, live, busy, onAdd, onDrop }:
+  {
+    spends: Spend[]; live: boolean; busy: boolean;
+    onAdd: (p: Record<string, unknown>) => Promise<boolean>;
+    onDrop: (id: string) => Promise<boolean>;
+  },
+) {
+  const [mine, setMine] = useState(true);
+  return (
+    <>
+      {spends.length > 0 && (
+        <ul className="lotlist">
+          {spends.map((sp) => (
+            <li key={sp.id}>
+              <strong>{money(sp.amount_cents)}</strong> {sp.what}
+              <span className="dim"> · {sp.spent_on}</span>
+              {!sp.from_owner && <span className="dim"> · ours, not deducted</span>}
+              <button type="button" className="aslink" disabled={busy}
+                      onClick={() => onDrop(sp.id)}>
+                remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="rowform" onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        const form = e.currentTarget;
+        const ok = await onAdd({
+          what: f.get("what"), amount: f.get("amount"),
+          on: f.get("on"), fromOwner: mine,
+        });
+        if (ok) { form.reset(); setMine(true); }
+      }}>
+        <div className="three">
+          <label>What<input name="what" placeholder="Water heater" required /></label>
+          <label>Cost<input name="amount" inputMode="decimal" placeholder="485" required /></label>
+          <label>When<input name="on" type="date" /></label>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={mine} disabled={!live}
+                 onChange={(e) => setMine(e.target.checked)} />
+          Take it off the owner
+        </label>
+        <button type="submit" className="btn" disabled={busy}>Record what we spent</button>
+      </form>
+    </>
+  );
+}
+
+/**
+ * What the owner is actually owed this month.
+ *
+ * The arrangement written out: the tenant's rent comes to us, the
+ * mortgage, the lot fee, the consultancy fee and the warranty come out
+ * of it, what we have spent comes out of it, and what is left is sent
+ * on. It is the only figure on the card nobody can work out in their
+ * head, and the one an owner will ring about.
+ *
+ * On the charges, not on receipts. Nothing here knows whether October's
+ * rent arrived, so the line says so rather than letting a number that
+ * assumes it go out looking like a fact.
+ */
+function Settles({ sale, spends }: { sale: Sale; spends: Spend[] }) {
+  const n = (v: number | null | undefined) => v ?? 0;
+  const inAll = n(sale.tenant_rent_cents);
+  const owes = n(sale.monthly_cents) + n(sale.lot_rent_cents)
+             + n(sale.management_cents) + n(sale.warranty_cents);
+  const paid = spends.filter((s) => s.from_owner)
+                     .reduce((t, s) => t + s.amount_cents, 0);
+  const net = inAll - owes - paid;
+  if (!inAll && !owes && !paid) return null;
+
+  return (
+    <section className="lotbit">
+      <h3>What we send them</h3>
+      <dl className="lotfacts">
+        <dt>Rent in</dt><dd>{money(inAll)}</dd>
+        <dt>They owe</dt>
+        <dd>
+          {money(owes)}
+          <span className="dim">
+            {" "}
+            {[
+              sale.financed && sale.monthly_cents ? "mortgage" : null,
+              sale.lot_rent_cents ? "lot fee" : null,
+              sale.management_cents ? "consultancy" : null,
+              sale.warranty_cents ? "warranty" : null,
+            ].filter(Boolean).join(" + ") || "nothing recorded"}
+          </span>
+        </dd>
+        <dt>We spent</dt><dd>{money(paid)}</dd>
+        <dt>Net to them</dt>
+        <dd><strong className={net < 0 ? "parkbad" : "parkok"}>{money(net)}</strong></dd>
+      </dl>
+      <p className="dim">
+        On the agreed charges, not on what has actually come in — nothing
+        here knows yet whether the rent arrived.
+      </p>
+    </section>
   );
 }
 
@@ -556,17 +742,35 @@ function Papers(
  *  retyping them is how a rate ends up different on one lot for no reason
  *  anybody can explain two years later. */
 function SaleForm(
-  { owners, memory, busy, ownerId, onOwner, onCancel, onSave }:
+  { owners, memory, lastAny, busy, ownerId, onOwner, onCancel, onSave }:
   {
     owners: Owner[]; busy: boolean; ownerId: string;
     memory: { price_cents: number; down_cents: number; financed: boolean;
               monthly_cents: number | null; rate_bps: number | null;
               term_months: number | null } | null;
+    /** The last sale recorded in this park, whoever bought it. */
+    lastAny: LastAny | null;
     onOwner: (id: string) => void;
     onCancel: () => void;
     onSave: (p: Record<string, unknown>) => Promise<boolean>;
   },
 ) {
+  /**
+   * Terms recalled from an earlier sale.
+   *
+   * Ten homes sold on the same terms is the same form ten times, and the
+   * buyer memory only helps when it is the same buyer. This is the deal
+   * rather than the person: price, note and the monthly charges, with
+   * the buyer and the date left blank, because those are the two things
+   * that are never the same twice.
+   *
+   * The form is uncontrolled, so recalling remounts it through `key`
+   * rather than reaching into the DOM to set values.
+   */
+  const [recall, setRecall] = useState<LastAny | null>(null);
+  const from = recall ?? null;
+  const was = memory;
+
   const [financed, setFinanced] = useState(memory?.financed ?? true);
   const [adding, setAdding] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -584,7 +788,7 @@ function SaleForm(
   }
 
   return (
-    <form className="saleform" onSubmit={async (e) => {
+    <form className="saleform" key={recall?.id ?? "blank"} onSubmit={async (e) => {
       e.preventDefault();
       const f = new FormData(e.currentTarget);
       await onSave({
@@ -594,8 +798,39 @@ function SaleForm(
         termMonths: f.get("termMonths"), firstDueOn: f.get("firstDueOn"),
         homeYear: f.get("homeYear"), homeMake: f.get("homeMake"),
         homeSerial: f.get("homeSerial"), note: f.get("note"),
+        // The monthly charges come over with the terms, so ten identical
+        // homes do not need the charges typed ten times either.
+        lotRent: f.get("lotRent"), management: f.get("management"),
+        warranty: f.get("warranty"), tenantRent: f.get("tenantRent"),
+        petFee: f.get("petFee"), lateFee: f.get("lateFee"),
       });
     }}>
+      {lastAny && !recall && (
+        <div className="recall">
+          <p>
+            Last sale here: <strong>{lastAny.units?.label ?? "another lot"}</strong>
+            {" — "}{money(lastAny.price_cents)}
+            {lastAny.financed && lastAny.monthly_cents
+              ? `, ${money(lastAny.monthly_cents)} a month over ${lastAny.term_months} months`
+              : ", paid outright"}.
+          </p>
+          <button type="button" className="btn" onClick={() => {
+            setRecall(lastAny);
+            setFinanced(Boolean(lastAny.financed));
+          }}>
+            Same terms as that one
+          </button>
+        </div>
+      )}
+      {recall && (
+        <p className="memory">
+          Terms copied from {recall.units?.label ?? "the last sale"}. The buyer
+          and the date are still yours to fill in.{" "}
+          <button type="button" className="aslink" onClick={() => setRecall(null)}>
+            start blank instead
+          </button>
+        </p>
+      )}
       {problem && <p className="err">{problem}</p>}
       <label>Who bought it
         <select name="ownerId" required value={ownerId}
@@ -630,9 +865,9 @@ function SaleForm(
       <div className="three">
         <label>Sold on<input name="soldOn" type="date" /></label>
         <label>Price<input name="price" inputMode="decimal" required
-                           defaultValue={d(memory?.price_cents)} /></label>
+                           defaultValue={d(from?.price_cents ?? was?.price_cents)} /></label>
         <label>Down<input name="down" inputMode="decimal"
-                          defaultValue={d(memory?.down_cents)} /></label>
+                          defaultValue={d(from?.down_cents ?? was?.down_cents)} /></label>
       </div>
 
       <label className="check">
@@ -643,15 +878,40 @@ function SaleForm(
         <>
           <div className="three">
             <label>Monthly<input name="monthly" inputMode="decimal"
-                                 defaultValue={d(memory?.monthly_cents)} /></label>
+                                 defaultValue={d(from?.monthly_cents ?? was?.monthly_cents)} /></label>
             <label>Rate %<input name="ratePct" inputMode="decimal"
-                                defaultValue={memory?.rate_bps ? (memory.rate_bps / 100).toFixed(2) : ""} /></label>
+                                defaultValue={(() => {
+                                  const bps = from?.rate_bps ?? was?.rate_bps;
+                                  return bps ? (bps / 100).toFixed(2) : "";
+                                })()} /></label>
             <label>Months<input name="termMonths" inputMode="numeric"
-                                defaultValue={memory?.term_months ?? ""} /></label>
+                                defaultValue={from?.term_months ?? was?.term_months ?? ""} /></label>
           </div>
           <label>First payment due<input name="firstDueOn" type="date" /></label>
         </>
       )}
+
+      {/* Set here as well as on the card afterwards. On ten homes let on
+          the park's standard terms these six are identical every time,
+          and filling them in with the sale is the difference between one
+          form and eleven. */}
+      <p className="memory">Every month, from the day it sells</p>
+      <div className="three">
+        <label>Lot fee<input name="lotRent" inputMode="decimal"
+                             defaultValue={d(from?.lot_rent_cents)} /></label>
+        <label>Consultancy<input name="management" inputMode="decimal"
+                                 defaultValue={d(from?.management_cents)} /></label>
+        <label>Warranty<input name="warranty" inputMode="decimal"
+                              defaultValue={d(from?.warranty_cents)} /></label>
+      </div>
+      <div className="three">
+        <label>Tenant rent<input name="tenantRent" inputMode="decimal"
+                                 defaultValue={d(from?.tenant_rent_cents)} /></label>
+        <label>Pet fee<input name="petFee" inputMode="decimal"
+                             defaultValue={d(from?.pet_fee_cents)} /></label>
+        <label>Late fee<input name="lateFee" inputMode="decimal"
+                              defaultValue={d(from?.late_fee_cents)} /></label>
+      </div>
 
       <div className="three">
         <label>Year<input name="homeYear" inputMode="numeric" /></label>

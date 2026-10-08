@@ -57,6 +57,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     .from("owners").select("id, name").order("name");
 
   // The whole history of this lot, newest first.
+  const WITH_SPEND = "id, sold_on, price_cents, down_cents, financed, monthly_cents, rate_bps, term_months, first_due_on, home_year, home_make, home_serial, ended_on, ended_why, note, lot_rent_cents, management_cents, warranty_cents, tenant_rent_cents, pet_fee_cents, late_fee_cents, owner_insures, owners(id, name)";
   const WITH_MONEY = "id, sold_on, price_cents, down_cents, financed, monthly_cents, rate_bps, term_months, first_due_on, home_year, home_make, home_serial, ended_on, ended_why, note, lot_rent_cents, management_cents, warranty_cents, tenant_rent_cents, pet_fee_cents, late_fee_cents, owners(id, name)";
   const PLAIN = "id, sold_on, price_cents, down_cents, financed, monthly_cents, rate_bps, term_months, first_due_on, home_year, home_make, home_serial, ended_on, ended_why, note, owners(id, name)";
 
@@ -64,8 +65,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // so the caller does not have to know which migrations have been run.
   const history = async (cols: string) => supabase.from("home_sales")
     .select(cols).eq("unit_id", id).order("sold_on", { ascending: false });
-  let got = await history(WITH_MONEY);
+  // 034's self-insurance flag, then 032's charges, then 030's bare sale.
+  let got = await history(WITH_SPEND);
   let money = true;
+  let spend = true;
+  if (got.error) { spend = false; got = await history(WITH_MONEY); }
   if (got.error) { money = false; got = await history(PLAIN); }
   if (got.error) {
     return NextResponse.json({
@@ -83,6 +87,31 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       .select("price_cents, down_cents, financed, monthly_cents, rate_bps, term_months")
       .eq("owner_id", ownerId).order("sold_on", { ascending: false }).limit(1).maybeSingle();
     if (prior) lastFor = prior;
+  }
+
+  // The last sale recorded anywhere in this park, whoever bought it.
+  //
+  // Ten homes sold on the same terms is ten identical forms, and the
+  // buyer-keyed memory above only helps on the second home the SAME
+  // investor buys. What repeats is the deal, not the person: the price,
+  // the note, the lot fee and the consultancy fee are the park's terms,
+  // and typing them out ten times is ten chances to fat-finger a rate.
+  //
+  // The charges come with it, because those are the ones most likely to
+  // be identical and the most tedious to re-enter.
+  const LAST = "id, sold_on, price_cents, down_cents, financed, monthly_cents,"
+    + " rate_bps, term_months, lot_rent_cents, management_cents, warranty_cents,"
+    + " tenant_rent_cents, pet_fee_cents, late_fee_cents,"
+    + " units(label), owners(id, name)";
+  let lastAny: Record<string, unknown> | null = null;
+  {
+    const recent = await supabase.from("home_sales")
+      .select(LAST)
+      .neq("unit_id", id)
+      .order("sold_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1).maybeSingle();
+    if (!recent.error && recent.data) lastAny = recent.data as unknown as Record<string, unknown>;
   }
 
   // The paperwork on the live sale, with links that work for five
@@ -111,6 +140,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     .select("id, label, size, monthly_cents, started_on, ended_on")
     .eq("unit_id", id).is("ended_on", null).order("started_on");
 
+  // What we have spent on this home. Against the lot, not the sale, so a
+  // water heater fitted in March is still on file when the home changes
+  // hands in June -- the sale it was deducted from is its own column.
+  const spent = await supabase.from("home_expenses")
+    .select("id, sale_id, spent_on, what, amount_cents, from_owner, bills_on, note")
+    .eq("unit_id", id).order("spent_on", { ascending: false }).limit(60);
+
   return NextResponse.json({
     unit: {
       id: unit.id, label: unit.label,
@@ -132,7 +168,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     meters: meters.error ? [] : (meters.data ?? []),
     storage: storage.error ? [] : (storage.data ?? []),
     money,
+    spend,
+    expenses: spent.error ? [] : (spent.data ?? []),
     lastFor,
+    lastAny,
   });
 }
 
@@ -253,22 +292,88 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         error: "Record who owns the home first — the charges hang off the sale.",
       }, { status: 400 });
     }
-    const patch = {
+    // Their own insurance and a warranty fee cannot both be true, and
+    // the database says so. Clearing the fee here means the person gets
+    // the answer they chose rather than a constraint violation.
+    const insures = Boolean(body.ownerInsures);
+    const patch: Record<string, unknown> = {
       lot_rent_cents: cents(body.lotRent),
       management_cents: cents(body.management),
-      warranty_cents: cents(body.warranty),
+      warranty_cents: insures ? null : cents(body.warranty),
+      owner_insures: insures,
       tenant_rent_cents: cents(body.tenantRent),
       pet_fee_cents: cents(body.petFee),
       late_fee_cents: cents(body.lateFee),
     };
-    const { error } = await db.from("home_sales").update(patch).eq("id", live.id);
+    let wrote = await db.from("home_sales").update(patch).eq("id", live.id);
+    if (wrote.error && /owner_insures/.test(wrote.error.message)) {
+      // 034 not run. The charges still save; the insurance answer waits.
+      delete patch.owner_insures;
+      patch.warranty_cents = cents(body.warranty);
+      wrote = await db.from("home_sales").update(patch).eq("id", live.id);
+    }
+    if (wrote.error) {
+      return NextResponse.json({
+        error: /lot_rent|management_cents|warranty|tenant_rent|pet_fee|late_fee/.test(wrote.error.message)
+          ? "Migration 032 hasn't been run yet, so there is nowhere to record the charges."
+          : wrote.error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- something we paid for on this home ---
+  //
+  // We front it and take it off what we send the owner, so a statement
+  // cannot be produced without these. Recorded against the lot, and
+  // against the sale it comes off where it comes off one at all.
+  if (body.action === "spend") {
+    const what = String(body.what ?? "").trim();
+    const amount = cents(body.amount);
+    if (!what) return NextResponse.json({ error: "say what it was" }, { status: 400 });
+    if (!amount || amount <= 0) {
+      return NextResponse.json({ error: "say what it cost" }, { status: 400 });
+    }
+    const fromOwner = body.fromOwner === undefined ? true : Boolean(body.fromOwner);
+
+    // A deduction has to name whose cheque it comes off, and the only
+    // answer is the owner holding the home now.
+    const { data: live } = await db.from("home_sales")
+      .select("id").eq("unit_id", id).is("ended_on", null).maybeSingle();
+    if (fromOwner && !live) {
+      return NextResponse.json({
+        error: "Nobody owns this home, so there is nobody to deduct it from. "
+             + "Untick \u201ctake it off the owner\u201d to record it as ours.",
+      }, { status: 400 });
+    }
+
+    const { error } = await db.from("home_expenses").insert({
+      unit_id: id,
+      sale_id: fromOwner ? live!.id : null,
+      what,
+      amount_cents: amount,
+      from_owner: fromOwner,
+      spent_on: String(body.on ?? "").trim() || undefined,
+      note: String(body.note ?? "").trim() || null,
+      created_by: staff.id,
+    });
     if (error) {
       return NextResponse.json({
-        error: /lot_rent|management_cents|warranty|tenant_rent|pet_fee|late_fee/.test(error.message)
-          ? "Migration 032 hasn't been run yet, so there is nowhere to record the charges."
+        error: /home_expenses/.test(error.message)
+          ? "Migration 034 hasn't been run yet, so there is nowhere to record this."
           : error.message,
       }, { status: 400 });
     }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- and taking one back off ---
+  if (body.action === "unspend") {
+    const spendId = String(body.spendId ?? "");
+    if (!spendId) return NextResponse.json({ error: "which one" }, { status: 400 });
+    const { error } = await db.from("home_expenses")
+      .delete().eq("id", spendId).eq("unit_id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ ok: true });
   }
 
@@ -419,7 +524,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }, { status: 400 });
   }
 
-  const { error } = await db.from("home_sales").insert({
+  const row: Record<string, unknown> = {
     unit_id: id,
     owner_id: ownerId,
     sold_on: soldOn,
@@ -435,8 +540,30 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     home_serial: String(body.homeSerial ?? "").trim() || null,
     note: String(body.note ?? "").trim() || null,
     created_by: staff.id,
-  });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  };
+
+  // The monthly charges, where the form sent them. They are set with the
+  // sale so that ten homes on the park's standard terms are one form
+  // each rather than two, and they are optional so that a database
+  // without 032 still takes the sale.
+  const charges: Record<string, unknown> = {
+    lot_rent_cents: cents(body.lotRent),
+    management_cents: cents(body.management),
+    warranty_cents: cents(body.warranty),
+    tenant_rent_cents: cents(body.tenantRent),
+    pet_fee_cents: cents(body.petFee),
+    late_fee_cents: cents(body.lateFee),
+  };
+  const any = Object.values(charges).some((v) => v !== null);
+
+  let put = await db.from("home_sales").insert(any ? { ...row, ...charges } : row);
+  if (put.error && any && /lot_rent|management_cents|warranty|tenant_rent|pet_fee|late_fee/
+      .test(put.error.message)) {
+    // 032 not run. The sale is the thing that matters; the charges can
+    // be added once the migration is.
+    put = await db.from("home_sales").insert(row);
+  }
+  if (put.error) return NextResponse.json({ error: put.error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }
