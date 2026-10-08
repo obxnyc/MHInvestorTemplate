@@ -30,6 +30,18 @@ type Shed = {
 const KIND: Record<string, string> = {
   poh: "Park owned", toh: "Tenant owned", ioh: "Investor owned", none: "No home on it",
 };
+/** What a home we still own is for. Only the first is stock. */
+const USE: [string, string][] = [
+  ["to_sell", "Ours to sell"],
+  ["we_rent", "We rent it out"],
+  ["not_home", "Not a home"],
+];
+const USE_WHY: Record<string, string> = {
+  to_sell: "Counted in what is left to sell. It can still be let in the meantime.",
+  we_rent: "Ours, let, and we are keeping it. Not counted as stock.",
+  not_home: "The office, the laundry, a storage building. We may let it, "
+    + "but it is not a home and will not be sold.",
+};
 const PAPER: Record<string, string> = {
   bill_of_sale: "Bill of sale", lease: "Lease", note: "Promissory note",
   title: "Title", warranty: "Warranty", other: "Other",
@@ -59,6 +71,13 @@ export default function LotCard(
   const [sheds, setSheds] = useState<Shed[]>([]);
   const [kind, setKind] = useState<string>("none");
   const [manage, setManage] = useState(false);
+  /** On a home we still own: inventory, a letting, or not a home. */
+  const [use, setUse] = useState<string>("to_sell");
+  const [rent, setRent] = useState<{
+    tenant: number | null; pet: number | null; late: number | null;
+  }>({ tenant: null, pet: null, late: null });
+  /** Whether 033 has been run, so the card can say what is missing. */
+  const [keeps, setKeeps] = useState(true);
   const [pending, setPending] = useState(false);
   const [selling, setSelling] = useState(false);
   const [ending, setEnding] = useState(false);
@@ -82,6 +101,9 @@ export default function LotCard(
     setSheds(out.storage ?? []);
     setKind(out.unit?.kind ?? "none");
     setManage(Boolean(out.unit?.manage));
+    setUse(out.unit?.use ?? "to_sell");
+    setRent(out.unit?.rent ?? { tenant: null, pet: null, late: null });
+    setKeeps(out.keeps !== false);
     setMemory(out.lastFor ?? null);
   }, [lot.id]);
   useEffect(() => { void load(); }, [load]);
@@ -132,20 +154,48 @@ export default function LotCard(
             </button>
           ))}
         </div>
-        {kind !== "none" && (
+        {kind !== "none" && kind !== "poh" && (
           <label className="check">
-            <input type="checkbox" checked={manage} disabled={busy || kind === "poh"}
+            <input type="checkbox" checked={manage} disabled={busy}
                    onChange={(e) => {
                      setManage(e.target.checked);
                      void post({ action: "kind", kind, manage: e.target.checked });
                    }} />
             We let it and look after it
-            {kind === "poh" ? " — always, on a home we own" : ""}
           </label>
+        )}
+
+        {/* A home we still own is one of three things, and only the first
+            is stock. Without this, "park owned" counts the office and the
+            laundry as homes for sale. */}
+        {kind === "poh" && (
+          <>
+            <p className="dim">We still own this one.</p>
+            <div className="kindpick">
+              {USE.map(([k, say]) => (
+                <button key={k} type="button" disabled={busy || !keeps}
+                        className={use === k ? "chip on" : "chip"}
+                        onClick={() => { setUse(k); void post({ action: "use", use: k }); }}>
+                  {say}
+                </button>
+              ))}
+            </div>
+            <p className="dim">{USE_WHY[use] ?? ""}</p>
+            {!keeps && (
+              <p className="parkhint">
+                Migration 033 hasn&rsquo;t been run, so this is not saved yet.
+              </p>
+            )}
+          </>
         )}
       </section>
 
-      {/* Who owns it, and what they bought. */}
+      {/* Who owns it, and what they bought.
+          Not on a home we still own: there is no buyer, no sale date, no
+          price and no bill of sale, because nothing has been sold. Asking
+          for them is asking somebody to invent an answer. A bare pad has
+          no home to have been sold either. */}
+      {kind !== "poh" && kind !== "none" && (
       <section className="lotbit">
         <h3>Owner</h3>
         {live ? (
@@ -206,6 +256,18 @@ export default function LotCard(
                     onSave={(payload) => post(payload)} />
         )}
       </section>
+      )}
+
+      {/* A home we own and let. No lot rent and no management fee: there
+          is no second party to charge either to -- we are both sides of
+          it -- so the rent is the only money there is. */}
+      {kind === "poh" && (
+        <section className="lotbit">
+          <h3>{use === "not_home" ? "What we let it for" : "Every month"}</h3>
+          <RentForm rent={rent} busy={busy || !keeps} structure={use === "not_home"}
+                    onSave={(p) => post({ action: "rent", ...p })} />
+        </section>
+      )}
 
       {/* What arrives every month. Six figures that land on one statement
           and get argued about one at a time, which is why each is its own
@@ -359,6 +421,60 @@ function MoneyForm(
       <div className="invacts">
         {saved && <span className="dim">Saved</span>}
         <button type="submit" className="btn pri" disabled={busy}>Save the charges</button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * What the person living in a home WE own pays.
+ *
+ * Three fields, not six. A home we own and let has no owner to charge
+ * lot rent to, no management fee to take from ourselves and no warranty
+ * to sell ourselves, and a form that asks for them anyway invites
+ * somebody to fill one in.
+ */
+function RentForm(
+  { rent, busy, structure, onSave }:
+  {
+    rent: { tenant: number | null; pet: number | null; late: number | null };
+    busy: boolean;
+    /** A storage building or the laundry rather than a home. Same three
+     *  figures -- we let those too -- said in the words that fit. */
+    structure?: boolean;
+    onSave: (p: Record<string, unknown>) => Promise<boolean>;
+  },
+) {
+  const d = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2));
+  const [saved, setSaved] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  return (
+    <form className="saleform" onSubmit={async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.currentTarget);
+      const ok = await onSave({
+        tenantRent: f.get("tenantRent"), petFee: f.get("petFee"),
+        lateFee: f.get("lateFee"),
+      });
+      if (ok) {
+        setSaved(true);
+        timer.current = setTimeout(() => setSaved(false), 2500);
+      }
+    }}>
+      <p className="memory">{structure ? "Whoever rents it pays" : "The tenant pays"}</p>
+      <div className="three">
+        <label>Rent<input name="tenantRent" inputMode="decimal"
+                          defaultValue={d(rent.tenant)} /></label>
+        <label>Pet fee<input name="petFee" inputMode="decimal"
+                             defaultValue={d(rent.pet)} /></label>
+        <label>Late fee<input name="lateFee" inputMode="decimal"
+                              defaultValue={d(rent.late)} /></label>
+      </div>
+      <div className="invacts">
+        {saved && <span className="dim">Saved</span>}
+        <button type="submit" className="btn pri" disabled={busy}>Save the rent</button>
       </div>
     </form>
   );

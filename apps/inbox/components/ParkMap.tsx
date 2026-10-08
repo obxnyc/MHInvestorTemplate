@@ -19,6 +19,11 @@ export type LotFact = {
   empty: boolean;
   /** We let it and look after it. Always true of a home we own. */
   managed: boolean;
+  /** On a home we still own, what it is for. Only 'to_sell' is stock;
+   *  'we_rent' we are keeping, and 'not_home' is the office or the
+   *  laundry. Undefined before 033, which the tally says rather than
+   *  guesses at. */
+  use?: "to_sell" | "we_rent" | "not_home" | null;
   who?: string;
 };
 export type LotFacts = Record<string, LotFact>;
