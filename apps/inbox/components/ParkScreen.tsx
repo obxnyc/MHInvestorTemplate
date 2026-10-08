@@ -7,7 +7,7 @@ import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing,
          type Shape, type Road } from "@/lib/osm";
-import { layRows, clipTo } from "@/lib/rows";
+import { layRows, clipTo, reachTo } from "@/lib/rows";
 import { degreesPerMetre } from "@/lib/footprint";
 
 /**
@@ -143,8 +143,14 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // streets and the property line around them.
     const fitted = placeFromRoads(base, mine) ?? base;
     const parcel = parkAround(found.areas, mine);
+    // The deed line runs up to Pamalee Drive. The polygon the map carries
+    // stops short of it -- somebody traced the back of the verge rather
+    // than the right of way -- so the corners that are nearly on the road
+    // are put on it.
+    const frontage = found.roads.find((r) => /pamalee/i.test(r.name))?.line ?? null;
     const boundary = parcel?.ring
-      ?? orientedBox(found.shapes.flatMap((sh) => sh.ring));
+      ? reachTo(parcel.ring, frontage)
+      : orientedBox(found.shapes.flatMap((sh) => sh.ring));
     const fence = boundary.length ? boundary : null;
 
     // The lots are laid along the streets rather than read off the map's
