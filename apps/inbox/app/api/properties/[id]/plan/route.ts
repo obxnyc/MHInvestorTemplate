@@ -220,6 +220,47 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true });
   }
 
+  // --- a home put somewhere by hand ---
+  //
+  // Written to the database rather than to the browser. These are
+  // corrections somebody made by dragging fifty one pads into place, and
+  // keeping them in local storage meant they lived on one machine, in
+  // one browser, until something cleared it -- which is what happened.
+  //
+  // Stored as the pad's own position, not as an offset from where the
+  // layout put it, so that changing the layout cannot move a corrected
+  // home. A correction is a statement about the ground.
+  if (body.action === "place") {
+    const label = String(body.label ?? "").trim();
+    const lat = Number(body.lat), lng = Number(body.lng);
+    if (!label) return NextResponse.json({ error: "which lot" }, { status: 400 });
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)
+        || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return NextResponse.json({ error: "that is not a place" }, { status: 400 });
+    }
+    const { error } = await db.from("units")
+      .update({ lat, lng }).eq("property_id", id).eq("label", label);
+    if (error) {
+      return NextResponse.json({
+        error: missing(error)
+          ? "Migration 024 hasn't been run, so there is nowhere to keep this."
+          : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- put a home back where the layout wants it ---
+  if (body.action === "unplace") {
+    const labels: unknown[] = Array.isArray(body.labels) ? body.labels : [];
+    const q = db.from("units").update({ lat: null, lng: null }).eq("property_id", id);
+    const { error } = labels.length
+      ? await q.in("label", labels.map((l) => String(l)))
+      : await q.not("lat", "is", null);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true });
+  }
+
   // --- the whole park at once ---
   //
   // Fifty one lots typed in one at a time is an afternoon, and an afternoon

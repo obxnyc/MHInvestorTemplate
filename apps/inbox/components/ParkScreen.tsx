@@ -60,14 +60,29 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     } catch { /* a park that forgets its corrections still draws */ }
   }, [byHand]);
 
-  const nudge = useCallback((id: string, dLng: number, dLat: number) => {
+  /**
+   * A home dragged to a new spot.
+   *
+   * Kept as the pad's own position rather than as an offset from where
+   * the layout put it, so that improving the layout cannot move a home
+   * somebody has already corrected -- a correction is a statement about
+   * the ground, not about the drawing.
+   *
+   * Written to the database as well as to the browser. Fifty one pads
+   * dragged into place is an hour of somebody's evening, and keeping
+   * that in local storage meant it lived on one machine in one browser
+   * until something cleared it. The browser copy stays as the thing that
+   * makes dragging feel instant, and as the fallback before the lots
+   * exist on file.
+   */
+  const nudge = useCallback((id: string, at: [number, number]) => {
     setMoved((was) => {
-      const had = was[id] ?? [0, 0];
-      const next = { ...was, [id]: [had[0] + dLng, had[1] + dLat] as [number, number] };
+      const next = { ...was, [id]: at };
       try { localStorage.setItem(byHand, JSON.stringify(next)); } catch { /* fine */ }
       return next;
     });
   }, [byHand]);
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem(key);
@@ -85,9 +100,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     } catch { /* unsaved is survivable; unmovable is not */ }
   }, [key]);
 
-  // Dragging gets the block within a few feet. Arrow keys get it onto the
-  // concrete: a mouse cannot reliably move a map one metre, and one metre is
-  // the difference between a home sitting on its pad and sitting on the road.
+  // Dragging the whole block gets it within a few feet. Arrow keys get
+  // it onto the concrete: a mouse cannot reliably move a map one metre,
+  // and one metre is the difference between a home on its pad and a home
+  // in the road.
   useEffect(() => {
     if (!fitting) return;
     const on = (e: KeyboardEvent) => {
@@ -111,10 +127,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     return () => window.removeEventListener("keydown", on);
   }, [fitting, plan, remember]);
 
-  // The latest plan, for the one-shot effects that must not re-run every
-  // time a slider moves.
+  /** The latest plan, for the one-shot effects that must not re-run every
+   *  time a slider moves. */
   const planNow = useRef(plan);
   planNow.current = plan;
+
+  const keep = useCallback((id: string, at: [number, number]) => {
+    const label = id.split("|")[1] ?? "";
+    if (!label) return;
+    void fetch(`/api/properties/${propertyId}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "place", label, lng: at[0], lat: at[1] }),
+    });
+  }, [propertyId]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/properties/${propertyId}/plan`, { cache: "no-store" });
@@ -245,19 +270,34 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   /** The park as drawn, with the corrections applied. */
   const shown = useMemo<RealPark | null>(() => {
     if (!real) return null;
-    if (!Object.keys(moved).length) return real;
+    // Where each lot has been put by hand: from the database where it is
+    // on file, from this browser otherwise. The database wins, because
+    // it is the copy that survives a cleared cache and reaches a second
+    // machine.
+    const onFile = new Map<string, [number, number]>();
+    for (const l of lots) {
+      if (l.lat != null && l.lng != null) onFile.set(norm(l.label), [l.lng, l.lat]);
+    }
+    if (!onFile.size && !Object.keys(moved).length) return real;
+
     return {
       ...real,
       homes: real.homes.map((h) => {
-        const by = moved[h.id];
-        if (!by) return h;
+        const at = onFile.get(norm(`${h.label} ${h.street}`))
+          ?? onFile.get(norm(h.label)) ?? moved[h.id];
+        if (!at) return h;
+        // The whole pad slid so its middle lands on the saved point.
+        // Never turned: the ladder stays a ladder however much is moved.
+        const mid = middleOf(h.ring);
+        const dx = at[0] - mid[0], dy = at[1] - mid[1];
         return {
           ...h, moved: true,
-          ring: h.ring.map((p) => [p[0] + by[0], p[1] + by[1]]),
+          ring: h.ring.map((p) => [p[0] + dx, p[1] + dy]),
+          dot: h.dot ? [h.dot[0] + dx, h.dot[1] + dy] as [number, number] : undefined,
         };
       }),
     };
-  }, [real, moved]);
+  }, [real, moved, lots]);
 
   const placed = useMemo<Placed[]>(() => (
     real
@@ -312,6 +352,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             <button type="button" className="btn" onClick={() => {
               setMoved({});
               try { localStorage.removeItem(byHand); } catch { /* fine */ }
+              void fetch(`/api/properties/${propertyId}/plan`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "unplace" }),
+              }).then(() => load());
             }}>
               Put them all back
             </button>
@@ -439,7 +483,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       <div className={`parkmain${open ? " withcard" : ""}`}>
         <ParkMap
           plan={plan} real={shown} facts={facts} onHarvest={onHarvest}
-          arranging={arranging} onNudge={nudge}
+          arranging={arranging} onNudge={nudge} onDropped={keep}
           selected={selected} onSelect={setSelected}
           fitting={fitting} taps={taps}
           onTap={(at) => {
@@ -554,6 +598,15 @@ export function pair(placed: Placed[], lots: Lot[]): Map<string, Lot> {
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** The middle of a closed ring. */
+function middleOf(ring: number[][]): [number, number] {
+  const n = Math.max(1, ring.length - 1);
+  return [
+    ring.slice(0, n).reduce((a, p) => a + p[0], 0) / n,
+    ring.slice(0, n).reduce((a, p) => a + p[1], 0) / n,
+  ];
+}
 
 /** The street names the map does have here. An error that names the
  *  neighbours is a fixable error; "not found" is another week of guessing. */
