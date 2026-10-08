@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import {
   appIdFrom, layersOf, parcelLayers, parcelByPin, outerRing, geocode,
+  serviceOf, centroid,
 } from "@/lib/agol";
 
 export const runtime = "nodejs";
@@ -56,20 +57,67 @@ export async function POST(req: Request) {
   // works for a park in Cumberland and a park in Pasquotank. Tried
   // first, because the alternative asks somebody to find a REST
   // endpoint, which is not a thing to ask.
-  const STATEWIDE = [
-    "https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1",
-    "https://services.gis.nc.gov/secure/rest/services/NC1Map_Parcels/MapServer/1",
+  // Three ways at the same data, because the first one wants a sign-in
+  // and only says so if you read the body.
+  //
+  //   the /secure/ server      token-protected, and answers 200 with an
+  //                            error inside rather than a 401;
+  //   the published items      the same layers as ArcGIS Online items,
+  //                            reached by id rather than by a REST path
+  //                            somebody guessed, which is a 404 that
+  //                            reads like an empty layer.
+  const NC_ITEMS = [
+    // The statewide parcel service, as published. Polygons are layer 1.
+    "250eb50c26ba46b185c39aa14fd2870c",
+    // The centroids dataset. A point is not a boundary, but it puts the
+    // park on the right ground, which is most of the value.
+    "943c5690291445c4bb679a7422dd8b93",
   ];
-  for (const url of STATEWIDE) {
-    const hit = await parcelByPin(url, pin, ["parno", "altparno", "pin"]);
-    if (!hit) continue;
-    const out = answer(hit, "NC OneMap, the statewide parcel layer");
-    if (out) return out;
+  const NC_FIELDS = ["parno", "altparno", "pin", "PARNO", "PIN"];
+
+  type Source = { say: string; url: string; fields?: string[] };
+  const sources: Source[] = [
+    { say: "NC OneMap (direct)", fields: NC_FIELDS,
+      url: "https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/1" },
+    { say: "NC OneMap mirror (direct)", fields: NC_FIELDS,
+      url: "https://services.gis.nc.gov/secure/rest/services/NC1Map_Parcels/MapServer/1" },
+  ];
+  for (const id of NC_ITEMS) {
+    const base = await serviceOf(id);
+    if (!base) {
+      steps.push({ did: `looked up published item ${id.slice(0, 8)}…`, ok: false,
+                   say: "ArcGIS would not say where it lives" });
+      continue;
+    }
+    sources.push({ say: `NC OneMap item ${id.slice(0, 8)}… polygons`,
+                   url: `${base}/1`, fields: NC_FIELDS });
+    sources.push({ say: `NC OneMap item ${id.slice(0, 8)}… points`,
+                   url: `${base}/0`, fields: NC_FIELDS });
   }
-  steps.push({
-    did: "asked NC OneMap's statewide parcels", ok: false,
-    say: `nothing numbered ${pin}, or the service did not answer`,
-  });
+
+  for (const src of sources) {
+    const notes: string[] = [];
+    const hit = await parcelByPin(src.url, pin, src.fields, notes);
+    if (hit) {
+      const out = answer(hit, src.say);
+      if (out) return out;
+      // A point layer has no ring, which is still worth having: it puts
+      // the park on the right ground even without the deed line.
+      const at = centroid(hit.geometry as { type?: string; coordinates?: unknown });
+      if (at) {
+        steps.push({ did: `found ${pin} in ${src.say}`, ok: true,
+                     say: "as a point — it places the park but carries no boundary" });
+        return NextResponse.json({
+          ok: true, ring: [], centre: [at.lng, at.lat], layer: src.say,
+          field: hit.field, props: hit.props, steps,
+          note: `${pin} is in ${src.say} as a centre point, not a boundary. `
+              + "The park is in the right place; the property line is still a box.",
+        });
+      }
+    }
+    steps.push({ did: `asked ${src.say}`, ok: false,
+                 say: notes.join("; ") || "nothing came back" });
+  }
 
   if (!app) {
     return NextResponse.json({

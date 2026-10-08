@@ -19,15 +19,15 @@ const here = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = readFileSync(join(here, "agol.ts"), "utf8").replace(/^import type .*$/gm, "");
 writeFileSync(join(here, "agol.gen.mjs"),
   ts.transpileModule(src, { compilerOptions: { target: 99, module: 99 } }).outputText);
-const { pinFields, parcelByPin, outerRing } = await import(join(here, "agol.gen.mjs"));
+const { pinFields, parcelByPin, outerRing, asked } = await import(join(here, "agol.gen.mjs"));
 
 const square = (x, y, s) => [[[x, y], [x + s, y], [x + s, y + s], [x, y + s], [x, y]]];
-const asked = [];
+const sent = [];
 
 /** A county server that holds one parcel, under a field name we choose. */
 function county({ fields, pinField, pin, geometry }) {
   return async (url) => {
-    asked.push(url);
+    sent.push(url);
     if (!url.includes("/query")) {
       return { ok: true, json: async () => ({ fields: fields.map((name) => ({ name })) }) };
     }
@@ -75,19 +75,19 @@ is("a layer with no parcel number offers nothing", await pinFields("x"), []);
 
 // --- finding the parcel ---
 const geom = { type: "Polygon", coordinates: square(-76.29, 36.369, 0.002) };
-asked.length = 0;
+sent.length = 0;
 global.fetch = county({ fields: ["OBJECTID", "REID", "PIN"], pinField: "PIN", pin: "P139-50A", geometry: geom });
 const hit = await parcelByPin("https://county/0", "P139-50A");
 is("the parcel comes back", hit?.field, "PIN");
 is("with its boundary", outerRing(hit?.geometry).length, 5);
 
 // --- the things that make a real lookup miss ---
-asked.length = 0;
+sent.length = 0;
 global.fetch = county({ fields: ["PIN"], pinField: "PIN", pin: "P139-50A", geometry: geom });
 is("lower case on the card still matches",
    Boolean(await parcelByPin("https://county/0", "p139-50a")), true);
 
-asked.length = 0;
+sent.length = 0;
 is("a space in the number still matches",
    Boolean(await parcelByPin("https://county/0", " P139 - 50A ".replace(/ - /g, "-"))), true);
 
@@ -96,14 +96,14 @@ is("a space in the number still matches",
 // giving up. A county whose number lives in REID while it also has a
 // column called PIN is exactly the case that looks like "no such
 // parcel" when this is wrong.
-asked.length = 0;
+sent.length = 0;
 global.fetch = county({ fields: ["PIN", "REID"], pinField: "REID", pin: "P139-50A", geometry: geom });
 const second = await parcelByPin("https://county/0", "P139-50A");
 is("a miss on the first field falls through to the next", second?.field, "REID");
 // The innermost REPLACE names the column; the outer one is the
 // separator-stripping retry, which is a second attempt at the SAME
 // field and not a different field.
-const tried = asked.filter((u) => u.includes("/query"))
+const tried = sent.filter((u) => u.includes("/query"))
   .map((u) => {
     const w = decodeURIComponent(new URL(u).searchParams.get("where"));
     return [...w.matchAll(/REPLACE\((\w+)[,)]/g)].map((m) => m[1])
@@ -114,10 +114,10 @@ is("each field is tried both ways before moving on",
    tried.filter((f) => f === "PIN").length, 2);
 
 // An apostrophe in a parcel number is not a way into the query.
-asked.length = 0;
+sent.length = 0;
 global.fetch = county({ fields: ["PIN"], pinField: "PIN", pin: "x", geometry: geom });
 await parcelByPin("https://county/0", "P139'OR 1=1--");
-const inj = decodeURIComponent(new URL(asked.find((u) => u.includes("/query"))).searchParams.get("where"));
+const inj = decodeURIComponent(new URL(sent.find((u) => u.includes("/query"))).searchParams.get("where"));
 is("an apostrophe is doubled, not passed through", inj.includes("''"), true);
 
 // --- a county that has nothing ---
@@ -127,6 +127,47 @@ is("no parcel is null, not a crash", await parcelByPin("https://county/0", "nope
 global.fetch = async () => { throw new Error("no route to host"); };
 is("an unreachable county is null, not a throw",
    await parcelByPin("https://county/0", "P139-50A", ["PIN"]), null);
+
+// --- why it failed, which is the whole point of asking ---
+//
+// "nothing numbered P139-50A, or the service did not answer" went to
+// the owner as a diagnosis. It is three different failures in one
+// sentence, and the real one -- a server that wants a sign-in -- was
+// not among the two it offered.
+
+global.fetch = async () => ({ ok: false, status: 404, statusText: "Not Found", json: async () => ({}) });
+is("a 404 says so", (await asked("https://x")).why, "the server answered 404 Not Found");
+
+// ArcGIS answers 200 with the refusal inside, which is its own trap.
+global.fetch = async () => ({
+  ok: true, status: 200, json: async () => ({ error: { code: 499, message: "Token Required" } }),
+});
+const tok = await asked("https://x");
+is("a token demand is not an empty layer", tok.data, null);
+is("and it says which it is", tok.why, "Token Required \u2014 it wants a sign-in");
+
+global.fetch = async () => { throw new Error("The operation was aborted due to timeout"); };
+is("a timeout says so", (await asked("https://x")).why, "it did not answer in time");
+
+global.fetch = async () => { throw new Error("getaddrinfo ENOTFOUND nope.example"); };
+is("an unreachable host says what it said",
+   (await asked("https://x")).why, "getaddrinfo ENOTFOUND nope.example");
+
+// And the reason comes back up through the lookup, per field.
+global.fetch = async (url) => (String(url).includes("/query")
+  ? { ok: true, status: 200, json: async () => ({ error: { code: 499, message: "Token Required" } }) }
+  : { ok: true, status: 200, json: async () => ({ fields: [{ name: "parno" }] }) });
+const notes = [];
+await parcelByPin("https://county/1", "P139-50A", undefined, notes);
+is("the reason reaches the caller", notes[0], "parno: Token Required \u2014 it wants a sign-in");
+
+// A layer with nothing parcel-shaped in it is its own answer, not a
+// silent miss that reads as the parcel not existing.
+global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ fields: [{ name: "OWNER" }] }) });
+const none = [];
+await parcelByPin("https://county/1", "P139-50A", undefined, none);
+is("a layer with no parcel column says that",
+   none[0], "that layer has no field that looks like a parcel number");
 
 if (wrong.length) { for (const w of wrong) console.error(" ✗ " + w); process.exit(1); }
 console.log("nothing obviously wrong");
