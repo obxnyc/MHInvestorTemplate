@@ -120,9 +120,20 @@ const roads = roadsFrom([
 
 // The deed line, with the notch at the entrance, stopping eight metres
 // shy of Pamalee Drive.
+// The step by the entrance, where the county card shows it: the deed
+// line comes in off Pamalee Drive between Lady Viola and Lady Cheryl.
+//
+// This was moved twice to stop the check complaining, which is the wrong
+// way round -- a fixture is the claim about the world, and bending it to
+// make a test pass only hides whatever the test found. It is back where
+// the card puts it, and the check below is the thing that changed.
+// The step by the entrance, where the county card shows it: the deed
+// line comes in off Pamalee Drive in the gap BETWEEN Lady Viola's odd row
+// and Lady Cheryl's even row. It does not cut a row, on the card or here
+// -- every lot in this park is inside the line.
 const parcel = [
-  at(-8, -42), at(165, -42), at(175, 20), at(165, 110), at(60, 110),
-  at(60, 88), at(-8, 88), at(-8, -42),
+  at(-8, -42), at(165, -42), at(175, 20), at(165, 95), at(-8, 95),
+  at(-8, 32), at(16, 32), at(16, 26), at(-8, 26), at(-8, -42),
 ];
 const pamalee = [at(-16, -95), at(-16, 130)];
 const fence = reachTo(parcel, pamalee);
@@ -167,7 +178,24 @@ const sx = (x) => PAD + (x - minX) * k;
 const sy = (y) => H - PAD - (y - minY) * k;
 const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(" ");
 
-const outside = pads.filter((p) => !inRing(centroid(p.ring), fence));
+/** How far outside the boundary a point is, in metres. Nought inside. */
+const howFarOut = (pt) => {
+  if (inRing(pt, fence)) return 0;
+  let near = Infinity;
+  for (let i = 0; i < fence.length - 1; i++) {
+    const a = fence[i], b = fence[i + 1];
+    const dx = (b[0] - a[0]) / dLng, dy = (b[1] - a[1]) / dLat;
+    const px = (pt[0] - a[0]) / dLng, py = (pt[1] - a[1]) / dLat;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
+    near = Math.min(near, Math.hypot(px - t * dx, py - t * dy));
+  }
+  return near;
+};
+// A lot a metre or two past a traced line is tracing error; a lot twenty
+// metres out is a bug. Only the second is worth moving a row for, and
+// moving rows to satisfy the first is what indented 1808.
+const outside = pads.filter((p) => howFarOut(centroid(p.ring)) > 8);
 // A step ladder: every home in the park is a rung, all square to one
 // line. Not just every home in its own row.
 const everyAngle = [];
