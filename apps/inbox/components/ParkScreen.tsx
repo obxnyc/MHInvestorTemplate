@@ -46,6 +46,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     parcel?: string | null;
     built?: number;
     buildings?: number;
+    rescued?: number;
     missing?: { street: string; side: string; short: number }[];
   } | null>(null);
 
@@ -173,21 +174,44 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const planNow = useRef(plan);
   planNow.current = plan;
 
+  /**
+   * A dragged home written to the database.
+   *
+   * The lot is named by number AND street, because that is the label it
+   * is on file under -- `3124 Lady Viola Dr`, not `3124`. Sending the
+   * bare number updated no rows and said it had worked, which is how an
+   * hour of dragging came to be held in one browser and nowhere else.
+   *
+   * A save that finds no such lot now says so, rather than failing in
+   * silence until the browser is cleared.
+   */
   const keep = useCallback((id: string, at: [number, number], whole?: boolean) => {
     const now = shownNow.current;
     const me = now?.homes.find((h) => h.id === id);
     const rows = whole && now && me
       ? now.homes.filter((h) => h.street === me.street && sideOf(h.id) === sideOf(me.id))
       : now?.homes.filter((h) => h.id === id) ?? [];
-    for (const h of rows) {
-      const label = h.id.split("|")[1] ?? "";
-      if (!label) continue;
-      const c = middleOf(h.ring);
-      void fetch(`/api/properties/${propertyId}/plan`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "place", label, lng: c[0], lat: c[1] }),
-      });
-    }
+    void (async () => {
+      let missed = 0;
+      for (const h of rows) {
+        const c = middleOf(h.ring);
+        const res = await fetch(`/api/properties/${propertyId}/plan`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "place", label: `${h.label} ${h.street}`, lng: c[0], lat: c[1],
+          }),
+        }).catch(() => null);
+        if (!res?.ok) missed += 1;
+      }
+      if (missed) {
+        setError(
+          `Moved on screen, but ${missed === rows.length ? "not saved" : `${missed} not saved`}`
+          + " — these lots are not on file yet. Press Add these lots and move them again.",
+        );
+      } else {
+        setError(null);
+      }
+    })();
   }, [propertyId]);
 
   const load = useCallback(async () => {
@@ -377,37 +401,79 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
   shownNow.current = shown;
 
-  // Offsets saved under the old scheme, turned into positions the first
-  // time there is a layout to measure them against -- and written
-  // straight to the database, so an hour of dragging is not one cleared
-  // cache away from gone a second time.
+  // Offsets saved under the old scheme, turned into positions and put
+  // somewhere that survives.
+  //
+  // Carefully, because this is somebody's only remaining copy. The
+  // original is kept under its own key before anything is touched; the
+  // lots are put on file first, since a position cannot be saved against
+  // a lot that does not exist; and the converted form only replaces the
+  // original once the database has taken it. A conversion that overwrote
+  // the offsets and then failed to save would destroy the last copy of
+  // an hour's work, which is the mistake that got us here.
   const rescued = useRef(false);
   useEffect(() => {
     const was = oldShape.current;
     if (!was || rescued.current || !real?.homes?.length) return;
     rescued.current = true;
-    const places: Record<string, [number, number]> = {};
-    for (const h of real.homes) {
-      const by = was[h.id];
-      if (!by) continue;
-      const mid = middleOf(h.ring);
-      places[h.id] = [mid[0] + by[0], mid[1] + by[1]];
-    }
-    if (!Object.keys(places).length) return;
-    setMoved((now) => {
-      const next = { ...places, ...now };
-      try { localStorage.setItem(byHand, JSON.stringify(next)); } catch { /* fine */ }
-      return next;
-    });
-    for (const [id, at] of Object.entries(places)) {
-      const label = id.split("|")[1] ?? "";
-      if (!label) continue;
-      void fetch(`/api/properties/${propertyId}/plan`, {
+
+    void (async () => {
+      try { localStorage.setItem(`${byHand}:asdragged`, JSON.stringify(was)); } catch { /* fine */ }
+
+      const places: Record<string, [number, number]> = {};
+      for (const h of real.homes) {
+        const by = was[h.id];
+        if (!by) continue;
+        const mid = middleOf(h.ring);
+        places[h.id] = [mid[0] + by[0], mid[1] + by[1]];
+      }
+      if (!Object.keys(places).length) return;
+
+      // Showing them is instant and costs nothing if the saving fails.
+      setMoved((now) => ({ ...places, ...now }));
+
+      // The lots have to exist before a position can be hung on one.
+      await fetch(`/api/properties/${propertyId}/plan`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "place", label, lng: at[0], lat: at[1] }),
-      });
-    }
-  }, [real, byHand, propertyId]);
+        body: JSON.stringify({
+          action: "seed",
+          labels: real.homes.map((h) => `${h.label} ${h.street}`),
+        }),
+      }).catch(() => null);
+
+      let saved = 0;
+      let why = "";
+      for (const h of real.homes) {
+        const at = places[h.id];
+        if (!at) continue;
+        const res = await fetch(`/api/properties/${propertyId}/plan`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "place", label: `${h.label} ${h.street}`, lng: at[0], lat: at[1],
+          }),
+        }).catch(() => null);
+        if (res?.ok) saved += 1;
+        else if (!why) {
+          const out = await res?.json().catch(() => ({})) ?? {};
+          why = String(out.error ?? "");
+        }
+      }
+
+      if (saved) {
+        // Only now is the old form replaced, and only because there is
+        // a copy of it in the database.
+        try { localStorage.setItem(byHand, JSON.stringify(places)); } catch { /* fine */ }
+        setOsm((o) => ({ ...(o ?? {}), rescued: saved }));
+        await load();
+      } else {
+        setError(
+          "Your moved homes are back on screen but could not be saved"
+          + (why ? ` — ${why}` : "")
+          + ". Don't clear this browser. Press Save a copy, then Add these lots.",
+        );
+      }
+    })();
+  }, [real, byHand, propertyId, load]);
 
   const here = placed.find((h) => h.id === selected) ?? null;
   const open = here ? match.get(here.id) ?? null : null;
@@ -437,8 +503,26 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               {arranging ? "Done moving" : "Move homes"}
             </button>
           )}
+          {Object.keys(moved).length > 0 && (
+            <button type="button" className="btn" onClick={() => {
+              // Somebody's evening, in a file they keep. The browser is
+              // not a safe place to hold the only copy of anything.
+              const blob = new Blob([JSON.stringify(moved, null, 2)],
+                                    { type: "application/json" });
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = `moved-homes-${propertyId}.json`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }}>
+              Save a copy
+            </button>
+          )}
           {real && arranging && Object.keys(moved).length > 0 && (
             <button type="button" className="btn" onClick={() => {
+              const n = Object.keys(moved).length;
+              if (!confirm(`Put all ${n} homes back where the layout wants them? `
+                           + "Your moves are lost.")) return;
               setMoved({});
               try { localStorage.removeItem(byHand); } catch { /* fine */ }
               void fetch(`/api/properties/${propertyId}/plan`, {
@@ -459,6 +543,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       </header>
 
       {error && <p className="err">{error}</p>}
+
+      {osm?.rescued ? (
+        <p className="parkhint">
+          <strong>{osm.rescued} homes you had moved are back</strong>, and are
+          now saved on the server rather than in this browser.
+        </p>
+      ) : null}
 
       {arranging && (
         <p className="parkhint">
