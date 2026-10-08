@@ -226,7 +226,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   //
   // Separate from the `money` action, which writes to the sale. A home we
   // own and let has no sale: there is no second party to charge lot rent
-  // to and no management fee to take from ourselves. The rent is the only
+  // to and no consultancy fee to take from ourselves. The rent is the only
   // money there is, and it belongs to the unit.
   if (body.action === "rent") {
     const { error } = await db.from("units").update({

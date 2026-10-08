@@ -10,6 +10,11 @@ type Sale = {
   term_months: number | null; home_year: number | null; home_make: string | null;
   home_serial: string | null; ended_on: string | null; ended_why: string | null;
   note: string | null; owners: { id: string; name: string } | null;
+  // `management_cents` is what the column has been called since 032.
+  // The charge is a CONSULTANCY fee and is called that everywhere a
+  // person reads it, here and on an owner statement. Renaming the column
+  // is a migration that buys nothing; renaming it on screen is the whole
+  // of what matters.
   lot_rent_cents?: number | null; management_cents?: number | null;
   warranty_cents?: number | null; tenant_rent_cents?: number | null;
   pet_fee_cents?: number | null; late_fee_cents?: number | null;
@@ -258,9 +263,9 @@ export default function LotCard(
       </section>
       )}
 
-      {/* A home we own and let. No lot rent and no management fee: there
-          is no second party to charge either to -- we are both sides of
-          it -- so the rent is the only money there is. */}
+      {/* A home we own and let. No lot rent and no consultancy fee:
+          there is no second party to charge either to -- we are both
+          sides of it -- so the rent is the only money there is. */}
       {kind === "poh" && (
         <section className="lotbit">
           <h3>{use === "not_home" ? "What we let it for" : "Every month"}</h3>
@@ -409,7 +414,7 @@ function MoneyForm(
       <p className="memory">The owner pays the park</p>
       <div className="three">
         <label>Lot rent<input name="lotRent" inputMode="decimal" defaultValue={d(sale.lot_rent_cents)} /></label>
-        <label>Management<input name="management" inputMode="decimal" defaultValue={d(sale.management_cents)} /></label>
+        <label>Consultancy<input name="management" inputMode="decimal" defaultValue={d(sale.management_cents)} /></label>
         <label>Warranty<input name="warranty" inputMode="decimal" defaultValue={d(sale.warranty_cents)} /></label>
       </div>
       <p className="memory">The tenant pays</p>
@@ -430,7 +435,7 @@ function MoneyForm(
  * What the person living in a home WE own pays.
  *
  * Three fields, not six. A home we own and let has no owner to charge
- * lot rent to, no management fee to take from ourselves and no warranty
+ * lot rent to, no consultancy fee to take from ourselves and no warranty
  * to sell ourselves, and a form that asks for them anyway invites
  * somebody to fill one in.
  */

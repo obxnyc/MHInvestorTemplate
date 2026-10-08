@@ -49,7 +49,7 @@ const card = `
     </form></section>
   <section class="lotbit"><h3>Every month</h3>
     <form class="saleform">
-      <div class="three"><label>Lot rent<input></label><label>Management<input></label>
+      <div class="three"><label>Lot rent<input></label><label>Consultancy<input></label>
         <label>Warranty<input></label></div>
       <div class="three"><label>Tenant rent<input></label><label>Pet fee<input></label>
         <label>Late fee<input></label></div></form></section>

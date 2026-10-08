@@ -114,3 +114,11 @@ create policy staff_removes_papers on sale_papers
 do $$ begin
   raise notice 'a sale has its monthly charges and its paperwork';
 end $$;
+
+-- A note on the name, added later.
+--
+-- `management_cents` is the fee the park charges an owner for looking
+-- after their home. The owner calls it a CONSULTANCY fee, and that is
+-- the word on the card and on any statement that goes out -- the column
+-- keeps its original name because renaming it is a migration that buys
+-- nothing, and nobody outside this file reads it.
