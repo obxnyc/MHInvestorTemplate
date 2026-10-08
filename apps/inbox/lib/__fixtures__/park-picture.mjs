@@ -74,13 +74,38 @@ const pieces = (across, cuts) => {
   }
   return out;
 };
-// Out of order, one reversed, plus a detached run of the same name east.
+
+// The horseshoe. Lady Viola and Lady Cheryl are the two legs of one loop:
+// they meet at the bend by the east boundary and come back. Whatever the
+// map calls each half, the geometry joins -- so a row walked along "the
+// street" carries on round the bend and back up the other side, which is
+// the thing the owner pointed at.
+const bend = (from, to, mid) => {
+  const out = [];
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
+    const ang = Math.PI * t;
+    out.push(at(mid + Math.sin(ang) * 18, (from + to) / 2 - Math.cos(ang) * (to - from) / 2));
+  }
+  return out;
+};
+const loop = bend(VIOLA, CHERYL, 150);
+
 const violaBits = [
-  ...pieces(VIOLA, [-140, -40, 0, 70, 150, 210]),
+  ...pieces(VIOLA, [-140, -40, 0, 70, 150]),
+  // The same name continuing a quarter mile east, nothing to do with us.
   [at(520, VIOLA), at(640, VIOLA)],
+  // ...and the bend, which the map hangs on one of the two names.
+  loop,
 ];
-const cherylBits = pieces(CHERYL, [-140, -30, 55, 150, 210]);
-const scramble = (a) => [a[2], [...a[0]].reverse(), a[4] ?? a[3], a[1], a[3], ...a.slice(5)];
+const cherylBits = pieces(CHERYL, [-140, -30, 55, 150]);
+const scramble = (a) => {
+  const out = [...a];
+  // Out of order, and one of them traced backwards.
+  out.reverse();
+  out[1] = [...out[1]].reverse();
+  return out;
+};
 
 const roads = roadsFrom([
   ...scramble(violaBits).map((line, i) => ({
@@ -108,8 +133,8 @@ const fitted = placeFromRoads(RETREAT, roads) ?? RETREAT;
 // still a lot, and that is the case this has to get right.
 //
 //   Lady Viola even   13 lots, 12 buildings, the empty one at the loop
-//   Lady Viola odd    14 lots, 11 buildings, three empty at the entrance
-//   Lady Cheryl even  12 lots, 10 buildings, two empty at the entrance
+//   Lady Viola odd    13 lots, 11 buildings, two empty at the entrance
+//   Lady Cheryl even  13 lots, 11 buildings, two empty at the entrance
 //   Lady Cheryl odd   12 lots, 12 buildings
 const PITCH = 10.5;
 const built = [];
@@ -124,8 +149,8 @@ const put = (across, from, count, skip = []) => {
   }
 };
 put(VIOLA - SETBACK, 6, 13, [12]);
-put(VIOLA + SETBACK, 6, 14, [0, 1, 2]);
-put(CHERYL - SETBACK, 6, 12, [0, 1]);
+put(VIOLA + SETBACK, 6, 13, [0, 1]);
+put(CHERYL - SETBACK, 6, 13, [0, 1]);
 put(CHERYL + SETBACK, 6, 12);
 
 const pads = layRows(fitted, roads, fence, built);
@@ -143,6 +168,9 @@ const sy = (y) => H - PAD - (y - minY) * k;
 const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(" ");
 
 const outside = pads.filter((p) => !inRing(centroid(p.ring), fence));
+// A step ladder: every home in the park is a rung, all square to one
+// line. Not just every home in its own row.
+const everyAngle = [];
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <rect width="${W}" height="${H}" fill="#eef1f4"/>
 <path d="${path(fence)} Z" fill="#dce7f5" stroke="#1F5BA6" stroke-width="2.5"/>
@@ -182,7 +210,24 @@ for (const [street, side] of [
     (cs[cs.length - 1][0] - cs[0][0]) / dLng, (cs[cs.length - 1][1] - cs[0][1]) / dLat);
   const walked = gaps.reduce((a, b) => a + b, 0);
   if (walked > span * 1.25) problems.push(`${street} ${side} folds back on itself`);
-  if (Math.min(...gaps) < 6) problems.push(`${street} ${side} has lots on top of each other`);
+  // A pad is 4.88 m across, so anything under that overlaps its
+  // neighbour. Checked against the real width rather than a round number.
+  if (Math.min(...gaps) < 4.9) problems.push(`${street} ${side} has lots overlapping`);
+  // Every home in a row stands in line with the rest. A pad that takes
+  // its angle from its own neighbours fans a few degrees off and catches
+  // the corner of the next one.
+  // Folded into half a turn: a rectangle pointing north and the same
+  // rectangle pointing south are the same rectangle, and 179 against 1
+  // is two degrees apart, not a hundred and seventy-eight.
+  const angleOf = (p) => {
+    const a = p.ring[0], b = p.ring[1];
+    const deg = (Math.atan2((b[0] - a[0]) / dLng, (b[1] - a[1]) / dLat) * 180) / Math.PI;
+    return ((deg % 180) + 180) % 180;
+  };
+  const angles = row.map(angleOf);
+  const off = Math.max(...angles) - Math.min(...angles);
+  if (off > 1) problems.push(`${street} ${side} homes are not parallel (${off.toFixed(1)}°)`);
+  everyAngle.push(...angles);
 }
 // A pad on every building the map has, which is the thing the owner
 // keeps pointing at: an outline with nothing on it is a lot that failed.
@@ -211,6 +256,10 @@ if (process.env.DEBUG) {
       (c[0] - cs[i][0]) / dLng, (c[1] - cs[i][1]) / dLat));
     console.log(`${street} ${side}: ${row.length} lots, gaps ${gaps.map((g) => g.toFixed(1)).join(" ")}`);
   }
+}
+if (everyAngle.length) {
+  const spread = Math.max(...everyAngle) - Math.min(...everyAngle);
+  if (spread > 1) problems.push(`the park's homes are not all parallel (${spread.toFixed(1)}°)`);
 }
 console.log(`wrote ${out}`);
 console.log(problems.length ? `PROBLEMS:\n- ${problems.join("\n- ")}` : "nothing obviously wrong");

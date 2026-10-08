@@ -25,7 +25,8 @@
 import {
   footprint, degreesPerMetre, bearingOf, metresBetween,
 } from "./footprint";
-import { inRing, placeOn, sameStreet, type Road, type Shape } from "./osm";
+import { alongAxis, inRing, nearestOn, placeOn, sameStreet,
+         type Road, type Shape } from "./osm";
 import type { Plan, PlanRow } from "./parkplan";
 
 export type Pad = {
@@ -44,7 +45,7 @@ export function layRows(
   // street within forty-five metres. The two streets here are fifty-seven
   // apart, so a row on one of them was claiming the facing row on the
   // other: Lady Cheryl ended up with twice the buildings it has, gave up,
-  // and spread its lots evenly down the middle of the park.
+  // and spread its lots down the middle of the park.
   const owns = new Map<Road, Shape[]>();
   for (const sh of shapes) {
     if (parcel && !inRing(sh.centre, parcel)) continue;
@@ -58,131 +59,157 @@ export function layRows(
     owns.set(best, [...(owns.get(best) ?? []), sh]);
   }
 
-  const out: Pad[] = [];
+  type Ready = {
+    row: PlanRow; line: number[][]; lo: number; hi: number; offset: number;
+    heading: number; here: { s: Shape; at: number }[];
+    pitch: number; span: number; slot: Map<number, Shape>; west: number;
+  };
+
+  const ready: Ready[] = [];
   for (const row of plan.rows) {
     const road = roads.find((r) => sameStreet(row.street, r.name));
     if (!road) continue;
-    const offset = offsetFor(row, road, owns.get(road) ?? [], plan);
-
-    // Two lines, for two different jobs. Positions are measured along the
-    // whole street, which runs well past the park, so nothing clamps at
-    // an end and piles two lots on one spot. The stretch the row can
-    // actually use -- clipped for THIS row, because a pad sits fifteen
-    // metres off the road and the boundary steps in at the entrance --
-    // only says where the row has to start and stop.
-    const full = westToEast(densify(road.line, 2));
-    const usable = westToEast(clipFor(road.line, parcel, row.side, offset));
-    if (full.length < 2 || usable.length < 2) continue;
-    const lo = alongOn(full, [usable[0][0], usable[0][1]]);
-    const hi = alongOn(full, [usable[usable.length - 1][0], usable[usable.length - 1][1]]);
 
     const on = (owns.get(road) ?? []).filter((sh) =>
       placeOn(road, sh.centre).north === (row.side === "N"));
-    out.push(...layRow(plan, row, full, lo, hi, offset, on));
+    const offset = offsetFor(row, road, owns.get(road) ?? [], plan);
+
+    // The leg of the loop this row's homes are on, not the whole loop:
+    // Lady Viola and Lady Cheryl meet at the horseshoe, so walking "the
+    // street" carries a row round the bend and back up the other side.
+    const leg = legFor(road.line, on);
+    // Positions are measured along the whole leg, which runs past the
+    // park, so nothing clamps at an end and piles two lots on one spot.
+    // The stretch the row can use -- clipped for THIS row, since a pad
+    // sits fifteen metres off the road -- only says where it may start
+    // and stop.
+    const line = westToEast(densify(leg, 2));
+    const usable = westToEast(clipFor(leg, parcel, row.side, offset));
+    if (line.length < 2 || usable.length < 2) continue;
+    const lo = alongOn(line, [usable[0][0], usable[0][1]]);
+    const hi = alongOn(line, [usable[usable.length - 1][0], usable[usable.length - 1][1]]);
+
+    // One heading for the whole row. Every home in this park is the same
+    // model on the same pad and they stand in line; taking each pad's
+    // angle from its own neighbours let them fan a few degrees apart and
+    // catch each other's corners.
+    const heading = bearingOf(
+      [usable[0][0], usable[0][1]],
+      [usable[usable.length - 1][0], usable[usable.length - 1][1]],
+    );
+
+    const here = on
+      .map((sh) => ({ s: sh, at: alongOn(line, sh.centre) }))
+      .sort((a, b) => a.at - b.at);
+
+    // The pitch, from the gaps between neighbours with nothing missing
+    // between them -- the small ones. A median over all the gaps is
+    // dragged up by every double gap.
+    const gaps: number[] = [];
+    for (let i = 1; i < here.length; i++) gaps.push(here[i].at - here[i - 1].at);
+    const rough = gaps.length
+      ? [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : 0;
+    const close = gaps.filter((g) => g < rough * 1.5).sort((a, b) => a - b);
+    const pitch = close.length ? close[Math.floor(close.length / 2)] : rough;
+
+    // Which lot each building is, counted one gap at a time. Dividing the
+    // distance from the first building by the pitch compounds a small
+    // error in the pitch into a whole lot across a row of thirteen.
+    const slot = new Map<number, Shape>();
+    let span = 0;
+    if (here.length) {
+      slot.set(0, here[0].s);
+      for (let i = 1; i < here.length; i++) {
+        span += Math.max(1, Math.round(gaps[i - 1] / pitch));
+        slot.set(span, here[i].s);
+      }
+    }
+
+    ready.push({
+      row, line, lo, hi, offset, heading, here, pitch, span, slot,
+      // Where this row's first home sits on one axis shared by the whole
+      // park, so the four rows can be compared with each other.
+      west: here.length
+        ? alongAxis(plan.centre, plan.bearing, here[0].s.centre) : Infinity,
+    });
+  }
+
+  // One heading for the whole park, not one per row.
+  //
+  // A step ladder: every home is a rung, all of them square to the same
+  // line. The two streets are the legs of one loop and the map traces
+  // them a degree or two apart, which is enough for the rows to read as
+  // slightly fanned rather than as a park. Averaged as directions rather
+  // than as numbers, because 179 degrees and 1 degree are two degrees
+  // apart and their arithmetic mean is ninety.
+  let sumX = 0, sumY = 0;
+  for (const r of ready) {
+    const a = (r.heading * Math.PI) / 90;
+    sumX += Math.cos(a); sumY += Math.sin(a);
+  }
+  const parkHeading = ready.length
+    ? ((Math.atan2(sumY, sumX) * 90) / Math.PI + 180) % 180
+    : plan.bearing;
+  for (const r of ready) r.heading = parkHeading;
+
+  // Where the park begins. Every row starts at the same end of the site,
+  // so a row whose first home is two pitches further in is a row missing
+  // two lots at the entrance -- which is the only honest evidence there
+  // is about where the empty pads are. The boundary is not: it runs on
+  // past the last home to the kerb of Pamalee Drive, and reading that as
+  // room for two more lots is what kept putting 3124 and 3122 at the
+  // wrong end of Lady Viola.
+  const edge = Math.min(...ready.map((r) => r.west).filter(Number.isFinite));
+
+  const out: Pad[] = [];
+  for (const r of ready) {
+    const n = r.row.numbers.length;
+    const mk = (label: string, at: number) => {
+      const w = walk(r.line, at);
+      return {
+        id: `${r.row.street}|${label}`, label,
+        street: r.row.street, side: r.row.side,
+        ring: footprint(
+          padAt(w.point, r.heading, r.row.side, r.offset)[1],
+          padAt(w.point, r.heading, r.row.side, r.offset)[0],
+          awayFrom(r.heading, r.row.side), plan.size,
+        ),
+      };
+    };
+
+    // Nothing from the map: spread them evenly over what there is.
+    if (r.here.length < 2 || !(r.pitch > 3) || r.span >= n) {
+      const room = r.hi - r.lo;
+      out.push(...r.row.numbers.map((label, k) =>
+        mk(label, r.lo + ((k + 0.5) / n) * (room > 0 ? room : n * plan.padSpacing))));
+      continue;
+    }
+
+    // The grid, fitted to the homes the map has: the distance from the
+    // first to the last over the lots between them.
+    const step = r.span > 0
+      ? (r.here[r.here.length - 1].at - r.here[0].at) / r.span : r.pitch;
+    const spare = n - 1 - r.span;
+    const before = Number.isFinite(edge)
+      ? Math.max(0, Math.min(spare, Math.round((r.west - edge) / step)))
+      : 0;
+
+    // Every lot on the grid, at one angle, one pitch apart. Putting each
+    // pad on its own building's middle instead let a pad traced a metre
+    // out sit a metre out, and two of them overlap.
+    //
+    // Nudged along by whole pitches if an end has run past the boundary,
+    // which keeps the row even and parallel while putting it back inside
+    // the park -- shortening or squeezing it would not.
+    let shift = 0;
+    const first = r.here[0].at - before * step;
+    const last = first + (n - 1) * step;
+    if (first < r.lo) shift = Math.ceil((r.lo - first) / step) * step;
+    else if (last > r.hi) shift = -Math.ceil((last - r.hi) / step) * step;
+
+    out.push(...r.row.numbers.map((label, k) => mk(label, first + shift + k * step)));
   }
   return out;
-}
-
-/**
- * One row: a lot on every building, and a lot on every gap between them.
- *
- * The map's buildings say where the homes are, and they are right -- what
- * they are not is complete, because a pad that was empty when the aerial
- * was flown has no building on it and is still a lot. So the row is a
- * regular grid at the buildings' own pitch, every building sits on the
- * slot it falls in, and the slots nothing lands on are the empty pads.
- *
- * Which end the spare slots go on is not a guess either. The grid has to
- * fit between the boundary and the boundary: on Lady Viola's even side the
- * first home is already up against Pamalee Drive, so the thirteenth lot
- * can only be at the far end by the loop -- which is the empty pad, and is
- * 3100.
- */
-function layRow(
-  plan: Plan, row: PlanRow, line: number[][],
-  lo: number, hi: number, offset: number, on: Shape[],
-): Pad[] {
-  const n = row.numbers.length;
-  const room = hi - lo;
-  if (!(room > 0) || n < 1) return [];
-
-  const mk = (label: string, centre: [number, number], heading: number): Pad => ({
-    id: `${row.street}|${label}`, label, street: row.street, side: row.side,
-    ring: footprint(centre[1], centre[0], awayFrom(heading, row.side), plan.size),
-  });
-  const place = (label: string, at: number, centre?: [number, number]) => {
-    const w = walk(line, at);
-    return mk(label, centre ?? padAt(w.point, w.bearing, row.side, offset), w.bearing);
-  };
-
-  const here = on
-    .map((s) => ({ s, at: alongOn(line, s.centre) }))
-    .sort((a, b) => a.at - b.at);
-
-  const evenly = () =>
-    row.numbers.map((label, k) => place(label, lo + ((k + 0.5) / n) * room));
-  if (here.length < 2) return evenly();
-
-  // The pitch, from the gaps between neighbours that have no lot missing
-  // between them -- the small ones. Taking the median of all the gaps
-  // lets a double-width gap drag the figure up.
-  const gaps: number[] = [];
-  for (let i = 1; i < here.length; i++) gaps.push(here[i].at - here[i - 1].at);
-  const rough = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
-  const close = gaps.filter((g) => g < rough * 1.5).sort((a, b) => a - b);
-  const pitch = close.length ? close[Math.floor(close.length / 2)] : rough;
-  if (!(pitch > 3)) return evenly();
-
-  // Which lot each building is, counted one gap at a time.
-  //
-  // This used to be the distance from the first building divided by the
-  // pitch, rounded. Over a row of thirteen a five per cent error in the
-  // pitch compounds into a whole lot, so the last few buildings claimed
-  // the same slot and two homes ended up on one pad. Counting each gap on
-  // its own cannot drift: the question is only ever "is the next home
-  // next door, or is there one empty pad between them, or two".
-  const slot = new Map<number, Shape>();
-  let where = 0;
-  slot.set(0, here[0].s);
-  for (let i = 1; i < here.length; i++) {
-    where += Math.max(1, Math.round(gaps[i - 1] / pitch));
-    slot.set(where, here[i].s);
-  }
-  const span = where;
-  if (span >= n) return evenly();
-
-  // The pitch to place the empty pads at, now that the slots are known:
-  // the distance from the first building to the last, over the number of
-  // lots between them. The estimate used to count the gaps is robust but
-  // approximate, and placing an empty pad with it left it half a pad out
-  // from the home next door.
-  const step = span > 0 ? (here[here.length - 1].at - here[0].at) / span : pitch;
-  if (process.env.PARKDEBUG) {
-    console.log(`${row.street} ${row.side}: lo=${lo.toFixed(0)} hi=${hi.toFixed(0)}`
-      + ` found=${here.length} pitch=${pitch.toFixed(2)} span=${span} n=${n}`);
-  }
-
-  // How many spare lots go before the first building. The grid has to
-  // start and finish inside the stretch this row can use, and where only
-  // one placing fits, that is the answer -- which is how the thirteenth
-  // lot on Lady Viola's even side ends up at the loop rather than jammed
-  // against Pamalee Drive.
-  const spare = n - 1 - span;
-  let before = 0;
-  let best = Infinity;
-  for (let b = 0; b <= spare; b++) {
-    const from = here[0].at - b * step;
-    const to = here[0].at + (span + spare - b) * step;
-    const out = Math.max(0, lo - from) + Math.max(0, to - hi);
-    const score = out * 1000 + Math.abs((from - lo) - (hi - to));
-    if (score < best) { best = score; before = b; }
-  }
-
-  return row.numbers.map((label, k) => {
-    const had = slot.get(k - before);
-    if (had) return place(label, alongOn(line, had.centre), had.centre);
-    return place(label, here[0].at + (k - before) * step);
-  });
 }
 
 /** How far along a line the nearest point to something is, in metres. */
@@ -332,6 +359,68 @@ export function awayFrom(heading: number, side: "N" | "S"): number {
   const right = (heading + 90) % 360;
   const northward = Math.cos((left * Math.PI) / 180) > 0 ? left : right;
   return side === "N" ? northward : (northward + 180) % 360;
+}
+
+/**
+ * One street broken at its corners.
+ *
+ * Lady Viola and Lady Cheryl are the two legs of a single loop: they meet
+ * at the horseshoe by the east boundary and come back. Whatever the map
+ * calls each half, the geometry joins, so walking "the street" to lay a
+ * row carries on round the bend and back up the other side -- and the row
+ * either doubles back on itself or measures its last few homes against the
+ * wrong leg.
+ *
+ * A home sits on a straight run of road. So the line is cut wherever it
+ * turns more than a corner's worth, and a row takes the piece its own
+ * homes are on.
+ */
+export function legs(line: number[][], maxTurn = 40): number[][][] {
+  if (line.length < 3) return [line];
+
+  // Cut where the road has turned away from the way this run started,
+  // not where one joint is sharp. A horseshoe turns a hundred and eighty
+  // degrees over a dozen gentle segments and no single one of them is a
+  // corner, so looking at joints finds nothing and the row carries on
+  // round the bend.
+  const out: number[][][] = [];
+  let run: number[][] = [line[0]];
+  let heading: number | null = null;
+
+  for (let i = 1; i < line.length; i++) {
+    const a: [number, number] = [line[i - 1][0], line[i - 1][1]];
+    const b: [number, number] = [line[i][0], line[i][1]];
+    if (a[0] === b[0] && a[1] === b[1]) continue;
+    const dir = bearingOf(a, b);
+    if (heading === null) heading = dir;
+    // How far this segment has turned from the way the run started.
+    // Nought when it carries straight on, a hundred and eighty when it
+    // comes back the other way.
+    const off = Math.abs(((dir - heading + 540) % 360) - 180);
+    if (off > maxTurn && run.length >= 2) {
+      out.push(run);
+      run = [line[i - 1]];
+      heading = dir;
+    }
+    run.push(line[i]);
+  }
+  out.push(run);
+  return out.filter((r) => r.length >= 2);
+}
+
+/** Of a street's straight runs, the one this row's homes are on. The
+ *  longest, where the row has no homes to go by. */
+export function legFor(line: number[][], on: Shape[]): number[][] {
+  const pieces = legs(line);
+  if (pieces.length === 1) return pieces[0];
+  let best = pieces[0];
+  let score = -1;
+  for (const piece of pieces) {
+    const near = on.filter((sh) => nearestOn(piece, sh.centre).metres <= 45).length;
+    const mark = near * 1e6 + lengthOf(piece);
+    if (mark > score) { score = mark; best = piece; }
+  }
+  return best;
 }
 
 /** The same line, guaranteed to run west to east, which is the direction

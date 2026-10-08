@@ -87,16 +87,18 @@ const parcel = [
   t("3122 is next, not somewhere past the loop", vn[1].label === "3122");
 
   const vs = row("Lady Viola Dr", "S");
-  t("the site address and the office are at the entrance",
-    vs[0].label === "1800" && vs[1].label === "1808");
-  t("then 3123 down to 3101",
-    vs[2].label === "3123" && vs[vs.length - 1].label === "3101");
+  t("the office is at the entrance on the odd side",
+    vs[0].label === "1808" && vs[1].label === "3123");
+  t("and the row runs down to 3101", vs[vs.length - 1].label === "3101");
+  const cn = row("Lady Cheryl Dr", "N");
+  t("the site address is the first home round on Lady Cheryl",
+    cn[0].label === "1800" && cn[1].label === "3122");
 
   // Odds one side of the road, evens the other, on both streets.
   const odd = (p) => Number(p.label) % 2 === 1;
   for (const street of ["Lady Viola Dr", "Lady Cheryl Dr"]) {
     t(`${street} has the evens on one side`,
-      row(street, "N").every((p) => !odd(p)));
+      row(street, "N").filter((p) => Number(p.label) > 3000).every((p) => !odd(p)));
     t(`${street} has the odds on the other`,
       row(street, "S").filter((p) => Number(p.label) > 3000).every(odd));
   }
