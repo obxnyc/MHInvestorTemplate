@@ -1990,7 +1990,21 @@ a.metric:hover{border-color:var(--accent)}
 .rowform .three{display:grid;gap:.5rem;align-items:end;
   grid-template-columns:repeat(auto-fit,minmax(5.5rem,1fr))}
 .rowform .three>*{min-width:0}
-.rowform input,.rowform select{min-width:0;width:100%}
+/* Not the checkboxes -- the same trap as `.saleform` above, where a
+   width of 100% on every input turned a tick into a box the width of
+   the card. Fixed there and not here, because `.rowform` had no tick in
+   it until an expense needed one. */
+.rowform input:not([type=checkbox]):not([type=radio]),
+.rowform select{min-width:0;width:100%}
+.rowform input[type=checkbox]{width:auto;flex:none;margin:0}
+/* And a date field clips rather than shrinks, so it takes a line. */
+.rowform .three label:has(input[type=date]){grid-column:1/-1}
+/* `check` is the setup page's result card; a tick beside a sentence is
+   not. Reset here as it already is in the sale form. */
+.rowform .check{display:flex;align-items:center;gap:.4rem;
+  border:none;border-radius:0;background:none;padding:0;margin:0;
+  text-transform:none;letter-spacing:0;font-size:.8rem;
+  color:var(--ink-2);font-weight:400}
 
 
 /* ---- an empty plan says what to do about it ---- */
@@ -2160,3 +2174,12 @@ a.metric:hover{border-color:var(--accent)}
    said in a colour and in words -- a count alone reads as decoration. */
 .parkok{color:var(--tn-ink)}
 .parkbad{color:var(--crit)}
+/* The last deal, offered as a starting point. Quiet, because it is an
+   offer and not a warning, and boxed, because it is not part of the form
+   it sits above. */
+.recall{margin:0 0 .6rem;padding:.6rem .7rem;border:1px solid var(--hair);
+  border-radius:9px;background:var(--sunk);display:grid;gap:.45rem;
+  justify-items:start}
+.recall p{margin:0;font-size:.78rem;line-height:1.45;color:var(--ink-2);
+  font-weight:400;text-transform:none;letter-spacing:0}
+.recall strong{color:var(--ink)}

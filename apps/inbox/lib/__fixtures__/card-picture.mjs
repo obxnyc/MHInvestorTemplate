@@ -34,6 +34,11 @@ const card = `
     <label class="check"><input type="checkbox"> We let it and look after it</label></section>
   <section class="lotbit"><h3>Owner</h3>
     <form class="saleform">
+      <div class="recall">
+        <p>Last sale here: <strong>3107 Lady Cheryl Dr</strong> &mdash; $38,500.00,
+          $612.00 a month over 84 months.</p>
+        <button class="btn">Same terms as that one</button>
+      </div>
       <label>Who bought it<select><option>Jernigan Holdings LLC</option></select></label>
       <div class="two"><input placeholder="Their name or LLC"><button class="btn">Add them</button></div>
       <p class="memory">Their last deal: $38,500, financed at $612 a month over 84 months.</p>
@@ -43,16 +48,48 @@ const card = `
       <div class="three"><label>Monthly<input></label><label>Rate %<input></label>
         <label>Months<input></label></div>
       <label>First payment due<input type="date"></label>
+      <p class="memory">Every month, from the day it sells</p>
+      <div class="three"><label>Lot fee<input></label><label>Consultancy<input></label>
+        <label>Warranty<input></label></div>
+      <div class="three"><label>Tenant rent<input></label><label>Pet fee<input></label>
+        <label>Late fee<input></label></div>
       <div class="three"><label>Year<input></label><label>Make<input></label>
         <label>Serial<input></label></div>
       <label>Note<textarea rows="2"></textarea></label>
     </form></section>
   <section class="lotbit"><h3>Every month</h3>
     <form class="saleform">
-      <div class="three"><label>Lot rent<input></label><label>Consultancy<input></label>
+      <p class="memory">The owner pays the park</p>
+      <p class="dim">Mortgage $612.00 a month, from the note above.</p>
+      <div class="three"><label>Lot fee<input></label><label>Consultancy<input></label>
         <label>Warranty<input></label></div>
-      <div class="three"><label>Tenant rent<input></label><label>Pet fee<input></label>
+      <label class="check"><input type="checkbox"> They carry their own insurance</label>
+      <p class="memory">The tenant pays</p>
+      <div class="three"><label>Rent<input></label><label>Pet fee<input></label>
         <label>Late fee<input></label></div></form></section>
+  <section class="lotbit"><h3>What we have spent</h3>
+    <ul class="lotlist">
+      <li><strong>$485.00</strong> Water heater <span class="dim">&middot; 2026-09-14</span>
+        <button class="aslink">remove</button></li>
+      <li><strong>$120.00</strong> Damage we caused
+        <span class="dim">&middot; ours, not deducted</span>
+        <button class="aslink">remove</button></li>
+    </ul>
+    <form class="rowform"><div class="three">
+      <label>What<input placeholder="Water heater"></label>
+      <label>Cost<input placeholder="485"></label>
+      <label>When<input type="date"></label></div>
+      <label class="check"><input type="checkbox" checked> Take it off the owner</label>
+      <button class="btn">Record what we spent</button></form></section>
+  <section class="lotbit"><h3>What we send them</h3>
+    <dl class="lotfacts">
+      <dt>Rent in</dt><dd>$1,100.00</dd>
+      <dt>They owe</dt><dd>$1,072.00 <span class="dim">mortgage + lot fee + consultancy + warranty</span></dd>
+      <dt>We spent</dt><dd>$485.00</dd>
+      <dt>Net to them</dt><dd><strong class="parkbad">-$457.00</strong></dd>
+    </dl>
+    <p class="dim">On the agreed charges, not on what has actually come in &mdash;
+      nothing here knows yet whether the rent arrived.</p></section>
   <section class="lotbit"><h3>Storage in the yard</h3>
     <form class="rowform"><div class="three">
       <label>What<input placeholder="Shed"></label><label>Size<input placeholder="10x12"></label>
