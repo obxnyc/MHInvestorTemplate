@@ -100,19 +100,24 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // The charges come with it, because those are the ones most likely to
   // be identical and the most tedious to re-enter.
   const LAST = "id, sold_on, price_cents, down_cents, financed, monthly_cents,"
-    + " rate_bps, term_months, lot_rent_cents, management_cents, warranty_cents,"
+    + " rate_bps, term_months, first_due_on, home_year, home_make,"
+    + " lot_rent_cents, management_cents, warranty_cents,"
     + " tenant_rent_cents, pet_fee_cents, late_fee_cents,"
-    + " units(label), owners(id, name)";
-  let lastAny: Record<string, unknown> | null = null;
+    + " units!inner(label, property_id), owners(id, name)";
+  let recent: Record<string, unknown>[] = [];
   {
-    const recent = await supabase.from("home_sales")
+    // In this park, not in every park. Terms differ between properties
+    // and recalling the wrong park's lot fee is worse than typing it.
+    const got3 = await supabase.from("home_sales")
       .select(LAST)
+      .eq("units.property_id", unit.property_id)
       .neq("unit_id", id)
       .order("sold_on", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(1).maybeSingle();
-    if (!recent.error && recent.data) lastAny = recent.data as unknown as Record<string, unknown>;
+      .limit(8);
+    if (!got3.error) recent = (got3.data ?? []) as unknown as Record<string, unknown>[];
   }
+  const lastAny = recent[0] ?? null;
 
   // The paperwork on the live sale, with links that work for five
   // minutes. Signed here rather than made public: a bill of sale is a
@@ -172,6 +177,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     expenses: spent.error ? [] : (spent.data ?? []),
     lastFor,
     lastAny,
+    // The last few sales in this park, offered whole: ten homes to one
+    // investor on one day is one form filled in and nine recalled.
+    recent,
   });
 }
 

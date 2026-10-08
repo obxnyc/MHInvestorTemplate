@@ -40,7 +40,8 @@ type Shed = {
 type LastAny = {
   id: string; sold_on: string; price_cents: number; down_cents: number;
   financed: boolean; monthly_cents: number | null; rate_bps: number | null;
-  term_months: number | null;
+  term_months: number | null; first_due_on: string | null;
+  home_year: number | null; home_make: string | null;
   lot_rent_cents: number | null; management_cents: number | null;
   warranty_cents: number | null; tenant_rent_cents: number | null;
   pet_fee_cents: number | null; late_fee_cents: number | null;
@@ -100,6 +101,7 @@ export default function LotCard(
   /** Whether 034 has been run, so the card can say what is missing. */
   const [spend, setSpend] = useState(true);
   const [lastAny, setLastAny] = useState<LastAny | null>(null);
+  const [recent, setRecent] = useState<LastAny[]>([]);
   const [kind, setKind] = useState<string>("none");
   const [manage, setManage] = useState(false);
   /** On a home we still own: inventory, a letting, or not a home. */
@@ -135,6 +137,7 @@ export default function LotCard(
     setSpends(out.expenses ?? []);
     setSpend(out.spend !== false);
     setLastAny(out.lastAny ?? null);
+    setRecent(out.recent ?? []);
     setKind(out.unit?.kind ?? "none");
     setManage(Boolean(out.unit?.manage));
     setUse(out.unit?.use ?? "to_sell");
@@ -270,7 +273,8 @@ export default function LotCard(
                 </button>
               </div>
             ) : fixing ? (
-              <SaleForm owners={owners} memory={null} lastAny={null} busy={busy}
+              <SaleForm owners={owners} memory={null} lastAny={null}
+                        recent={[]} busy={busy}
                         editing={live}
                         ownerId={ownerId || live.owners?.id || ""}
                         onOwner={(o) => { setOwnerId(o); }}
@@ -300,7 +304,8 @@ export default function LotCard(
             </button>
           </>
         ) : (
-          <SaleForm owners={owners} memory={memory} lastAny={lastAny} busy={busy}
+          <SaleForm owners={owners} memory={memory} lastAny={lastAny}
+                    recent={recent} busy={busy}
                     onOwner={(o) => { setOwnerId(o); void load(o); }}
                     ownerId={ownerId}
                     onCancel={() => setSelling(false)}
@@ -892,7 +897,7 @@ function Papers(
  *  retyping them is how a rate ends up different on one lot for no reason
  *  anybody can explain two years later. */
 function SaleForm(
-  { owners, memory, lastAny, editing, busy, ownerId, onOwner, onCancel, onSave }:
+  { owners, memory, lastAny, recent, editing, busy, ownerId, onOwner, onCancel, onSave }:
   {
     owners: Owner[]; busy: boolean; ownerId: string;
     /** A sale already on file, being corrected rather than recorded. */
@@ -902,6 +907,8 @@ function SaleForm(
               term_months: number | null } | null;
     /** The last sale recorded in this park, whoever bought it. */
     lastAny: LastAny | null;
+    /** The last few, so a recall can name which one. */
+    recent: LastAny[];
     onOwner: (id: string) => void;
     onCancel: () => void;
     onSave: (p: Record<string, unknown>) => Promise<boolean>;
@@ -920,6 +927,7 @@ function SaleForm(
    * rather than reaching into the DOM to set values.
    */
   const [recall, setRecall] = useState<LastAny | null>(null);
+  const [picking, setPicking] = useState(false);
   // Correcting beats recalling beats remembering beats blank.
   const from = (editing as unknown as LastAny | null) ?? recall ?? null;
   const was = editing ? null : memory;
@@ -964,29 +972,53 @@ function SaleForm(
           <strong>End ownership</strong> instead.
         </p>
       )}
-      {lastAny && !recall && !editing && (
+      {/* Ten homes to one investor on one day is one form filled in and
+          nine recalled. Everything comes over -- the buyer and the date
+          included, because when a recall is wanted at all those are
+          usually the same too, and changing one date is quicker than
+          typing fourteen fields. */}
+      {!editing && recent.length > 0 && !recall && (
         <div className="recall">
-          <p>
-            Last sale here: <strong>{lastAny.units?.label ?? "another lot"}</strong>
-            {" — "}{money(lastAny.price_cents)}
-            {lastAny.financed && lastAny.monthly_cents
-              ? `, ${money(lastAny.monthly_cents)} a month over ${lastAny.term_months} months`
-              : ", paid outright"}.
-          </p>
-          <button type="button" className="btn" onClick={() => {
-            setRecall(lastAny);
-            setFinanced(Boolean(lastAny.financed));
-          }}>
-            Copy terms
-          </button>
+          <p>Copy a sale you have already recorded here.</p>
+          {!picking ? (
+            <button type="button" className="btn" onClick={() => setPicking(true)}>
+              Recall
+            </button>
+          ) : (
+            <ul className="recalls">
+              {recent.map((r) => (
+                <li key={r.id}>
+                  <button type="button" onClick={() => {
+                    setRecall(r);
+                    setPicking(false);
+                    setFinanced(Boolean(r.financed));
+                    if (r.owners?.id) onOwner(r.owners.id);
+                  }}>
+                    <strong>{r.units?.label ?? "another lot"}</strong>
+                    <span className="dim">
+                      {" "}{r.owners?.name ?? "no buyer"} · {r.sold_on}
+                      {" · "}{money(r.price_cents)}
+                      {r.financed && r.monthly_cents
+                        ? ` · ${money(r.monthly_cents)}/mo` : " · outright"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
-      {recall && (
+      {recall && !editing && (
         <p className="memory">
-          Terms copied from {recall.units?.label ?? "the last sale"}. The buyer
-          and the date are still yours to fill in.{" "}
-          <button type="button" className="aslink" onClick={() => setRecall(null)}>
-            start blank instead
+          Copied from {recall.units?.label ?? "an earlier sale"} — buyer,
+          date, terms and charges. The serial is this home&rsquo;s own.
+          Change whatever differs.{" "}
+          <button type="button" className="aslink" onClick={() => {
+            setRecall(null);
+            setPicking(false);
+            onOwner("");
+          }}>
+            start blank
           </button>
         </p>
       )}
@@ -1004,7 +1036,7 @@ function SaleForm(
 
       <div className="three">
         <label>Sold on<input name="soldOn" type="date"
-                              defaultValue={editing?.sold_on ?? ""} /></label>
+                              defaultValue={editing?.sold_on ?? recall?.sold_on ?? ""} /></label>
         <label>Price<input name="price" inputMode="decimal" required
                            defaultValue={d(from?.price_cents ?? was?.price_cents)} /></label>
         <label>Down<input name="down" inputMode="decimal"
@@ -1029,7 +1061,7 @@ function SaleForm(
                                 defaultValue={from?.term_months ?? was?.term_months ?? ""} /></label>
           </div>
           <label>First payment due<input name="firstDueOn" type="date"
-                                         defaultValue={editing?.first_due_on ?? ""} /></label>
+                                         defaultValue={from?.first_due_on ?? ""} /></label>
         </>
       )}
 
@@ -1062,9 +1094,13 @@ function SaleForm(
 
       <div className="three">
         <label>Year<input name="homeYear" inputMode="numeric"
-                          defaultValue={editing?.home_year ?? ""} /></label>
-        <label>Make<input name="homeMake" defaultValue={editing?.home_make ?? ""} /></label>
-        <label>Serial<input name="homeSerial" defaultValue={editing?.home_serial ?? ""} /></label>
+                          defaultValue={from?.home_year ?? ""} /></label>
+        <label>Make<input name="homeMake" defaultValue={from?.home_make ?? ""} /></label>
+        {/* Never recalled. Two homes can be the same year and make; no
+            two share a serial, and a copied one is a wrong one on a
+            bill of sale. */}
+        <label>Serial<input name="homeSerial" defaultValue={editing?.home_serial ?? ""}
+                            placeholder={recall ? "this home's own" : undefined} /></label>
       </div>
       <label>Note<textarea name="note" rows={2} defaultValue={editing?.note ?? ""} /></label>
 
