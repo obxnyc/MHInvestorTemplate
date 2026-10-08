@@ -39,11 +39,54 @@ export function streetOf(v: unknown): string | null {
 const AGOL = "https://www.arcgis.com/sharing/rest/content/items";
 
 async function json(url: string): Promise<Record<string, unknown> | null> {
+  return (await asked(url)).data;
+}
+
+/**
+ * A request, and why it came to nothing.
+ *
+ * `json` swallows everything into null, so a server that refused the
+ * connection, a server that demanded a token and a server that
+ * answered "no such parcel" were indistinguishable -- and the message
+ * that reached the owner said all three at once: "nothing numbered
+ * P139-50A, or the service did not answer". That is not a diagnosis,
+ * it is a shrug, and it cost a round.
+ *
+ * ArcGIS also answers 200 with an error object inside, which is its
+ * own way of being unhelpful, so the body is read before it is
+ * believed.
+ */
+export async function asked(
+  url: string,
+): Promise<{ data: Record<string, unknown> | null; why: string }> {
   try {
     const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
-    if (!res.ok) return null;
-    return await res.json() as Record<string, unknown>;
-  } catch { return null; }
+    if (!res.ok) {
+      return { data: null, why: `the server answered ${res.status} ${res.statusText}`.trim() };
+    }
+    const body = await res.json() as Record<string, unknown>;
+    const err = body.error as { message?: string; code?: number } | undefined;
+    if (err) {
+      const code = err.code === 499 || err.code === 498
+        ? " — it wants a sign-in" : "";
+      return { data: null, why: `${err.message ?? "the service refused"}${code}` };
+    }
+    return { data: body, why: "" };
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    return { data: null, why: /abort|timeout/i.test(m) ? "it did not answer in time" : m };
+  }
+}
+
+/** Where a published item's service actually lives.
+ *
+ *  An item id is the only durable handle on somebody else's data: REST
+ *  paths get reorganised and a guessed one is a 404 that reads like an
+ *  empty layer. */
+export async function serviceOf(itemId: string): Promise<string | null> {
+  const item = await json(`${AGOL}/${itemId}?f=json`);
+  const url = item?.url;
+  return typeof url === "string" && /^https?:/.test(url) ? url.replace(/\/+$/, "") : null;
 }
 
 /** The item id out of whatever was pasted: a bare id, or the whole URL. */
@@ -264,7 +307,7 @@ export async function pointsIn(
 /** The middle of whatever shape came back. A building footprint is a polygon
  *  and an address point is a point; both answer "where is this home" and the
  *  plan only needs the one number. */
-function centroid(g: { type?: string; coordinates?: unknown } | null): { lat: number; lng: number } | null {
+export function centroid(g: { type?: string; coordinates?: unknown } | null): { lat: number; lng: number } | null {
   if (!g) return null;
   const pts: number[][] = [];
   const walk = (c: unknown) => {
@@ -432,9 +475,13 @@ export async function pinFields(layerUrl: string): Promise<string[]> {
 }
 
 export async function parcelByPin(
-  layerUrl: string, pin: string, fields?: string[],
+  layerUrl: string, pin: string, fields?: string[], notes?: string[],
 ): Promise<{ geometry: unknown; props: Record<string, unknown>; field: string } | null> {
   const want = (fields?.length ? fields : await pinFields(layerUrl));
+  if (!want.length) {
+    notes?.push("that layer has no field that looks like a parcel number");
+    return null;
+  }
   const clean = pin.trim().replace(/'/g, "''");
   const bare = clean.toUpperCase().replace(/\s+/g, "");
   for (const f of want) {
@@ -450,8 +497,13 @@ export async function parcelByPin(
     for (const where of tries) {
       const q = `${layerUrl}/query?where=${encodeURIComponent(where)}`
         + "&outFields=*&outSR=4326&returnGeometry=true&resultRecordCount=5&f=geojson";
-      const out = await json(q);
-      if (!out || out.type !== "FeatureCollection") continue;
+      const got = await asked(q);
+      const out = got.data;
+      if (!out) { notes?.push(`${f}: ${got.why}`); continue; }
+      if (out.type !== "FeatureCollection") {
+        notes?.push(`${f}: the answer was not parcels`);
+        continue;
+      }
       const hit = ((out.features ?? []) as Record<string, unknown>[])[0];
       if (hit?.geometry) {
         return {
@@ -462,6 +514,7 @@ export async function parcelByPin(
       }
     }
   }
+  notes?.push(`asked ${want.join(", ")} — none of them holds ${pin}`);
   return null;
 }
 
