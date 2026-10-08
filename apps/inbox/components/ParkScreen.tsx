@@ -475,6 +475,48 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     })();
   }, [real, byHand, propertyId, load]);
 
+  /**
+   * Put the lots on file, and the corrections on the lots.
+   *
+   * Adding the lots and saving where they sit have to be one button.
+   * Before the lots exist there is nothing for a position to hang on,
+   * so a park dragged into shape and then seeded had the shape in the
+   * browser and the lots in the database and no join between them --
+   * which lasted until the browser was cleared.
+   */
+  async function addThem() {
+    setBusy(true); setError(null);
+    const res = await fetch(`/api/properties/${propertyId}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "seed", labels: missing.map((h) => `${h.label} ${h.street}`),
+      }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) { setBusy(false); setError(out.error ?? "That didn't save."); return; }
+
+    // Every home that has been moved by hand, written against the lot
+    // that now exists for it.
+    let saved = 0, missed = 0;
+    for (const h of shown?.homes ?? []) {
+      if (!moved[h.id]) continue;
+      const c = middleOf(h.ring);
+      const r = await fetch(`/api/properties/${propertyId}/plan`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "place", label: `${h.label} ${h.street}`, lng: c[0], lat: c[1],
+        }),
+      }).catch(() => null);
+      if (r?.ok) saved += 1; else missed += 1;
+    }
+    setBusy(false);
+    if (missed) {
+      setError(`${saved} homes saved, ${missed} could not be. Press Save a copy`
+               + " and send me the file before closing this.");
+    }
+    await load();
+  }
+
   const here = placed.find((h) => h.id === selected) ?? null;
   const open = here ? match.get(here.id) ?? null : null;
   const missing = placed.filter((h) => !match.has(h.id));
@@ -656,10 +698,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             them. Add them all and every pad on the map becomes clickable.
           </p>
           <button type="button" className="btn pri" disabled={busy}
-                  onClick={() => void post({
-                    action: "seed",
-                    labels: missing.map((h) => `${h.label} ${h.street}`),
-                  })}>
+                  onClick={() => void addThem()}>
             {busy ? "Adding…" : `Add these ${missing.length} lots`}
           </button>
         </div>
