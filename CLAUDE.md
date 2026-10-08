@@ -157,3 +157,50 @@ fix is `minmax(0,1fr)` or `repeat(auto-fit,…)`. And `width:100%` on
 page's result card -- bordered, padded, coloured left edge -- and a tick
 beside a sentence borrowed it on six screens. The stylesheet had the
 same note about `.empty` from the last time this happened.
+
+### One park must never be drawn as another
+
+Three rounds were lost to a park in Pasquotank being drawn as the park
+in Fayetteville, each time by a different route, and each time it read
+as the new park being laid out badly rather than the old one still
+being on screen.
+
+**The screen started as Cross Creek.** The map reads the ground the
+moment it loads, which is before the database has said which park this
+is -- so the wrong park was harvested, and nothing afterwards threw it
+away. A screen now starts as nothing: the spacings, and no rows.
+
+**A flag that is null before it is false.** `described === false`
+looked like "not described", but the answer is null until it is known,
+and in that window the default drew. Ask `!== true`.
+
+**An allowance spent before anyone was listening.** Harvest attempts
+are capped so a hopeless map stops being asked; the counter ticked even
+with no handler attached, so the cap was reached before the plan
+arrived and the tiles were never read again.
+
+**One park's street name in shared code.** The property line ran out to
+`/pamalee/i` on every park in the system. Harmless, because no other
+park has that road, and wrong, because the park that does is not
+special. Facts about a park belong on its plan.
+
+A picture does not catch any of these -- the picture looks like a park.
+`apps/inbox/lib/__fixtures__/one-park-check.mjs` guards the rule
+instead: outside the line defining an empty plan, the screen may not
+name the park written into the code, and it may not draw or harvest
+before that park's own plan has arrived. Each fault above was
+reintroduced in turn to confirm the check catches it. Do that too when
+adding to it -- a guard nobody has seen fail is a guard nobody has
+tested.
+
+### What is not reachable from here
+
+arcgis.com, services.nconemap.gov, the Census geocoder, Nominatim and
+Overpass are all refused by egress policy, through curl and through the
+fetch tool alike. Web search is not. So county data cannot be tested
+against the real service from this machine, and guessing coordinates
+from a screenshot produced a park four kilometres from where it stands
+-- do not do that again. Test the logic against a stand-in server, say
+plainly what could not be verified, and let the deployment, which is
+not blocked, do the real call.
+

@@ -163,6 +163,18 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       const saved = localStorage.getItem(key);
       if (saved) setPlan((p) => ({ ...p, ...JSON.parse(saved) }));
     } catch { /* a browser with storage switched off still gets a map */ }
+    // Only before the park's own plan has arrived. This cache was
+    // written by the fitting that ran on load, which happened while the
+    // screen still held the default park -- so it holds that park's
+    // CENTRE, and applying it over a plan fetched from the database
+    // moved a park in Pasquotank back to Fayetteville on every reload,
+    // with the right streets named above the wrong ground.
+    //
+    // The database is the park. This is a convenience for the keystroke
+    // after the last one, and it does not get a vote once the answer
+    // is known.
+    // Once, on the way in. Re-running this after the park's own plan
+    // has loaded would put the stale centre straight back.
   }, [key]);
 
   /**
@@ -300,8 +312,17 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     if (mine?.rows?.length) {
       setPlan(mine);
       planNow.current = mine;
+      // Overwrite the browser's copy with what is on file, so a stale
+      // centre cannot come back the next time this page opens.
+      try {
+        localStorage.setItem(key, JSON.stringify({
+          centre: mine.centre, bearing: mine.bearing,
+          padSpacing: mine.padSpacing, pairGap: mine.pairGap,
+          streetGap: mine.streetGap,
+        }));
+      } catch { /* fine */ }
     }
-  }, [propertyId]);
+  }, [propertyId, key]);
   useEffect(() => { void load(); }, [load]);
 
   /** A park described for the first time, or re-described. */
@@ -973,6 +994,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       {described === false && !fitting && (
         <Describe
           propertyId={propertyId}
+          from={plan.rows.length ? plan : null}
           canKeep={canKeep}
           onAt={(at) => setPlan((was) => ({ ...was, centre: at }))}
           onLay={(next) => void describeIt(next)} />
@@ -1190,30 +1212,42 @@ function Slider(
  * whose drive has no name -- which is most of them -- is the second.
  */
 function Describe(
-  { propertyId, canKeep, onAt, onLay }:
+  { propertyId, from, canKeep, onAt, onLay }:
   {
     propertyId: string;
+    /** What the park already says about itself, where it says anything.
+     *  Re-describing a park to change one number should not mean typing
+     *  the other five again. */
+    from: Plan | null;
     canKeep: boolean;
     onAt: (at: [number, number]) => void;
     onLay: (plan: Plan) => void;
   },
 ) {
-  const [address, setAddress] = useState("");
-  const [at, setAt] = useState<[number, number] | null>(null);
+  const rows = from?.rows ?? [];
+  const streets = [...new Set(rows.map((r) => r.street))];
+  const hadName = Boolean(from && from.naming !== "lot");
+
+  const [address, setAddress] = useState(from?.address ?? "");
+  const [at, setAt] = useState<[number, number] | null>(
+    rows.length && from ? from.centre : null);
   const [hits, setHits] = useState<{ id: string; label: string }[]>([]);
-  const [named, setNamed] = useState(false);
-  const [street, setStreet] = useState("");
-  const [left, setLeft] = useState(20);
-  const [right, setRight] = useState(20);
-  const [first, setFirst] = useState(1);
-  const [turn, setTurn] = useState(30);
+  const [named, setNamed] = useState(hadName);
+  const [street, setStreet] = useState(hadName ? streets[0] ?? "" : "");
+  const [left, setLeft] = useState(rows[0]?.numbers.length ?? 20);
+  const [right, setRight] = useState(rows[1]?.numbers.length ?? 20);
+  const [first, setFirst] = useState(() => {
+    const n = Number(rows[0]?.numbers[0]);
+    return Number.isFinite(n) ? n : 1;
+  });
+  const [turn, setTurn] = useState(from?.homeTurn ?? 30);
   const [looking, setLooking] = useState(false);
   /** The address lookup is not configured on this deployment. */
   const [off, setOff] = useState(false);
   /** The county's parcel viewer, and the number on the tax card. */
   const [gis, setGis] = useState("");
-  const [parcel, setParcel] = useState("");
-  const [fence, setFence] = useState<number[][] | null>(null);
+  const [parcel, setParcel] = useState(from?.pin ?? "");
+  const [fence, setFence] = useState<number[][] | null>(from?.fence ?? null);
   const [said, setSaid] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
 
@@ -1320,6 +1354,10 @@ function Describe(
       address: named ? undefined : address.trim() || undefined,
       fence: fence ?? undefined,
       pin: parcel.trim() || undefined,
+      // Kept rather than re-asked: which road the line runs out to is
+      // not something the six questions cover, and losing it on a
+      // re-describe would quietly shrink the park by a verge.
+      frontage: from?.frontage,
       countFrom: "west",
       rows: [
         { street: name, side: "N", numbers: run(left, first) },
@@ -1425,8 +1463,9 @@ function Describe(
                    onChange={(e) => setFirst(Number(e.target.value) || 1)} /></label>
         </div>
         <p className="dim">
-          Rough is fine. Lots can be added and renumbered afterwards, and
-          nothing here is saved against a home until you say so.
+          <strong>{left + right} lots in all.</strong> Rough is fine — lots can
+          be added and renumbered afterwards, and nothing here is saved against
+          a home until you say so.
         </p>
 
         <button type="submit" className="btn pri" disabled={!at}>
