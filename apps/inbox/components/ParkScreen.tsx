@@ -922,6 +922,24 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           Saying so beats letting somebody believe the numbers on screen
           are theirs -- which is exactly how a wrong lot gets an owner
           recorded against it. */}
+      {/* The county's line, askable at any time.
+          It was inside the describe form, which is reachable only
+          before a park has been laid out -- so the one park that needed
+          it had to be re-described to get at it, and the box fitted
+          round the homes stayed on screen looking like the answer. */}
+      {described && !fitting && (
+        <Parcel propertyId={propertyId}
+                pin={plan.pin ?? ""}
+                has={Boolean(plan.fence?.length)}
+                onGot={(ring, centre, pin) => {
+                  // Not just the line: the block goes inside it. A deed
+                  // line drawn round homes that are somewhere else is
+                  // two right answers making one wrong picture.
+                  const moved = { ...plan, fence: ring, pin, centre };
+                  remember(fitInside(moved, ring));
+                }} />
+      )}
+
       {described === false && !fitting && (
         <Describe
           propertyId={propertyId}
@@ -1391,6 +1409,124 @@ function Describe(
           </p>
         )}
       </form>
+    </div>
+  );
+}
+
+/**
+ * The property line, asked of the county.
+ *
+ * Separate from describing a park because it is a different question
+ * with a different answer rate: the shape of the park is something the
+ * owner knows, and the deed line is something only the county has. One
+ * can be done today and the other when the county's field names have
+ * been worked out.
+ *
+ * Every step comes back and every step is shown. None of this can be
+ * exercised from the machine it was written on -- arcgis.com is blocked
+ * there by policy -- so the only way it gets debugged is somebody
+ * reading what it tried and saying so.
+ */
+function Parcel(
+  { propertyId, pin, has, onGot }:
+  {
+    propertyId: string; pin: string; has: boolean;
+    onGot: (ring: number[][], centre: [number, number], pin: string) => void;
+  },
+) {
+  const [open, setOpen] = useState(false);
+  const [gis, setGis] = useState("");
+  const [no, setNo] = useState(pin);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const [steps, setSteps] = useState<{ did: string; ok: boolean; say: string }[]>([]);
+  const [copied, setCopied] = useState(false);
+
+  async function ask() {
+    setBusy(true); setSaid(null); setSteps([]);
+    try {
+      const res = await fetch(`/api/properties/${propertyId}/parcel`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app: gis, pin: no }),
+      });
+      const out = await res.json().catch(() => ({}));
+      setSteps(out.steps ?? []);
+      if (out.ring?.length) {
+        onGot(out.ring, [Number(out.centre[0]), Number(out.centre[1])], no.trim());
+        setSaid(`The property line is from ${out.layer} — ${out.ring.length} corners.`);
+      } else {
+        setSaid(out.error ?? out.note ?? "The county did not answer.");
+      }
+    } catch {
+      setSaid("The county did not answer at all.");
+    }
+    setBusy(false);
+  }
+
+  if (!open) {
+    return (
+      <p className="parkhint">
+        {has
+          ? `The property line is the county's, from parcel ${pin || "on file"}.`
+          : "The property line drawn is a box around the homes, not the deed line."}
+        {" "}
+        <button type="button" className="aslink" onClick={() => setOpen(true)}>
+          {has ? "get it again" : "get it from the county"}
+        </button>
+      </p>
+    );
+  }
+
+  return (
+    <div className="parkseed">
+      <p>
+        The number off the tax card is usually enough — North Carolina
+        publishes every county&rsquo;s parcels as one layer. The county&rsquo;s
+        own viewer is the fallback if theirs is not in it.
+      </p>
+      <form className="rowform" onSubmit={(e) => { e.preventDefault(); void ask(); }}>
+        <div className="two">
+          <label>Parcel number
+            <input value={no} placeholder="P139-50A"
+                   onChange={(e) => setNo(e.target.value)} /></label>
+          <button type="submit" className="btn pri" disabled={!no || busy}>
+            {busy ? "Asking…" : "Get the property line"}
+          </button>
+        </div>
+      </form>
+      {said && <p className={has ? "parkok" : "parkbad"}>{said}</p>}
+      <details className="parkmanual">
+        <summary>Or name the county&rsquo;s own parcel viewer</summary>
+        <label className="parkhint">Paste the whole address bar from their map
+          <input value={gis} placeholder="…/index.html?appid=38fc8f…"
+                 onChange={(e) => setGis(e.target.value)} /></label>
+      </details>
+      {steps.length > 0 && (
+        <>
+          <ul className="lotlist">
+            {steps.map((st, i) => (
+              <li key={i}>
+                <strong>{st.ok ? "\u2713" : "\u2717"} {st.did}</strong>
+                <span className="dim"> — {st.say}</span>
+              </li>
+            ))}
+          </ul>
+          {/* So the failure can be handed over whole rather than
+              described from memory. */}
+          <button type="button" className="aslink" onClick={() => {
+            void navigator.clipboard.writeText(
+              steps.map((st) => `${st.ok ? "ok" : "no"}: ${st.did} — ${st.say}`).join("\n"),
+            ).then(() => setCopied(true), () => setCopied(false));
+          }}>
+            {copied ? "copied — paste it to me" : "copy this and send it to me"}
+          </button>
+        </>
+      )}
+      <p className="dim">
+        <button type="button" className="aslink" onClick={() => setOpen(false)}>
+          close
+        </button>
+      </p>
     </div>
   );
 }
