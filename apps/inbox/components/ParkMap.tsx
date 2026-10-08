@@ -18,7 +18,8 @@ export type RealPark = {
   }[];
   streets: { name: string; line: number[][] }[];
   boundary: number[][];
-  spare?: number[][][];
+  /** The park's own roads, the unnamed loop included. */
+  lanes?: number[][][];
   parcel?: string | null;
 };
 
@@ -58,7 +59,9 @@ export default function ParkMap(
     /** The buildings and named streets the tiles are carrying, handed up
      *  as soon as they have loaded. */
     onHarvest?: (found: {
-      shapes: Shape[]; roads: Road[]; areas: { name: string; ring: number[][] }[];
+      shapes: Shape[]; roads: Road[];
+      areas: { name: string; ring: number[][] }[];
+      lanes: number[][][];
     }) => void;
     fitting?: boolean;
     onMove?: (lng: number, lat: number) => void;
@@ -99,8 +102,14 @@ export default function ParkMap(
     const areas = shapesFrom(get("landuse")).map((a) => ({
       name: "land", ring: a.ring,
     }));
+    // Every road, named or not. The loop at the east end of the park has
+    // no name of its own, so it never came through with the streets and
+    // the park was drawn without the one road that goes round it.
+    const lanes = roadsFrom(
+      get("transportation").map((f, i) => ({ ...f, properties: { name: `lane${i}` } })),
+    ).map((r) => r.line);
     reaped.current += 1;
-    live.current.onHarvest?.({ shapes, roads, areas });
+    live.current.onHarvest?.({ shapes, roads, areas, lanes });
   }, []);
 
   useEffect(() => {
@@ -239,11 +248,11 @@ export default function ParkMap(
         geometry: { type: "LineString", coordinates: st.line },
       })),
     });
-    set("others", {
+    set("lanes", {
       type: "FeatureCollection",
-      features: (real?.spare ?? []).map((r) => ({
+      features: (real?.lanes ?? []).map((line: number[][]) => ({
         type: "Feature", properties: {},
-        geometry: { type: "Polygon", coordinates: [r] },
+        geometry: { type: "LineString", coordinates: line },
       })),
     });
     set("taps", {
@@ -263,8 +272,14 @@ export default function ParkMap(
       m.addLayer({ id: "park-line", type: "line", source: "park",
         paint: { "line-color": "#1F5BA6", "line-width": 2.5 } });
 
-      m.addLayer({ id: "other-fill", type: "fill", source: "others",
-        paint: { "fill-color": "#AFB7C2", "fill-opacity": 0.45 } });
+      // The park's own roads, drawn over its fill so the loop at the east
+      // end reads as a road rather than as a gap between two rows.
+      m.addLayer({ id: "lane-line", type: "line", source: "lanes",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#ffffff", "line-opacity": 0.95,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 3, 18, 9, 20, 16],
+        } });
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
         paint: { "fill-color": ["get", "colour"], "fill-opacity": 1 } });
       // Two layers rather than one with an expression: line-dasharray is
