@@ -43,6 +43,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [plan, setPlan] = useState<Plan>(RETREAT);
   /** Whether this park has a layout on file, or is still the default. */
   const [described, setDescribed] = useState<boolean | null>(null);
+  /** Whether 035 has been run. Without it a layout cannot be saved at
+   *  all, and the screen said nothing -- so laying out a park appeared
+   *  to work and then came back empty. */
+  const [canKeep, setCanKeep] = useState(true);
   const [real, setReal] = useState<RealPark | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
   const [asking, setAsking] = useState(true);
@@ -192,18 +196,6 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     }, 800);
   }, [key, propertyId]);
 
-  /** A park described for the first time, or re-described. */
-  const describeIt = useCallback(async (next: Plan) => {
-    own.current = true;
-    setDescribed(true);
-    setPlan(next);
-    planNow.current = next;
-    await fetch(`/api/properties/${propertyId}/plan`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "plan", plan: next }),
-    }).catch(() => null);
-    await load();
-  }, [propertyId]);
 
   // Dragging the whole block gets it within a few feet. Arrow keys get
   // it onto the concrete: a mouse cannot reliably move a map one metre,
@@ -283,6 +275,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     if (!res.ok) { setError(out.error ?? "Could not load the park."); return; }
     setName(out.property?.name ?? "");
     setLots(out.lots ?? []);
+    setCanKeep(out.plans !== false);
     const mine = out.property?.plan as Plan | null | undefined;
     const has = Boolean(mine?.rows?.length);
     own.current = has;
@@ -293,6 +286,29 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     }
   }, [propertyId]);
   useEffect(() => { void load(); }, [load]);
+
+  /** A park described for the first time, or re-described. */
+  const describeIt = useCallback(async (next: Plan) => {
+    setError(null);
+    setPlan(next);
+    planNow.current = next;
+    const res = await fetch(`/api/properties/${propertyId}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "plan", plan: next }),
+    }).catch(() => null);
+    const out = await res?.json().catch(() => ({})) ?? {};
+    if (!res?.ok) {
+      // Drawn either way -- the work is not lost while this is sorted
+      // out -- but not claimed as saved, because it was not.
+      own.current = false;
+      setDescribed(true);
+      setError(out.error ?? "The layout is on screen but could not be saved.");
+      return;
+    }
+    own.current = true;
+    setDescribed(true);
+    await load();
+  }, [propertyId, load]);
 
   /**
    * What the map is carrying, as soon as it has loaded.
@@ -896,6 +912,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           recorded against it. */}
       {described === false && !fitting && (
         <Describe
+          canKeep={canKeep}
           onAt={(at) => setPlan((was) => ({ ...was, centre: at }))}
           onLay={(next) => void describeIt(next)} />
       )}
@@ -1112,8 +1129,12 @@ function Slider(
  * whose drive has no name -- which is most of them -- is the second.
  */
 function Describe(
-  { onAt, onLay }:
-  { onAt: (at: [number, number]) => void; onLay: (plan: Plan) => void },
+  { canKeep, onAt, onLay }:
+  {
+    canKeep: boolean;
+    onAt: (at: [number, number]) => void;
+    onLay: (plan: Plan) => void;
+  },
 ) {
   const [address, setAddress] = useState("");
   const [at, setAt] = useState<[number, number] | null>(null);
@@ -1125,17 +1146,43 @@ function Describe(
   const [first, setFirst] = useState(1);
   const [turn, setTurn] = useState(30);
   const [looking, setLooking] = useState(false);
+  /** The address lookup is not configured on this deployment. */
+  const [off, setOff] = useState(false);
 
   // The address lookup is already proxied, so the key stays on the
   // server. Without it this still works -- the block lands near nothing
   // and gets dragged -- which is worse but not broken.
+  /**
+   * Coordinates, pasted.
+   *
+   * "36.3339, -76.2486" or a Google Maps link with @lat,lng in it. The
+   * address lookup needs a key that may not be set, and a form whose
+   * only way to say where a park is depends on somebody else's billing
+   * is a form that cannot be used. Right-click on Google Maps, copy the
+   * coordinates, paste them here.
+   */
+  function asPoint(text: string): [number, number] | null {
+    const at = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const pair = at ?? text.match(/^\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/);
+    if (!pair) return null;
+    const lat = Number(pair[1]), lng = Number(pair[2]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return [lng, lat];
+  }
+
   async function find(q: string) {
+    const point = asPoint(q);
+    if (point) { setHits([]); setAt(point); onAt(point); setOff(false); return; }
     setLooking(true);
     try {
       const res = await fetch(`/api/places?q=${encodeURIComponent(q)}`);
       const out = await res.json().catch(() => ({}));
+      // A lookup that is switched off returns nothing and used to say
+      // nothing, which reads as "no such address".
+      setOff(out.configured === false);
       setHits((out.suggestions ?? []).slice(0, 5));
-    } catch { setHits([]); }
+    } catch { setHits([]); setOff(false); }
     setLooking(false);
   }
 
@@ -1191,8 +1238,16 @@ function Describe(
       </p>
 
       <form className="rowform" onSubmit={(e) => { e.preventDefault(); lay(); }}>
+        {!canKeep && (
+          <p className="parkbad">
+            <strong>Migration 035 hasn&rsquo;t been run</strong>, so there is
+            nowhere to keep this park&rsquo;s layout. Laying it out will draw
+            it and then lose it on the next reload. Run the SQL first.
+          </p>
+        )}
         <label>The park&rsquo;s address
-          <input value={address} placeholder="1140 Northside Rd, Elizabeth City NC"
+          <input value={address}
+                 placeholder="1140 Northside Rd, Elizabeth City NC — or 36.3339, -76.2486"
                  onChange={(e) => {
                    setAddress(e.target.value);
                    if (e.target.value.trim().length > 6) void find(e.target.value);
@@ -1210,10 +1265,17 @@ function Describe(
             ))}
           </ul>
         )}
-        <p className="dim">
-          {at ? "Found it — the block will land there." :
-            "Pick it from the list so the block lands in the right place. "
-            + "Without it you can still drag the whole block onto the park."}
+        <p className={at ? "parkok" : off ? "parkbad" : "dim"}>
+          {at
+            ? "Found it — the map has moved there."
+            : off
+              ? "Address lookup is switched off on this site. Open the park in "
+                + "Google Maps, right-click the middle of it, click the "
+                + "coordinates to copy them, and paste them above."
+              : looking
+                ? "Looking…"
+                : "Pick it from the list, or paste coordinates. The map moves "
+                  + "as soon as it knows where the park is."}
         </p>
 
         <label className="check">
