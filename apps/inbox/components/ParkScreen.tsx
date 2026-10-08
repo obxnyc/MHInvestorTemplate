@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lot } from "./ParkPlan";
-import ParkMap, { type LotFacts, type LotState, type RealPark } from "./ParkMap";
+import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
 import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
@@ -273,7 +273,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     const out: LotFacts = {};
     for (const h of placed) {
       const lot = match.get(h.id);
-      out[h.id] = { state: lot ? stateOf(lot) : "bare", who: lot?.tenant ?? undefined };
+      out[h.id] = lot
+        ? { owner: ownerOf(lot), empty: emptyOf(lot), managed: Boolean(lot.manage), who: lot.tenant ?? undefined }
+        : { owner: "none", empty: true, managed: false };
     }
     return out;
   }, [placed, match]);
@@ -471,21 +473,56 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       </div>
 
       <ul className="parkkey">
-        <li><i className="sw sw-let" /> Owned and let</li>
-        <li><i className="sw sw-empty" /> Owned, nobody in it</li>
-        <li><i className="sw sw-ours" /> Our home, let</li>
-        <li><i className="sw sw-bare" /> Bare pad</li>
+        <li><i className="sw sw-poh" /> Park owned</li>
+        <li><i className="sw sw-toh" /> Tenant owned</li>
+        <li><i className="sw sw-ioh" /> Investor owned</li>
+        <li><i className="sw sw-pale" /> Pale = home empty</li>
+        <li><i className="sw sw-bare" /> Dashed = bare lot</li>
+        <li><i className="dotkey" /> We manage it</li>
       </ul>
+
+      {/* What is left to sell, which is the question the owner opened
+          this screen to answer. A park-owned home is one we can sell; a
+          tenant's or an investor's is not ours to sell. */}
+      <p className="parktally">
+        {(() => {
+          const all = Object.values(facts);
+          const n = (o: Owner) => all.filter((f) => f.owner === o).length;
+          const sellable = all.filter((f) => f.owner === "poh").length;
+          const empty = all.filter((f) => f.owner === "poh" && f.empty).length;
+          return (
+            <>
+              <strong>{sellable} of {all.length} are ours to sell</strong>
+              {empty ? `, ${empty} of them standing empty` : ""}.{" "}
+              {n("toh")} tenant owned, {n("ioh")} investor owned,{" "}
+              {n("none")} bare lots.
+            </>
+          );
+        })()}
+      </p>
+
     </div>
   );
 }
 
-/** A pad, at a glance. Four states and not more: the two that cost money --
- *  an empty home and a bare pad -- are the ones worth seeing from across the
- *  office without reading anything. */
-function stateOf(lot: Lot): LotState {
-  if (!lot.sale) return lot.tenant ? "ours" : "bare";
-  return lot.tenant ? "let" : "empty";
+/**
+ * Who owns the home on the pad.
+ *
+ * Taken from the unit where somebody has said, and worked out from the
+ * sale record where they have not -- a live sale to an investor is an
+ * investor-owned home whatever anybody has ticked, and a pad with
+ * neither a sale nor a flag has no home on it.
+ */
+function ownerOf(lot: Lot): Owner {
+  if (lot.kind && lot.kind !== "none") return lot.kind;
+  if (lot.sale) return "ioh";
+  return lot.kind === "none" ? "none" : lot.tenant ? "poh" : "none";
+}
+
+/** A home with nobody in it. A bare pad is not empty -- there is nothing
+ *  there to be empty. */
+function emptyOf(lot: Lot): boolean {
+  return !lot.tenant;
 }
 
 /**

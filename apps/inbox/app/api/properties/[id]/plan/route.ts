@@ -35,7 +35,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .select(cols).eq("property_id", id).order("label");
 
   let pending = false;
-  let got = await read("id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent");
+  // Asked for in descending order of how much the database might have:
+  // 031's ownership columns, then 024 and 030's layout columns, then the
+  // bare minimum. A page that says "run the migration" beats one that
+  // will not open.
+  let got = await read(
+    "id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent, home_kind, we_manage");
+  if (got.error && missing(got.error)) {
+    got = await read("id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent");
+  }
   if (got.error && missing(got.error)) {
     pending = true;
     got = await read("id, label, is_vacant, monthly_rent");
@@ -46,6 +54,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const rows = (got.data ?? []) as unknown as {
     id: string; label: string; is_vacant: boolean; monthly_rent: number | null;
     map_x?: number | null; map_y?: number | null; map_rot?: number | null;
+    home_kind?: "poh" | "toh" | "ioh" | "none" | null;
+    we_manage?: boolean | null;
     lat?: number | null; lng?: number | null;
   }[];
   const unitIds = rows.map((u) => u.id);
@@ -100,6 +110,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       x: u.map_x ?? null,
       y: u.map_y ?? null,
       rot: u.map_rot ?? 0,
+      kind: u.home_kind ?? null,
+      manage: Boolean(u.we_manage),
       vacant: u.is_vacant,
       rent: u.monthly_rent,
       tenant: tenants.get(u.id) ?? null,
