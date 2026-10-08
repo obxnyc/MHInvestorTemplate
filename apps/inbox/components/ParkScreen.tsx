@@ -30,7 +30,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [fitting, setFitting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * How this park is laid out.
+   *
+   * From the database where somebody has described it, from this browser
+   * where they are mid-way through, and only then from the one park
+   * written into the code. That last fallback is the reason a second
+   * park opened showing the first one's streets, so it is kept only
+   * until the park has a plan of its own and never written back over
+   * one.
+   */
   const [plan, setPlan] = useState<Plan>(RETREAT);
+  /** Whether this park has a layout on file, or is still the default. */
+  const [described, setDescribed] = useState<boolean | null>(null);
   const [real, setReal] = useState<RealPark | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
   const [asking, setAsking] = useState(true);
@@ -132,6 +144,20 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     } catch { /* a browser with storage switched off still gets a map */ }
   }, [key]);
 
+  /**
+   * The layout, changed.
+   *
+   * Written to the browser for the next keystroke and to the park for
+   * everything after that. The browser copy makes dragging feel instant;
+   * the park copy is the one that survives a cleared cache, reaches a
+   * second machine, and stops this park drawing some other park's
+   * streets -- which is the whole reason the plan moved out of the code.
+   *
+   * Debounced, because this fires on every arrow key and every drag of a
+   * slider, and a write per keystroke is a write per keystroke.
+   */
+  const saving = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (saving.current) clearTimeout(saving.current); }, []);
   const remember = useCallback((next: Plan) => {
     setPlan(next);
     try {
@@ -140,7 +166,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         padSpacing: next.padSpacing, pairGap: next.pairGap, streetGap: next.streetGap,
       }));
     } catch { /* unsaved is survivable; unmovable is not */ }
-  }, [key]);
+
+    if (saving.current) clearTimeout(saving.current);
+    saving.current = setTimeout(() => {
+      void fetch(`/api/properties/${propertyId}/plan`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "plan", plan: next }),
+      }).then((r) => { if (r.ok) setDescribed(true); }).catch(() => null);
+    }, 800);
+  }, [key, propertyId]);
 
   // Dragging the whole block gets it within a few feet. Arrow keys get
   // it onto the concrete: a mouse cannot reliably move a map one metre,
@@ -220,6 +254,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     if (!res.ok) { setError(out.error ?? "Could not load the park."); return; }
     setName(out.property?.name ?? "");
     setLots(out.lots ?? []);
+    const mine = out.property?.plan as Plan | null | undefined;
+    setDescribed(Boolean(mine));
+    if (mine?.rows?.length) {
+      setPlan(mine);
+      planNow.current = mine;
+    }
   }, [propertyId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -786,6 +826,26 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           the handful that differ is six clicks instead of a hundred, and
           it only touches lots nobody has answered for, so it cannot undo
           a correction. */}
+      {/* A park nobody has described is drawing another park's streets.
+          Saying so beats letting somebody believe the numbers on screen
+          are theirs -- which is exactly how a wrong lot gets an owner
+          recorded against it. */}
+      {described === false && !fitting && (
+        <div className="parkseed">
+          <p>
+            <strong>This park has no layout of its own yet.</strong> What is
+            drawn is The Retreat at Cross Creek&rsquo;s — its streets, its
+            numbers and its angle — because that is the one written into the
+            code. Nothing here is this park&rsquo;s until somebody describes
+            it.
+          </p>
+          <p className="dim">
+            Tell me the streets, which side the even numbers are, and the
+            house numbers in order from a named end, and I will lay it out.
+          </p>
+        </div>
+      )}
+
       {unanswered.length > 0 && !missing.length && !fitting && (
         <div className="parkseed">
           <p>

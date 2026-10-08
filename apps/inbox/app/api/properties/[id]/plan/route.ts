@@ -25,8 +25,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const supabase = await supabaseServer();
 
-  const { data: property } = await supabase
-    .from("properties").select("id, name, kind").eq("id", id).maybeSingle();
+  // This park's own layout arrives with 035. Before it, every park drew
+  // the one park whose streets were written into the code, which is
+  // right with one park and wrong with two.
+  let got0 = await supabase
+    .from("properties").select("id, name, kind, plan").eq("id", id).maybeSingle();
+  let plans = true;
+  if (got0.error) {
+    plans = false;
+    got0 = await supabase
+      .from("properties").select("id, name, kind").eq("id", id).maybeSingle();
+  }
+  const property = got0.data as {
+    id: string; name: string; kind: string | null;
+    plan?: Record<string, unknown> | null;
+  } | null;
   if (!property) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   // The layout columns arrive with 024 and 030. Asked for tolerantly so the
@@ -107,7 +120,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   return NextResponse.json({
-    property: { id: property.id, name: property.name, kind: property.kind },
+    property: {
+      id: property.id, name: property.name, kind: property.kind,
+      // Null means nobody has described this park yet, which the screen
+      // says rather than drawing somebody else's park.
+      plan: property.plan ?? null,
+    },
+    plans,
     pending,
     lots: rows.map((u) => ({
       id: u.id,
@@ -363,6 +382,27 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       }, { status: 400 });
     }
     return NextResponse.json({ ok: true, marked: got.data?.length ?? 0 });
+  }
+
+  // --- how this park is laid out ---
+  //
+  // Written whole. A plan is read and changed as one thing -- move the
+  // block, turn it, widen the street -- and a patch of one field would
+  // be a second way to say the same thing.
+  if (body.action === "plan") {
+    const plan = body.plan;
+    if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+      return NextResponse.json({ error: "that is not a plan" }, { status: 400 });
+    }
+    const { error } = await db.from("properties").update({ plan }).eq("id", id);
+    if (error) {
+      return NextResponse.json({
+        error: /plan/.test(error.message) && missing(error)
+          ? "Migration 035 hasn't been run, so there is nowhere to keep this park's layout."
+          : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
