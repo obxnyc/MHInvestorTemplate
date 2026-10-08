@@ -2201,3 +2201,14 @@ a.metric:hover{border-color:var(--accent)}
 .ownerhits button.make{color:var(--muted);font-size:.8rem;
   border-top:1px solid var(--hair-2);border-radius:0 0 6px 6px}
 .ownerhits button.make.on{background:var(--sunk);color:var(--ink-2)}
+/* Which earlier sale to copy. A list of one line each, because the lot
+   number alone does not say whether it is the right one -- the buyer,
+   the date and the price do. */
+.recalls{list-style:none;margin:0;padding:0;display:grid;gap:.15rem;width:100%}
+.recalls li{margin:0}
+.recalls button{display:block;width:100%;text-align:left;border:1px solid var(--hair);
+  background:var(--card);padding:.4rem .55rem;border-radius:7px;font:inherit;
+  font-size:.8rem;font-weight:400;text-transform:none;letter-spacing:0;
+  color:var(--ink);cursor:pointer;line-height:1.4}
+.recalls button:hover{background:var(--accent-soft);border-color:var(--accent)}
+.recalls strong{color:var(--ink)}

@@ -35,9 +35,15 @@ const card = `
   <section class="lotbit"><h3>Owner</h3>
     <form class="saleform">
       <div class="recall">
-        <p>Last sale here: <strong>3107 Lady Cheryl Dr</strong> &mdash; $38,500.00,
-          $612.00 a month over 84 months.</p>
-        <button class="btn">Copy terms</button>
+        <p>Copy a sale you have already recorded here.</p>
+        <ul class="recalls">
+          <li><button><strong>3107 Lady Cheryl Dr</strong>
+            <span class="dim"> Habberstad Norse Ventures LLC &middot; 2026-08-10
+            &middot; $95,600.00 &middot; $341.22/mo</span></button></li>
+          <li><button><strong>3105 Lady Cheryl Dr</strong>
+            <span class="dim"> Jernigan Holdings LLC &middot; 2026-07-02
+            &middot; $38,500.00 &middot; outright</span></button></li>
+        </ul>
       </div>
       <div class="ownerpick">
         <label>Who bought it<input value="Habb" placeholder="Start typing their name or LLC"></label>
