@@ -279,10 +279,21 @@ export default function ParkMap(
       m.addLayer({ id: "home-on", type: "line", source: "homes",
         filter: ["==", ["get", "id"], ""],
         paint: { "line-color": "#0F1729", "line-width": 3.5 } });
-      m.addLayer({ id: "home-label", type: "symbol", source: "homes", minzoom: 16.5,
-        layout: { "text-field": ["get", "label"], "text-size": 10, "text-font": font,
-                  "text-allow-overlap": false, "text-padding": 1 },
-        paint: { "text-color": "#ffffff", "text-halo-color": "#19202B", "text-halo-width": 1.2 } });
+      // Every pad carries its number, always.
+      //
+      // Collision detection was dropping the ones that would overlap,
+      // which on a row of pads ten metres apart meant a home here and
+      // there with no number on it -- and a pad with no number reads as a
+      // lot that failed rather than as a label that did not fit. A number
+      // half over its neighbour is legible; a missing one is a question.
+      m.addLayer({ id: "home-label", type: "symbol", source: "homes", minzoom: 15.5,
+        layout: {
+          "text-field": ["get", "label"], "text-font": font,
+          "text-size": ["interpolate", ["linear"], ["zoom"], 15.5, 8, 18, 10, 20, 12],
+          "text-allow-overlap": true, "text-ignore-placement": true,
+          "symbol-z-order": "source",
+        },
+        paint: { "text-color": "#ffffff", "text-halo-color": "#19202B", "text-halo-width": 1.4 } });
       m.addLayer({ id: "street-label", type: "symbol", source: "streets",
         layout: { "text-field": ["get", "name"], "text-size": 13, "text-font": font,
                   "symbol-placement": "line-center", "text-letter-spacing": 0.06 },
