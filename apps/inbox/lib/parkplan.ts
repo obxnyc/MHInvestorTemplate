@@ -455,12 +455,18 @@ export function fitTargets(plan: Plan): { id: string; label: string; street: str
     label: r.numbers[i], street: r.street, say,
   });
 
+  // Said so they can be followed looking at a photograph, where there
+  // are no labels and no street names -- only roofs. "The first home on
+  // this row" is not a thing anybody can see; "the end of the row
+  // nearest the entrance" is.
+  const end = plan.countFrom === "east" ? "east" : "west";
+  const far = end === "east" ? "west" : "east";
   const out = [
-    at(row, 0, "the first home on this row"),
-    at(row, row.numbers.length - 1, "the last home on the same row"),
+    at(row, 0, `the home at the ${end} end of one row`),
+    at(row, row.numbers.length - 1, `the home at the ${far} end of that same row`),
   ];
-  if (facing) out.push(at(facing, 0, "any home across the street from it"));
-  if (next) out.push(at(next, 0, "any home on the next street"));
+  if (facing) out.push(at(facing, 0, "any home on the other side of the road"));
+  if (next) out.push(at(next, 0, "any home on the next road along"));
   return out;
 }
 

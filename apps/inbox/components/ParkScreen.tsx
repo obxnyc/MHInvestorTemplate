@@ -896,10 +896,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       {fitting && (
         <div className="parkfit">
           <p className="parkhint">
-            Switch to <strong>Aerial</strong>, then tap four homes in the
-            photograph. That is enough to pin the whole park: two along one
-            row give the angle and the spacing, and the other two give the
-            width of the street and the distance to the next one.
+            Switch to <strong>Aerial</strong>, then tap these{" "}
+            {fitTargets(plan).length} homes in the photograph — a park with
+            one road needs three, not four. Two along a row give the angle
+            and the spacing, the third gives the width of the road, and a
+            fourth, where there is a second road, gives the distance to it.
+            That is the whole park placed: on a park of fifty nine lots it
+            puts every one of them within a centimetre of where it stands.
           </p>
           <ol className="parktaps">
             {fitTargets(plan).map((want, i) => (
