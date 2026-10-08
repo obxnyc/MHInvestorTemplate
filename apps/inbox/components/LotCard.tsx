@@ -42,6 +42,10 @@ type LastAny = {
   financed: boolean; monthly_cents: number | null; rate_bps: number | null;
   term_months: number | null; first_due_on: string | null;
   home_year: number | null; home_make: string | null;
+  /** Whatever was written about the deal. Recalled with the rest of it:
+   *  a note that says "sold with the shed, no warranty taken" is as much
+   *  a term of the deal as the rate is. */
+  note: string | null;
   lot_rent_cents: number | null; management_cents: number | null;
   warranty_cents: number | null; tenant_rent_cents: number | null;
   pet_fee_cents: number | null; late_fee_cents: number | null;
@@ -1011,7 +1015,8 @@ function SaleForm(
       {recall && !editing && (
         <p className="memory">
           Copied from {recall.units?.label ?? "an earlier sale"} — buyer,
-          date, terms and charges. The serial is this home&rsquo;s own.
+          date, terms, charges and the note. The serial is this
+          home&rsquo;s own.
           Change whatever differs.{" "}
           <button type="button" className="aslink" onClick={() => {
             setRecall(null);
@@ -1102,7 +1107,7 @@ function SaleForm(
         <label>Serial<input name="homeSerial" defaultValue={editing?.home_serial ?? ""}
                             placeholder={recall ? "this home's own" : undefined} /></label>
       </div>
-      <label>Note<textarea name="note" rows={2} defaultValue={editing?.note ?? ""} /></label>
+      <label>Note<textarea name="note" rows={2} defaultValue={from?.note ?? ""} /></label>
 
       <div className="invacts">
         <button type="button" className="btn" onClick={onCancel}>Cancel</button>

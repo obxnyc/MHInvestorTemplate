@@ -100,7 +100,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // The charges come with it, because those are the ones most likely to
   // be identical and the most tedious to re-enter.
   const LAST = "id, sold_on, price_cents, down_cents, financed, monthly_cents,"
-    + " rate_bps, term_months, first_due_on, home_year, home_make,"
+    + " rate_bps, term_months, first_due_on, home_year, home_make, note,"
     + " lot_rent_cents, management_cents, warranty_cents,"
     + " tenant_rent_cents, pet_fee_cents, late_fee_cents,"
     + " units!inner(label, property_id), owners(id, name)";
