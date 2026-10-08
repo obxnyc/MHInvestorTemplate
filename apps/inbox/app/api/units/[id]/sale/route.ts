@@ -23,10 +23,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const { id } = await ctx.params;
   const supabase = await supabaseServer();
 
-  // The ownership columns arrive with 031. Asked for tolerantly so the
-  // card still opens on a database that has not had it yet.
-  let unitRow = await supabase.from("units")
-    .select("id, label, property_id, home_kind, we_manage").eq("id", id).maybeSingle();
+  // The ownership columns arrive with 031 and what a park-owned home is
+  // for, with its rent, arrives with 033. Asked for in that order and
+  // tolerantly, so the card still opens on a database that has had
+  // neither.
+  const UNIT_033 = "id, label, property_id, home_kind, we_manage, park_use,"
+    + " tenant_rent_cents, pet_fee_cents, late_fee_cents";
+  let unitRow = await supabase.from("units").select(UNIT_033).eq("id", id).maybeSingle();
+  let keeps = true;
+  if (unitRow.error) {
+    keeps = false;
+    unitRow = await supabase.from("units")
+      .select("id, label, property_id, home_kind, we_manage").eq("id", id).maybeSingle();
+  }
   if (unitRow.error) {
     unitRow = await supabase.from("units")
       .select("id, label, property_id").eq("id", id).maybeSingle();
@@ -34,6 +43,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const unit = unitRow.data as {
     id: string; label: string; property_id: string;
     home_kind?: string | null; we_manage?: boolean | null;
+    park_use?: string | null;
+    tenant_rent_cents?: number | null;
+    pet_fee_cents?: number | null;
+    late_fee_cents?: number | null;
   } | null;
   if (!unit) return NextResponse.json({ error: "not found" }, { status: 404 });
 
@@ -102,7 +115,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     unit: {
       id: unit.id, label: unit.label,
       kind: unit.home_kind ?? null, manage: Boolean(unit.we_manage),
+      // What a home we still own is for, and what the person living in
+      // it pays. Both are the unit's own, because a home we own that we
+      // let has no sale for them to hang off -- we are both sides of it.
+      use: unit.park_use ?? null,
+      rent: {
+        tenant: unit.tenant_rent_cents ?? null,
+        pet: unit.pet_fee_cents ?? null,
+        late: unit.late_fee_cents ?? null,
+      },
     },
+    keeps,
     owners: owners ?? [],
     sales,
     papers,
@@ -143,12 +166,78 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // a bare pad. The database says so too; saying it here means the
     // person gets a sentence rather than a constraint violation.
     const manage = kind === "poh" ? true : kind === "none" ? false : Boolean(body.manage);
-    const { error } = await db.from("units")
-      .update({ home_kind: kind, we_manage: manage }).eq("id", id);
+
+    // What a park-owned home is for only means anything while we own it.
+    // Clearing it on the way out is not tidying: the constraint refuses
+    // the change otherwise, so a home sold to its tenant could not be
+    // marked as sold while it still said `ours to sell`.
+    //
+    // And a home that becomes ours is inventory until somebody says it
+    // is not, which is the answer that is right far more often.
+    const patch: Record<string, unknown> = { home_kind: kind, we_manage: manage };
+    if (kind === "poh") {
+      const want = String(body.use ?? "");
+      patch.park_use = ["to_sell", "we_rent", "not_home"].includes(want) ? want : "to_sell";
+    } else {
+      patch.park_use = null;
+    }
+
+    let got = await db.from("units").update(patch).eq("id", id);
+    if (got.error && /park_use/.test(got.error.message)) {
+      // 033 not run. The kind still saves; what the home is for waits.
+      delete patch.park_use;
+      got = await db.from("units").update(patch).eq("id", id);
+    }
+    if (got.error) {
+      return NextResponse.json({
+        error: /home_kind|we_manage/.test(got.error.message)
+          ? "Migration 031 hasn't been run yet, so there is nowhere to record this."
+          : got.error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- a home we still own: inventory, a letting, or not a home at all ---
+  //
+  // The one question the plan screen exists to answer is what is left to
+  // sell, and "park owned" was being asked to mean three things at once:
+  // a home we will sell, a home we are letting and mean to keep, and the
+  // office or the laundry, which was never a home.
+  if (body.action === "use") {
+    const want = String(body.use ?? "");
+    if (!["to_sell", "we_rent", "not_home"].includes(want)) {
+      return NextResponse.json({ error: "say what it is for" }, { status: 400 });
+    }
+    const { error } = await db.from("units").update({ park_use: want }).eq("id", id);
     if (error) {
       return NextResponse.json({
-        error: /home_kind|we_manage/.test(error.message)
-          ? "Migration 031 hasn't been run yet, so there is nowhere to record this."
+        error: /park_use/.test(error.message)
+          ? "Migration 033 hasn't been run yet, so there is nowhere to record this."
+          : /violates check/.test(error.message)
+            ? "Only a home we own can be marked this way."
+            : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- what the tenant of a home WE own pays ---
+  //
+  // Separate from the `money` action, which writes to the sale. A home we
+  // own and let has no sale: there is no second party to charge lot rent
+  // to and no management fee to take from ourselves. The rent is the only
+  // money there is, and it belongs to the unit.
+  if (body.action === "rent") {
+    const { error } = await db.from("units").update({
+      tenant_rent_cents: cents(body.tenantRent),
+      pet_fee_cents: cents(body.petFee),
+      late_fee_cents: cents(body.lateFee),
+    }).eq("id", id);
+    if (error) {
+      return NextResponse.json({
+        error: /tenant_rent_cents|pet_fee_cents|late_fee_cents/.test(error.message)
+          ? "Migration 033 hasn't been run yet, so there is nowhere to keep the rent."
           : error.message,
       }, { status: 400 });
     }

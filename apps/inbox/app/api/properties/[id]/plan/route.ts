@@ -40,7 +40,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // bare minimum. A page that says "run the migration" beats one that
   // will not open.
   let got = await read(
-    "id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent, home_kind, we_manage");
+    "id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent,"
+    + " home_kind, we_manage, park_use, tenant_rent_cents");
+  if (got.error && missing(got.error)) {
+    got = await read(
+      "id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent, home_kind, we_manage");
+  }
   if (got.error && missing(got.error)) {
     got = await read("id, label, lat, lng, map_x, map_y, map_rot, is_vacant, monthly_rent");
   }
@@ -56,6 +61,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     map_x?: number | null; map_y?: number | null; map_rot?: number | null;
     home_kind?: "poh" | "toh" | "ioh" | "none" | null;
     we_manage?: boolean | null;
+    park_use?: "to_sell" | "we_rent" | "not_home" | null;
+    tenant_rent_cents?: number | null;
     lat?: number | null; lng?: number | null;
   }[];
   const unitIds = rows.map((u) => u.id);
@@ -112,6 +119,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       rot: u.map_rot ?? 0,
       kind: u.home_kind ?? null,
       manage: Boolean(u.we_manage),
+      // Of the homes we still own, which are stock. Null before 033,
+      // and the tally says so rather than counting the laundry.
+      use: u.park_use ?? null,
+      tenantRent: u.tenant_rent_cents ?? null,
       vacant: u.is_vacant,
       rent: u.monthly_rent,
       tenant: tenants.get(u.id) ?? null,

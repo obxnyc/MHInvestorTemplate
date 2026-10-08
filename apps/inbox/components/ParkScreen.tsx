@@ -393,8 +393,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     for (const h of placed) {
       const lot = match.get(h.id);
       out[h.id] = lot
-        ? { owner: ownerOf(lot), empty: emptyOf(lot), managed: Boolean(lot.manage), who: lot.tenant ?? undefined }
-        : { owner: "none", empty: true, managed: false };
+        ? {
+            owner: ownerOf(lot), empty: emptyOf(lot),
+            managed: Boolean(lot.manage), use: lot.use ?? null,
+            who: lot.tenant ?? undefined,
+          }
+        : { owner: "none", empty: true, managed: false, use: null };
     }
     return out;
   }, [placed, match]);
@@ -823,14 +827,33 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         {(() => {
           const all = Object.values(facts);
           const n = (o: Owner) => all.filter((f) => f.owner === o).length;
-          const sellable = all.filter((f) => f.owner === "poh").length;
-          const empty = all.filter((f) => f.owner === "poh" && f.empty).length;
+          const ours = all.filter((f) => f.owner === "poh");
+          // Owning it is not the same as being able to sell it. A home we
+          // are letting and mean to keep is ours; so is the laundry. Only
+          // what is marked `ours to sell` is stock.
+          const stock = ours.filter((f) => f.use === "to_sell");
+          const keeping = ours.filter((f) => f.use === "we_rent").length;
+          const notHomes = ours.filter((f) => f.use === "not_home").length;
+          const unsaid = ours.filter((f) => !f.use).length;
+          const empty = stock.filter((f) => f.empty).length;
           return (
             <>
-              <strong>{sellable} of {all.length} are ours to sell</strong>
+              <strong>{stock.length} of {all.length} are ours to sell</strong>
               {empty ? `, ${empty} of them standing empty` : ""}.{" "}
+              {keeping ? `${keeping} we own and let. ` : ""}
+              {notHomes ? `${notHomes} not homes. ` : ""}
               {n("toh")} tenant owned, {n("ioh")} investor owned,{" "}
               {n("none")} bare lots.
+              {unsaid ? (
+                <>
+                  {" "}
+                  <span className="parkbad">
+                    {unsaid} we own {unsaid === 1 ? "has" : "have"} not been
+                    marked as stock or kept, so {unsaid === 1 ? "it is" : "they are"} not
+                    counted either way.
+                  </span>
+                </>
+              ) : null}
             </>
           );
         })()}

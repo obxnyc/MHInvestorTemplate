@@ -18,6 +18,12 @@ export type Lot = {
   kind: "poh" | "toh" | "ioh" | "none" | null;
   /** We let it and look after it. */
   manage: boolean;
+  /** On a home we still own: 'to_sell' it is stock, 'we_rent' we are
+   *  letting it and keeping it, 'not_home' it is the office or the
+   *  laundry and never was a home. Null until 033 has been run. */
+  use?: "to_sell" | "we_rent" | "not_home" | null;
+  /** What the tenant of a home we own pays, in cents. */
+  tenantRent?: number | null;
   vacant: boolean;
   rent: number | null;
   tenant: string | null;

@@ -68,12 +68,45 @@ const card = `
     <p class="dim">Recording one replaces the one in service and keeps the old number.</p></section>
 </aside>`;
 
+// And the same card for a home we still own, which is a different card:
+// no buyer, no sale date, no price, no bill of sale -- nothing has been
+// sold -- and three chips saying whether it is stock, a letting we mean
+// to keep, or the laundry.
+const owned = `
+<aside class="lotcard">
+  <header><h2>Lot 3100 Lady Viola Dr</h2><button class="x">&times;</button></header>
+  <section class="lotbit"><h3>The home</h3>
+    <div class="kindpick"><button class="chip on">Park owned</button>
+      <button class="chip">Tenant owned</button><button class="chip">Investor owned</button>
+      <button class="chip">No home on it</button></div>
+    <p class="dim">We still own this one.</p>
+    <div class="kindpick"><button class="chip on">Ours to sell</button>
+      <button class="chip">We rent it out</button><button class="chip">Not a home</button></div>
+    <p class="dim">Counted in what is left to sell. It can still be let in the meantime.</p>
+  </section>
+  <section class="lotbit"><h3>Every month</h3>
+    <form class="saleform"><p class="memory">The tenant pays</p>
+      <div class="three"><label>Rent<input></label><label>Pet fee<input></label>
+        <label>Late fee<input></label></div>
+      <div class="invacts"><button class="btn pri">Save the rent</button></div>
+    </form></section>
+  <section class="lotbit"><h3>Storage in the yard</h3>
+    <form class="rowform"><div class="three">
+      <label>What<input placeholder="Shed"></label><label>Size<input placeholder="10x12"></label>
+      <label>A month<input placeholder="45"></label></div>
+      <button class="btn">Add storage</button></form></section>
+</aside>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page);padding:1rem">
 <div class="parkmain withcard">
   <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
   ${card}
+</div>
+<div class="parkmain withcard" style="margin-top:2rem">
+  <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
+  ${owned}
 </div></body></html>`;
 
 const file = "/tmp/lot-card.html";
@@ -127,9 +160,9 @@ for (const width of [1440, 1100, 900, 420]) {
   await p.waitForTimeout(150);
 
   const said = await p.evaluate(() => {
-    const card = document.querySelector(".lotcard");
-    const box = card.getBoundingClientRect();
     const out = [], thin = [], over = [];
+    for (const card of document.querySelectorAll(".lotcard")) {
+    const box = card.getBoundingClientRect();
     for (const el of card.querySelectorAll("*")) {
       const r = el.getBoundingClientRect();
       if (!r.width) continue;
@@ -145,6 +178,7 @@ for (const width of [1440, 1100, 900, 420]) {
         // only thing that says whether it fitted.
         if (el.type === "date" && r.width < 128) thin.push(`${name}[date] ${Math.round(r.width)}px`);
       }
+    }
     }
     return {
       out: [...new Set(out)], thin: [...new Set(thin)], over: [...new Set(over)],
