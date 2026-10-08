@@ -25,7 +25,8 @@ writeFileSync(gen.osm, transpile("osm.ts")
   .replace(/(["'])\.\/footprint\1/g, '"./.h.footprint.gen.mjs"')
   .replace(/(["'])\.\/parkplan\1/g, '"./.h.parkplan.gen.mjs"'));
 writeFileSync(gen.harvest, transpile("harvest.ts")
-  .replace(/(["'])\.\/osm\1/g, '"./.h.osm.gen.mjs"'));
+  .replace(/(["'])\.\/osm\1/g, '"./.h.osm.gen.mjs"')
+  .replace(/(["'])\.\/footprint\1/g, '"./.h.footprint.gen.mjs"'));
 let dedupe, ringsIn, shapesFrom, roadsFrom, stitch, assign, RETREAT, nearestOn, placeOn;
 try {
   ({ dedupe, ringsIn, shapesFrom, roadsFrom, stitch } = await import(gen.harvest));
@@ -112,14 +113,61 @@ const road = (id, name, off, from, to) => ({
   t("an unnamed line is not a street", !roads.some((r) => !r.name));
 
   const viola = roads.find((r) => r.name === "Lady Viola Dr");
-  t("and it runs the whole length", viola.line.length === 6);
+  // Measured on the ground. The shared endpoint between two pieces is one
+  // place, so counting points counts it twice.
+  const span = (line) => Math.abs(line[line.length - 1][0] - line[0][0]) / dLng;
+  t("and it runs the whole length", span(viola.line) > 125);
   // Left in tile order, the piece nearest a home can point the wrong way
   // and put it on the wrong side of its own street.
+  // In order along the street, either way round. Which end a joined
+  // street starts at depends on which piece happened to come first, and
+  // the direction the house numbers run is settled later, deliberately.
   const xs = viola.line.map((p) => p[0]);
-  t("in order along the street", xs.every((x, i) => i === 0 || x >= xs[i - 1]));
+  const rising = xs.every((x, i) => i === 0 || x >= xs[i - 1]);
+  const falling = xs.every((x, i) => i === 0 || x <= xs[i - 1]);
+  t("in order along the street", rising || falling);
 }
 {
   t("a single point is not a street", stitch([[[0, 0]]]).length === 1);
+}
+{
+  // What a street really looks like coming out of vector tiles, and what
+  // broke the whole screen: several pieces, out of order, some traced
+  // backwards, plus a run of the same name a quarter mile east that is a
+  // different piece of road entirely.
+  //
+  // Sorting every point of every piece along one axis -- which is what
+  // this used to do -- turns that into one line zig-zagging across the
+  // site, and a row of homes walked along it wanders off at angles that
+  // match nothing on the map.
+  const seg = (fromM, toM, offM = 0) =>
+    [[LNG + fromM * dLng, LAT + offM * dLat], [LNG + toM * dLng, LAT + offM * dLat]];
+  const scrambled = [
+    seg(90, 130),
+    [...seg(0, 45)].reverse(),
+    seg(45, 90),
+    // Same name, a quarter mile east, not joined to anything here.
+    seg(520, 640),
+  ];
+  const one = stitch(scrambled);
+  const xs = one.map((p) => (p[0] - LNG) / dLng);
+  t("the pieces join into one street, in order",
+    xs.every((x, i) => i === 0 || x >= xs[i - 1] - 0.001)
+    || xs.every((x, i) => i === 0 || x <= xs[i - 1] + 0.001));
+  t("it runs the length of the park", Math.max(...xs) - Math.min(...xs) > 120);
+  t("and the far-off run of the same name is not part of it",
+    Math.max(...xs) < 200);
+
+  // Joined end to end, not point-sorted: a street that doubles back has
+  // to keep its shape rather than being flattened into a monotonic line.
+  const hook = stitch([
+    [[LNG, LAT], [LNG + 60 * dLng, LAT]],
+    [[LNG + 60 * dLng, LAT], [LNG + 60 * dLng, LAT - 40 * dLat]],
+    [[LNG + 60 * dLng, LAT - 40 * dLat], [LNG, LAT - 40 * dLat]],
+  ]);
+  t("a street that doubles back keeps its shape", hook.length === 4);
+  const back = hook.map((p) => (p[0] - LNG) / dLng);
+  t("so it is not monotonic", back.some((x, i) => i > 0 && x < back[i - 1] - 0.5));
 }
 
 // --- and the whole thing, numbered ---
