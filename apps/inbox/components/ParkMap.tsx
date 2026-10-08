@@ -74,6 +74,9 @@ function roadPaint(m: MlMap): { id: string; paint: Record<string, unknown>; unde
  *  streets as shapes rather than as a picture of shapes. */
 const STYLE = "https://tiles.openfreemap.org/styles/positron";
 
+/** The park's roads, a shade darker than Positron paints them. */
+const DARKER = "#CBD2DA";
+
 /**
  * The park, taken out of the map rather than drawn over it.
  *
@@ -350,12 +353,23 @@ export default function ParkMap(
       // are found and their paint copied, so the new stretch is the same
       // colour, the same width at every zoom, and the same casing as
       // every other street on screen.
-      for (const copy of roadPaint(m)) {
+      const copied = roadPaint(m);
+      for (const copy of copied) {
         m.addLayer({
           id: `lane-${copy.id}`, type: "line", source: "lanes",
           layout: { "line-cap": "round", "line-join": "round" },
           paint: copy.paint,
         }, copy.under);
+      }
+      // The park's roads a shade darker than the base map draws them.
+      // Positron paints a residential street almost white, which is right
+      // on a map of a city and too faint on a map of one park, where the
+      // roads are most of what gives the place its shape. The base map's
+      // own layers are darkened along with ours, so they stay one road.
+      for (const copy of copied) {
+        for (const id of [copy.id, `lane-${copy.id}`]) {
+          if (m.getLayer(id)) m.setPaintProperty(id, "line-color", DARKER);
+        }
       }
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
         paint: { "fill-color": ["get", "colour"], "fill-opacity": 1 } });
