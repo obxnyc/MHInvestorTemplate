@@ -291,7 +291,7 @@ export default function LotCard(
                 <option value="gas">Gas</option>
               </select>
             </label>
-            <label>Meter number<input name="serial" placeholder="81-440391" /></label>
+            <label>Number<input name="serial" placeholder="81-440391" /></label>
             <label>Provider<input name="provider" placeholder="PWC" /></label>
           </div>
           <label>Account reference<input name="account" /></label>

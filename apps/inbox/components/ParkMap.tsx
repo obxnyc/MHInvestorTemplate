@@ -603,6 +603,30 @@ export default function ParkMap(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, real]);
 
+  /**
+   * The park put back in frame when the card beside it opens or shuts.
+   *
+   * Opening a pad takes twenty rem off the map's width. MapLibre is told
+   * its container's size once and has no way to notice, so the park went
+   * on being drawn at the old width and the bottom two rows fell off the
+   * bottom of the box.
+   *
+   * On the card opening and shutting rather than on every size change:
+   * an observer on the box fed its own resize back in and grew the map
+   * down the page. Changing which pad is open does not refit, because
+   * re-zooming the map under somebody reading a card is its own bug.
+   */
+  const hadCard = useRef<boolean | null>(null);
+  const card = Boolean(selected);
+  useEffect(() => {
+    if (!ready) return;
+    if (hadCard.current === card) return;
+    hadCard.current = card;
+    const id = requestAnimationFrame(() => frame());
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, card]);
+
   function frame() {
     const m = map.current;
     if (!m) return;
