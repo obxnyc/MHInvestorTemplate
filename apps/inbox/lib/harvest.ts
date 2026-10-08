@@ -144,7 +144,16 @@ export function roadsFrom(features: TileFeature[]): Road[] {
  * the longest is the street.
  */
 export function stitch(pieces: number[][][], gap = 8): number[][] {
-  const left = pieces.filter((p) => p.length >= 2).map((p) => [...p]);
+  // The same piece arriving twice -- which tiling does -- would be joined
+  // on, reversed, and double the street back over itself.
+  const seen = new Set<string>();
+  const left = pieces.filter((p) => p.length >= 2).filter((p) => {
+    const ends = [p[0], p[p.length - 1]]
+      .map((q) => `${q[0].toFixed(7)},${q[1].toFixed(7)}`).sort().join("|");
+    if (seen.has(ends)) return false;
+    seen.add(ends);
+    return true;
+  }).map((p) => [...p]);
   if (!left.length) return pieces.flat();
 
   const chains: number[][][] = [];

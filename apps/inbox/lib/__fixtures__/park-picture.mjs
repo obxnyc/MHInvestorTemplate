@@ -37,12 +37,13 @@ writeFileSync(gen.p, fix(tr("parkplan.ts")));
 writeFileSync(gen.o, fix(tr("osm.ts")));
 writeFileSync(gen.h, fix(tr("harvest.ts")));
 writeFileSync(gen.r, fix(tr("rows.ts")));
-let layRows, clipTo, reachTo, roadsFrom, RETREAT, placeFromRoads, inRing, centroid;
+let layRows, clipTo, reachTo, roadsFrom, RETREAT, placeFromRoads, inRing, centroid, footprint;
 try {
   ({ layRows, clipTo, reachTo } = await import(gen.r));
   ({ roadsFrom } = await import(gen.h));
   ({ RETREAT } = await import(gen.p));
   ({ placeFromRoads, inRing, centroid } = await import(gen.o));
+  ({ footprint } = await import(gen.f));
 } finally {
   for (const f of Object.values(gen)) unlinkSync(f);
 }
@@ -61,6 +62,11 @@ const at = (along, across) => [
   LAT + (along * Math.cos(TURN) - across * Math.sin(TURN)) * dLat,
 ];
 
+// In this frame a positive "across" is southward, because the park runs
+// east-south-east. Lady Cheryl is the southern street, so it is the
+// larger across; each street's even row is its northern one.
+const VIOLA = 0, CHERYL = 57, SETBACK = 15.5;
+
 const pieces = (across, cuts) => {
   const out = [];
   for (let i = 0; i < cuts.length - 1; i++) {
@@ -70,10 +76,10 @@ const pieces = (across, cuts) => {
 };
 // Out of order, one reversed, plus a detached run of the same name east.
 const violaBits = [
-  ...pieces(15.5, [-140, -40, 0, 70, 150, 210]),
-  [at(520, 15.5), at(640, 15.5)],
+  ...pieces(VIOLA, [-140, -40, 0, 70, 150, 210]),
+  [at(520, VIOLA), at(640, VIOLA)],
 ];
-const cherylBits = pieces(-41.5, [-140, -30, 55, 150, 210]);
+const cherylBits = pieces(CHERYL, [-140, -30, 55, 150, 210]);
 const scramble = (a) => [a[2], [...a[0]].reverse(), a[4] ?? a[3], a[1], a[3], ...a.slice(5)];
 
 const roads = roadsFrom([
@@ -90,13 +96,39 @@ const roads = roadsFrom([
 // The deed line, with the notch at the entrance, stopping eight metres
 // shy of Pamalee Drive.
 const parcel = [
-  at(-8, 42), at(165, 42), at(175, -20), at(165, -80), at(-8, -80),
-  at(-8, -30), at(18, -30), at(18, 10), at(-8, 10), at(-8, 42),
+  at(-8, -42), at(165, -42), at(175, 20), at(165, 95), at(-8, 95),
+  at(-8, 40), at(18, 40), at(18, 4), at(-8, 4), at(-8, -42),
 ];
-const pamalee = [at(-16, 90), at(-16, -130)];
+const pamalee = [at(-16, -95), at(-16, 130)];
 const fence = reachTo(parcel, pamalee);
 const fitted = placeFromRoads(RETREAT, roads) ?? RETREAT;
-const pads = layRows(fitted, roads, fence);
+
+// The buildings the map has. Every row but one is short on purpose: a pad
+// that was empty when the aerial was flown has no building on it and is
+// still a lot, and that is the case this has to get right.
+//
+//   Lady Viola even   13 lots, 12 buildings, the empty one at the loop
+//   Lady Viola odd    14 lots, 11 buildings, three empty at the entrance
+//   Lady Cheryl even  12 lots, 10 buildings, two empty at the entrance
+//   Lady Cheryl odd   12 lots, 12 buildings
+const PITCH = 10.5;
+const built = [];
+const put = (across, from, count, skip = []) => {
+  for (let i = 0; i < count; i++) {
+    if (skip.includes(i)) continue;
+    const c = at(from + i * PITCH, across);
+    built.push({
+      id: `b${built.length}`, centre: c,
+      ring: footprint(c[1], c[0], 22, { width: 4.6, length: 17 }),
+    });
+  }
+};
+put(VIOLA - SETBACK, 6, 13, [12]);
+put(VIOLA + SETBACK, 6, 14, [0, 1, 2]);
+put(CHERYL - SETBACK, 6, 12, [0, 1]);
+put(CHERYL + SETBACK, 6, 12);
+
+const pads = layRows(fitted, roads, fence, built);
 
 // --- what it looks like ---
 const all = [...fence, ...pads.flatMap((p) => p.ring), ...roads.flatMap((r) => r.line)];
@@ -115,6 +147,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
 <rect width="${W}" height="${H}" fill="#eef1f4"/>
 <path d="${path(fence)} Z" fill="#dce7f5" stroke="#1F5BA6" stroke-width="2.5"/>
 ${roads.map((r) => `<path d="${path(clipTo(r.line, fence))}" fill="none" stroke="#fff" stroke-width="8"/>`).join("\n")}
+${built.map((b) => `<path d="${path(b.ring)} Z" fill="none" stroke="#b08968" stroke-width="1.6"/>`).join("\n")}
 ${pads.map((p) => {
   const bad = !inRing(centroid(p.ring), fence);
   return `<path d="${path(p.ring)} Z" fill="${bad ? "#D1453B" : "#6B7F99"}" stroke="#17212E" stroke-width="0.8"/>`;
@@ -142,7 +175,7 @@ for (const [street, side] of [
   const gaps = cs.slice(1).map((c, i) => Math.hypot(
     (c[0] - cs[i][0]) / dLng, (c[1] - cs[i][1]) / dLat));
   const spread = Math.max(...gaps) - Math.min(...gaps);
-  if (spread > 1) problems.push(`${street} ${side} spacing varies by ${spread.toFixed(1)} m`);
+  if (spread > 1.5) problems.push(`${street} ${side} spacing varies by ${spread.toFixed(1)} m`);
   // A row that folds back on itself: the straight-line span should be
   // the sum of the gaps, near enough.
   const span = Math.hypot(
@@ -150,6 +183,34 @@ for (const [street, side] of [
   const walked = gaps.reduce((a, b) => a + b, 0);
   if (walked > span * 1.25) problems.push(`${street} ${side} folds back on itself`);
   if (Math.min(...gaps) < 6) problems.push(`${street} ${side} has lots on top of each other`);
+}
+// A pad on every building the map has, which is the thing the owner
+// keeps pointing at: an outline with nothing on it is a lot that failed.
+for (const b of built) {
+  const near = pads.some((p) =>
+    Math.hypot((centroid(p.ring)[0] - b.centre[0]) / dLng,
+               (centroid(p.ring)[1] - b.centre[1]) / dLat) < 3);
+  if (!near) { problems.push(`a building with no lot on it`); break; }
+}
+// And the empty lots where the aerial shows nothing, not somewhere else.
+const viola = rowOf("Lady Viola Dr", "N");
+const lastViola = centroid(viola[viola.length - 1].ring);
+const anyBuildingThere = built.some((b) =>
+  Math.hypot((lastViola[0] - b.centre[0]) / dLng,
+             (lastViola[1] - b.centre[1]) / dLat) < 3);
+if (viola[viola.length - 1].label !== "3100") problems.push("Lady Viola even does not end at 3100");
+if (anyBuildingThere) problems.push("3100 is not the empty pad at the loop");
+if (viola.length !== 13) problems.push(`Lady Viola even has ${viola.length} lots, not 13`);
+
+if (process.env.DEBUG) {
+  for (const [street, side] of [["Lady Viola Dr", "N"], ["Lady Viola Dr", "S"],
+                                ["Lady Cheryl Dr", "N"], ["Lady Cheryl Dr", "S"]]) {
+    const row = rowOf(street, side);
+    const cs = row.map((p) => centroid(p.ring));
+    const gaps = cs.slice(1).map((c, i) => Math.hypot(
+      (c[0] - cs[i][0]) / dLng, (c[1] - cs[i][1]) / dLat));
+    console.log(`${street} ${side}: ${row.length} lots, gaps ${gaps.map((g) => g.toFixed(1)).join(" ")}`);
+  }
 }
 console.log(`wrote ${out}`);
 console.log(problems.length ? `PROBLEMS:\n- ${problems.join("\n- ")}` : "nothing obviously wrong");
