@@ -7,7 +7,7 @@ import { RETREAT, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing,
          type Shape, type Road } from "@/lib/osm";
-import { layRows, clipTo, reachTo } from "@/lib/rows";
+import { layRows, clipTo, reachTo, densify } from "@/lib/rows";
 import { degreesPerMetre } from "@/lib/footprint";
 
 /**
@@ -168,12 +168,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // The park's own roads, the loop at the east end included. It has no
     // name of its own, so it never arrived with the named streets and the
     // park was drawn without the one road that goes round it.
+    // Every road with any part of it in the park, drawn as it is. The
+    // loop at the east end has no name of its own, so it never arrived
+    // with the named streets -- and clipping it first threw it away
+    // again, because a short loop segment with no vertex inside reads as
+    // nothing at all.
     const lanes = fence
-      ? found.lanes
-          .map((line) => clipTo(line, fence))
-          .filter((line) => line.length > 1
-            && line.some((p) => inRing([p[0], p[1]], fence)))
-      : [];
+      ? found.lanes.filter((line) =>
+          line.length > 1 && densify(line, 4).some((p) => inRing([p[0], p[1]], fence)))
+      : found.lanes;
 
     remember(parcel ? fitInside(fitted, parcel.ring) : fitted);
     setReal({
