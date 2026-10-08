@@ -121,8 +121,8 @@ const roads = roadsFrom([
 // The deed line, with the notch at the entrance, stopping eight metres
 // shy of Pamalee Drive.
 const parcel = [
-  at(-8, -42), at(165, -42), at(175, 20), at(165, 95), at(-8, 95),
-  at(-8, 40), at(18, 40), at(18, 4), at(-8, 4), at(-8, -42),
+  at(-8, -42), at(165, -42), at(175, 20), at(165, 110), at(60, 110),
+  at(60, 88), at(-8, 88), at(-8, -42),
 ];
 const pamalee = [at(-16, -95), at(-16, 130)];
 const fence = reachTo(parcel, pamalee);
@@ -192,6 +192,20 @@ writeFileSync(out, svg);
 // --- and the things a picture makes obvious, as checks ---
 const rowOf = (street, side) => pads.filter((p) => p.street === street && p.side === side);
 const problems = [];
+// Rows begin level with each other at the entrance. A row indented
+// against its neighbours is the thing you see before anything else.
+const starts = [["Lady Viola Dr", "N"], ["Lady Viola Dr", "S"],
+                ["Lady Cheryl Dr", "N"], ["Lady Cheryl Dr", "S"]]
+  .map(([st, sd]) => {
+    const r = pads.filter((p) => p.street === st && p.side === sd);
+    if (!r.length) return null;
+    const c = centroid(r[0].ring);
+    const e = (c[0] - LNG) / dLng, n = (c[1] - LAT) / dLat;
+    return e * Math.sin(TURN) + n * Math.cos(TURN);
+  }).filter((x) => x !== null);
+if (starts.length === 4 && Math.max(...starts) - Math.min(...starts) > 6) {
+  problems.push(`the rows do not start level (${(Math.max(...starts) - Math.min(...starts)).toFixed(1)} m apart)`);
+}
 if (pads.length !== 51) problems.push(`${pads.length} lots, not 51`);
 if (outside.length) problems.push(`${outside.length} outside the fence: ${outside.map((p) => p.label).join(", ")}`);
 for (const [street, side] of [

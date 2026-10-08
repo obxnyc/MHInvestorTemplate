@@ -198,16 +198,15 @@ export function layRows(
     // pad on its own building's middle instead let a pad traced a metre
     // out sit a metre out, and two of them overlap.
     //
-    // Nudged along by whole pitches if an end has run past the boundary,
-    // which keeps the row even and parallel while putting it back inside
-    // the park -- shortening or squeezing it would not.
-    let shift = 0;
+    // Not nudged to fit the boundary. The park's own rows say where a row
+    // starts -- they all begin at the same end of the site -- and the
+    // boundary is a traced polygon that can be a few metres out. Shifting
+    // a row east by a whole pitch to satisfy it indented that row against
+    // its neighbours, which is wrong in a way anybody can see, to fix
+    // something nobody can.
     const first = r.here[0].at - before * step;
-    const last = first + (n - 1) * step;
-    if (first < r.lo) shift = Math.ceil((r.lo - first) / step) * step;
-    else if (last > r.hi) shift = -Math.ceil((last - r.hi) / step) * step;
 
-    out.push(...r.row.numbers.map((label, k) => mk(label, first + shift + k * step)));
+    out.push(...r.row.numbers.map((label, k) => mk(label, first + k * step)));
   }
   return out;
 }
