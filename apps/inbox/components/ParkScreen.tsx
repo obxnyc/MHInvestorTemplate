@@ -23,6 +23,23 @@ import { degreesPerMetre } from "@/lib/footprint";
  * sits and which way it points. That is "Fit to aerial": drag the block
  * onto the pads in the photograph, turn it until the rows line up, done once.
  */
+/**
+ * A park before anybody has said what it is.
+ *
+ * The spacings off Cross Creek, because a single-wide is a single-wide
+ * and 14 metres apart is a reasonable first guess anywhere. But no
+ * rows: Cross Creek's fifty one lots belong to Cross Creek.
+ *
+ * This exists because the screen used to START as Cross Creek, and the
+ * map reads the ground as soon as it loads -- before the database has
+ * said which park this is. So a park in Pasquotank was harvested as
+ * Cross Creek, and nothing afterwards threw that away: the plan
+ * arrived, the heading and the lot count changed, and the fifty one
+ * pads on screen stayed exactly where they were. "51 of 40 lots" was
+ * the two of them disagreeing out loud.
+ */
+const EMPTY: Plan = { ...RETREAT, rows: [] };
+
 export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [lots, setLots] = useState<Lot[]>([]);
   const [name, setName] = useState("");
@@ -40,7 +57,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    * until the park has a plan of its own and never written back over
    * one.
    */
-  const [plan, setPlan] = useState<Plan>(RETREAT);
+  const [plan, setPlan] = useState<Plan>(EMPTY);
   /** Whether this park has a layout on file, or is still the default. */
   const [described, setDescribed] = useState<boolean | null>(null);
   /** Whether 035 has been run. Without it a layout cannot be saved at
@@ -361,7 +378,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // streets and the property line around them.
     const fitted = placeFromRoads(base, mine) ?? base;
     const parcel = parkAround(found.areas, mine);
-    const frontage = found.roads.find((r) => /pamalee/i.test(r.name))?.line ?? null;
+    // The road the park's line runs out to, where the park names one.
+    const edge = base.frontage?.trim();
+    const frontage = edge
+      ? found.roads.find((r) => sameStreet(edge, r.name))?.line ?? null
+      : null;
 
     // The lots are laid along the streets rather than read off the map's
     // buildings. The map is good at streets and boundaries and bad at
@@ -373,17 +394,18 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       return;
     }
 
-    // The property line is square, and its western perimeter is Pamalee
-    // Drive. So it is the tightest rectangle that holds the homes, turned
-    // to match them, with the Pamalee side pushed out to the road.
+    // The line is the tightest rectangle that holds the homes, turned to
+    // match them, and pushed out to the frontage road where the park
+    // names one.
     //
     // Not the landuse polygon the map carries. That is somebody's tracing
     // of the back of a verge: it wandered, it left a field of empty land
     // behind the loop, and every odd corner in it had to be worked around
     // rather than drawn.
-    // The road across the back, behind 3100 and 3101. The two streets are
-    // one road that turns at the east end; the map traces that turn as an
-    // arc, and on the ground it is square.
+    //
+    // The road across the back, where two streets are one road that
+    // turns at the far end: the map traces that turn as an arc and on
+    // the ground it is square.
     const streetOrder = [...new Set(base.rows.map((r) => r.street))];
     let back = backRoad(pads, streetOrder, fitted.bearing);
     // Only drawn if the map has not got it. The park's roads are the
@@ -419,13 +441,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
     const fence = boundary.length ? boundary : null;
 
-    remember(fitInside(fitted, boundary), true);
+    // Not when the county has given us the line. Fitting the block to
+    // whatever the tiles happened to carry would walk it off a boundary
+    // that is a statement about the deed.
+    remember(base.fence?.length ? fitted : fitInside(fitted, boundary), true);
     setReal({
       homes: pads.map((h) => ({ ...h, filed: filedAs(base, h.label, h.street) })),
       streets: streetOrder.map((st, i) => ({ name: st, line: ways[i] ?? [] }))
         .filter((st) => st.line.length >= 2),
       boundary, lanes: back,
-      parcel: "square to the homes, out to Pamalee Dr",
+      parcel: base.fence?.length
+        ? `the county's line${base.pin ? `, parcel ${base.pin}` : ""}`
+        : edge ? `square to the homes, out to ${edge}`
+        : "square to the homes",
     });
     // How much of this is the map's doing and how much is arithmetic.
     // A row laid on real buildings sits on the pads; a row spread evenly
@@ -486,7 +514,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    * labelled across it -- which reads as this park being wrong rather
    * than as this park being unknown.
    */
-  const blank = described === false;
+  const blank = described !== true;
   const drawn = useMemo<Plan>(
     () => (blank ? { ...plan, rows: [] } : plan), [blank, plan]);
 
@@ -865,7 +893,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
                     onClick={() => setTaps((p) => p.slice(0, -1))}>
               Undo that tap
             </button>
-            <button type="button" className="btn" onClick={() => { setTaps([]); remember(RETREAT); }}>
+            <button type="button" className="btn" onClick={() => {
+              setTaps([]); setDescribed(false); remember(EMPTY);
+            }}>
               Start over
             </button>
           </div>
@@ -1276,7 +1306,7 @@ function Describe(
       Array.from({ length: Math.max(0, n) }, (_, i) => String(from + i));
     const name = named && street.trim() ? street.trim() : "The drive";
     onLay({
-      ...RETREAT,
+      ...EMPTY,
       centre: at,
       // Rows running roughly north, which is what a strip park off a
       // road usually is. It is a starting point for the Turn slider,
@@ -1373,7 +1403,7 @@ function Describe(
         </label>
         {named ? (
           <label>Its name
-            <input value={street} placeholder="Lady Viola Dr"
+            <input value={street} placeholder="e.g. Maple Dr"
                    onChange={(e) => setStreet(e.target.value)} />
           </label>
         ) : (

@@ -223,6 +223,12 @@ export default function ParkMap(
   // buildings still on their way.
   const reaped = useRef(0);
   const reap = useCallback((m: MlMap) => {
+    // Nobody is listening yet. A park whose own plan has not arrived
+    // does not want the ground read for it, and counting these as
+    // attempts spent the whole allowance before the plan appeared --
+    // after which the map never read the tiles again and went on
+    // showing whatever it had harvested first.
+    if (!live.current.onHarvest) return;
     if (reaped.current > 6) return;
     const style = m.getStyle();
     const vector = Object.entries(style.sources ?? {})
@@ -617,6 +623,25 @@ export default function ParkMap(
 
   // Framed on what is drawn, once per set of geometry. Re-framing on every
   // nudge would yank the map out from under somebody placing the block.
+  /**
+   * A fresh allowance when the park moves or is first described.
+   *
+   * The attempts are capped so a map that will never carry this park's
+   * streets stops asking. But a park that has just been given a plan,
+   * or moved to another county, is a different question from the one
+   * the allowance was spent on.
+   */
+  const lastAsk = useRef("");
+  useEffect(() => {
+    const key = `${onHarvest ? "on" : "off"}:${plan.centre.map((n) => n.toFixed(4)).join(",")}`;
+    if (lastAsk.current === key) return;
+    lastAsk.current = key;
+    reaped.current = 0;
+    const m = map.current;
+    if (m && ready && onHarvest) requestAnimationFrame(() => reap(m));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onHarvest, plan.centre, ready]);
+
   const framed = useRef("");
   useEffect(() => {
     const m = map.current;

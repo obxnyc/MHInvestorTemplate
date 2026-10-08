@@ -121,6 +121,19 @@ export type Plan = {
   fence?: number[][];
   /** The parcel number it came from, so it can be looked up again. */
   pin?: string;
+  /**
+   * A road the property line runs out to, by name.
+   *
+   * Cross Creek's deed line is the kerb of Pamalee Drive, so a box
+   * drawn round its homes stops short of the boundary by the width of
+   * a verge. That was written into the screen as /pamalee/i and ran on
+   * every park in the system -- harmlessly, because no other park has a
+   * road called that, and wrongly, because the park that does is not
+   * special.
+   *
+   * Ignored once `fence` is set: the county's line needs no help.
+   */
+  frontage?: string;
   rows: PlanRow[];
 };
 
@@ -175,6 +188,9 @@ export const RETREAT: Plan = {
   // it the wrong way round reverses all four rows at once, which looks
   // plausible until somebody reads a house number.
   countFrom: "west",
+  // The deed line is the kerb of Pamalee Drive, so a box drawn round
+  // the homes stops a verge short of it.
+  frontage: "Pamalee Dr",
   padSpacing: 10.5,
   pairGap: 31,
   streetGap: 57,
