@@ -78,3 +78,58 @@ a value.
 
 Say which screen, which button, and what the right answer looks like. Leave out
 the reasoning unless it changes what they do.
+
+## Laying out a park, or anything else drawn from a map
+
+This took sixteen rounds and it should have taken one. Almost none of that
+was the owner's fault: the instructions that were missing are ones Claude
+should have asked for before writing a line, and the question "what should
+I have told you?" has a short answer and a longer one.
+
+### The short answer: six facts, asked for up front
+
+Before drawing a park, ask for these. They are five minutes to answer and
+they are the whole job.
+
+1. **The rows.** Street, which side, and the house numbers in order,
+   starting from a named end. "Lady Viola, even side, 3124 at the Pamalee
+   entrance counting down to 3100 at the loop, thirteen lots."
+2. **Which pads are empty**, and that empty is not the same as missing.
+3. **Whether every home is the same model.** If it is, every rectangle is
+   the same rectangle and they are all parallel -- rungs on a ladder.
+4. **The shape of the property line**, and what forms each edge. "Square,
+   and the west perimeter is Pamalee Drive."
+5. **The road layout.** Here: two streets joined at the east end by a
+   square connector behind 3100 and 3101, not a curve.
+6. **A county GIS screenshot with the lot numbers on it.** This one was
+   given early and is worth more than the other five together.
+
+### The longer answer: what went wrong, so it does not again
+
+**Ask before inferring.** Six attempts were spent deriving the park from
+Cumberland's GIS and then from OpenStreetMap, when the owner knew every
+answer. A map says where buildings are. It does not say which of them is a
+home, which lot it is, which way the numbers run, or where the deed line
+goes. Derive geometry; ask for meaning.
+
+**Draw it and look at it before shipping.** Three rounds shipped on green
+tests and came back obviously broken, because the tests asked whether the
+numbers were in order and never asked what it looked like. A row folded
+back on itself passes "fifty one lots, each with its own id".
+`lib/__fixtures__/park-picture.mjs` renders the park and fails on the
+things a picture answers: anything outside the line, rows that fold, lots
+overlapping, homes not parallel, rows not starting level, the road leaving
+the property. Run it before every push.
+
+**Build the test park with the real shape.** A toy fixture hides the bugs
+that matter. The horseshoe, the street names continuing past the site, the
+rows short at one end -- each of those was a real fault that only appeared
+once the fixture had that shape.
+
+**Never move the fixture to make the check pass.** Done twice here. A
+fixture is the claim about the world; bending it only hides what the check
+found.
+
+**When the correction is faster than the inference, build the correction.**
+"Move homes" -- drag a pad, angle locked -- took twenty minutes and ended
+the argument. It should have been offered ten rounds earlier.

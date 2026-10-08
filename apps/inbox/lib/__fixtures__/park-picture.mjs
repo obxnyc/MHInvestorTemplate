@@ -38,9 +38,9 @@ writeFileSync(gen.o, fix(tr("osm.ts")));
 writeFileSync(gen.h, fix(tr("harvest.ts")));
 writeFileSync(gen.r, fix(tr("rows.ts")));
 let layRows, clipTo, reachTo, roadsFrom, RETREAT, placeFromRoads, inRing, centroid, footprint,
-    orientedBox, lengthOf;
+    orientedBox, lengthOf, backRoad, streetLine;
 try {
-  ({ layRows, clipTo, reachTo, lengthOf } = await import(gen.r));
+  ({ layRows, clipTo, reachTo, lengthOf, backRoad, streetLine } = await import(gen.r));
   ({ roadsFrom } = await import(gen.h));
   ({ RETREAT } = await import(gen.p));
   ({ placeFromRoads, inRing, centroid, orientedBox } = await import(gen.o));
@@ -158,7 +158,16 @@ put(CHERYL + SETBACK, 6, 12);
 // traced polygon left a field of empty land behind the loop.
 const pads = layRows(fitted, roads, null, built);
 const padCorners = pads.flatMap((p) => p.ring);
-const tarmac = roads.flatMap((r) => r.line)
+// The road across the back, drawn square from the park rather than taken
+// from the map's arc.
+const back = backRoad(pads, ["Lady Viola Dr", "Lady Cheryl Dr"], fitted.bearing);
+// The carriageways, drawn down the middle of their own rows rather than
+// from the map's tracing -- which wobbles, and brings the arc at the east
+// end with it where the ground is square.
+const ways = ["Lady Viola Dr", "Lady Cheryl Dr"]
+  .map((st) => streetLine(pads, st, fitted.bearing))
+  .filter((l) => l.length >= 2);
+const tarmac = [...ways.flat(), ...back.flat()]
   .filter((q) => padCorners.some((c) =>
     Math.abs(c[0] - q[0]) < 0.0005 && Math.abs(c[1] - q[1]) < 0.0004));
 const fence = reachTo(orientedBox([...padCorners, ...tarmac], 8), pamalee);
@@ -204,7 +213,7 @@ const everyAngle = [];
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <rect width="${W}" height="${H}" fill="#eef1f4"/>
 <path d="${path(fence)} Z" fill="#dce7f5" stroke="#1F5BA6" stroke-width="2.5"/>
-${roads.map((r) => `<path d="${path(clipTo(r.line, upTo))}" fill="none" stroke="#fff" stroke-width="8"/>`).join("\n")}
+${[...ways, ...back].map((seg) => `<path d="${path(seg)}" fill="none" stroke="#fff" stroke-width="8"/>`).join("\n")}
 ${built.map((b) => `<path d="${path(b.ring)} Z" fill="none" stroke="#b08968" stroke-width="1.6"/>`).join("\n")}
 ${pads.map((p) => {
   const bad = !inRing(centroid(p.ring), fence);
@@ -309,20 +318,22 @@ if (everyAngle.length) {
 // alone cuts it off, and a park whose own road leaves the property is
 // wrong in a way that is obvious at a glance.
 {
-  const loopPts = roads.flatMap((r) => r.line)
-    .filter((q) => padCorners.some((c) =>
-      Math.abs(c[0] - q[0]) < 0.0005 && Math.abs(c[1] - q[1]) < 0.0004));
+  const loopPts = [...ways.flat(), ...back.flat()];
   const out2 = loopPts.filter((q) => howFarOut([q[0], q[1]]) > 2).length;
   if (out2) problems.push(`${out2} points of the park's own road are outside the line`);
-  // And it has to arrive as one unbroken road: the loop joining the two
-  // streets is the shape of this park.
-  for (const r of roads) {
-    const kept = clipTo(r.line, upTo);
-    const want = r.line.filter((q) => howFarOut([q[0], q[1]]) <= 16).length;
-    if (kept.length < 2 || want > 2 && lengthOf(kept) < 60) {
-      problems.push(`${r.name} is drawn in pieces`);
-    }
-  }
+  // Both carriageways drawn, and long enough to be streets.
+  if (ways.length !== 2) problems.push("a street is missing from the drawing");
+  for (const w of ways) if (lengthOf(w) < 60) problems.push("a street is drawn too short");
+}
+// The back road has to be there, square, and inside the line.
+if (back.length !== 3) problems.push("no road across the back of the park");
+else {
+  const far = back.flat().filter((q) => howFarOut([q[0], q[1]]) > 2).length;
+  if (far) problems.push(`the back road leaves the property (${far} points)`);
+  const corners = back.flat().filter((q) =>
+    pads.some((p) => Math.hypot(
+      (centroid(p.ring)[0] - q[0]) / dLng, (centroid(p.ring)[1] - q[1]) / dLat) < 6));
+  if (corners.length) problems.push("the back road runs through a home");
 }
 console.log(`wrote ${out}`);
 console.log(problems.length ? `PROBLEMS:\n- ${problems.join("\n- ")}` : "nothing obviously wrong");
