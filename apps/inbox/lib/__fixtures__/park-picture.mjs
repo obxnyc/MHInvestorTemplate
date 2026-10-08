@@ -171,11 +171,15 @@ const tarmac = [...ways.flat(), ...back.flat()]
   .filter((q) => padCorners.some((c) =>
     Math.abs(c[0] - q[0]) < 0.0005 && Math.abs(c[1] - q[1]) < 0.0004));
 const fence = reachTo(orientedBox([...padCorners, ...tarmac], 8), pamalee);
+// The streets themselves are the base map's to draw; only the missing
+// stretch across the back is ours. Trimmed to a looser line than the one
+// that gets drawn, because the corner grazes the boundary.
+const upTo = reachTo(orientedBox([...padCorners, ...tarmac], 16), pamalee);
 // Roads trimmed to a looser line than the one that is drawn: the turning
 // circle grazes the boundary, and trimming it to the exact line split the
 // run so only half of it survived and the loop stopped joining the two
 // streets.
-const upTo = reachTo(orientedBox([...padCorners, ...tarmac], 16), pamalee);
+
 
 // --- what it looks like ---
 const all = [...fence, ...pads.flatMap((p) => p.ring), ...roads.flatMap((r) => r.line)];
@@ -213,7 +217,10 @@ const everyAngle = [];
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <rect width="${W}" height="${H}" fill="#eef1f4"/>
 <path d="${path(fence)} Z" fill="#dce7f5" stroke="#1F5BA6" stroke-width="2.5"/>
-${[...ways, ...back].map((seg) => `<path d="${path(seg)}" fill="none" stroke="#fff" stroke-width="8"/>`).join("\n")}
+${roads.map((r) => `<path d="${path(clipTo(r.line, upTo))}" fill="none" stroke="#ccd3da" stroke-width="9"/>`).join("\n")}
+${roads.map((r) => `<path d="${path(clipTo(r.line, upTo))}" fill="none" stroke="#fff" stroke-width="7"/>`).join("\n")}
+${back.map((seg) => `<path d="${path(seg)}" fill="none" stroke="#ccd3da" stroke-width="9"/>`).join("\n")}
+${back.map((seg) => `<path d="${path(seg)}" fill="none" stroke="#fff" stroke-width="7"/>`).join("\n")}
 ${built.map((b) => `<path d="${path(b.ring)} Z" fill="none" stroke="#b08968" stroke-width="1.6"/>`).join("\n")}
 ${pads.map((p) => {
   const bad = !inRing(centroid(p.ring), fence);
