@@ -238,8 +238,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
       return NextResponse.json({ error: "that is not a place" }, { status: 400 });
     }
-    const { error } = await db.from("units")
-      .update({ lat, lng }).eq("property_id", id).eq("label", label);
+    // The rows that were actually written come back, because an update
+    // against a label no lot carries succeeds and changes nothing. A
+    // caller that treats that as saved will throw away the only other
+    // copy of the correction.
+    const { data, error } = await db.from("units")
+      .update({ lat, lng }).eq("property_id", id).eq("label", label)
+      .select("id");
     if (error) {
       return NextResponse.json({
         error: missing(error)
@@ -247,7 +252,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           : error.message,
       }, { status: 400 });
     }
-    return NextResponse.json({ ok: true });
+    if (!data?.length) {
+      return NextResponse.json({
+        error: `There is no lot ${label} here yet, so there is nothing to move.`,
+      }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, hit: data.length });
   }
 
   // --- put a home back where the layout wants it ---
