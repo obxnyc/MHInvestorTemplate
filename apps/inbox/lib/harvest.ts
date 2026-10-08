@@ -22,6 +22,7 @@
 
 import type { Shape, Road } from "./osm";
 import { centroid } from "./osm";
+import { metresBetween } from "./footprint";
 
 /** What MapLibre hands back from a vector source. */
 export type TileFeature = {
@@ -127,28 +128,72 @@ export function roadsFrom(features: TileFeature[]): Road[] {
 }
 
 /**
- * Pieces of one street, put in order along it.
+ * Pieces of one street, joined end to end.
  *
- * Not a true join -- the pieces are not re-linked end to end -- but sorted
- * by where they sit along the street's own overall direction, which is all
- * that the distance and side-of-the-road maths needs and cannot be defeated
- * by a gap in the middle.
+ * This sorted every point of every piece along the street's overall
+ * direction, which works for one straight street and nothing else. A
+ * street arrives as a line per tile, often several, and a name covers
+ * everything that carries it -- the part inside the park, the part a
+ * quarter mile east of it, and the loop at the end. Sorted into one list,
+ * those become a single line that zig-zags across the site, and a row of
+ * homes walked along it wanders off at angles that match nothing.
+ *
+ * Joined properly: start at a loose end, take the nearest piece each time,
+ * turn it round if it is the wrong way about, and stop when the next
+ * nearest is too far to be the same street. Of the chains that come out,
+ * the longest is the street.
  */
-export function stitch(pieces: number[][][]): number[][] {
-  const all = pieces.flat();
-  if (all.length < 2) return all;
+export function stitch(pieces: number[][][], gap = 8): number[][] {
+  const left = pieces.filter((p) => p.length >= 2).map((p) => [...p]);
+  if (!left.length) return pieces.flat();
 
-  // The street's overall direction, from the two points furthest apart in
-  // x, which for a street is good enough and costs one pass.
-  let lo = all[0], hi = all[0];
-  for (const p of all) {
-    if (p[0] < lo[0]) lo = p;
-    if (p[0] > hi[0]) hi = p;
+  const chains: number[][][] = [];
+  while (left.length) {
+    const chain = left.shift()!;
+    // Grow at both ends until nothing is close enough to belong.
+    for (let end = 0; end < 2; end++) {
+      for (;;) {
+        const tip = chain[chain.length - 1];
+        let best = -1, flip = false, how = Infinity;
+        left.forEach((piece, i) => {
+          const a = metresBetween([tip[0], tip[1]], [piece[0][0], piece[0][1]]);
+          const b = metresBetween(
+            [tip[0], tip[1]], [piece[piece.length - 1][0], piece[piece.length - 1][1]],
+          );
+          if (Math.min(a, b) < how) { how = Math.min(a, b); best = i; flip = b < a; }
+        });
+        // Tight on purpose. Pieces of one street share their endpoints
+        // exactly, so anything more than a few metres is a different
+        // stretch of road -- and a loose threshold lets a piece that
+        // belongs at the far end of the chain attach to this one, which
+        // folds the street back on itself and sends the row of homes
+        // across the park at an angle that matches nothing.
+        if (best < 0 || how > gap) break;
+        const next = left.splice(best, 1)[0];
+        const add = flip ? [...next].reverse() : next;
+        // The shared endpoint arrives twice.
+        chain.push(...(how < 1e-9 ? add.slice(1) : add));
+      }
+      chain.reverse();
+    }
+    chains.push(chain);
   }
-  const dx = hi[0] - lo[0], dy = hi[1] - lo[1];
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len, uy = dy / len;
 
-  return [...all].sort((a, b) =>
-    (a[0] * ux + a[1] * uy) - (b[0] * ux + b[1] * uy));
+  // The longest run is the street; the rest is the same name somewhere
+  // else, which is not this park's street however it is spelled.
+  let best = chains[0];
+  let far = -1;
+  for (const c of chains) {
+    const d = lengthOf(c);
+    if (d > far) { far = d; best = c; }
+  }
+  return best;
+}
+
+function lengthOf(line: number[][]): number {
+  let d = 0;
+  for (let i = 0; i < line.length - 1; i++) {
+    d += metresBetween([line[i][0], line[i][1]], [line[i + 1][0], line[i + 1][1]]);
+  }
+  return d;
 }

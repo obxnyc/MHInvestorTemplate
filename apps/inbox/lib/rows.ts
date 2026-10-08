@@ -40,9 +40,14 @@ export function layRows(
   for (const row of plan.rows) {
     const road = roads.find((r) => sameStreet(row.street, r.name));
     if (!road) continue;
-    const line = westToEast(clipTo(road.line, parcel));
+    const offset = offsetFor(row, road, shapes, plan);
+    // Clipped for THIS row, not for the street. A pad sits fifteen metres
+    // off the road, so a stretch of street can be inside the boundary
+    // while the homes along it are not -- which is exactly what the notch
+    // by the entrance does, and it put four pads in the bite.
+    const line = westToEast(clipFor(road.line, parcel, row.side, offset));
     if (line.length < 2) continue;
-    out.push(...layRow(plan, row, line, offsetFor(row, road, shapes, plan)));
+    out.push(...layRow(plan, row, line, offset));
   }
   return out;
 }
@@ -58,19 +63,8 @@ function layRow(plan: Plan, row: PlanRow, line: number[][], offset: number): Pad
     // the fence.
     const at = ((k + 0.5) / n) * total;
     const { point, bearing } = walk(line, at);
-    // The side of the street this row is on, as a direction. North is
-    // whichever of the two perpendiculars points north.
-    const left = (bearing + 270) % 360;
-    const right = (bearing + 90) % 360;
-    const northward = Math.cos((left * Math.PI) / 180) > 0 ? left : right;
-    const away = row.side === "N" ? northward : (northward + 180) % 360;
-
-    const per = degreesPerMetre(point[1]);
-    const b = (away * Math.PI) / 180;
-    const centre: [number, number] = [
-      point[0] + Math.sin(b) * offset * per.lng,
-      point[1] + Math.cos(b) * offset * per.lat,
-    ];
+    const away = awayFrom(bearing, row.side);
+    const centre = padAt(point, bearing, row.side, offset);
     return {
       id: `${row.street}|${label}`, label, street: row.street, side: row.side,
       // A home stands square to its street: its length runs away from the
@@ -151,6 +145,62 @@ export function densify(line: number[][], step = 2): number[][] {
     }
   }
   return out;
+}
+
+/**
+ * The stretch of street whose homes are inside the boundary.
+ *
+ * Trimming the street itself is not the same question. A pad sits a good
+ * fifteen metres back from the road, so where the boundary steps in -- the
+ * notch by the Pamalee entrance -- the road runs on happily while the row
+ * beside it would be standing in next door's yard.
+ */
+export function clipFor(
+  line: number[][], ring: number[][] | null, side: "N" | "S", offset: number,
+  step = 2,
+): number[][] {
+  if (!ring || ring.length < 4 || line.length < 2) return line;
+  const dense = densify(line, step);
+
+  let best: number[][] = [];
+  let run: number[][] = [];
+  for (let i = 0; i < dense.length; i++) {
+    const a: [number, number] = [dense[i][0], dense[i][1]];
+    const b: [number, number] = i + 1 < dense.length
+      ? [dense[i + 1][0], dense[i + 1][1]]
+      : [dense[i - 1][0], dense[i - 1][1]];
+    const heading = i + 1 < dense.length ? bearingOf(a, b) : bearingOf(b, a);
+    const where = padAt(a, heading, side, offset);
+    if (inRing(where, ring)) {
+      run.push(dense[i]);
+      if (run.length > best.length) best = run;
+    } else {
+      run = [];
+    }
+  }
+  return lengthOf(best) >= 30 ? best : clipTo(line, ring, step);
+}
+
+/** Where a home on this side of the street, at this setback, would sit. */
+export function padAt(
+  on: [number, number], heading: number, side: "N" | "S", offset: number,
+): [number, number] {
+  const away = awayFrom(heading, side);
+  const per = degreesPerMetre(on[1]);
+  const b = (away * Math.PI) / 180;
+  return [
+    on[0] + Math.sin(b) * offset * per.lng,
+    on[1] + Math.cos(b) * offset * per.lat,
+  ];
+}
+
+/** Which way is "off the street, on this side". North is whichever of the
+ *  two perpendiculars points north. */
+export function awayFrom(heading: number, side: "N" | "S"): number {
+  const left = (heading + 270) % 360;
+  const right = (heading + 90) % 360;
+  const northward = Math.cos((left * Math.PI) / 180) > 0 ? left : right;
+  return side === "N" ? northward : (northward + 180) % 360;
 }
 
 /** The same line, guaranteed to run west to east, which is the direction
