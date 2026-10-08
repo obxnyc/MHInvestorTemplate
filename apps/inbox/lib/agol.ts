@@ -518,6 +518,65 @@ export async function parcelByPin(
   return null;
 }
 
+/**
+ * A parcel found by its address instead of its number.
+ *
+ * A parcel number is not one thing. "P139-50A" is a map-block-lot
+ * label off a tax card; the table underneath may be keyed on 858056,
+ * or on an internal id, and the label may live in a field nobody
+ * thought to call PIN. Asking for the number and getting nothing back
+ * reads as "this parcel does not exist", which is never true of a
+ * parcel somebody is standing on.
+ *
+ * The address is the one handle that is the same on the card, on the
+ * envelope and in the table. It is not unique -- a road with a hundred
+ * houses on it has a hundred matches -- so this is a fallback, and it
+ * returns what it found rather than pretending to be sure.
+ */
+export async function parcelByAddress(
+  layerUrl: string, address: string, notes?: string[],
+): Promise<{ geometry: unknown; props: Record<string, unknown>; field: string } | null> {
+  const meta = await json(`${layerUrl}?f=json`);
+  const names = ((meta?.fields ?? []) as { name?: string }[])
+    .map((f) => String(f.name ?? ""))
+    .filter((n) => /address|situs|site.?addr|location|property.?addr/i.test(n))
+    .slice(0, 5);
+  if (!names.length) {
+    notes?.push("that layer has no address field either");
+    return null;
+  }
+
+  // The house number and the first word of the street, which is as much
+  // as two records of the same place reliably agree on: "1140 NORTHSIDE
+  // RD", "1140 Northside Road" and "1140  NORTHSIDE  RD" are one parcel.
+  const bits = address.trim().toUpperCase().match(/^(\d+)\s+([A-Z0-9]+)/);
+  if (!bits) { notes?.push(`"${address}" is not a street address`); return null; }
+  const [, number, word] = bits;
+
+  for (const f of names) {
+    const where = encodeURIComponent(
+      `UPPER(${f}) LIKE '${number} %' AND UPPER(${f}) LIKE '%${word.replace(/'/g, "''")}%'`);
+    const q = `${layerUrl}/query?where=${where}`
+      + "&outFields=*&outSR=4326&returnGeometry=true&resultRecordCount=5&f=geojson";
+    const got = await asked(q);
+    if (!got.data) { notes?.push(`${f}: ${got.why}`); continue; }
+    const hits = (got.data.features ?? []) as Record<string, unknown>[];
+    const hit = hits.find((h) => h.geometry);
+    if (hit) {
+      if (hits.length > 1) {
+        notes?.push(`${f}: ${hits.length} parcels match that address — took the first`);
+      }
+      return {
+        geometry: hit.geometry,
+        props: (hit.properties ?? {}) as Record<string, unknown>,
+        field: f,
+      };
+    }
+  }
+  notes?.push(`no parcel at "${address}" in ${names.join(", ")}`);
+  return null;
+}
+
 /** The outer ring of whatever came back, as [lng, lat] pairs.
  *
  *  A parcel is a Polygon or, where the county has split it round a

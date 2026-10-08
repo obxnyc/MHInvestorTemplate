@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import {
-  appIdFrom, layersOf, parcelLayers, parcelByPin, outerRing, geocode,
-  serviceOf, centroid,
+  appIdFrom, layersOf, parcelLayers, parcelByPin, parcelByAddress,
+  outerRing, geocode, serviceOf, centroid,
 } from "@/lib/agol";
 
 export const runtime = "nodejs";
@@ -95,9 +95,15 @@ export async function POST(req: Request) {
                    url: `${base}/0`, fields: NC_FIELDS });
   }
 
+  // The address, kept for the fallback below. A parcel number can be
+  // written three ways and indexed on a fourth; an address is the same
+  // string on the card, the envelope and the table.
+  const where = String(body.address ?? "").trim();
+
   for (const src of sources) {
     const notes: string[] = [];
-    const hit = await parcelByPin(src.url, pin, src.fields, notes);
+    let hit = await parcelByPin(src.url, pin, src.fields, notes);
+    if (!hit && where) hit = await parcelByAddress(src.url, where, notes);
     if (hit) {
       const out = answer(hit, src.say);
       if (out) return out;
@@ -150,17 +156,22 @@ export async function POST(req: Request) {
   });
 
   for (const layer of tryThese) {
-    const hit = await parcelByPin(layer.url, pin);
-    if (!hit) continue;
+    const notes: string[] = [];
+    let hit = await parcelByPin(layer.url, pin, undefined, notes);
+    if (!hit && where) hit = await parcelByAddress(layer.url, where, notes);
+    if (!hit) {
+      steps.push({ did: `asked ${layer.title}`, ok: false,
+                   say: notes.join("; ") || "nothing came back" });
+      continue;
+    }
     const out = answer(hit, layer.title);
     if (out) return out;
     steps.push({ did: `found ${pin} in ${layer.title}`, ok: false,
                  say: "but it carried no boundary" });
   }
 
-  // No parcel. An address still puts the park on the right ground, and
-  // the Census geocoder needs no key and no account.
-  const where = String(body.address ?? "").trim();
+  // No parcel anywhere. An address still puts the park on the right
+  // ground, and the Census geocoder needs no key and no account.
   if (where) {
     const at = await geocode(where);
     if (at) {
