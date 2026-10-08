@@ -581,6 +581,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const here = placed.find((h) => h.id === selected) ?? null;
   const open = here ? match.get(here.id) ?? null : null;
   const missing = placed.filter((h) => !match.has(h.id));
+  /** On file, but nobody has said whose home stands on it. */
+  const unanswered = placed.filter((h) => {
+    const lot = match.get(h.id);
+    return lot && (!lot.kind || lot.kind === "none");
+  });
 
   async function post(payload: Record<string, unknown>) {
     setBusy(true); setError(null);
@@ -771,6 +776,31 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           <button type="button" className="btn pri" disabled={busy}
                   onClick={() => void addThem()}>
             {busy ? "Adding…" : `Add these ${missing.length} lots`}
+          </button>
+        </div>
+      )}
+
+      {/* Saying the same true thing fifty one times.
+          Every lot arrives with no home recorded, and in this park nearly
+          all of them are ours. Setting the common answer and correcting
+          the handful that differ is six clicks instead of a hundred, and
+          it only touches lots nobody has answered for, so it cannot undo
+          a correction. */}
+      {unanswered.length > 0 && !missing.length && !fitting && (
+        <div className="parkseed">
+          <p>
+            <strong>{unanswered.length} of {placed.length}</strong> lots have no
+            home recorded, so none of them count towards what is left to sell.
+            Mark them all as yours, then click the few that belong to a tenant
+            or an investor.
+          </p>
+          <button type="button" className="btn pri" disabled={busy}
+                  onClick={() => void post({
+                    action: "kinds", kind: "poh", use: "to_sell",
+                  })}>
+            {busy
+              ? "Marking…"
+              : `Mark these ${unanswered.length} park owned, ours to sell`}
           </button>
         </div>
       )}
