@@ -924,6 +924,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           recorded against it. */}
       {described === false && !fitting && (
         <Describe
+          propertyId={propertyId}
           canKeep={canKeep}
           onAt={(at) => setPlan((was) => ({ ...was, centre: at }))}
           onLay={(next) => void describeIt(next)} />
@@ -1141,8 +1142,9 @@ function Slider(
  * whose drive has no name -- which is most of them -- is the second.
  */
 function Describe(
-  { canKeep, onAt, onLay }:
+  { propertyId, canKeep, onAt, onLay }:
   {
+    propertyId: string;
     canKeep: boolean;
     onAt: (at: [number, number]) => void;
     onLay: (plan: Plan) => void;
@@ -1160,6 +1162,36 @@ function Describe(
   const [looking, setLooking] = useState(false);
   /** The address lookup is not configured on this deployment. */
   const [off, setOff] = useState(false);
+  /** The county's parcel viewer, and the number on the tax card. */
+  const [gis, setGis] = useState("");
+  const [parcel, setParcel] = useState("");
+  const [fence, setFence] = useState<number[][] | null>(null);
+  const [said, setSaid] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
+
+  async function askCounty() {
+    setProbing(true); setSaid(null);
+    try {
+      const res = await fetch(`/api/properties/${propertyId}/parcel`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app: gis, pin: parcel, address }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) { setSaid(out.error ?? "The county did not answer."); setProbing(false); return; }
+      if (out.ring?.length) {
+        setFence(out.ring);
+        setSaid(`Property line from ${out.layer} — ${out.ring.length} corners.`);
+      } else {
+        setSaid(out.note ?? "Found the place, but no property line.");
+      }
+      if (out.centre) {
+        const where: [number, number] = [Number(out.centre[0]), Number(out.centre[1])];
+        setAt(where);
+        onAt(where);
+      }
+    } catch { setSaid("The county did not answer."); }
+    setProbing(false);
+  }
 
   // The address lookup is already proxied, so the key stays on the
   // server. Without it this still works -- the block lands near nothing
@@ -1238,6 +1270,8 @@ function Describe(
       streetGap: 60,
       naming: named ? "street" : "lot",
       address: named ? undefined : address.trim() || undefined,
+      fence: fence ?? undefined,
+      pin: parcel.trim() || undefined,
       countFrom: "west",
       rows: [
         { street: name, side: "N", numbers: run(left, first) },
@@ -1294,6 +1328,25 @@ function Describe(
                 : "Pick it from the list, or paste coordinates. The map moves "
                   + "as soon as it knows where the park is."}
         </p>
+
+        {/* The property line, from the county rather than from a
+            tracing of it. Their parcel viewer is already showing the
+            deed line; asking for it by the number on the tax card is
+            one field and an exact answer. */}
+        <label>The county&rsquo;s parcel viewer
+          <input value={gis} placeholder="paste the whole address bar from their map"
+                 onChange={(e) => setGis(e.target.value)} />
+        </label>
+        <div className="two">
+          <label>Parcel number
+            <input value={parcel} placeholder="P139-50A"
+                   onChange={(e) => setParcel(e.target.value)} /></label>
+          <button type="button" className="btn" disabled={!gis || !parcel || probing}
+                  onClick={() => void askCounty()}>
+            {probing ? "Asking…" : "Get the property line"}
+          </button>
+        </div>
+        {said && <p className={fence ? "parkok" : "parkbad"}>{said}</p>}
 
         <label className="check">
           <input type="checkbox" checked={named}

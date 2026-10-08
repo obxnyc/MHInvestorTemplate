@@ -107,6 +107,20 @@ export type Plan = {
    * stay parallel to each other whatever the angle -- rungs on a ladder.
    */
   homeTurn?: number;
+  /**
+   * The property line, as the county drew it.
+   *
+   * [lng, lat] corners of the parcel, taken from the county's own
+   * parcel layer by the number on the tax card. When it is here it IS
+   * the boundary -- not a box fitted round wherever the homes ended up,
+   * and not somebody's tracing of a screenshot.
+   *
+   * Absent for a park whose county publishes nothing, where the
+   * boundary falls back to the box as before.
+   */
+  fence?: number[][];
+  /** The parcel number it came from, so it can be looked up again. */
+  pin?: string;
   rows: PlanRow[];
 };
 
