@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { parseMoney } from "@/lib/invoices";
+import { signMedia } from "@/lib/media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +23,18 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const { id } = await ctx.params;
   const supabase = await supabaseServer();
 
-  const { data: unit } = await supabase
-    .from("units").select("id, label, property_id").eq("id", id).maybeSingle();
+  // The ownership columns arrive with 031. Asked for tolerantly so the
+  // card still opens on a database that has not had it yet.
+  let unitRow = await supabase.from("units")
+    .select("id, label, property_id, home_kind, we_manage").eq("id", id).maybeSingle();
+  if (unitRow.error) {
+    unitRow = await supabase.from("units")
+      .select("id, label, property_id").eq("id", id).maybeSingle();
+  }
+  const unit = unitRow.data as {
+    id: string; label: string; property_id: string;
+    home_kind?: string | null; we_manage?: boolean | null;
+  } | null;
   if (!unit) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   // Everyone who could be the buyer. Owners are records rather than typed
@@ -33,14 +44,22 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     .from("owners").select("id, name").order("name");
 
   // The whole history of this lot, newest first.
-  const { data: sales, error } = await supabase.from("home_sales")
-    .select("id, sold_on, price_cents, down_cents, financed, monthly_cents, rate_bps, term_months, first_due_on, home_year, home_make, home_serial, ended_on, ended_why, note, owners(id, name)")
-    .eq("unit_id", id).order("sold_on", { ascending: false });
-  if (error) {
+  const WITH_MONEY = "id, sold_on, price_cents, down_cents, financed, monthly_cents, rate_bps, term_months, first_due_on, home_year, home_make, home_serial, ended_on, ended_why, note, lot_rent_cents, management_cents, warranty_cents, tenant_rent_cents, pet_fee_cents, late_fee_cents, owners(id, name)";
+  const PLAIN = "id, sold_on, price_cents, down_cents, financed, monthly_cents, rate_bps, term_months, first_due_on, home_year, home_make, home_serial, ended_on, ended_why, note, owners(id, name)";
+
+  // 032's monthly charges, then 030's bare sale. Two shapes, one read,
+  // so the caller does not have to know which migrations have been run.
+  const history = async (cols: string) => supabase.from("home_sales")
+    .select(cols).eq("unit_id", id).order("sold_on", { ascending: false });
+  let got = await history(WITH_MONEY);
+  let money = true;
+  if (got.error) { money = false; got = await history(PLAIN); }
+  if (got.error) {
     return NextResponse.json({
       error: "Migration 030 has not been run yet.", pending: true,
     }, { status: 200 });
   }
+  const sales = (got.data ?? []) as unknown as Record<string, unknown>[];
 
   // What this buyer last agreed, if the caller named one. Not the lot's last
   // sale -- the buyer's -- because the thing being repeated is their deal.
@@ -53,10 +72,43 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (prior) lastFor = prior;
   }
 
+  // The paperwork on the live sale, with links that work for five
+  // minutes. Signed here rather than made public: a bill of sale is a
+  // document with somebody's name and figures on it.
+  const live = sales.find((x) => !x.ended_on);
+  let papers: { id: string; kind: string; name: string | null; path: string;
+                signed_on: string | null; url?: string }[] = [];
+  if (live) {
+    const got2 = await supabase.from("sale_papers")
+      .select("id, kind, name, path, signed_on")
+      .eq("sale_id", live.id as string).order("added_at");
+    if (!got2.error) {
+      papers = got2.data ?? [];
+      const urls = await signMedia(supabaseAdmin(), papers.map((p) => p.path));
+      papers = papers.map((p) => ({ ...p, url: urls.get(p.path) }));
+    }
+  }
+
+  // The meters and the sheds, which belong to the lot rather than to any
+  // one sale and so outlive every owner it has had.
+  const meters = await supabase.from("meters")
+    .select("id, kind, serial, provider, account_ref, lat, lng, fitted_on, removed_on")
+    .eq("unit_id", id).is("removed_on", null).order("kind");
+  const storage = await supabase.from("yard_storage")
+    .select("id, label, size, monthly_cents, started_on, ended_on")
+    .eq("unit_id", id).is("ended_on", null).order("started_on");
+
   return NextResponse.json({
-    unit: { id: unit.id, label: unit.label },
+    unit: {
+      id: unit.id, label: unit.label,
+      kind: unit.home_kind ?? null, manage: Boolean(unit.we_manage),
+    },
     owners: owners ?? [],
-    sales: sales ?? [],
+    sales,
+    papers,
+    meters: meters.error ? [] : (meters.data ?? []),
+    storage: storage.error ? [] : (storage.data ?? []),
+    money,
     lastFor,
   });
 }
@@ -74,6 +126,159 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const body = await req.json().catch(() => ({}));
   const db = supabaseAdmin();
+
+  const cents = (v: unknown) => {
+    const t = String(v ?? "").trim();
+    if (!t) return null;
+    return parseMoney(t);
+  };
+
+  // --- who owns the home standing here, and do we run it ---
+  if (body.action === "kind") {
+    const kind = String(body.kind ?? "");
+    if (!["poh", "toh", "ioh", "none"].includes(kind)) {
+      return NextResponse.json({ error: "pick who owns the home" }, { status: 400 });
+    }
+    // A home we own is one we manage, and there is nothing to manage on
+    // a bare pad. The database says so too; saying it here means the
+    // person gets a sentence rather than a constraint violation.
+    const manage = kind === "poh" ? true : kind === "none" ? false : Boolean(body.manage);
+    const { error } = await db.from("units")
+      .update({ home_kind: kind, we_manage: manage }).eq("id", id);
+    if (error) {
+      return NextResponse.json({
+        error: /home_kind|we_manage/.test(error.message)
+          ? "Migration 031 hasn't been run yet, so there is nowhere to record this."
+          : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- what this owner and their tenant pay every month ---
+  if (body.action === "money") {
+    const { data: live } = await db.from("home_sales")
+      .select("id").eq("unit_id", id).is("ended_on", null).maybeSingle();
+    if (!live) {
+      return NextResponse.json({
+        error: "Record who owns the home first — the charges hang off the sale.",
+      }, { status: 400 });
+    }
+    const patch = {
+      lot_rent_cents: cents(body.lotRent),
+      management_cents: cents(body.management),
+      warranty_cents: cents(body.warranty),
+      tenant_rent_cents: cents(body.tenantRent),
+      pet_fee_cents: cents(body.petFee),
+      late_fee_cents: cents(body.lateFee),
+    };
+    const { error } = await db.from("home_sales").update(patch).eq("id", live.id);
+    if (error) {
+      return NextResponse.json({
+        error: /lot_rent|management_cents|warranty|tenant_rent|pet_fee|late_fee/.test(error.message)
+          ? "Migration 032 hasn't been run yet, so there is nowhere to record the charges."
+          : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- a document filed against the sale ---
+  if (body.action === "paper") {
+    const { data: live } = await db.from("home_sales")
+      .select("id").eq("unit_id", id).is("ended_on", null).maybeSingle();
+    if (!live) {
+      return NextResponse.json({
+        error: "Record who owns the home first — papers are filed against the sale.",
+      }, { status: 400 });
+    }
+    const kind = String(body.kind ?? "other");
+    const path = String(body.path ?? "").trim();
+    // The file has to be one this route put in this lot's folder. Taking
+    // a path from the browser without checking it would let anybody read
+    // any file in the bucket by filing it against their own sale.
+    if (!path.startsWith(`units/${id}/`) || path.includes("..")) {
+      return NextResponse.json({ error: "that file isn't on this lot" }, { status: 400 });
+    }
+    const { error } = await db.from("sale_papers").insert({
+      sale_id: live.id, kind,
+      path, name: String(body.name ?? "").trim() || null,
+      signed_on: body.signedOn || null,
+      added_by: staff.id,
+    });
+    if (error) {
+      return NextResponse.json({
+        error: /duplicate|unique/.test(error.message)
+          ? "That file is already filed against this sale."
+          : /sale_papers/.test(error.message)
+          ? "Migration 032 hasn't been run yet."
+          : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+  if (body.action === "unpaper") {
+    const { error } = await db.from("sale_papers")
+      .delete().eq("id", String(body.paperId ?? ""));
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- a meter ---
+  if (body.action === "meter") {
+    const kind = String(body.kind ?? "");
+    if (!["water", "electric", "gas"].includes(kind)) {
+      return NextResponse.json({ error: "water, electric or gas" }, { status: 400 });
+    }
+    // One live meter of each kind, which the database enforces. The old
+    // one is taken out rather than overwritten, so its number stays
+    // readable next to the bill that was argued about.
+    await db.from("meters").update({ removed_on: new Date().toISOString().slice(0, 10) })
+      .eq("unit_id", id).eq("kind", kind).is("removed_on", null);
+    const { error } = await db.from("meters").insert({
+      unit_id: id, kind,
+      serial: String(body.serial ?? "").trim() || null,
+      provider: String(body.provider ?? "").trim() || null,
+      account_ref: String(body.account ?? "").trim() || null,
+      fitted_on: body.fittedOn || null,
+    });
+    if (error) {
+      return NextResponse.json({
+        error: /meters/.test(error.message)
+          ? "Migration 031 hasn't been run yet." : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // --- a shed in the yard ---
+  if (body.action === "storage") {
+    const monthly = cents(body.monthly);
+    if (monthly === null) {
+      return NextResponse.json({ error: "What does it cost a month?" }, { status: 400 });
+    }
+    const { error } = await db.from("yard_storage").insert({
+      unit_id: id,
+      label: String(body.label ?? "").trim() || null,
+      size: String(body.size ?? "").trim() || null,
+      monthly_cents: monthly,
+      created_by: staff.id,
+    });
+    if (error) {
+      return NextResponse.json({
+        error: /yard_storage/.test(error.message)
+          ? "Migration 031 hasn't been run yet." : error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+  if (body.action === "unstorage") {
+    const { error } = await db.from("yard_storage")
+      .update({ ended_on: new Date().toISOString().slice(0, 10) })
+      .eq("id", String(body.storageId ?? ""));
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true });
+  }
 
   // --- the home changed hands, or left ---
   if (body.action === "end") {

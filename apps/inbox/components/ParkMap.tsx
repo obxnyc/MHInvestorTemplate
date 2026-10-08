@@ -115,6 +115,41 @@ const STYLE = "https://tiles.openfreemap.org/styles/positron";
 const DARKER = "#CBD2DA";
 
 /**
+ * How the base map letters a street name, borrowed.
+ *
+ * The map names Lady Viola two or three times along its length and Lady
+ * Cheryl once, because it spaces labels by how much of each street is on
+ * screen and the two are not the same length. Repeating both along their
+ * own line fixes that, and copying the map's own text layer keeps it in
+ * the same font, size and colour rather than in one of ours.
+ */
+function labelStyle(m: MlMap): { layout: Record<string, unknown>; paint: Record<string, unknown> } {
+  const found = (m.getStyle().layers ?? []).find((l) =>
+    l.type === "symbol"
+    && (l as { "source-layer"?: string })["source-layer"] === "transportation_name");
+  const layout = { ...((found as { layout?: Record<string, unknown> })?.layout ?? {}) };
+  const paint = { ...((found as { paint?: Record<string, unknown> })?.paint ?? {}) };
+  return {
+    layout: {
+      "text-font": layout["text-font"] ?? ["Noto Sans Regular"],
+      "text-size": layout["text-size"] ?? 11,
+      "text-field": ["get", "name"],
+      "symbol-placement": "line",
+      // Named again every so often along its own length, which is what
+      // the map does to a long street and not to a short one.
+      "symbol-spacing": 180,
+      "text-letter-spacing": layout["text-letter-spacing"] ?? 0.05,
+      "text-max-angle": 40,
+    },
+    paint: {
+      "text-color": paint["text-color"] ?? "#8a8e94",
+      "text-halo-color": paint["text-halo-color"] ?? "#ffffff",
+      "text-halo-width": paint["text-halo-width"] ?? 1.2,
+    },
+  };
+}
+
+/**
  * The park, taken out of the map rather than drawn over it.
  *
  * Every earlier version of this put a picture on top: fifty one identical
@@ -470,6 +505,14 @@ export default function ParkMap(
                               ["get", "empty"], "#ffffff", "#19202B"],
           "text-halo-width": 1.2,
         } });
+      // Each street named along its own length, in the map's own hand.
+      {
+        const look = labelStyle(m);
+        m.addLayer({
+          id: "street-name", type: "symbol", source: "streets", minzoom: 15,
+          layout: look.layout as never, paint: look.paint as never,
+        });
+      }
       m.addLayer({ id: "ours-dot", type: "circle", source: "ours", minzoom: 16,
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 16, 2.5, 18, 4, 20, 6],

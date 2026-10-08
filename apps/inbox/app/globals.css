@@ -2090,3 +2090,33 @@ a.metric:hover{border-color:var(--accent)}
 /* A button that is a sentence, not a control. */
 .aslink{border:none;background:none;padding:0;font:inherit;color:var(--accent-ink);
   text-decoration:underline;cursor:pointer}
+
+/* ---- one pad, opened: the owner card ---- */
+.lotbit{margin-top:.9rem;padding-top:.7rem;border-top:1px solid var(--hair)}
+.lotbit:first-of-type{border-top:none;padding-top:0;margin-top:.2rem}
+.lotbit h3{margin:0 0 .45rem;font-size:.68rem;font-weight:700;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.06em}
+
+/* Who owns the home: four choices, one tap, saved on the tap. A select
+   would hide three of the four and cost a second click. */
+.kindpick{display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.45rem}
+.chip{display:inline-block;padding:.26rem .6rem;border:1px solid var(--hair);
+  border-radius:999px;background:var(--card);font-size:.76rem;font-weight:600;
+  color:var(--ink-2);cursor:pointer}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip:hover:not(.on):not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
+
+.lotlist{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.25rem;
+  font-size:.8rem;color:var(--ink-2);line-height:1.5}
+.lotlist strong{text-transform:capitalize}
+.lotlist .aslink{margin-left:.4rem;font-size:.74rem;color:var(--faint)}
+.lotlist a{color:var(--accent-ink)}
+
+/* The paperwork, as four buttons that are each a file picker. Naming the
+   document on the way in means nobody has to classify it afterwards. */
+.papergrab{display:flex;flex-wrap:wrap;gap:.3rem}
+.papergrab .chip{cursor:pointer}
+.saleform .check{display:flex;align-items:center;gap:.4rem;text-transform:none;
+  letter-spacing:0;font-size:.8rem;color:var(--ink-2);font-weight:400}
+.lotbit .check{display:flex;align-items:center;gap:.4rem;font-size:.8rem;
+  color:var(--ink-2)}
