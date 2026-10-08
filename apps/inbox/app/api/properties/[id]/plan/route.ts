@@ -310,5 +310,60 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true, added: fresh.length });
   }
 
+  // --- the same answer for a whole park at once ---
+  //
+  // Fifty one lots, each needing who owns the home and what it is for, is
+  // a hundred clicks to say a thing that is true of nearly all of them.
+  // Setting the common answer and correcting the handful that differ is
+  // the same work in about six.
+  //
+  // Only lots that have not been answered are touched, unless `over` says
+  // otherwise, so running it a second time after correcting a few does
+  // not undo the corrections.
+  if (body.action === "kinds") {
+    const kind = String(body.kind ?? "");
+    if (!["poh", "toh", "ioh", "none"].includes(kind)) {
+      return NextResponse.json({ error: "pick who owns the homes" }, { status: 400 });
+    }
+    const manage = kind === "poh" ? true : kind === "none" ? false : Boolean(body.manage);
+
+    const patch: Record<string, unknown> = { home_kind: kind, we_manage: manage };
+    if (kind === "poh") {
+      const want = String(body.use ?? "");
+      patch.park_use = ["to_sell", "we_rent", "not_home"].includes(want) ? want : "to_sell";
+    } else {
+      patch.park_use = null;
+    }
+
+    // Named lots, or every lot nobody has answered for yet.
+    const given: unknown[] = Array.isArray(body.labels) ? body.labels : [];
+    const labels = given.map((l) => String(l ?? "").trim()).filter(Boolean);
+
+    // Over the top of answers somebody has already given, or only the
+    // lots nobody has answered for. Default is to leave corrections
+    // alone, so running this twice is safe.
+    const over = Boolean(body.over);
+    const run = async (cols: Record<string, unknown>) => {
+      let q = db.from("units").update(cols).eq("property_id", id);
+      if (labels.length) q = q.in("label", labels);
+      else if (!over) q = q.or("home_kind.is.null,home_kind.eq.none");
+      return q.select("id");
+    };
+
+    let got = await run(patch);
+    if (got.error && /park_use/.test(got.error.message)) {
+      delete patch.park_use;
+      got = await run(patch);
+    }
+    if (got.error) {
+      return NextResponse.json({
+        error: /home_kind|we_manage/.test(got.error.message)
+          ? "Migration 031 hasn't been run yet, so there is nowhere to record this."
+          : got.error.message,
+      }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true, marked: got.data?.length ?? 0 });
+  }
+
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
 }
