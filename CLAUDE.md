@@ -133,3 +133,27 @@ found.
 **When the correction is faster than the inference, build the correction.**
 "Move homes" -- drag a pad, angle locked -- took twenty minutes and ended
 the argument. It should have been offered ten rounds earlier.
+
+### The same rule for a screen, not just a map
+
+The owner card shipped with its fields off the side of the page, a tick
+box stretched to the width of the card, and a date field clipped to
+`mm/dd/y`. A type checker cannot see any of that and neither can a test
+that asks what the data is.
+
+`apps/inbox/lib/__fixtures__/card-picture.mjs` renders the card against
+the real stylesheet at four widths and fails on what a picture answers:
+anything out of the card, a page that scrolls sideways, a field too
+narrow to type into, a tick box stretched into a box. Run it before
+every push that touches the card or `globals.css`.
+
+Two things it caught that are worth remembering. A bare `1fr` column is
+`minmax(auto,1fr)`, so it never shrinks below the default width of the
+input inside it -- three of those will not fit in a 23rem card, and the
+fix is `minmax(0,1fr)` or `repeat(auto-fit,…)`. And `width:100%` on
+`input` includes the checkboxes.
+
+**A state name is not a class name.** `check` was already the setup
+page's result card -- bordered, padded, coloured left edge -- and a tick
+beside a sentence borrowed it on six screens. The stylesheet had the
+same note about `.empty` from the last time this happened.

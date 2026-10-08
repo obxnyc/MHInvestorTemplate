@@ -1861,7 +1861,9 @@ a.metric:hover{border-color:var(--accent)}
    anything is in it left a third of the screen empty and squeezed the plan
    into the rest, which is the opposite of what a plan is for. */
 .parkmain{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
-.parkmain.withcard{grid-template-columns:minmax(0,1fr) 20rem}
+/* Twenty rem could not hold a three-field row without the fields
+   running off the side. The plan still gets the rest. */
+.parkmain.withcard{grid-template-columns:minmax(0,1fr) 23rem}
 @media (max-width:860px){ .parkmain.withcard{grid-template-columns:minmax(0,1fr)} }
 
 .parkwrap{min-width:0}
@@ -1918,7 +1920,12 @@ a.metric:hover{border-color:var(--accent)}
 
 /* ---- one pad, opened ---- */
 .lotcard{border:1px solid var(--hair);border-radius:12px;background:var(--card);
-  padding:.9rem 1rem;position:sticky;top:1rem}
+  padding:.9rem 1rem;position:sticky;top:1rem;min-width:0;overflow-wrap:anywhere}
+/* Nothing inside the card is allowed to set the card's width. */
+.lotcard *{min-width:0}
+/* The boxed sections -- storage, meters -- were as wide as their widest
+   row rather than as wide as the card. */
+.lotcard .rowform{max-width:100%;box-sizing:border-box}
 .lotcard header{display:flex;align-items:baseline;margin-bottom:.6rem}
 .lotcard h2{margin:0;font-size:1.05rem;font-weight:700}
 .lotcard .x{margin-left:auto;border:none;background:none;font-size:1.2rem;
@@ -1934,12 +1941,32 @@ a.metric:hover{border-color:var(--accent)}
   border-top:1px solid var(--hair)}
 .saleform label{display:grid;gap:.2rem;font-size:.7rem;font-weight:700;
   text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
-.saleform input,.saleform select,.saleform textarea{padding:.4rem .55rem;
+/* Not the checkboxes. A width of 100% on every input turned the
+   `We hold the note` tick into a box the width of the card. */
+.saleform input:not([type=checkbox]):not([type=radio]),
+.saleform select,.saleform textarea{min-width:0;width:100%;
+  box-sizing:border-box;padding:.4rem .55rem;
   border:1px solid var(--hair);border-radius:7px;background:var(--card);
   color:var(--ink);font:inherit;font-size:.86rem;font-weight:400;
   text-transform:none;letter-spacing:0}
-.saleform .two{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
-.saleform .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem}
+.saleform input[type=checkbox]{width:auto;flex:none;margin:0}
+/* minmax(0,…), not 1fr. A bare 1fr is minmax(auto,1fr), so a column
+   never shrinks below its input's own default width -- about twenty
+   characters. Three of those in a twenty-rem card is wider than the
+   card, and the fields ran off the side of the page.
+
+   And auto-fit, so a row of three becomes a row of two and then a
+   column as the card narrows, rather than three slivers. */
+/* Bottom-aligned, so a label that wraps to two lines lifts its own
+   caption and leaves the row of inputs in a line. */
+.saleform .two{display:grid;gap:.5rem;align-items:end;
+  grid-template-columns:repeat(auto-fit,minmax(6.5rem,1fr))}
+.saleform .three{display:grid;gap:.5rem;align-items:end;
+  grid-template-columns:repeat(auto-fit,minmax(5.5rem,1fr))}
+/* A date field carries its own mm/dd/yyyy and a picker button, and
+   clips rather than shrinks. It gets a line to itself. */
+.saleform .three label:has(input[type=date]){grid-column:1/-1}
+.saleform .two>*,.saleform .three>*{min-width:0}
 .saleform .check{display:flex;align-items:center;gap:.4rem;text-transform:none;
   letter-spacing:0;font-size:.8rem;color:var(--ink-2)}
 /* What this buyer agreed last time. The point of it is that nobody retypes a
@@ -1960,7 +1987,10 @@ a.metric:hover{border-color:var(--accent)}
 .rowform input{padding:.4rem .55rem;border:1px solid var(--hair);border-radius:7px;
   background:var(--card);color:var(--ink);font:inherit;font-size:.86rem;
   font-weight:400;text-transform:none;letter-spacing:0}
-.rowform .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem}
+.rowform .three{display:grid;gap:.5rem;align-items:end;
+  grid-template-columns:repeat(auto-fit,minmax(5.5rem,1fr))}
+.rowform .three>*{min-width:0}
+.rowform input,.rowform select{min-width:0;width:100%}
 
 
 /* ---- an empty plan says what to do about it ---- */
@@ -2116,7 +2146,17 @@ a.metric:hover{border-color:var(--accent)}
    document on the way in means nobody has to classify it afterwards. */
 .papergrab{display:flex;flex-wrap:wrap;gap:.3rem}
 .papergrab .chip{cursor:pointer}
-.saleform .check{display:flex;align-items:center;gap:.4rem;text-transform:none;
-  letter-spacing:0;font-size:.8rem;color:var(--ink-2);font-weight:400}
-.lotbit .check{display:flex;align-items:center;gap:.4rem;font-size:.8rem;
-  color:var(--ink-2)}
+/* `check` is the setup page's result card -- a bordered, padded box with a
+   coloured left edge. A tick beside a sentence borrowed the name and came
+   out as a white card with `We hold the note` wrapped inside it. Same trap
+   as `.empty` further up: a state name is not a class name. The display is
+   reset here along with everything the card rule paints, because renaming
+   it reaches six other screens and this is the one that is wrong today. */
+.saleform .check,.lotbit .check{display:flex;align-items:center;gap:.4rem;
+  border:none;border-radius:0;background:none;padding:0;margin:0;
+  text-transform:none;letter-spacing:0;font-size:.8rem;
+  color:var(--ink-2);font-weight:400}
+/* Whether the corrections somebody made by hand have reached the park,
+   said in a colour and in words -- a count alone reads as decoration. */
+.parkok{color:var(--tn-ink)}
+.parkbad{color:var(--crit)}

@@ -476,6 +476,63 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   }, [real, byHand, propertyId, load]);
 
   /**
+   * Corrections held in this browser, written to the park.
+   *
+   * A home dragged before the lot existed had nowhere to be saved, and
+   * a home dragged while the saving was sending the wrong label was not
+   * saved either. Both leave the same state: the browser knows where
+   * fifty one homes go and the database does not, and the first cleared
+   * cache loses the lot of it.
+   *
+   * So the two are reconciled whenever the park draws. Every home this
+   * browser has a position for, that the database has no position for
+   * or a different one, is written. It runs once per load and settles
+   * immediately, because after the write the two agree.
+   */
+  const [synced, setSynced] = useState<{ saved: number; of: number } | null>(null);
+  const syncing = useRef(false);
+  useEffect(() => {
+    if (syncing.current || !real?.homes?.length || !lots.length) return;
+    const mine = Object.keys(moved).length;
+    if (!mine) return;
+
+    const onFile = new Map<string, [number, number]>();
+    for (const l of lots) {
+      if (l.lat != null && l.lng != null) onFile.set(norm(l.label), [l.lng, l.lat]);
+    }
+    // A tenth of a metre. Below that the two copies agree and writing
+    // again would only make the effect run forever.
+    const same = (a: [number, number], b: [number, number]) =>
+      Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
+
+    const todo: { label: string; at: [number, number] }[] = [];
+    for (const h of real.homes) {
+      const at = moved[h.id];
+      if (!at) continue;
+      const label = `${h.label} ${h.street}`;
+      const have = onFile.get(norm(label));
+      if (have && same(have, at)) continue;
+      todo.push({ label, at });
+    }
+    if (!todo.length) { setSynced({ saved: mine, of: mine }); return; }
+
+    syncing.current = true;
+    void (async () => {
+      let saved = 0;
+      for (const { label, at } of todo) {
+        const res = await fetch(`/api/properties/${propertyId}/plan`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "place", label, lng: at[0], lat: at[1] }),
+        }).catch(() => null);
+        if (res?.ok) saved += 1;
+      }
+      setSynced({ saved: saved + (mine - todo.length), of: mine });
+      syncing.current = false;
+      if (saved) await load();
+    })();
+  }, [real, lots, moved, propertyId, load]);
+
+  /**
    * Put the lots on file, and the corrections on the lots.
    *
    * Adding the lots and saving where they sit have to be one button.
@@ -637,6 +694,16 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               }}>
                 {copied ? "copied — paste it to me" : "copy the map data"}
               </button>
+            </>
+          ) : null}
+          {synced ? (
+            <>
+              {" "}
+              <strong className={synced.saved === synced.of ? "parkok" : "parkbad"}>
+                {synced.saved === synced.of
+                  ? `All ${synced.of} of your moved homes are saved to the park.`
+                  : `Only ${synced.saved} of ${synced.of} moved homes saved — press Save a copy and send me the file.`}
+              </strong>
             </>
           ) : null}
         </p>
