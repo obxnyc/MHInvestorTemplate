@@ -249,6 +249,40 @@ lands where you tapped, it points where you said, it is the size you
 typed, a home split out of a row does not move or turn, and doing any
 of it to one home does not touch its neighbours.
 
+### An afternoon of work must not live in a debounce
+
+Fifty-nine homes put down one tap at a time is an afternoon, and the
+layout they make sat in an eight-hundred-millisecond debounce with two
+missing ways out. Both are silent.
+
+**Re-reading the park overwrote it.** `load()` replaces the layout on
+screen with the server's copy, and a layout still waiting in the
+debounce is the newer of the two -- so the very next thing anybody does
+after placing the homes, pressing *Add lots*, would have put the
+afternoon back the way it was. No error. Nothing on screen. `load()`
+now awaits a flush first, and `flush` is in its dependencies, because a
+stale flush closed over an old plan writes the old plan.
+
+**Closing the tab never sent it.** The cleanup cleared the timer and
+dropped what it was holding. Now `pagehide` sends it with
+`keepalive: true` -- a fetch started as the tab closes is not sent
+otherwise -- and the effect's own cleanup sends it too, because
+navigating inside the app unmounts the screen without ever firing
+`pagehide`.
+
+**The plan waiting to be written lives in a ref**, not only inside the
+timer's closure, because two separate paths have to be able to reach it.
+
+And the screen now says *Saving…* / *Saved*, with a Try again on a
+failed write. Silence and success look identical, and the one time they
+are not the same is the time it matters.
+
+`apps/inbox/lib/__fixtures__/keep-check.mjs` runs the real debounce
+against a stand-in server: fifty-nine remembers, then a re-read, and all
+fifty-nine have to come back. It also runs the same sequence *without*
+the flush and requires that one to lose them -- a race check that cannot
+fail is not checking a race.
+
 ### A park the map has never heard of is still a park
 
 Northside drew fifty-nine numbered pads and nothing could be done with

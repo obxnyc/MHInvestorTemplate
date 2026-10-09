@@ -254,7 +254,57 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    * slider, and a write per keystroke is a write per keystroke.
    */
   const saving = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (saving.current) clearTimeout(saving.current); }, []);
+  /**
+   * The layout waiting to be written, if any.
+   *
+   * Held separately from the timer because two things need to get at it:
+   * anything that is about to re-read the park from the server, and the
+   * page being closed. An afternoon of putting fifty-nine homes down one
+   * at a time lives in here for eight hundred milliseconds at a time,
+   * and there was no path that made sure it got out.
+   */
+  const unsaved = useRef<Plan | null>(null);
+  const [kept, setKept] = useState<"saving" | "saved" | "failed" | null>(null);
+
+  const writePlan = useCallback(async (next: Plan, leaving = false) => {
+    unsaved.current = null;
+    if (!leaving) setKept("saving");
+    const res = await fetch(`/api/properties/${propertyId}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "plan", plan: next }),
+      // So a write started as the tab closes is still sent.
+      keepalive: leaving,
+    }).catch(() => null);
+    if (!leaving) setKept(res?.ok ? "saved" : "failed");
+    return Boolean(res?.ok);
+  }, [propertyId]);
+
+  /**
+   * Everything waiting, written now.
+   *
+   * Re-reading the park from the server while a layout is still sitting
+   * in the debounce overwrites it with the older copy -- and the very
+   * next thing anybody does after placing the homes is press Add lots,
+   * which re-reads. That is the whole afternoon, gone, with no error and
+   * nothing on screen to say it happened.
+   */
+  const flush = useCallback(async () => {
+    if (saving.current) { clearTimeout(saving.current); saving.current = null; }
+    const next = unsaved.current;
+    if (next) await writePlan(next);
+  }, [writePlan]);
+
+  // On the way out, and on the way to another tab. `pagehide` fires on a
+  // phone where `beforeunload` does not.
+  useEffect(() => {
+    const go = () => {
+      if (saving.current) { clearTimeout(saving.current); saving.current = null; }
+      const next = unsaved.current;
+      if (next) void writePlan(next, true);
+    };
+    window.addEventListener("pagehide", go);
+    return () => { window.removeEventListener("pagehide", go); go(); };
+  }, [writePlan]);
   /**
    * Whether this park has a layout of its own, for the saving path to
    * read without waiting for a render.
@@ -280,14 +330,14 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // described -- so the form that would have asked never appeared.
     if (auto || !own.current) return;
 
+    unsaved.current = next;
+    setKept("saving");
     if (saving.current) clearTimeout(saving.current);
     saving.current = setTimeout(() => {
-      void fetch(`/api/properties/${propertyId}/plan`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "plan", plan: next }),
-      }).catch(() => null);
+      saving.current = null;
+      void writePlan(next);
     }, 800);
-  }, [key, propertyId]);
+  }, [key, writePlan]);
 
 
   // Dragging the whole block gets it within a few feet. Arrow keys get
@@ -366,6 +416,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   }, [propertyId]);
 
   const load = useCallback(async () => {
+    // Anything still in the debounce goes first. What comes back from
+    // the server is about to replace the layout on screen, and a layout
+    // that has not been written yet is the newer of the two.
+    await flush();
     const res = await fetch(`/api/properties/${propertyId}/plan`, { cache: "no-store" });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) { setError(out.error ?? "Could not load the park."); return; }
@@ -412,7 +466,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         }));
       } catch { /* fine */ }
     }
-  }, [propertyId, key]);
+  }, [propertyId, key, flush]);
   useEffect(() => { void load(); }, [load]);
 
   /** A park described for the first time, or re-described. */
@@ -1097,6 +1151,22 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     <div className="parkpage">
       <header className="parkhead">
         <h1>{name || "The park"}</h1>
+        {/* An afternoon of putting homes down one at a time deserves to
+            say so. Silence and success look identical, and the one time
+            they are not the same is the time it matters. */}
+        {kept && (
+          <span className={`parkkept${kept === "failed" ? " bad" : ""}`}>
+            {kept === "saving" ? "Saving…" : kept === "saved" ? "Saved" : (
+              <>
+                Not saved.{" "}
+                <button type="button" className="aslink"
+                        onClick={() => void writePlan(plan)}>
+                  Try again
+                </button>
+              </>
+            )}
+          </span>
+        )}
         <div className="parkacts">
           {real && (
             <button type="button" className={arranging ? "btn pri" : "btn"}

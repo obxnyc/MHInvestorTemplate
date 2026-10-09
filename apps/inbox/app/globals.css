@@ -1852,6 +1852,9 @@ a.metric:hover{border-color:var(--accent)}
 .parkpage{padding:1rem 0 2rem;max-width:72rem}
 .parkhead{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:.6rem}
 .parkhead h1{margin:0;font-size:1.3rem;font-weight:700;letter-spacing:-.02em}
+.parkkept{margin-left:.6rem;font-size:.76rem;color:var(--muted);
+  align-self:center}
+.parkkept.bad{color:var(--crit);font-weight:700}
 .parkacts{margin-left:auto;display:flex;gap:.5rem}
 .parkhint{margin:.5rem 0;font-size:.8rem;line-height:1.5;color:var(--muted)}
 
