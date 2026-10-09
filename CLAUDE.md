@@ -230,6 +230,20 @@ whose colour is within 1.6:1 of what is behind it. Not a contrast
 audit: this stylesheet uses a deliberately quiet grey for small labels
 and that is a choice. The floor is "these words are not there at all".
 
+**Clearing the drawing is part of placing by hand.** Fifty-nine pads
+stacked on each other are in the way of the ones being put down, and
+taking them off one at a time is fifty-nine confirmations. The clear-all
+lives inside Add a home, not in the header -- a destructive button in
+the header is one somebody presses by accident; inside the mode that
+needs it, it is the step before the next one.
+
+It also found the thing clearing them would have broken. A park whose
+homes are all taken off has a plan with a boundary and no rows, and the
+load keyed "has this park been described" on rows alone -- so the next
+reload would have called it undescribed, offered the describe form
+again, declined to load the plan, and lost the line somebody had drawn
+by hand along with the homes. **A boundary counts as knowing the park.**
+
 `apps/inbox/lib/__fixtures__/drop-check.mjs` holds the arithmetic: it
 lands where you tapped, it points where you said, it is the size you
 typed, a home split out of a row does not move or turn, and doing any

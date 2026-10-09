@@ -14,5 +14,18 @@ if (!/const \[fence, setFence\] = useState<number\[\]\[\] \| null>\(from\?\.fenc
 if (!/fence: fence \?\? undefined,/.test(s)) {
   bad.push("laying out a park does not carry the boundary into the new plan");
 }
+// Taking every home off the map to put them back one at a time leaves a
+// plan with a line and no rows. Keyed on rows alone, the next reload
+// called that park undescribed, offered the describe form again, and did
+// not load the plan at all -- so the line went with the homes.
+if (!/const has = Boolean\(mine\?\.rows\?\.length \|\| mine\?\.fence\?\.length\);/.test(s)) {
+  bad.push("a park with a boundary and no rows reads as undescribed, so "
+    + "clearing the homes to place them by hand loses the boundary too");
+}
+if (!/if \(has && mine\) \{\n      setPlan\(mine\);/.test(s)) {
+  bad.push("the stored plan is adopted on a different test from the one "
+    + "that decided the park is known, so the two can disagree");
+}
+
 if (bad.length) { for (const b of bad) console.error(" ✗ " + b); process.exit(1); }
 console.log("nothing obviously wrong");

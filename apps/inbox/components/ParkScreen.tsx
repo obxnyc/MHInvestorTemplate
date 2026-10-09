@@ -391,10 +391,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       }
     }
 
-    const has = Boolean(mine?.rows?.length);
+    // A boundary counts. Taking every home off the map to put them back
+    // one at a time leaves a plan with a line and no rows -- and keyed on
+    // rows alone, the next reload called that park undescribed, offered
+    // the describe form again, and did not load the plan at all, so the
+    // line somebody had drawn by hand went with it.
+    const has = Boolean(mine?.rows?.length || mine?.fence?.length);
     own.current = has;
     setDescribed(has);
-    if (mine?.rows?.length) {
+    if (has && mine) {
       setPlan(mine);
       planNow.current = mine;
       // Overwrite the browser's copy with what is on file, so a stale
@@ -469,6 +474,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   }) => {
     const base = planNow.current;
     setAsking(false);
+    // A park with every home taken off it has no streets to look for,
+    // and saying "the map here has no " with nothing after it reads as
+    // the map having failed rather than as there being nothing to ask.
+    if (!base.rows.length) return;
     const mine = found.roads.filter((r) =>
       base.rows.some((row) => sameStreet(row.street, r.name)));
     if (!mine.length) {
@@ -1238,6 +1247,24 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           map and nothing else moves. A home put down here is drawn
           straight away; it goes on file when you press <em>Add lots</em>{" "}
           above, and only then can it have an owner.
+          {countOf(plan) > 0 && (
+            <>
+              {" "}
+              <button type="button" className="aslink" onClick={() => {
+                if (!confirm(
+                  `Take all ${countOf(plan)} homes off the map?\n\n`
+                  + "The boundary stays, and every lot stays on file with"
+                  + " whatever is recorded against it. You will be putting"
+                  + " them back one tap at a time, starting at 1.")) return;
+                remember({ ...plan, rows: [] });
+                setSelected(null);
+              }}>
+                Clear all {countOf(plan)} first
+              </button>
+              {" "}— the ones already drawn are in the way of the ones you
+              are putting down.
+            </>
+          )}
         </p>
       )}
 

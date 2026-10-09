@@ -163,6 +163,29 @@ t("Add a home is a button",
   /\{dropping \? "Done" : "Add a home"\}/.test(screen));
 t("and a tap in that mode drops one",
   /if \(dropping\) \{[\s\S]{0,400}?homeAt\(plan, at, label\)/.test(screen));
+t("the homes already drawn can be cleared out of the way",
+  /Clear all \{countOf\(plan\)\} first/.test(screen)
+  && /remember\(\{ \.\.\.plan, rows: \[\] \}\);/.test(screen),
+  "Fifty-nine pads stacked on each other are in the way of the ones "
+  + "being put down, and taking them off one at a time is fifty-nine "
+  + "confirmations.");
+
+t("and clearing them is offered where it is needed, not in the header",
+  /\{dropping && \([\s\S]{0,1400}?\{countOf\(plan\) > 0 && \([\s\S]{0,900}?Clear all/
+    .test(screen),
+  "A destructive button in the header is a button somebody presses by "
+  + "accident; inside Add a home it is the step before the next one.");
+
+t("clearing says what it does not touch",
+  /every lot stays on file with[\s\S]{0,120}?recorded against it/.test(screen),
+  "Taking a home off the drawing is not deleting the lot, and somebody "
+  + "about to lose an afternoon needs to be told which it is.");
+
+t("a park with no rows is not asked of the map",
+  /if \(!base\.rows\.length\) return;/.test(screen),
+  "With no rows there are no streets to look for, and the screen said "
+  + "\"the map here has no\" with nothing after it.");
+
 t("the angle and the size are offered in feet and degrees",
   /Wide \(ft\)/.test(screen) && /Long \(ft\)/.test(screen) && /Angle/.test(screen),
   "A home is 16 by 60 to everyone who has stood next to one.");
