@@ -602,3 +602,41 @@ export function localOf(
     across: plan.mirror ? -across : across,
   };
 }
+
+
+/**
+ * The park a set of lot labels belongs to, where that is one this code
+ * already describes.
+ *
+ * The Retreat at Cross Creek was laid out before a park could have a
+ * plan of its own: its arrangement lived in this file and nowhere
+ * else. Giving every park its own plan then made that park a park with
+ * no plan -- fifty one lots on file, an hour of somebody's dragging
+ * saved against them, and a blank map, because the thing that drew it
+ * had been taken away and nothing had been put in its place.
+ *
+ * So a park with no plan is asked whether it is this one, by its lot
+ * labels, which are the only durable thing about it. If it is, it
+ * adopts the built-in description and from then on owns it. No other
+ * park can match: Northside's lots are filed as "1140 Northside Rd Lot
+ * 1" and Cross Creek's as "3124 Lady Viola Dr".
+ *
+ * Returns null for anything else, which is the whole point -- a park
+ * that is not this one draws nothing until somebody says what it is.
+ */
+export function builtInFor(labels: string[]): Plan | null {
+  const mine = new Set(layOut(RETREAT).map((h) => tidy(h.filed)));
+  const seen = labels.map(tidy).filter(Boolean);
+  if (seen.length < 5) return null;
+  const hits = seen.filter((l) => mine.has(l)).length;
+  // Most of what is on file has to be this park's, and most of this
+  // park has to be on file. One matching label is a coincidence; fifty
+  // is an identification.
+  return hits >= seen.length * 0.6 && hits >= mine.size * 0.5 ? RETREAT : null;
+}
+
+/** Labels compared the way they are compared everywhere else: case and
+ *  spacing are not part of the name. */
+function tidy(s: string): string {
+  return String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
