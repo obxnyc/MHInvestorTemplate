@@ -4,6 +4,7 @@ import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { footprint, middleOfRing } from "@/lib/footprint";
 import { padAt } from "@/lib/nearpad";
+import { reframe } from "@/lib/reframe";
 import { layOut, boundaryOf, streetLines, countOf, type Plan, type Tap } from "@/lib/parkplan";
 import { shapesFrom, roadsFrom, type TileFeature } from "@/lib/harvest";
 import type { Shape, Road } from "@/lib/osm";
@@ -669,6 +670,16 @@ export default function ParkMap(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onHarvest, plan.centre, ready]);
 
+  /**
+   * The camera belongs to whoever is using it.
+   *
+   * Placing homes, moving them, drawing the line, fitting the block --
+   * in all of those somebody has chosen a zoom and a corner of the park
+   * to work in, and the map taking it back is the screen arguing with
+   * the hand. "Fit view" is there for when they want it back.
+   */
+  const working = Boolean(fitting || arranging || drawing);
+
   const framed = useRef("");
   useEffect(() => {
     const m = map.current;
@@ -678,15 +689,17 @@ export default function ParkMap(
     // never re-framed -- so a correctly re-described park went on
     // showing three hundred miles away, which reads as the describing
     // having done nothing.
-    const where = plan.centre.map((n) => n.toFixed(5)).join(",");
-    const what = `${real?.boundary?.length ? "real" : "drawn"}`
-      + `:${real?.homes?.length ?? 0}:${where}`;
-    if (framed.current === what) return;
-    framed.current = what;
+    const { key, now } = reframe(framed.current, {
+      boundary: Boolean(real?.boundary?.length),
+      homes: real?.homes?.length ?? 0,
+      centre: plan.centre,
+    }, working);
+    framed.current = key;
+    if (!now) return;
     const id = requestAnimationFrame(() => frame());
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, real, plan.centre]);
+  }, [ready, real, plan.centre, working]);
 
   /**
    * The park put back in frame when the card beside it opens or shuts.
@@ -704,13 +717,18 @@ export default function ParkMap(
   const hadCard = useRef<boolean | null>(null);
   const card = Boolean(selected);
   useEffect(() => {
-    if (!ready) return;
+    const m = map.current;
+    if (!m || !ready) return;
     if (hadCard.current === card) return;
     hadCard.current = card;
-    const id = requestAnimationFrame(() => frame());
+    // While the map is being worked on, the box changing width must not
+    // change the view. Telling MapLibre its new size is the whole of
+    // what is needed; re-fitting as well zoomed the park out on the
+    // first tap of every session and again every time the panel shut.
+    const id = requestAnimationFrame(() => (working ? m.resize() : frame()));
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, card]);
+  }, [ready, card, working]);
 
   function frame() {
     const m = map.current;

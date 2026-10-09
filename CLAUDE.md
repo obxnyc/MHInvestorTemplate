@@ -249,6 +249,46 @@ lands where you tapped, it points where you said, it is the size you
 typed, a home split out of a row does not move or turn, and doing any
 of it to one home does not touch its neighbours.
 
+### The camera belongs to whoever is using it
+
+Putting fifty-nine homes down by hand means zooming in on a corner of
+the park and tapping. Between every pair of taps the map re-framed --
+a four-hundred-millisecond zoom out, back to the whole parcel, so the
+next tap had to begin by zooming in again. "It would fidget and
+unzoom."
+
+Two causes, and both are the map deciding it knew better.
+
+**The number of homes was in the framing key.** Every home put down
+changed it. What the framing is actually for is the park *arriving* on
+screen, and that happens once -- so the key now asks whether there are
+homes, not how many.
+
+**The panel opening re-fitted the map.** The box narrows when the panel
+appears and MapLibre has to be told, but telling it its new size with
+`m.resize()` is the whole of what is needed. Re-fitting as well zoomed
+the park out on the first tap of every session and again every time the
+panel shut.
+
+Underneath both: **while somebody is working on the map, the camera is
+theirs.** Placing, moving, drawing the line, fitting the block -- in all
+of those they have chosen a zoom and a corner, and the map taking it
+back is the screen arguing with the hand. `Fit view` is there for when
+they want it back. A view that arrives while the tools are out is still
+recorded as framed, so putting them down does not then yank it.
+
+The decision lives in `apps/inbox/lib/reframe.ts` rather than inline in
+the effect, because the bug was one word in a cache key and nothing
+about that is visible in a type, in a test of where the homes are, or
+in a picture of the park. `apps/inbox/lib/__fixtures__/still-check.mjs`
+runs the afternoon through it: fifty-nine homes, and the map may not
+move.
+
+**Either fix alone stops the fidget**, which made the first two guards
+pass on the fault. A check that cannot tell two fixes apart cannot tell
+you which one broke -- so the one that tests the key asks it with
+nobody working, and the one that tests the guard asks it with somebody.
+
 ### An afternoon of work must not live in a debounce
 
 Fifty-nine homes put down one tap at a time is an afternoon, and the
