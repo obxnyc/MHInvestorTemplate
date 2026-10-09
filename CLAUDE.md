@@ -193,6 +193,44 @@ reintroduced in turn to confirm the check catches it.
 
 Run both before every push that touches the map.
 
+### A park the map has never heard of is still a park
+
+Northside drew fifty-nine numbered pads and nothing could be done with
+any of them: no Move homes button, a drag that saved nothing, a nudge
+that found no home to nudge. The homes were on screen the whole time,
+which is what made it baffling.
+
+`real` was what the TILES carried -- buildings, named streets, a
+boundary -- and Pasquotank's basemap carries none of that there, so it
+stayed null. The map falls back to the plan for *drawing*, so the park
+appeared; but every feature that works ON a home was keyed on `real`,
+and so none of them existed.
+
+The two are now separate. `harvested` is what the map handed over, and
+only the sentences that are *claims about the map* read it -- "All N
+lots, laid along…", "Fit to aerial", the reading hint. `real` is the
+park however it came to be known: the harvest when there is one, the
+plan's own drawing otherwise. Everything that moves, saves or opens a
+home works on that.
+
+The general shape of this: **a fallback that covers the drawing but not
+the doing.** The screen looks complete and is inert, and nothing fails
+loudly enough to find.
+
+### A fit that overlaps the pads is not a fit
+
+The same park then fitted inside its boundary by squeezing fifty-nine
+pads into room for thirty, and drew as one grey smear. Every number
+present, in order, inside the line -- and nothing on it could be taken
+hold of, because you cannot grab what you cannot tell apart.
+
+`fitInside` now never shrinks below the room a home actually takes
+along the row. Not its width: a home turned off square reaches further
+along the row than it is wide, so it is
+`width·cos(turn) + length·sin(turn)`. A row that then will not fit
+overflows, and the screen counts the lots outside and says the number.
+An overflow somebody can see beats a fit that lies.
+
 ### A park drawn past its own deed line still looks like a park
 
 1140 Northside Rd shipped with fifty-nine numbered pads strung out in

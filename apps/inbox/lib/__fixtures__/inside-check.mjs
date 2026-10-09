@@ -159,6 +159,53 @@ const put = fitInside(spread(LOOP / (Math.ceil(LOTS / 2) - 1) * 2.4), askew);
     layOut(put).every((h) => inRing([h.lng, h.lat], askew)));
 }
 
+// --- a fit that overlaps the pads is not a fit ----------------------
+//
+// Fifty-nine pads squeezed into room for thirty drew as one grey smear.
+// Every number was present and in order, so nothing in the suite
+// objected -- and nothing on screen could be taken hold of, because you
+// cannot grab what you cannot tell apart.
+const { metresBetween } = await import(join(here, "footprint.gen.mjs"));
+function tightest(p) {
+  const by = new Map();
+  for (const h of layOut(p)) {
+    const key = `${h.street}|${h.side}`;
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(h);
+  }
+  let least = Infinity;
+  for (const row of by.values()) {
+    for (let i = 1; i < row.length; i++) {
+      least = Math.min(least, metresBetween(
+        [row[i - 1].lng, row[i - 1].lat], [row[i].lng, row[i].lat]));
+    }
+  }
+  return least;
+}
+// Square to the row, so a pad takes up its own width along it.
+const ROOM = SINGLE_WIDE.width;
+t(`fitted pads do not overlap (${tightest(fitted).toFixed(1)} m apart,`
+  + ` ${ROOM.toFixed(1)} m wide)`,
+  tightest(fitted) >= ROOM,
+  "Pads closer together than they are wide are drawn on top of each "
+  + "other, and a smear cannot be dragged.");
+
+{
+  // A parcel far too small for the park: the fit must refuse to squeeze
+  // rather than produce a smear that fits.
+  const tiny = parcel(70, 150);
+  const squashed = fitInside(spread(LOOP / (Math.ceil(LOTS / 2) - 1) * 2.4), tiny);
+  t(`a park that cannot fit still keeps its pads apart`
+    + ` (${tightest(squashed).toFixed(1)} m)`,
+    tightest(squashed) >= ROOM,
+    "It used to shrink to a fifth of the spacing it was given, whatever "
+    + "that did to the drawing.");
+  const over = layOut(squashed).filter((h) => !inRing([h.lng, h.lat], tiny)).length;
+  t(`and lets the overflow show instead (${over} outside)`, over > 0,
+    "A row that will not fit has to say so. The screen counts these and "
+    + "says the number above the map.");
+}
+
 // --- and the rules the arithmetic cannot see ------------------------
 const screen = readFileSync(join(here, "../components/ParkScreen.tsx"), "utf8");
 const board = readFileSync(join(here, "../components/PropertyBoard.tsx"), "utf8");

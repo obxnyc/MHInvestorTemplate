@@ -4,11 +4,12 @@ import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
 import { RETREAT, builtInFor, filedAs, layOut, countOf, fitTargets, fitFromTaps,
-         placed as placedRow, type Plan, type Placed, type Tap } from "@/lib/parkplan";
+         boundaryOf, streetLines, placed as placedRow,
+         type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
 import { layRows, reachTo, backRoad, streetLine } from "@/lib/rows";
-import { degreesPerMetre, middleOfRing } from "@/lib/footprint";
+import { degreesPerMetre, middleOfRing, footprint } from "@/lib/footprint";
 
 /**
  * The park screen.
@@ -108,7 +109,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    *  all, and the screen said nothing -- so laying out a park appeared
    *  to work and then came back empty. */
   const [canKeep, setCanKeep] = useState(true);
-  const [real, setReal] = useState<RealPark | null>(null);
+  /** What the tiles carried: buildings, named streets, a boundary. Null
+   *  on a basemap that has nothing here, which is most rural counties. */
+  const [harvested, setHarvested] = useState<RealPark | null>(null);
   const [taps, setTaps] = useState<Tap[]>([]);
   const [asking, setAsking] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -409,7 +412,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // Cross Creek's ground, under a sentence naming the new park's
     // streets. Throwing it away makes the map read the tiles again,
     // where the new plan now says to look.
-    setReal(null);
+    setHarvested(null);
     setOsm(null);
     setGave(null);
     took.current = false;
@@ -540,7 +543,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     // whatever the tiles happened to carry would walk it off a boundary
     // that is a statement about the deed.
     remember(base.fence?.length ? fitted : fitInside(fitted, boundary), true);
-    setReal({
+    setHarvested({
       homes: pads.map((h) => ({ ...h, filed: filedAs(base, h.label, h.street) })),
       streets: streetOrder.map((st, i) => ({ name: st, line: ways[i] ?? [] }))
         .filter((st) => st.line.length >= 2),
@@ -567,6 +570,44 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     took.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remember]);
+
+  /**
+   * The park drawn from its own plan, when the map had nothing to hand
+   * over.
+   *
+   * `real` is what the tiles carried: buildings, named streets, a
+   * boundary. Pasquotank's basemap carries none of that for Northside,
+   * so `real` stayed null -- and everything that works ON a home hung
+   * off it. The homes drew, because the map falls back to the plan for
+   * drawing, and that is exactly what made it baffling: fifty-nine pads
+   * on screen, no Move homes button, a drag that saved nothing and a
+   * nudge that found no home to nudge.
+   *
+   * A park drawn from its own description is no less a park. It just was
+   * not read off a photograph.
+   */
+  const asPlanned = useMemo<RealPark | null>(() => {
+    if (!plan.rows.length) return null;
+    return {
+      homes: layOut(plan).map((h) => ({
+        id: h.id, label: h.label, street: h.street, filed: h.filed,
+        ring: footprint(h.lat, h.lng, h.bearing, plan.size),
+      })),
+      streets: streetLines(plan),
+      boundary: plan.fence?.length ? plan.fence : boundaryOf(plan),
+      lanes: [],
+    };
+  }, [plan]);
+
+  /**
+   * The park, however it came to be known.
+   *
+   * The map's reading of the ground when there is one, the plan's own
+   * drawing otherwise. Everything downstream -- moving a home, saving
+   * where it went, the lot cards -- works on this, so none of it
+   * depends any more on whether a basemap happened to have the park.
+   */
+  const real = harvested ?? asPlanned;
 
   /** The park as drawn, with the corrections applied. */
   const shown = useMemo<RealPark | null>(() => {
@@ -1070,7 +1111,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               {laying ? "Done" : "Place rows"}
             </button>
           )}
-          {!real && (
+          {!harvested && (
             <button type="button" className={fitting ? "btn pri" : "btn"}
                     onClick={() => {
                       setFitting((v) => !v); setLaying(false);
@@ -1122,22 +1163,22 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       {/* Where the outlines came from. Said once, plainly, because a park
           drawn from a description and a park drawn from the map look alike
           on screen and are not the same claim. */}
-      {asking && !real && (
+      {asking && !harvested && (
         <p className="parkhint">
           Reading the park off the map — the homes and the streets come down
           with the map itself, so give the tiles a moment.
         </p>
       )}
-      {!asking && (osm?.error || real) && (
+      {!asking && (osm?.error || harvested) && (
         <p className="parkhint">
-          {real?.homes?.length ? (
+          {harvested?.homes?.length ? (
             <>
               {/* Named from the park's own plan. This sentence used to
                   read "laid along Lady Viola and Lady Cheryl, numbered
                   down from the Pamalee entrance" on every park there
                   was, which on a park in another county is not a
                   description but a contradiction of what is on screen. */}
-              <strong>All {real.homes.length} lots</strong>, laid along{" "}
+              <strong>All {harvested.homes.length} lots</strong>, laid along{" "}
               {[...new Set(plan.rows.map((r) => r.street))].join(" and ")}{" "}
               inside the property line. Every pad is the same rectangle,
               because every home here is the same model.

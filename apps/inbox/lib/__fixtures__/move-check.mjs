@@ -75,6 +75,30 @@ t("taking hold of a home also chooses it",
   /if \(id\) live\.current\.onSelect\(id\);/.test(map),
   "So the buttons are already pointed at the home under the hand.");
 
+// --- a park you can move, whether or not a map had heard of it -------
+t("the park is drawn from its own plan when the map has nothing",
+  /const real = harvested \?\? asPlanned;/.test(screen)
+  && /const asPlanned = useMemo<RealPark \| null>/.test(screen),
+  "Pasquotank's basemap carries no buildings for Northside, so the "
+  + "harvest came back null -- and everything that works ON a home hung "
+  + "off it. Fifty-nine pads drew, no Move homes button appeared, a drag "
+  + "saved nothing and a nudge found no home to nudge.");
+
+t("Move homes is offered on either kind of park",
+  /\{real && \(\s*\n?\s*<button type="button" className=\{arranging \? "btn pri" : "btn"\}/
+    .test(screen),
+  "Keyed on the harvest, it never appears on a park the map has not "
+  + "heard of -- which is the park that most needs moving by hand.");
+
+t("but what the map actually handed over is still said separately",
+  /\{harvested\?\.homes\?\.length \? \(/.test(screen),
+  "A park drawn from a description and a park drawn from the map look "
+  + "alike on screen and are not the same claim.");
+
+t("and Fit to aerial still only shows when the map found nothing",
+  /\{!harvested && \(/.test(screen),
+  "It is the way to place a park the map could not find.");
+
 // --- something to aim at ---------------------------------------------
 t("the panel of nudge buttons takes the card's place while arranging",
   /const pad = arranging \? here : null;/.test(screen)

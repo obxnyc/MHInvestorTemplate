@@ -827,12 +827,29 @@ export function fitInside(plan: Plan, ring: number[][], margin = 8): Plan {
   const rows = spread(homes.map((h) => [h.lng, h.lat] as Tap), plan);
   const taken = rows.width + plan.size.width;
 
+  // How much room one home actually takes up ALONG the row. Not its
+  // width: a home turned off square reaches further along the row than
+  // it is wide.
+  const turn = ((plan.homeTurn ?? 0) * Math.PI) / 180;
+  const takes = Math.abs(plan.size.width * Math.cos(turn))
+    + Math.abs(plan.size.length * Math.sin(turn));
+
   let out = plan;
   if (taken > room) {
     // Only ever shrinks. A park with room to spare is drawn at the spacing
     // it was given rather than stretched to touch its own fence.
+    //
+    // And never below the room a home takes. Squeezing fifty-nine pads
+    // into a space for thirty drew them as one grey smear, and a smear
+    // cannot be worked with: you cannot take hold of what you cannot
+    // tell apart, and every pad in it is a lie about where a home is.
+    // Better that the row overflows, which the screen counts and says
+    // out loud, than that it fits by pretending.
     const scale = (room - plan.size.width) / rows.width;
-    out = { ...plan, padSpacing: plan.padSpacing * Math.max(0.2, scale) };
+    out = {
+      ...plan,
+      padSpacing: Math.max(takes + 1, plan.padSpacing * Math.max(0.2, scale)),
+    };
   }
 
   // And centred in the park along the rows. The street midpoint the rows
