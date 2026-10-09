@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
-import { RETREAT, filedAs, layOut, countOf, fitTargets, fitFromTaps,
+import { RETREAT, builtInFor, filedAs, layOut, countOf, fitTargets, fitFromTaps,
          type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
@@ -317,7 +317,25 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     setName(out.property?.name ?? "");
     setLots(out.lots ?? []);
     setCanKeep(out.plans !== false);
-    const mine = out.property?.plan as Plan | null | undefined;
+    let mine = out.property?.plan as Plan | null | undefined;
+
+    // A park with no plan of its own may still be one this code already
+    // describes -- Cross Creek was laid out before a plan could be
+    // stored, so it had fifty one lots, an hour of dragging saved
+    // against them, and nothing to draw them with. It is recognised by
+    // its lot labels and adopts the description once, after which it
+    // owns it like any other park.
+    if (!mine?.rows?.length) {
+      const known = builtInFor((out.lots ?? []).map((l: Lot) => l.label));
+      if (known) {
+        mine = known;
+        void fetch(`/api/properties/${propertyId}/plan`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "plan", plan: known }),
+        }).catch(() => null);
+      }
+    }
+
     const has = Boolean(mine?.rows?.length);
     own.current = has;
     setDescribed(has);
@@ -1351,6 +1369,8 @@ function Describe(
   const [fence, setFence] = useState<number[][] | null>(from?.fence ?? null);
   const [said, setSaid] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
+  const [paste, setPaste] = useState("");
+  const [bad, setBad] = useState<string | null>(null);
 
   async function askCounty() {
     setProbing(true); setSaid(null);
@@ -1626,6 +1646,45 @@ function Describe(
           </p>
         )}
       </form>
+
+      {/* A park measured off an aerial is six numbers and a list of row
+          ends, and typing six numbers correctly is not the work -- it is
+          the part where one of them comes out wrong and the whole park
+          lands in a field. A description pasted whole cannot be
+          mistyped. */}
+      <details className="parkmanual">
+        <summary>Or paste a description</summary>
+        <p className="parkhint">
+          Everything about the park in one go: where it is, which way the
+          rows run, how many homes in each, and where any already-placed
+          row begins and ends.
+        </p>
+        <textarea className="parkpaste" rows={4} value={paste}
+                  placeholder='{"centre":[-76.28638,36.37140],"bearing":178,…}'
+                  onChange={(e) => { setPaste(e.target.value); setBad(null); }} />
+        {bad && <p className="parkbad">{bad}</p>}
+        <button type="button" className="btn" disabled={!paste.trim()}
+                onClick={() => {
+                  try {
+                    const got = JSON.parse(paste) as Partial<Plan>;
+                    if (!got || typeof got !== "object" || Array.isArray(got)) {
+                      setBad("That is not a park description."); return;
+                    }
+                    if (!Array.isArray(got.rows) || !got.rows.length) {
+                      setBad("It has no rows in it."); return;
+                    }
+                    if (!Array.isArray(got.centre) || got.centre.length !== 2) {
+                      setBad("It does not say where the park is."); return;
+                    }
+                    onLay({ ...EMPTY, ...got } as Plan);
+                  } catch {
+                    setBad("That did not read as a description — it should "
+                         + "start with { and end with }.");
+                  }
+                }}>
+          Use this description
+        </button>
+      </details>
     </div>
   );
 }
