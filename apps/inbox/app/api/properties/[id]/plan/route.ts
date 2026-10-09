@@ -290,6 +290,42 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true, hit: data.length });
   }
 
+  // --- a lot, renumbered ---
+  //
+  // The number on the ground does not always match the number on a plan:
+  // a pad gets split, a number is skipped, a run is renumbered after a
+  // sale. Correcting it in front of the park beats going back and
+  // describing the whole park again.
+  if (body.action === "rename") {
+    const from = String(body.from ?? "").trim();
+    const to = String(body.to ?? "").trim();
+    if (!from || !to) {
+      return NextResponse.json({ error: "which lot, and what to" }, { status: 400 });
+    }
+    if (from === to) return NextResponse.json({ ok: true, hit: 0 });
+    // Two lots with the same number is a park where nothing can be filed
+    // against the right one, so this refuses rather than making one.
+    const { data: clash } = await db.from("units")
+      .select("id").eq("property_id", id).eq("label", to).limit(1);
+    if (clash?.length) {
+      return NextResponse.json({
+        error: `There is already a ${to} here.`,
+      }, { status: 409 });
+    }
+    // The rows written come back, for the same reason as `place`: an
+    // update against a label no lot carries succeeds and changes nothing.
+    const { data, error } = await db.from("units")
+      .update({ label: to }).eq("property_id", id).eq("label", from)
+      .select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!data?.length) {
+      return NextResponse.json({
+        error: `There is no lot ${from} here, so there is nothing to rename.`,
+      }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, hit: data.length });
+  }
+
   // --- put a home back where the layout wants it ---
   if (body.action === "unplace") {
     const labels: unknown[] = Array.isArray(body.labels) ? body.labels : [];
