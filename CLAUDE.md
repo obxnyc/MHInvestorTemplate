@@ -193,6 +193,43 @@ reintroduced in turn to confirm the check catches it.
 
 Run both before every push that touches the map.
 
+### A park drawn past its own deed line still looks like a park
+
+1140 Northside Rd shipped with fifty-nine numbered pads strung out in
+two rows running a couple of hundred metres past the property line and
+across a neighbouring field. Tidy rows, numbers in order, homes all
+parallel -- `park-picture.mjs` is happy, and so is anyone who does not
+happen to notice the blue line it crosses.
+
+Two things were missing, and both are the same mistake: a correction
+that exists but is not reachable, and a state that is wrong but is not
+said.
+
+**Fitting inside the boundary happened only on the way back from the
+county lookup** -- a path a park takes once. A park whose line arrived
+any other way had no way to ask for it. It is a button now, in the
+header, whenever there is a line and rows to put inside it.
+
+**Nothing counted the lots that were out.** The screen now says
+"N of 59 lots are drawn outside the property line" above the map, so
+the state is read rather than noticed.
+
+`apps/inbox/lib/__fixtures__/inside-check.mjs` builds a park the size
+of the real one inside a 12.5-acre parcel, at a spacing deliberately
+far too wide, and asks the question the owner was asking: does pressing
+the button put them all back inside? It also holds the rules the
+arithmetic cannot see -- the button exists, the count is said, and a row
+placed by hand is not quietly re-fitted (fitting changes the spacing,
+and a placed row has none, so it would report success and move
+nothing).
+
+Three of its guards passed on a fault the first time, and each for a
+reason worth remembering. A test parcel sharing the plan's own centre
+makes the re-centring step untestable, because it has nothing to do --
+offset it. And a source rule that greps for a phrase matches the
+sentence explaining the phrase as readily as the button carrying it --
+anchor on the call, not the words.
+
 ### One park must never be drawn as another
 
 Three rounds were lost to a park in Pasquotank being drawn as the park

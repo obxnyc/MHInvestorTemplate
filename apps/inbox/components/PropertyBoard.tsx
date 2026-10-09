@@ -45,7 +45,17 @@ export default function PropertyBoard(
 ) {
   const router = useRouter();
   const [, start] = useTransition();
-  const [open, setOpen] = useState<string | null>(properties[0]?.id ?? null);
+  /**
+   * Everything shut, every time.
+   *
+   * It used to open whichever park happened to sort first, which is a
+   * decision the screen has no business making: the list is for finding
+   * the one you want, and one of them being open is one of them being
+   * answered for you. Worse, it came back open on every visit, so the
+   * same park was in the way of the list however many times you closed
+   * it.
+   */
+  const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [editProp, setEditProp] = useState<Property | null>(null);

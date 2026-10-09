@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:parsers": "node lib/__fixtures__/parsers.test.mjs",
     "test:prequal": "node lib/__fixtures__/prequal.test.mjs",
-    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices && npm run test:park && npm run test:agol && npm run test:footprint && npm run test:harvest && npm run test:osm && npm run test:parkplan && npm run test:rows && npm run test:move",
+    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices && npm run test:park && npm run test:agol && npm run test:footprint && npm run test:harvest && npm run test:osm && npm run test:parkplan && npm run test:rows && npm run test:move && npm run test:inside",
     "test:classify": "node lib/__fixtures__/classify.test.mjs",
     "test:category": "node lib/__fixtures__/category.test.mjs",
     "test:media": "node lib/__fixtures__/media.test.mjs",
@@ -29,7 +29,8 @@
     "test:osm": "node lib/__fixtures__/osm.test.mjs",
     "test:parkplan": "node lib/__fixtures__/parkplan.test.mjs",
     "test:rows": "node lib/__fixtures__/rows.test.mjs",
-    "test:move": "node lib/__fixtures__/move-check.mjs"
+    "test:move": "node lib/__fixtures__/move-check.mjs",
+    "test:inside": "node lib/__fixtures__/inside-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

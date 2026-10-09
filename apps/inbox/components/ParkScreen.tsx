@@ -4,7 +4,7 @@ import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
 import { RETREAT, builtInFor, filedAs, layOut, countOf, fitTargets, fitFromTaps,
-         type Plan, type Placed, type Tap } from "@/lib/parkplan";
+         placed as placedRow, type Plan, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
 import { layRows, reachTo, backRoad, streetLine } from "@/lib/rows";
@@ -879,6 +879,23 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    *  card's place. A card opening over the park you are arranging is in
    *  the way, which is why choosing a home used to do nothing here at
    *  all -- and that left nothing for a key or a button to aim at. */
+  /**
+   * Pads standing outside the property line.
+   *
+   * A park drawn at the wrong spacing runs off its own deed, and on a
+   * plain basemap that looks like a park -- two tidy rows of numbered
+   * rectangles, over somebody else's field. It is only wrong if you
+   * happen to notice the blue line. So it is counted and said.
+   */
+  const outside = useMemo(() => {
+    const ring = plan.fence;
+    if (!ring || ring.length < 4) return 0;
+    const mids = shown?.homes?.length
+      ? shown.homes.map((h) => middleOf(h.ring))
+      : layOut(drawn).map((h) => [h.lng, h.lat] as [number, number]);
+    return mids.filter((m) => m && !inRing(m, ring)).length;
+  }, [plan.fence, shown, drawn]);
+
   const card = arranging ? null : open;
   const pad = arranging ? here : null;
   // The box starts as the number it is about to change, and belongs to
@@ -1023,6 +1040,27 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
                 ? "Adjust the boundary" : "Draw the boundary"}
             </button>
           )}
+          {/* One press to bring the whole park back inside its own deed
+              line. It used to happen only on the way back from the
+              county lookup, which is a path a park takes once -- so a
+              park whose line arrived any other way had no way to ask. */}
+          {!fitting && !laying && !fencing && plan.rows.length > 0
+            && (plan.fence?.length ?? 0) > 3 && (
+            <button type="button" className={outside ? "btn pri" : "btn"}
+                    disabled={busy}
+                    onClick={() => {
+                      if (plan.rows.some(placedRow)) {
+                        setError("These rows were put down by hand, so they are"
+                          + " already exactly where you placed them. Use Place"
+                          + " rows to move one.");
+                        return;
+                      }
+                      setError(null);
+                      remember(fitInside(plan, plan.fence ?? []));
+                    }}>
+              Fit inside the boundary
+            </button>
+          )}
           {plan.rows.length > 0 && (
             <button type="button" className={laying ? "btn pri" : "btn"}
                     onClick={() => {
@@ -1052,6 +1090,17 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           now saved on the server rather than in this browser.
         </p>
       ) : null}
+
+      {outside > 0 && !fencing && (
+        <p className="parkhint">
+          <strong>{outside} of {countOf(plan)} lots are drawn outside the
+          property line.</strong>{" "}
+          {plan.rows.some(placedRow)
+            ? "These rows were put down by hand — use Place rows to move the"
+              + " ones that are out."
+            : "Press Fit inside the boundary above and they will all come in."}
+        </p>
+      )}
 
       {arranging && (
         <p className="parkhint">
