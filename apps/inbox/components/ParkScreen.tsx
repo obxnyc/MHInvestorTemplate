@@ -997,8 +997,33 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               : corners.length < 3
                 ? `${corners.length} corner${corners.length > 1 ? "s" : ""} — `
                   + "three makes a shape."
-                : `${corners.length} corners. The line follows them as you go.`}
+                : `${corners.length} corners, numbered as you tapped them. `
+                  + "A wrong one can go on its own."}
           </p>
+          {/* Numbered, and each one removable on its own.
+              Undo only takes the last, so a corner put down by mistake
+              in the middle of a run meant unwinding everything after it
+              and tapping it all again. The numbers match the ones on the
+              map, so "the sixth one was a mistake" is one click. */}
+          {corners.length > 0 && (
+            <ol className="fencepts">
+              {corners.map((q, i) => (
+                <li key={`${q[0]},${q[1]},${i}`}>
+                  <span className="n">{i + 1}</span>
+                  <span className="dim">
+                    {q[1].toFixed(5)}, {q[0].toFixed(5)}
+                  </span>
+                  <button type="button" className="aslink" onClick={() => {
+                    const left = corners.filter((_, k) => k !== i);
+                    setCorners(left);
+                    setPlan((was) => ({ ...was, fence: asRing(left) }));
+                  }}>
+                    remove
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
           <div className="invacts">
             <button type="button" className="btn" disabled={!corners.length}
                     onClick={() => {
