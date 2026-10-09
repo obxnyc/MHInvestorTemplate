@@ -57,6 +57,26 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [laying, setLaying] = useState(false);
   const [onRow, setOnRow] = useState(0);
   const [end, setEnd] = useState<Tap | null>(null);
+  /**
+   * The property line, drawn corner by corner.
+   *
+   * The county's own line is better where it can be had, and sometimes
+   * it cannot: the parcel is keyed on a number nobody has, the service
+   * wants a sign-in, or the deed line and the fence on the ground are
+   * not the same thing. A line traced off the photograph is then the
+   * best answer available, and waiting for a better one leaves the park
+   * in a box drawn round wherever the homes happened to land.
+   */
+  const [fencing, setFencing] = useState(false);
+  const [corners, setCorners] = useState<Tap[]>([]);
+  /** The boundary as it is on file, so abandoning a redraw restores it. */
+  const planSaved = useRef<number[][] | undefined>(undefined);
+
+  /** The corners as a closed ring, or nothing while there are too few
+   *  of them to be a shape. */
+  const asRing = useCallback((pts: Tap[]) => (
+    pts.length >= 3 ? [...pts, pts[0]].map((q) => [q[0], q[1]]) : undefined
+  ), []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -835,6 +855,32 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           {/* Placing rows one at a time is the answer for a park that
               grew rather than one that was drawn, so it is offered
               whether or not the map has handed anything over. */}
+          {described && (
+            <button type="button" className={fencing ? "btn pri" : "btn"}
+                    onClick={() => {
+                      if (fencing) {
+                        // Nothing was written while drawing, so putting
+                        // the saved plan back is the whole of undoing it.
+                        setFencing(false);
+                        setPlan((was) => ({ ...was, fence: planSaved.current }));
+                        return;
+                      }
+                      setFencing(true); setLaying(false); setFitting(false);
+                      setSelected(null);
+                      planSaved.current = plan.fence;
+                      // Start from the line it already has, so this is
+                      // adjusting rather than beginning again.
+                      const had = plan.fence ?? [];
+                      const open = had.length > 3
+                        && had[0][0] === had[had.length - 1][0]
+                        && had[0][1] === had[had.length - 1][1]
+                        ? had.slice(0, -1) : had;
+                      setCorners(open.map((q) => [q[0], q[1]] as Tap));
+                    }}>
+              {fencing ? "Done" : plan.fence?.length
+                ? "Adjust the boundary" : "Draw the boundary"}
+            </button>
+          )}
           {plan.rows.length > 0 && (
             <button type="button" className={laying ? "btn pri" : "btn"}
                     onClick={() => {
@@ -936,6 +982,53 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             </>
           ) : null}
         </p>
+      )}
+
+      {fencing && (
+        <div className="parkfit">
+          <p className="parkhint">
+            Switch to <strong>Aerial</strong> and tap each corner of the
+            property, going round one way. Straight runs need two corners,
+            not twenty — a fence line is its ends. Press{" "}
+            <strong>Done</strong> when the shape closes.
+          </p>
+          <p className={corners.length >= 3 ? "parkok" : "dim"}>
+            {corners.length === 0 ? "No corners yet."
+              : corners.length < 3
+                ? `${corners.length} corner${corners.length > 1 ? "s" : ""} — `
+                  + "three makes a shape."
+                : `${corners.length} corners. The line follows them as you go.`}
+          </p>
+          <div className="invacts">
+            <button type="button" className="btn" disabled={!corners.length}
+                    onClick={() => {
+                      const back = corners.slice(0, -1);
+                      setCorners(back);
+                      setPlan((was) => ({ ...was, fence: asRing(back) }));
+                    }}>
+              Undo the last corner
+            </button>
+            <button type="button" className="btn" disabled={!corners.length}
+                    onClick={() => {
+                      setCorners([]);
+                      setPlan((was) => ({ ...was, fence: undefined }));
+                    }}>
+              Start again
+            </button>
+            <button type="button" className="btn pri" disabled={corners.length < 3}
+                    onClick={() => {
+                      remember({ ...plan, fence: asRing(corners) });
+                      setFencing(false);
+                    }}>
+              Save this boundary
+            </button>
+          </div>
+          <p className="dim">
+            Leaving without saving puts the old line back. Saving replaces
+            it — including a line that came from the county, so only do
+            that where theirs is wrong or missing.
+          </p>
+        </div>
       )}
 
       {laying && (
@@ -1118,8 +1211,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           onHarvest={blank ? undefined : onHarvest}
           arranging={arranging} onNudge={nudge} onDropped={keep}
           selected={selected} onSelect={setSelected}
-          fitting={fitting || laying} taps={laying ? (end ? [end] : []) : taps}
+          fitting={fitting || laying || fencing}
+          taps={fencing ? corners : laying ? (end ? [end] : []) : taps}
           onTap={(at) => {
+            if (fencing) {
+              // Shown at once, saved only on Done. A boundary half drawn
+              // is not a boundary, and writing each corner as it lands
+              // would leave a three-sided park on file the moment
+              // somebody was called away from the screen.
+              const next = [...corners, at];
+              setCorners(next);
+              setPlan((was) => ({ ...was, fence: asRing(next) }));
+              return;
+            }
             if (laying) {
               // First tap is where the row starts, second where it
               // ends. On the second the row is placed and the next one
