@@ -855,7 +855,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           {/* Placing rows one at a time is the answer for a park that
               grew rather than one that was drawn, so it is offered
               whether or not the map has handed anything over. */}
-          {described && (
+          {!fitting && !laying && (
             <button type="button" className={fencing ? "btn pri" : "btn"}
                     onClick={() => {
                       if (fencing) {
@@ -1211,7 +1211,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           onHarvest={blank ? undefined : onHarvest}
           arranging={arranging} onNudge={nudge} onDropped={keep}
           selected={selected} onSelect={setSelected}
-          fitting={fitting || laying || fencing}
+          fitting={fitting || laying || fencing} drawing={fencing}
           taps={fencing ? corners : laying ? (end ? [end] : []) : taps}
           onTap={(at) => {
             if (fencing) {
@@ -1857,6 +1857,9 @@ function Parcel(
         <button type="button" className="aslink" onClick={() => setOpen(true)}>
           {has ? "get it again" : "get it from the county"}
         </button>
+        {" — or draw it yourself with "}
+        <strong>{has ? "Adjust the boundary" : "Draw the boundary"}</strong>
+        {" above."}
       </p>
     );
   }

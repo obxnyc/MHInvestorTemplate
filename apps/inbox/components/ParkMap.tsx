@@ -176,7 +176,7 @@ function labelStyle(m: MlMap): { layout: Record<string, unknown>; paint: Record<
  * alignment with the map underneath, because it is the map underneath.
  */
 export default function ParkMap(
-  { plan, real, facts, selected, onSelect, onHarvest, fitting, onMove,
+  { plan, real, facts, selected, onSelect, onHarvest, fitting, drawing, onMove,
     arranging, onNudge, onDropped, taps, onTap }:
   {
     plan: Plan;
@@ -192,6 +192,8 @@ export default function ParkMap(
       lanes: number[][][];
     }) => void;
     fitting?: boolean;
+    /** The boundary is being tapped out corner by corner. */
+    drawing?: boolean;
     onMove?: (lng: number, lat: number) => void;
     /** Dragging a single home about, with its angle locked. */
     arranging?: boolean;
@@ -406,6 +408,12 @@ export default function ParkMap(
     if (m.getLayer("park-fill")) {
       m.setPaintProperty("park-fill", "fill-opacity", fitting ? 0 : sat ? 0.1 : 0.14);
     }
+    if (m.getLayer("park-line")) {
+      // While the boundary is being tapped out it is the thing being
+      // aimed at, so it stops being a hairline.
+      m.setPaintProperty("park-line", "line-width", drawing ? 3.5 : 2);
+      m.setPaintProperty("park-line", "line-color", drawing ? "#D8443C" : "#2B5FA8");
+    }
     if (m.getLayer("home-fill")) {
       // Solid. At 0.9 the base map's own grey buildings showed through
       // underneath and every pad came out mottled, which is what "grainy"
@@ -413,7 +421,7 @@ export default function ParkMap(
       // the other, almost but not quite aligned.
       m.setPaintProperty("home-fill", "fill-opacity", fitting ? 0.35 : 1);
     }
-  }, [sat, ready, fitting, arranging]);
+  }, [sat, ready, fitting, arranging, drawing]);
 
   useEffect(() => {
     const m = map.current;
