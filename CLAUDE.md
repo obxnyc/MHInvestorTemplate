@@ -249,6 +249,29 @@ lands where you tapped, it points where you said, it is the size you
 typed, a home split out of a row does not move or turn, and doing any
 of it to one home does not touch its neighbours.
 
+### A line drawn by eye is not the deed line
+
+Above the map, over a boundary the owner had drawn by hand with the
+mouse because the county's service had not answered: "The property line
+is the county's, from parcel P139-50A."
+
+The sentence only ever asked whether there WAS a line. The two look
+identical on screen and are not the same claim -- and the difference
+decides whether the next park takes a minute or another afternoon, so
+it is exactly the thing somebody plans around.
+
+`plan.fenceFrom` is now `"county"`, `"hand"`, or absent, and the
+sentence says which. Absent is its own answer -- "does not say whether
+it came from the county or was drawn by hand" -- because a park whose
+line predates the question is not evidence either way, and guessing
+there is the same lie in a new place.
+
+The general shape, and it has now cost four rounds in three places: **a
+screen that reports a state by testing whether anything is there at
+all.** `described` keyed on rows. `has` keyed on a line. Both answer a
+narrower question than the one being asked, and both answer it
+confidently.
+
 ### The camera belongs to whoever is using it
 
 Putting fifty-nine homes down by hand means zooming in on a corner of

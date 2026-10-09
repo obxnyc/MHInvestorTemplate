@@ -27,5 +27,29 @@ if (!/if \(has && mine\) \{\n      setPlan\(mine\);/.test(s)) {
     + "that decided the park is known, so the two can disagree");
 }
 
+// A line drawn by eye and a line off the deed look identical on screen
+// and are not the same claim. The sentence above the map said "the
+// property line is the county's, from parcel P139-50A" over a line
+// somebody had drawn with the mouse, because it only ever asked whether
+// there WAS a line. Which it is decides whether the next park takes a
+// minute or another afternoon.
+if (!/fenceFrom: "county" as const,/.test(s)) {
+  bad.push("the county's line is not recorded as the county's");
+}
+if (!/fenceFrom: "hand" as const,/.test(s)) {
+  bad.push("a line drawn by hand is not recorded as drawn by hand");
+}
+if (!/has=\{plan\.fence\?\.length \? \(plan\.fenceFrom \?\? "unsaid"\) : null\}/.test(s)) {
+  bad.push("the sentence above the map is told only whether a line exists, "
+    + "so it will call a hand-drawn line the county's again");
+}
+if (!/has === "hand"\s*\n\s*\? "The property line is the one you drew by hand/.test(s)) {
+  bad.push("a hand-drawn line is not said to be hand-drawn");
+}
+if (!/has === "unsaid"/.test(s)) {
+  bad.push("a park whose line predates the question is not allowed to say "
+    + "so -- guessing county or hand there is the same lie in a new place");
+}
+
 if (bad.length) { for (const b of bad) console.error(" ✗ " + b); process.exit(1); }
 console.log("nothing obviously wrong");

@@ -1474,7 +1474,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             </button>
             <button type="button" className="btn pri" disabled={corners.length < 3}
                     onClick={() => {
-                      remember({ ...plan, fence: asRing(corners) });
+                      remember({
+                        ...plan, fence: asRing(corners),
+                        fenceFrom: "hand" as const,
+                      });
                       setFencing(false);
                     }}>
               Save this boundary
@@ -1624,12 +1627,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         <Parcel propertyId={propertyId}
                 pin={plan.pin ?? ""}
                 where={plan.address ?? name}
-                has={Boolean(plan.fence?.length)}
+                has={plan.fence?.length ? (plan.fenceFrom ?? "unsaid") : null}
                 onGot={(ring, centre, pin) => {
                   // Not just the line: the block goes inside it. A deed
                   // line drawn round homes that are somewhere else is
                   // two right answers making one wrong picture.
-                  const moved = { ...plan, fence: ring, pin, centre };
+                  const moved = {
+                    ...plan, fence: ring, pin, centre,
+                    fenceFrom: "county" as const,
+                  };
                   remember(fitInside(moved, ring));
                 }} />
       )}
@@ -2410,7 +2416,9 @@ function Parcel(
     propertyId: string; pin: string;
     /** The park's address, as a second way of finding the parcel. */
     where: string;
-    has: boolean;
+    /** Where the line on screen came from: the county, somebody's hand,
+     *  a park that predates the question, or nothing drawn at all. */
+    has: "county" | "hand" | "unsaid" | null;
     onGot: (ring: number[][], centre: [number, number], pin: string) => void;
   },
 ) {
@@ -2447,12 +2455,21 @@ function Parcel(
   if (!open) {
     return (
       <p className="parkhint">
-        {has
+        {/* Which line this is. A line drawn by eye and a line off the
+            deed look identical on screen and are not the same claim --
+            and this sentence called a hand-drawn one the county's,
+            because it only ever asked whether there WAS a line. */}
+        {has === "county"
           ? `The property line is the county's, from parcel ${pin || "on file"}.`
+          : has === "hand"
+          ? "The property line is the one you drew by hand, not the county's."
+          : has === "unsaid"
+          ? "The property line on file does not say whether it came from the"
+            + " county or was drawn by hand."
           : "The property line drawn is a box around the homes, not the deed line."}
         {" "}
         <button type="button" className="aslink" onClick={() => setOpen(true)}>
-          {has ? "get it again" : "get it from the county"}
+          {has === "county" ? "get it again" : "get it from the county"}
         </button>
         {" — or draw it yourself with "}
         <strong>{has ? "Adjust the boundary" : "Draw the boundary"}</strong>

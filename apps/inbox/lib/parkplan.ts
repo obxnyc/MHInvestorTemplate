@@ -168,6 +168,21 @@ export type Plan = {
   /** The parcel number it came from, so it can be looked up again. */
   pin?: string;
   /**
+   * Where the property line came from.
+   *
+   * The screen said "the property line is the county's, from parcel
+   * P139-50A" whenever there was a line of any kind -- including one
+   * somebody had drawn by hand with the mouse, because the county's
+   * service had not answered. A line drawn by eye and a line off the
+   * deed look identical on screen and are not the same claim, and the
+   * difference decides whether the next park can be done in a minute
+   * or needs another afternoon.
+   *
+   * Undefined on a park whose line predates this, where the honest
+   * answer is that nobody recorded which it was.
+   */
+  fenceFrom?: "county" | "hand";
+  /**
    * A road the property line runs out to, by name.
    *
    * Cross Creek's deed line is the kerb of Pamalee Drive, so a box
