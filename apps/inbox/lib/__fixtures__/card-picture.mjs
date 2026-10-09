@@ -147,6 +147,36 @@ const owned = `
       <button class="btn">Add storage</button></form></section>
 </aside>`;
 
+// And the panel that takes the card's place while the homes are being
+// moved: four arrows round a number, a tick, a box to retype the number
+// in, and two buttons to step along the row. Three separate grids in a
+// 23rem column, which is the exact shape of thing that has gone wrong
+// here before -- a bare `1fr` that will not shrink, and a tick box
+// stretched by a width of 100%.
+const moving = `
+<aside class="lotcard movecard">
+  <header><h2>Lot 1140 Northside Rd Lot 17</h2><button class="x">&times;</button></header>
+  <div class="movepad">
+    <button class="up">&uarr;</button>
+    <button class="left">&larr;</button>
+    <span class="movenum">17</span>
+    <button class="right">&rarr;</button>
+    <button class="down">&darr;</button>
+  </div>
+  <label class="movewhole"><input type="checkbox"> <span>Move the whole row</span></label>
+  <p class="movesay">Half a metre a press. The arrow keys do the same thing.</p>
+  <form class="movenumber">
+    <label for="lotno">Lot number</label>
+    <input id="lotno" value="17">
+    <button class="btn">Rename</button>
+  </form>
+  <p class="movesay">1140 Northside Rd Lot 17 &mdash; what a sale or a lease is filed under.</p>
+  <div class="movestep">
+    <button class="btn">&lsaquo; Previous</button>
+    <button class="btn">Next &rsaquo;</button>
+  </div>
+</aside>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page);padding:1rem">
@@ -157,6 +187,10 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
 <div class="parkmain withcard" style="margin-top:2rem">
   <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
   ${owned}
+</div>
+<div class="parkmain withcard" style="margin-top:2rem">
+  <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
+  ${moving}
 </div></body></html>`;
 
 const file = "/tmp/lot-card.html";
@@ -210,7 +244,17 @@ for (const width of [1440, 1100, 900, 420]) {
   await p.waitForTimeout(150);
 
   const said = await p.evaluate(() => {
-    const out = [], thin = [], over = [];
+    const out = [], thin = [], over = [], small = [];
+    // The point of the nudge buttons is that a pad can be moved without
+    // hitting a twelve-pixel rectangle. A nudge button you have to aim
+    // at is the same bug one step along, so they have a floor: 30px,
+    // which is under Apple's 44 and over a fingertip's worth of slop.
+    for (const b of document.querySelectorAll(".movepad button, .movestep .btn")) {
+      const r = b.getBoundingClientRect();
+      if (r.width < 30 || r.height < 30) {
+        small.push(`${b.className} ${Math.round(r.width)}x${Math.round(r.height)}px`);
+      }
+    }
     for (const card of document.querySelectorAll(".lotcard")) {
     const box = card.getBoundingClientRect();
     for (const el of card.querySelectorAll("*")) {
@@ -232,6 +276,7 @@ for (const width of [1440, 1100, 900, 420]) {
     }
     return {
       out: [...new Set(out)], thin: [...new Set(thin)], over: [...new Set(over)],
+      small: [...new Set(small)],
       sideways: document.documentElement.scrollWidth > window.innerWidth,
     };
   });
@@ -242,6 +287,7 @@ for (const width of [1440, 1100, 900, 420]) {
   if (said.out.length) wrong.push(`${width}px: out of the card -- ${said.out.join(", ")}`);
   if (said.thin.length) wrong.push(`${width}px: too narrow to use -- ${said.thin.join(", ")}`);
   if (said.over.length) wrong.push(`${width}px: a tick box stretched -- ${said.over.join(", ")}`);
+  if (said.small.length) wrong.push(`${width}px: too small to hit -- ${said.small.join(", ")}`);
   if (said.sideways) wrong.push(`${width}px: the page scrolls sideways`);
 }
 

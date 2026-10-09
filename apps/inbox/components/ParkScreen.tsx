@@ -8,7 +8,7 @@ import { RETREAT, builtInFor, filedAs, layOut, countOf, fitTargets, fitFromTaps,
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
 import { layRows, reachTo, backRoad, streetLine } from "@/lib/rows";
-import { degreesPerMetre } from "@/lib/footprint";
+import { degreesPerMetre, middleOfRing } from "@/lib/footprint";
 
 /**
  * The park screen.
@@ -39,6 +39,18 @@ import { degreesPerMetre } from "@/lib/footprint";
  * the two of them disagreeing out loud.
  */
 const EMPTY: Plan = { ...RETREAT, rows: [] };
+
+/**
+ * How far one press moves a home, in metres.
+ *
+ * A drag gets a pad to about the right place. Getting it level with its
+ * neighbour is three or four pixels at the zoom that shows a whole park,
+ * and three or four pixels with a mouse is luck -- which is what "not
+ * able to move these easily" was about. Half a metre is small enough
+ * that no keystroke can lose a home and large enough that squaring a pad
+ * up is a press or two rather than twenty.
+ */
+const STEP = 0.5;
 
 export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [lots, setLots] = useState<Lot[]>([]);
@@ -101,6 +113,13 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [asking, setAsking] = useState(true);
   const [copied, setCopied] = useState(false);
   const [arranging, setArranging] = useState(false);
+  /** Whether a press moves one home or the row it stands in. The same
+   *  question Shift answers while dragging, asked once instead of held
+   *  down -- a modifier you have to hold is a modifier you cannot use
+   *  on a tablet in a driveway. */
+  const [wholeRow, setWholeRow] = useState(false);
+  /** The lot number being retyped. Empty when nothing is being renamed. */
+  const [renaming, setRenaming] = useState("");
   /** Homes moved by hand, as an offset from where the layout put them.
    *  Kept as an offset rather than a position so that a better layout --
    *  or a corrected street -- still carries the corrections with it. */
@@ -176,10 +195,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         // row stays straight, evenly spaced and parallel. Dragging a row
         // is the common correction; dragging one pad is the exception.
         const mid = middleOf(me.ring);
+        if (!mid) return was;
         const dx = at[0] - mid[0], dy = at[1] - mid[1];
         for (const h of now.homes) {
           if (h.street !== me.street || sideOf(h.id) !== sideOf(me.id)) continue;
           const c = middleOf(h.ring);
+          if (!c) continue;
           next[h.id] = [c[0] + dx, c[1] + dy];
         }
       } else {
@@ -311,6 +332,9 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       let missed = 0;
       for (const h of rows) {
         const c = middleOf(h.ring);
+        // A pad with no shape has no position to save, and sending one
+        // anyway would write a home onto the equator.
+        if (!c) { missed += 1; continue; }
         const res = await fetch(`/api/properties/${propertyId}/plan`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -566,6 +590,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         // The whole pad slid so its middle lands on the saved point.
         // Never turned: the ladder stays a ladder however much is moved.
         const mid = middleOf(h.ring);
+        if (!mid) return h;
         const dx = at[0] - mid[0], dy = at[1] - mid[1];
         return {
           ...h, moved: true,
@@ -640,6 +665,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         const by = was[h.id];
         if (!by) continue;
         const mid = middleOf(h.ring);
+        if (!mid) continue;
         places[h.id] = [mid[0] + by[0], mid[1] + by[1]];
       }
       if (!Object.keys(places).length) return;
@@ -773,6 +799,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     for (const h of shown?.homes ?? []) {
       if (!moved[h.id]) continue;
       const c = middleOf(h.ring);
+      if (!c) { missed += 1; continue; }
       const r = await fetch(`/api/properties/${propertyId}/plan`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -789,14 +816,129 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     await load();
   }
 
+  /**
+   * One home, moved by a stated distance rather than by hand.
+   *
+   * Takes the home where it is now and puts it half a metre on, which is
+   * a thing a keystroke can do and a mouse cannot. `whole` means the
+   * same here as it does while dragging -- the row goes with it -- so
+   * there is one rule for the modifier rather than two.
+   *
+   * The database is written once the pressing stops. An arrow key held
+   * down is thirty presses a second, and a POST for each of them is a
+   * park's worth of writes to move one pad a metre.
+   */
+  const settling = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (settling.current) clearTimeout(settling.current); }, []);
+  const shift = useCallback((id: string, east: number, north: number, whole = false) => {
+    const now = shownNow.current;
+    const me = now?.homes.find((h) => h.id === id);
+    if (!me) return;
+    const mid = middleOf(me.ring);
+    if (!mid) return;
+    const per = degreesPerMetre(mid[1]);
+    const at: [number, number] = [mid[0] + east * per.lng, mid[1] + north * per.lat];
+    nudge(id, at, whole);
+    if (settling.current) clearTimeout(settling.current);
+    settling.current = setTimeout(() => { settling.current = null; keep(id, at, whole); }, 500);
+  }, [nudge, keep]);
+
+  /**
+   * The arrow keys, while a home is chosen and the park is being moved.
+   *
+   * Taken from the window rather than from the map, because the thing
+   * being aimed at is on the map but the focus is usually on the button
+   * that was just pressed. Given back the moment a text box has the
+   * focus -- an arrow key inside an input belongs to the input.
+   */
+  useEffect(() => {
+    if (!arranging || !selected) return;
+    const WAY: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1],
+    };
+    const press = (e: KeyboardEvent) => {
+      const way = WAY[e.key];
+      if (!way || e.metaKey || e.ctrlKey || e.altKey) return;
+      const on = e.target as HTMLElement | null;
+      const tag = on?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+          || on?.isContentEditable) return;
+      e.preventDefault();
+      shift(selected, way[0] * STEP, way[1] * STEP, e.shiftKey || wholeRow);
+    };
+    window.addEventListener("keydown", press);
+    return () => window.removeEventListener("keydown", press);
+  }, [arranging, selected, wholeRow, shift]);
+
   const here = placed.find((h) => h.id === selected) ?? null;
   const open = here ? match.get(here.id) ?? null : null;
+  /** Where in the park the chosen home sits, so the next one along is a
+   *  button rather than a hunt for a twelve-pixel rectangle. */
+  const nth = here ? placed.findIndex((h) => h.id === here.id) : -1;
+  /** While homes are being moved the panel of nudge buttons takes the
+   *  card's place. A card opening over the park you are arranging is in
+   *  the way, which is why choosing a home used to do nothing here at
+   *  all -- and that left nothing for a key or a button to aim at. */
+  const card = arranging ? null : open;
+  const pad = arranging ? here : null;
+  // The box starts as the number it is about to change, and belongs to
+  // the home it was typed for. Starting it empty and falling back to the
+  // label for display meant backspacing to nothing put the old number
+  // straight back, so the box could not be cleared.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setRenaming(pad?.label ?? ""); }, [selected]);
   const missing = placed.filter((h) => !match.has(h.id));
   /** On file, but nobody has said whose home stands on it. */
   const unanswered = placed.filter((h) => {
     const lot = match.get(h.id);
     return lot && (!lot.kind || lot.kind === "none");
   });
+
+  /**
+   * A lot, renumbered.
+   *
+   * The number is kept twice -- on the unit, which is what a sale or a
+   * lease hangs off, and in the plan, which is what the map draws -- so
+   * both are written or neither is. A position already saved against
+   * the lot travels with it: it is a column on that same row.
+   */
+  async function renumber(lot: Placed, to: string) {
+    const was = lot.label;
+    const want = to.trim();
+    if (!want || want === was) return;
+    // The number lives in two places. If the plan does not carry this
+    // one, renaming the unit alone leaves the map drawing the old number
+    // over a lot that is no longer on file under it -- which reads as
+    // the lot having vanished.
+    if (!plan.rows.some((r) => r.street === lot.street && r.numbers.includes(was))) {
+      setError(`Lot ${was} is not in this park's plan, so renaming it here`
+               + " would leave the map and the file disagreeing."
+               + " Describe the park's rows first.");
+      return;
+    }
+    const done = await post({
+      action: "rename", from: lot.filed, to: filedAs(plan, want, lot.street),
+    });
+    if (!done) return;
+    const rows = plan.rows.map((r) => (
+      r.street === lot.street && r.numbers.includes(was)
+        ? { ...r, numbers: r.numbers.map((x) => (x === was ? want : x)) }
+        : r));
+    remember({ ...plan, rows });
+    // The browser's note of where this pad was put is keyed by the
+    // number, so it follows the number.
+    const now = `${lot.street}|${want}`;
+    setMoved((had) => {
+      if (!had[lot.id]) return had;
+      const next = { ...had };
+      next[now] = had[lot.id];
+      delete next[lot.id];
+      try { localStorage.setItem(byHand, JSON.stringify(next)); } catch { /* fine */ }
+      return next;
+    });
+    setSelected(now);
+    setRenaming("");
+  }
 
   async function post(payload: Record<string, unknown>) {
     setBusy(true); setError(null);
@@ -913,10 +1055,15 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
 
       {arranging && (
         <p className="parkhint">
-          Drag any home to move it, or hold <kbd>Shift</kbd> and drag to
-          take the whole row with you — four drags instead of fifty one.
-          A drag only ever slides a pad, so the ladder stays a ladder, and
-          what you move is saved the moment you let go.
+          Tap a home to choose it, then nudge it with the arrows or the
+          arrow keys. Dragging still works, and you no longer have to hit
+          the pad exactly — the nearest home within a fingertip is the one
+          that moves. Hold <kbd>Shift</kbd> while dragging, or tick{" "}
+          <em>the whole row</em>, to take the row with you: four moves
+          instead of fifty one. Nothing ever rotates, so the ladder stays
+          a ladder, and what you move is saved as soon as you stop. To
+          move the map itself rather than a home, drag from clear ground
+          outside the rows, or press <em>Fit view</em>.
           {Object.keys(moved).length
             ? ` ${Object.keys(moved).length} moved so far, outlined in orange.`
             : ""}
@@ -1234,7 +1381,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         </div>
       )}
 
-      <div className={`parkmain${open ? " withcard" : ""}`}>
+      <div className={`parkmain${card || pad ? " withcard" : ""}`}>
         <ParkMap
           plan={drawn} real={blank ? null : shown} facts={facts}
           onHarvest={blank ? undefined : onHarvest}
@@ -1272,8 +1419,63 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           }}
           onMove={(lng, lat) => remember({ ...plan, centre: [lng, lat] })}
         />
-        {open && <LotCard lot={open} onClose={() => setSelected(null)} onChanged={load} />}
-        {here && !open && (
+        {card && <LotCard lot={card} onClose={() => setSelected(null)} onChanged={load} />}
+        {pad && (
+          <aside className="lotcard movecard">
+            <header>
+              <h2>Lot {pad.label}</h2>
+              <button type="button" className="x" onClick={() => setSelected(null)}
+                      aria-label="Close">×</button>
+            </header>
+            {/* Four arrows round the number they move, so what is being
+                moved and which way are the same picture. */}
+            <div className="movepad">
+              <button type="button" className="up" aria-label="Move north"
+                      onClick={() => shift(pad.id, 0, STEP, wholeRow)}>↑</button>
+              <button type="button" className="left" aria-label="Move west"
+                      onClick={() => shift(pad.id, -STEP, 0, wholeRow)}>←</button>
+              <span className="movenum">{pad.label}</span>
+              <button type="button" className="right" aria-label="Move east"
+                      onClick={() => shift(pad.id, STEP, 0, wholeRow)}>→</button>
+              <button type="button" className="down" aria-label="Move south"
+                      onClick={() => shift(pad.id, 0, -STEP, wholeRow)}>↓</button>
+            </div>
+            <label className="movewhole">
+              <input type="checkbox" checked={wholeRow}
+                     onChange={(e) => setWholeRow(e.target.checked)} />
+              <span>Move the whole row</span>
+            </label>
+            <p className="movesay">
+              Half a metre a press. The arrow keys do the same thing.
+            </p>
+            <form className="movenumber"
+                  onSubmit={(e) => { e.preventDefault(); void renumber(pad, renaming); }}>
+              <label htmlFor="lotno">Lot number</label>
+              <input id="lotno" value={renaming}
+                     onChange={(e) => setRenaming(e.target.value)} />
+              <button type="submit" className="btn" disabled={
+                busy || !renaming.trim() || renaming.trim() === pad.label
+              }>
+                Rename
+              </button>
+            </form>
+            <p className="movesay">
+              {pad.filed} — what a sale or a lease is filed under.
+            </p>
+            <div className="movestep">
+              <button type="button" className="btn" disabled={nth <= 0}
+                      onClick={() => setSelected(placed[nth - 1]?.id ?? null)}>
+                ‹ Previous
+              </button>
+              <button type="button" className="btn"
+                      disabled={nth < 0 || nth >= placed.length - 1}
+                      onClick={() => setSelected(placed[nth + 1]?.id ?? null)}>
+                Next ›
+              </button>
+            </div>
+          </aside>
+        )}
+        {here && !open && !arranging && (
           <aside className="lotcard">
             <header>
               <h2>Lot {here.label}</h2>
@@ -1404,13 +1606,17 @@ function sideOf(id: string): string {
   return id.split("|")[0] ?? "";
 }
 
-/** The middle of a closed ring. */
-function middleOf(ring: number[][]): [number, number] {
-  const n = Math.max(1, ring.length - 1);
-  return [
-    ring.slice(0, n).reduce((a, p) => a + p[0], 0) / n,
-    ring.slice(0, n).reduce((a, p) => a + p[1], 0) / n,
-  ];
+/**
+ * The middle of a closed ring.
+ *
+ * One definition, in lib/footprint, because two of these drifting apart
+ * moves every home by a metre and a half and nothing says why. Null when
+ * the ring is not a shape, and every caller here says what it does about
+ * that -- a silent fallback of [0, 0] would put a home in the Gulf of
+ * Guinea and save it there.
+ */
+function middleOf(ring: number[][]): [number, number] | null {
+  return middleOfRing(ring);
 }
 
 /** The street names the map does have here. An error that names the

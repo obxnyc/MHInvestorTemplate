@@ -77,6 +77,28 @@ export function footprint(
  * beats asking somebody for a number in degrees that they would have to go
  * and measure.
  */
+/**
+ * The middle of a closed ring, which for a pad is the middle of the home.
+ *
+ * The last point of a closed ring repeats the first, and counting it
+ * twice pulls the answer towards that one corner -- about a metre and a
+ * half on a single-wide, which is enough to make a home jump when it is
+ * taken hold of.
+ */
+export function middleOfRing(ring: number[][] | undefined): [number, number] | null {
+  if (!ring || ring.length < 3) return null;
+  const closed = ring.length > 3
+    && ring[0][0] === ring[ring.length - 1][0]
+    && ring[0][1] === ring[ring.length - 1][1];
+  const pts = closed ? ring.slice(0, -1) : ring;
+  const n = pts.length;
+  if (!n) return null;
+  return [
+    pts.reduce((a, q) => a + q[0], 0) / n,
+    pts.reduce((a, q) => a + q[1], 0) / n,
+  ];
+}
+
 export function bearingOf(from: [number, number], to: [number, number]): number {
   const [lng1, lat1] = from;
   const [lng2, lat2] = to;

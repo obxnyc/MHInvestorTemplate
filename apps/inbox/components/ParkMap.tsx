@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { footprint } from "@/lib/footprint";
+import { footprint, middleOfRing } from "@/lib/footprint";
+import { padAt } from "@/lib/nearpad";
 import { layOut, boundaryOf, streetLines, countOf, type Plan, type Tap } from "@/lib/parkplan";
 import { shapesFrom, roadsFrom, type TileFeature } from "@/lib/harvest";
 import type { Shape, Road } from "@/lib/osm";
@@ -213,6 +214,9 @@ export default function ParkMap(
   const [ready, setReady] = useState(false);
   const [sat, setSat] = useState(false);
 
+  /** A drag just happened, so the click it ends with is not a click. */
+  const hauled = useRef(false);
+
   const live = useRef({
     plan, fitting, onMove, onSelect, onTap, onHarvest, arranging, onNudge, onDropped,
   });
@@ -304,19 +308,19 @@ export default function ParkMap(
       originalEvent?: { shiftKey?: boolean }; preventDefault: () => void;
     }) => {
       if (!live.current.arranging || !live.current.onNudge) return;
-      const f = m.queryRenderedFeatures(e.point, { layers: ["home-fill"] })[0];
+      const f = padAt(m, e.point);
       if (!f) return;
       // Where the pad is now, so the drag can report a position rather
       // than a running total of nudges -- a total is only meaningful
       // against the layout it was accumulated from.
-      const ring = (f.geometry as GeoJSON.Polygon).coordinates?.[0] ?? [];
-      const n = Math.max(1, ring.length - 1);
-      const mid: [number, number] = [
-        ring.slice(0, n).reduce((a, p) => a + p[0], 0) / n,
-        ring.slice(0, n).reduce((a, p) => a + p[1], 0) / n,
-      ];
+      const mid = middleOfRing((f.geometry as GeoJSON.Polygon).coordinates?.[0]);
+      if (!mid) return;
+      const id = String(f.properties?.id ?? "");
+      // Taking hold of a home is also choosing it, so the panel of nudge
+      // buttons is already pointed at the home under the hand.
+      if (id) live.current.onSelect(id);
       hold = {
-        id: String(f.properties?.id ?? ""),
+        id,
         lng: e.lngLat.lng, lat: e.lngLat.lat, at: mid, last: mid,
         // Shift takes the whole row with it. Fifty one pads dragged one
         // at a time is an evening; four rows dragged once each is a
@@ -334,9 +338,15 @@ export default function ParkMap(
         hold.at[1] + (e.lngLat.lat - hold.lat),
       ];
       hold.last = at;
+      hauled.current = true;
       live.current.onNudge(hold.id, at, hold.whole);
     };
     const letGo = () => {
+      // Cleared on the next turn, by which time the click the mouseup
+      // produces has already been swallowed. Without this a drag that
+      // ends off the canvas leaves the flag up and eats the next real
+      // click instead.
+      setTimeout(() => { hauled.current = false; }, 0);
       if (!hold) return;
       // Written to the database once, when the finger comes off, rather
       // than on every frame of the drag.
@@ -612,17 +622,26 @@ export default function ParkMap(
         paint: { "text-color": "#ffffff" } });
 
       m.on("click", (e) => {
-        // A drag is not a click: selecting the home you have just put
-        // down opens its card over the map you are arranging.
-        if (live.current.arranging) return;
+        // A drag is not a click. MapLibre withholds the click when the
+        // pointer travelled far enough to be a drag, and this is the belt
+        // for those braces -- a home that has just been dragged must not
+        // also be re-chosen by the mouseup that ended the drag.
+        if (hauled.current) { hauled.current = false; return; }
         if (live.current.fitting) {
           if (live.current.onTap) live.current.onTap([e.lngLat.lng, e.lngLat.lat]);
           return;
         }
-        const f = m.queryRenderedFeatures(e.point, { layers: ["home-fill"] })[0];
+        // Choosing a home works while arranging too. It used to return
+        // here, on the grounds that a card opening over the map you are
+        // arranging is in the way -- but it also meant the only way to
+        // say WHICH home you meant was to successfully drag it, so there
+        // was nothing to aim an arrow key or a nudge button at.
+        const f = padAt(m, e.point);
         live.current.onSelect(f ? String(f.properties?.id ?? "") : null);
       });
-      m.on("mouseenter", "home-fill", () => { m.getCanvas().style.cursor = "pointer"; });
+      m.on("mouseenter", "home-fill", () => {
+        m.getCanvas().style.cursor = live.current.arranging ? "move" : "pointer";
+      });
       m.on("mouseleave", "home-fill", () => { m.getCanvas().style.cursor = ""; });
     }
 

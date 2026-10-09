@@ -9,7 +9,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const js = ts.transpileModule(readFileSync(join(here, "..", "footprint.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { footprint, bearingOf, metresBetween, bearingsForRow, degreesPerMetre, half, SINGLE_WIDE } =
+const { footprint, bearingOf, metresBetween, bearingsForRow, degreesPerMetre, half,
+        middleOfRing, SINGLE_WIDE } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
 const checks = [];
@@ -127,6 +128,34 @@ t("exactly half a turn is zero", half(180) === 0);
 t("a real angle in between is kept", near(half(37.4), 37.4, 0.05));
 t("a whole turn is zero", half(360) === 0);
 t("a negative angle comes back positive", near(half(-45), 135, 0.05));
+
+// --- the middle of a pad ---
+//
+// What a drag and an arrow key both start from. A ring closes by
+// repeating its first point, and counting that twice pulls the middle a
+// metre and a half towards one corner -- which on screen is a home that
+// jumps the moment it is touched.
+{
+  const ring = footprint(LAT, LNG, 0);
+  const mid = middleOfRing(ring);
+  t("the middle of a pad is where the pad was put",
+    near(metresBetween(mid, [LNG, LAT]), 0, 0.01));
+  const open = ring.slice(0, 4);
+  const mo = middleOfRing(open);
+  t("an unclosed ring gives the same answer",
+    near(metresBetween(mo, mid), 0, 0.001));
+  // The bug this guards: slicing one point off a ring that was never
+  // closed drops a real corner.
+  const three = [[0, 0], [0, 2], [2, 2]];
+  const m3 = middleOfRing(three);
+  t("three points are all counted",
+    near(m3[0], 2 / 3, 1e-9) && near(m3[1], 4 / 3, 1e-9));
+  t("a turned pad still finds its own middle",
+    near(metresBetween(middleOfRing(footprint(LAT, LNG, 128)), [LNG, LAT]), 0, 0.01));
+  t("nothing is not a shape", middleOfRing(undefined) === null);
+  t("nor is a line", middleOfRing([[0, 0], [1, 1]]) === null);
+  t("nor is an empty ring", middleOfRing([]) === null);
+}
 
 let failed = 0;
 for (const [n, ok] of checks) { console.log(`${ok ? "  ok" : "FAIL"}  ${n}`); if (!ok) failed++; }

@@ -158,6 +158,41 @@ page's result card -- bordered, padded, coloured left edge -- and a tick
 beside a sentence borrowed it on six screens. The stylesheet had the
 same note about `.empty` from the last time this happened.
 
+### A thing you have to aim at is a thing that is hard to use
+
+Moving the homes shipped working and unusable. A single-wide is about
+twelve pixels across at the zoom that shows a whole park, so taking hold
+of one meant hitting a target smaller than the mouse cursor's own point,
+and missing grabbed the map and panned the park instead. Worse, a click
+while moving homes did nothing at all -- it returned early, so there was
+no way to say *which* home you meant, and nothing for a key or a button
+to point at.
+
+Neither is visible to a type checker, to a test that asks where the
+homes are, or to a picture: the map looks fine. What catches it is the
+rule, and the browser.
+
+`apps/inbox/lib/__fixtures__/grab-check.mjs` puts eight real
+single-wides on a real MapLibre map in a real browser at the zoom a park
+is looked at, and puts the pointer where a hand puts it -- on the pad,
+just off it, between two, and nowhere near. It found a bug that reading
+the code could not:
+
+**MapLibre decides whether its first argument is a place or an options
+object with `instanceof Point || Array.isArray`.** A plain `{x, y}` is
+neither, so it is read as options, the query silently becomes the whole
+viewport, and the answer is the topmost home on screen. Which is a home,
+and looks like one, and is not the one under the hand. Pass `[x, y]`.
+
+`apps/inbox/lib/__fixtures__/move-check.mjs` guards the rest as rules:
+the grab widens into a box, a click still chooses a home while the park
+is being arranged, the arrow keys give way to a text box and to the
+browser's own shortcuts, a held key does not write once per frame, and a
+rename that matched no lot is not reported as done. Each fault was
+reintroduced in turn to confirm the check catches it.
+
+Run both before every push that touches the map.
+
 ### One park must never be drawn as another
 
 Three rounds were lost to a park in Pasquotank being drawn as the park
