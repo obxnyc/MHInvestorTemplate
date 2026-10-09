@@ -193,6 +193,48 @@ reintroduced in turn to confirm the check catches it.
 
 Run both before every push that touches the map.
 
+### Some parks are not rows, and the answer is a home at a time
+
+Northside is a loop with homes along it, a cluster in the middle at its
+own angle, and three that never fit any pattern -- the office, the
+laundry, the one turned sideways at the end. Every attempt to say that
+with one bearing and one spacing produced a park wrong in a way no
+slider could fix, and the last one stacked fifty-nine pads on top of
+each other.
+
+**Add a home** drops one where you tap, and the panel beside the map
+gives it its own angle and its own rectangle. The data model needed
+nothing new: a row placed by its two ends already owes nothing to the
+grid, and a row of one sits on its first end. So a home put down by
+hand IS a row, with one number in it, whose ends are a metre apart. The
+`turn` and `size` that make it its own shape live on the row, which
+means a whole row can be angled or resized in one go and a single home
+can be split out of one -- "give this one its own shape" -- without a
+second idea for either.
+
+**Sizes are offered in feet.** The model is metric because the earth
+is; a home is 16 by 60 to everybody who has ever stood next to one.
+
+Two traps worth keeping:
+
+A size field cleared on the way to a new number reads as zero, and a
+pad of no width is a pad nobody can find again. Ignore anything under
+4 ft rather than applying it.
+
+And `.btn.danger` is already the filled destructive button -- red
+ground, white text. Overriding only its colour for a quieter one gave
+**red on red**: a solid block with the words invisible inside it. That
+is the third time a state name has been borrowed here (`.check`,
+`.empty`, now `.danger`), so `card-picture.mjs` now also fails on text
+whose colour is within 1.6:1 of what is behind it. Not a contrast
+audit: this stylesheet uses a deliberately quiet grey for small labels
+and that is a choice. The floor is "these words are not there at all".
+
+`apps/inbox/lib/__fixtures__/drop-check.mjs` holds the arithmetic: it
+lands where you tapped, it points where you said, it is the size you
+typed, a home split out of a row does not move or turn, and doing any
+of it to one home does not touch its neighbours.
+
 ### A park the map has never heard of is still a park
 
 Northside drew fifty-nine numbered pads and nothing could be done with

@@ -441,7 +441,7 @@ export default function ParkMap(
       ? real.homes.map((h) => ({ ...h, ring: h.ring }))
       : layOut(plan).map((h) => ({
           id: h.id, label: h.label, street: h.street,
-          ring: footprint(h.lat, h.lng, h.bearing, plan.size),
+          ring: footprint(h.lat, h.lng, h.bearing, h.size ?? plan.size),
         }))
     ).map((h) => {
       const f = facts[h.id] ?? { owner: "none" as Owner, empty: true, managed: false };

@@ -1961,6 +1961,35 @@ a.metric:hover{border-color:var(--accent)}
   border:1px solid var(--hair);border-radius:8px;background:var(--card);
   color:var(--ink);font:inherit;font-size:.86rem}
 .movenumber .btn{justify-self:start}
+/* Angle in degrees, size in feet -- the units a park is measured in,
+   whatever the model keeps underneath. */
+.moveshape{display:grid;gap:.3rem;margin:.7rem 0 0;padding-top:.7rem;
+  border-top:1px solid var(--hair)}
+.moveshape > label,.movetwo label{font-size:.68rem;font-weight:700;
+  color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.movetwo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}
+.movetwo label{display:grid;gap:.2rem}
+.moveshape input{width:100%;box-sizing:border-box;padding:.4rem .5rem;
+  border:1px solid var(--hair);border-radius:8px;background:var(--card);
+  color:var(--ink);font:inherit;font-size:.86rem;text-align:center}
+/* A minus, a number, a plus. The number is the field, so an angle can be
+   typed as readily as nudged. */
+.movebump{display:grid;grid-template-columns:2.2rem minmax(0,1fr) auto 2.2rem;
+  align-items:center;gap:.3rem}
+.movebump button{border:1px solid var(--hair);border-radius:8px;
+  background:var(--card);color:var(--ink);font:inherit;font-size:1rem;
+  line-height:1;padding:0;height:2.1rem;cursor:pointer}
+.movebump button:active{background:var(--hair-2)}
+.movedeg{font-size:.8rem;color:var(--muted)}
+.moveshape .btn{width:100%;margin-top:.1rem}
+/* Its own name. `.btn.danger` is already the filled destructive button
+   -- red ground, white text -- and overriding only its colour here gave
+   red on red: a solid block with the words invisible inside it. The
+   stylesheet has the same note about `.check` and about `.empty`. */
+.moveoff{width:100%;margin-top:.8rem;padding:.5rem .75rem;border-radius:9px;
+  border:1px solid var(--hair);background:var(--card);color:var(--crit);
+  font:inherit;font-size:.84rem;cursor:pointer}
+.moveoff:hover{border-color:var(--crit);background:var(--warn-soft)}
 .movestep{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;
   margin-top:.8rem;padding-top:.7rem;border-top:1px solid var(--hair)}
 .movestep .btn{width:100%;text-align:center}

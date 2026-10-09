@@ -170,7 +170,21 @@ const moving = `
     <input id="lotno" value="17">
     <button class="btn">Rename</button>
   </form>
+  <div class="moveshape">
+    <label for="lotangle">Angle</label>
+    <div class="movebump">
+      <button>&minus;</button><input id="lotangle" value="-38"><span class="movedeg">&deg;</span><button>+</button>
+    </div>
+    <div class="movetwo">
+      <label>Wide (ft)<input value="16"></label>
+      <label>Long (ft)<input value="60"></label>
+    </div>
+    <p class="movesay">This changes all 30 homes in the row, because they are
+      one row of one model.</p>
+    <button class="btn">Give this one its own shape</button>
+  </div>
   <p class="movesay">1140 Northside Rd Lot 17 &mdash; what a sale or a lease is filed under.</p>
+  <button class="moveoff">Take off the map</button>
   <div class="movestep">
     <button class="btn">&lsaquo; Previous</button>
     <button class="btn">Next &rsaquo;</button>
@@ -244,11 +258,45 @@ for (const width of [1440, 1100, 900, 420]) {
   await p.waitForTimeout(150);
 
   const said = await p.evaluate(() => {
-    const out = [], thin = [], over = [], small = [];
+    const out = [], thin = [], over = [], small = [], faint = [];
     // The point of the nudge buttons is that a pad can be moved without
     // hitting a twelve-pixel rectangle. A nudge button you have to aim
     // at is the same bug one step along, so they have a floor: 30px,
     // which is under Apple's 44 and over a fingertip's worth of slop.
+    // Words you cannot read. `.btn.danger` is the filled destructive
+    // button -- red ground, white text -- and a later rule that set only
+    // the colour gave red on red: a solid block with the words invisible
+    // inside it, which every other check in here was happy with.
+    const seen = (el) => {
+      let node = el;
+      while (node && node !== document.documentElement) {
+        const bg = getComputedStyle(node).backgroundColor;
+        const m = bg.match(/[\d.]+/g);
+        if (m && (m.length < 4 || Number(m[3]) > 0.5)) return m.slice(0, 3).map(Number);
+        node = node.parentElement;
+      }
+      return [255, 255, 255];
+    };
+    const lum = ([r, g, b]) => {
+      const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    for (const el of document.querySelectorAll(".lotcard button, .lotcard a, .lotcard label, .lotcard p, .lotcard h2, .lotcard h3, .lotcard span, .lotcard dt, .lotcard dd")) {
+      if (!el.textContent.trim()) continue;
+      if (el.querySelector("*")) continue;
+      const ink = (getComputedStyle(el).color.match(/[\d.]+/g) ?? [0, 0, 0])
+        .slice(0, 3).map(Number);
+      const a = lum(ink) + 0.05, b2 = lum(seen(el)) + 0.05;
+      const ratio = a > b2 ? a / b2 : b2 / a;
+      // Not a contrast audit -- this stylesheet uses a deliberately
+      // quiet grey for its small uppercase labels and that is a choice,
+      // not a bug. 1.6 is the floor for "these words are not there at
+      // all", which is what red on red was.
+      if (ratio < 1.6) {
+        faint.push(`${el.tagName.toLowerCase()}.${el.className || "-"}`
+          + ` ${ratio.toFixed(1)}:1`);
+      }
+    }
     for (const b of document.querySelectorAll(".movepad button, .movestep .btn")) {
       const r = b.getBoundingClientRect();
       if (r.width < 30 || r.height < 30) {
@@ -276,7 +324,7 @@ for (const width of [1440, 1100, 900, 420]) {
     }
     return {
       out: [...new Set(out)], thin: [...new Set(thin)], over: [...new Set(over)],
-      small: [...new Set(small)],
+      small: [...new Set(small)], faint: [...new Set(faint)],
       sideways: document.documentElement.scrollWidth > window.innerWidth,
     };
   });
@@ -288,6 +336,7 @@ for (const width of [1440, 1100, 900, 420]) {
   if (said.thin.length) wrong.push(`${width}px: too narrow to use -- ${said.thin.join(", ")}`);
   if (said.over.length) wrong.push(`${width}px: a tick box stretched -- ${said.over.join(", ")}`);
   if (said.small.length) wrong.push(`${width}px: too small to hit -- ${said.small.join(", ")}`);
+  if (said.faint.length) wrong.push(`${width}px: words you cannot read -- ${said.faint.join(", ")}`);
   if (said.sideways) wrong.push(`${width}px: the page scrolls sideways`);
 }
 

@@ -53,6 +53,25 @@ export type PlanRow = {
    */
   from?: [number, number];
   to?: [number, number];
+  /**
+   * How far this row's homes are turned off square to the row.
+   *
+   * The park's `homeTurn` is the usual answer and this overrides it.
+   * A row of one -- which is what a home dropped on the map by hand is
+   * -- uses it to point that single home wherever it actually stands,
+   * because a park where one home sits at an angle is a real park and
+   * not a mistake.
+   */
+  turn?: number;
+  /**
+   * The size of the homes in this row, where it is not the park's.
+   *
+   * Most parks are one model throughout and `plan.size` says so. But a
+   * double-wide at the end of a row, or the office, or a storage
+   * building, is a different rectangle, and drawing it as a single-wide
+   * is a drawing that disagrees with the ground.
+   */
+  size?: { width: number; length: number };
 };
 
 /** A row that has been placed by its ends rather than by the grid. */
@@ -193,6 +212,10 @@ export type Placed = {
   lng: number;
   /** The way the home itself points, for `footprint`. */
   bearing: number;
+  /** The rectangle this one is, where it is not the park's own. Carried
+   *  here so that everything drawing a pad gets the same answer without
+   *  having to go back to the row it came from. */
+  size?: { width: number; length: number };
 };
 
 const rad = (d: number) => (d * Math.PI) / 180;
@@ -241,6 +264,65 @@ function down(first: number, count: number): string[] {
 }
 
 /** The streets in the order the plan names them, each once. */
+/**
+ * A home put down on the map by hand, as the row of one it becomes.
+ *
+ * A row placed by its two ends already ignores the grid entirely, and a
+ * row of one sits on its first end. So "drop a home here" needs no new
+ * idea and no new shape to store: it is a row, with one number in it,
+ * whose ends are a metre apart along the park. Everything that already
+ * works on a row -- drawing it, moving it, filing its lot, giving it its
+ * own angle and its own size -- works on this for free.
+ *
+ * `to` is a metre along rather than the same point as `from`, because
+ * the direction between two identical points is not a direction, and a
+ * home has to face somewhere.
+ */
+export function homeAt(
+  plan: Plan, at: [number, number], label: string,
+  opts?: {
+    street?: string; turn?: number; size?: { width: number; length: number };
+    /** The way the row runs, where it is not the park's own bearing --
+     *  so a home taken out of a row that was placed by hand keeps the
+     *  angle it had rather than snapping back to the grid. */
+    head?: number;
+  },
+): PlanRow {
+  const per = degreesPerMetre(at[1]);
+  const b = rad(opts?.head ?? plan.bearing);
+  return {
+    street: opts?.street ?? plan.rows[0]?.street ?? plan.address ?? "",
+    side: "N",
+    numbers: [label],
+    from: [at[0], at[1]],
+    to: [at[0] + Math.sin(b) * per.lng, at[1] + Math.cos(b) * per.lat],
+    turn: opts?.turn ?? plan.homeTurn ?? 0,
+    size: opts?.size ?? { ...plan.size },
+  };
+}
+
+/**
+ * The next free number in the park.
+ *
+ * Counting from the highest rather than from the count: a park with 1
+ * to 59 where 17 was taken out still wants 60 next, not a second 59.
+ * Numbers that are not numbers are left out of the sum and a park of
+ * them falls back to how many there are.
+ */
+export function nextLabel(plan: Plan): string {
+  let top = 0;
+  let any = false;
+  let count = 0;
+  for (const row of plan.rows) {
+    for (const num of row.numbers) {
+      count += 1;
+      const n = Number(String(num).replace(/[^0-9]/g, ""));
+      if (Number.isFinite(n) && n > 0) { any = true; if (n > top) top = n; }
+    }
+  }
+  return String((any ? top : count) + 1);
+}
+
 export function streetsOf(plan: Plan): string[] {
   const seen: string[] = [];
   for (const r of plan.rows) if (!seen.includes(r.street)) seen.push(r.street);
@@ -291,7 +373,8 @@ export function layOut(plan: Plan): Placed[] {
           side: row.side,
           lng: x1 + (x2 - x1) * t,
           lat: y1 + (y2 - y1) * t,
-          bearing: (head + 90 + (plan.homeTurn ?? 0) + 360) % 360,
+          bearing: (head + 90 + (row.turn ?? plan.homeTurn ?? 0) + 360) % 360,
+          size: row.size,
         });
       });
       continue;
@@ -315,7 +398,8 @@ export function layOut(plan: Plan): Placed[] {
         lat, lng,
         // Square to the street unless the park says otherwise: a home's
         // long axis runs away from the road, not along it.
-        bearing: (plan.bearing + 90 + (plan.homeTurn ?? 0) + 360) % 360,
+        bearing: (plan.bearing + 90 + (row.turn ?? plan.homeTurn ?? 0) + 360) % 360,
+        size: row.size,
       });
     });
   }
@@ -378,7 +462,7 @@ export function boundaryOf(plan: Plan, margin = 9): number[][] {
 
   let minA = Infinity, maxA = -Infinity, minC = Infinity, maxC = -Infinity;
   for (const h of layOut(plan)) {
-    for (const c of footprint(h.lat, h.lng, h.bearing, plan.size)) {
+    for (const c of footprint(h.lat, h.lng, h.bearing, h.size ?? plan.size)) {
       const { along, across } = localOf(plan, plan.centre, [c[0], c[1]]);
       if (along < minA) minA = along;
       if (along > maxA) maxA = along;

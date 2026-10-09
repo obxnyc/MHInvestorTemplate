@@ -4,8 +4,8 @@ import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
 import { RETREAT, builtInFor, filedAs, layOut, countOf, fitTargets, fitFromTaps,
-         boundaryOf, streetLines, placed as placedRow,
-         type Plan, type Placed, type Tap } from "@/lib/parkplan";
+         boundaryOf, streetLines, homeAt, nextLabel, placed as placedRow,
+         type Plan, type PlanRow, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
 import { layRows, reachTo, backRoad, streetLine } from "@/lib/rows";
@@ -52,6 +52,12 @@ const EMPTY: Plan = { ...RETREAT, rows: [] };
  * up is a press or two rather than twenty.
  */
 const STEP = 0.5;
+
+/** Metres to feet. The model is metric because the earth is; a home is
+ *  16 by 60 to everybody who has ever stood next to one. */
+const FT = 3.280839895;
+const feet = (m: number) => Math.round(m * FT);
+const metres = (ft: number) => ft / FT;
 
 export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [lots, setLots] = useState<Lot[]>([]);
@@ -123,6 +129,8 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const [wholeRow, setWholeRow] = useState(false);
   /** The lot number being retyped. Empty when nothing is being renamed. */
   const [renaming, setRenaming] = useState("");
+  /** Tapping the map puts a home down where the finger lands. */
+  const [dropping, setDropping] = useState(false);
   /** Homes moved by hand, as an offset from where the layout put them.
    *  Kept as an offset rather than a position so that a better layout --
    *  or a corrected street -- still carries the corrections with it. */
@@ -591,7 +599,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     return {
       homes: layOut(plan).map((h) => ({
         id: h.id, label: h.label, street: h.street, filed: h.filed,
-        ring: footprint(h.lat, h.lng, h.bearing, plan.size),
+        ring: footprint(h.lat, h.lng, h.bearing, h.size ?? plan.size),
       })),
       streets: streetLines(plan),
       boundary: plan.fence?.length ? plan.fence : boundaryOf(plan),
@@ -937,8 +945,73 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     return mids.filter((m) => m && !inRing(m, ring)).length;
   }, [plan.fence, shown, drawn]);
 
-  const card = arranging ? null : open;
-  const pad = arranging ? here : null;
+  const card = arranging || dropping ? null : open;
+  const pad = arranging || dropping ? here : null;
+  /**
+   * The chosen pad as the plan has it, and the row it belongs to.
+   *
+   * `placed` built from a harvest carries no position -- it is a list of
+   * which lots exist, not where they are -- so the plan's own drawing is
+   * what gets asked about angle and size. Where it stands comes from
+   * `shown`, which has the hand corrections applied, and falls back to
+   * the drawing for a pad nobody has moved.
+   */
+  const laid = useMemo(() => layOut(plan), [plan]);
+  const padLaid = pad ? laid.find((h) => h.id === pad.id) ?? null : null;
+  const padRow = pad
+    ? plan.rows.find((r) => r.street === pad.street && r.numbers.includes(pad.label))
+      ?? null
+    : null;
+  const padWhere: [number, number] | null = (() => {
+    if (!pad) return null;
+    const h = shown?.homes.find((x) => x.id === pad.id);
+    const mid = h ? middleOf(h.ring) : null;
+    return mid ?? (padLaid ? [padLaid.lng, padLaid.lat] : null);
+  })();
+  const padTurn = padRow?.turn ?? plan.homeTurn ?? 0;
+  const padSize = padRow?.size ?? plan.size;
+
+  /** The chosen home's row, changed. */
+  function reshape(change: Partial<Pick<PlanRow, "turn" | "size">>) {
+    if (!pad || !padRow) return;
+    remember({
+      ...plan,
+      rows: plan.rows.map((r) => (r === padRow ? { ...r, ...change } : r)),
+    });
+  }
+
+  /** The chosen home, out of its row and on its own. */
+  function onItsOwn() {
+    if (!pad || !padRow || !padWhere || !padLaid) return;
+    const rest = plan.rows.flatMap((r) => {
+      if (r !== padRow) return [r];
+      const left = { ...r, numbers: r.numbers.filter((x) => x !== pad.label) };
+      return left.numbers.length ? [left] : [];
+    });
+    remember({
+      ...plan,
+      rows: [...rest, homeAt(plan, padWhere, pad.label, {
+        street: pad.street, turn: padRow.turn, size: padRow.size,
+        // The angle it is drawn at now, less the turn, is the way its
+        // row runs -- so taking it out of the row does not move it.
+        head: padLaid.bearing - 90 - padTurn,
+      })],
+    });
+  }
+
+  /** The chosen home, off the drawing. The lot stays on file. */
+  function offTheMap() {
+    if (!pad || !padRow) return;
+    remember({
+      ...plan,
+      rows: plan.rows.flatMap((r) => {
+        if (r !== padRow) return [r];
+        const left = { ...r, numbers: r.numbers.filter((x) => x !== pad.label) };
+        return left.numbers.length ? [left] : [];
+      }),
+    });
+    setSelected(null);
+  }
   // The box starts as the number it is about to change, and belongs to
   // the home it was typed for. Starting it empty and falling back to the
   // label for display meant backspacing to nothing put the old number
@@ -1052,6 +1125,20 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               Reset positions
             </button>
           )}
+          {/* Put a home down where you tap. The answer for a park that
+              is not rows at all, and for the last three that never fit
+              the pattern -- the office, the laundry, the one turned
+              sideways at the end of the loop. */}
+          {!fitting && !laying && !fencing && (
+            <button type="button" className={dropping ? "btn pri" : "btn"}
+                    onClick={() => {
+                      setDropping((v) => !v);
+                      setLaying(false); setFitting(false); setArranging(false);
+                      setSelected(null);
+                    }}>
+              {dropping ? "Done" : "Add a home"}
+            </button>
+          )}
           {/* Placing rows one at a time is the answer for a park that
               grew rather than one that was drawn, so it is offered
               whether or not the map has handed anything over. */}
@@ -1140,6 +1227,17 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             ? "These rows were put down by hand — use Place rows to move the"
               + " ones that are out."
             : "Press Fit inside the boundary above and they will all come in."}
+        </p>
+      )}
+
+      {dropping && (
+        <p className="parkhint">
+          Tap the map and a home drops there, numbered{" "}
+          <strong>{nextLabel(plan)}</strong> and counting on. Each one is
+          its own home, so set its angle and size in the panel beside the
+          map and nothing else moves. A home put down here is drawn
+          straight away; it goes on file when you press <em>Add lots</em>{" "}
+          above, and only then can it have an owner.
         </p>
       )}
 
@@ -1477,9 +1575,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           onHarvest={blank ? undefined : onHarvest}
           arranging={arranging} onNudge={nudge} onDropped={keep}
           selected={selected} onSelect={setSelected}
-          fitting={fitting || laying || fencing} drawing={fencing}
-          taps={fencing ? corners : laying ? (end ? [end] : []) : taps}
+          fitting={fitting || laying || fencing || dropping} drawing={fencing}
+          taps={fencing ? corners : laying ? (end ? [end] : []) : dropping ? [] : taps}
           onTap={(at) => {
+            if (dropping) {
+              // A row of one, which is a shape the drawing already
+              // understands: placed by its own two ends, owing nothing
+              // to the grid, with its own angle and its own size.
+              const label = nextLabel(plan);
+              const row = homeAt(plan, at, label);
+              remember({ ...plan, rows: [...plan.rows, row] });
+              setSelected(`${row.street}|${label}`);
+              return;
+            }
             if (fencing) {
               // Shown at once, saved only on Done. A boundary half drawn
               // is not a boundary, and writing each corner as it lands
@@ -1538,6 +1646,65 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             <p className="movesay">
               Half a metre a press. The arrow keys do the same thing.
             </p>
+
+            {padRow && (
+              <div className="moveshape">
+                <label htmlFor="lotangle">Angle</label>
+                <div className="movebump">
+                  <button type="button" aria-label="Turn anticlockwise"
+                          onClick={() => reshape({ turn: padTurn - 5 })}>−</button>
+                  <input id="lotangle" inputMode="numeric"
+                         value={Math.round(padTurn)}
+                         onChange={(e) => {
+                           const v = Number(e.target.value);
+                           if (Number.isFinite(v)) reshape({ turn: v });
+                         }} />
+                  <span className="movedeg">°</span>
+                  <button type="button" aria-label="Turn clockwise"
+                          onClick={() => reshape({ turn: padTurn + 5 })}>+</button>
+                </div>
+
+                <div className="movetwo">
+                  <label>
+                    Wide (ft)
+                    <input inputMode="numeric" value={feet(padSize.width)}
+                           onChange={(e) => {
+                             const v = Number(e.target.value);
+                             // A field cleared on the way to a new number
+                             // reads as zero, and a pad of no width is a
+                             // pad nobody can find again.
+                             if (v >= 4 && v <= 200) {
+                               reshape({ size: { ...padSize, width: metres(v) } });
+                             }
+                           }} />
+                  </label>
+                  <label>
+                    Long (ft)
+                    <input inputMode="numeric" value={feet(padSize.length)}
+                           onChange={(e) => {
+                             const v = Number(e.target.value);
+                             if (v >= 4 && v <= 200) {
+                               reshape({ size: { ...padSize, length: metres(v) } });
+                             }
+                           }} />
+                  </label>
+                </div>
+
+                {padRow.numbers.length > 1 ? (
+                  <>
+                    <p className="movesay">
+                      This changes all {padRow.numbers.length} homes in the row,
+                      because they are one row of one model.
+                    </p>
+                    <button type="button" className="btn" onClick={onItsOwn}>
+                      Give this one its own shape
+                    </button>
+                  </>
+                ) : (
+                  <p className="movesay">This home only.</p>
+                )}
+              </div>
+            )}
             <form className="movenumber"
                   onSubmit={(e) => { e.preventDefault(); void renumber(pad, renaming); }}>
               <label htmlFor="lotno">Lot number</label>
@@ -1552,6 +1719,14 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
             <p className="movesay">
               {pad.filed} — what a sale or a lease is filed under.
             </p>
+            <button type="button" className="moveoff" onClick={() => {
+              if (!confirm(`Take lot ${pad.label} off the map? The lot stays`
+                           + " on file with everything recorded against it.")) return;
+              offTheMap();
+            }}>
+              Take off the map
+            </button>
+
             <div className="movestep">
               <button type="button" className="btn" disabled={nth <= 0}
                       onClick={() => setSelected(placed[nth - 1]?.id ?? null)}>

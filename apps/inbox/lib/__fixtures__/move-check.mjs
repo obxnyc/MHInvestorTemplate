@@ -100,11 +100,13 @@ t("and Fit to aerial still only shows when the map found nothing",
   "It is the way to place a park the map could not find.");
 
 // --- something to aim at ---------------------------------------------
-t("the panel of nudge buttons takes the card's place while arranging",
-  /const pad = arranging \? here : null;/.test(screen)
-  && /const card = arranging \? null : open;/.test(screen),
+t("the panel takes the card's place while homes are being placed",
+  /const pad = arranging \|\| dropping \? here : null;/.test(screen)
+  && /const card = arranging \|\| dropping \? null : open;/.test(screen),
   "A card opening over the park being arranged is in the way, which is "
-  + "why choosing a home used to do nothing.");
+  + "why choosing a home used to do nothing. It has to give way while a "
+  + "home is being dropped too, or the one just put down cannot be "
+  + "angled without leaving the mode.");
 
 t("four arrows, one per way",
   ["Move north", "Move south", "Move east", "Move west"]
