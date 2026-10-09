@@ -3,13 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lot } from "./ParkPlan";
 import ParkMap, { type LotFacts, type Owner, type RealPark } from "./ParkMap";
 import LotCard from "./LotCard";
-import { RETREAT, builtInFor, filedAs, layOut, countOf, fitTargets, fitFromTaps,
+import { builtInFor, filedAs, layOut, countOf, fitTargets, fitFromTaps,
          boundaryOf, streetLines, homeAt, nextLabel, placed as placedRow,
          type Plan, type PlanRow, type Placed, type Tap } from "@/lib/parkplan";
 import { sameStreet, placeFromRoads, parkAround, orientedBox, fitInside, inRing, placeOn,
          type Shape, type Road } from "@/lib/osm";
 import { layRows, reachTo, backRoad, streetLine } from "@/lib/rows";
-import { degreesPerMetre, middleOfRing, footprint } from "@/lib/footprint";
+import { degreesPerMetre, middleOfRing, footprint, SINGLE_WIDE }
+  from "@/lib/footprint";
 
 /**
  * The park screen.
@@ -39,7 +40,33 @@ import { degreesPerMetre, middleOfRing, footprint } from "@/lib/footprint";
  * pads on screen stayed exactly where they were. "51 of 40 lots" was
  * the two of them disagreeing out loud.
  */
-const EMPTY: Plan = { ...RETREAT, rows: [] };
+const EMPTY: Plan = {
+  // Nowhere, and meaning it.
+  //
+  // This was `{ ...RETREAT, rows: [] }`, which took the rows off Cross
+  // Creek and kept everything else -- including its CENTRE. So every
+  // park nobody had placed yet opened on Fayetteville, which is the
+  // fourth route by which one park has been drawn as another, and the
+  // one the guard was written to allow.
+  //
+  // It also carried Cross Creek's bearing, the end its numbers count
+  // from, and the road its deed line runs out to. Facts about a park
+  // belong on that park's plan; the only things general enough to start
+  // with are how far apart homes and streets usually are, and how big a
+  // single-wide is.
+  centre: [0, 0],
+  bearing: 0,
+  padSpacing: 10.5,
+  pairGap: 31,
+  streetGap: 57,
+  size: SINGLE_WIDE,
+  rows: [],
+};
+
+/** Has anybody said where this park is? [0, 0] is in the Atlantic. */
+function somewhere(plan: Plan): boolean {
+  return plan.centre[0] !== 0 || plan.centre[1] !== 0;
+}
 
 /**
  * How far one press moves a home, in metres.
@@ -453,6 +480,17 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     const has = Boolean(mine?.rows?.length || mine?.fence?.length);
     own.current = has;
     setDescribed(has);
+
+    // A park with no plan of its own is placed by the pin on the
+    // property, if anybody has dropped one. Not by the park that
+    // happens to be written into the code.
+    if (!has) {
+      const lat = Number(out.property?.lat);
+      const lng = Number(out.property?.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && (lat || lng)) {
+        setPlan((was) => ({ ...was, centre: [lng, lat] }));
+      }
+    }
     if (has && mine) {
       setPlan(mine);
       planNow.current = mine;
@@ -1672,6 +1710,20 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         </div>
       )}
 
+      {/* No map for a park nobody has placed.
+          Drawing one anyway meant drawing it over whatever ground the
+          starting plan happened to carry -- which is how a park in
+          Pasquotank came up over Fayetteville for the fourth time. An
+          empty screen that says why is not a worse answer than a map of
+          the wrong county; it is the only honest one. */}
+      {!somewhere(plan) ? (
+        <p className="parkhint">
+          <strong>Nobody has said where this park is yet.</strong> Put its
+          address or its coordinates in the box above and the map will
+          open on it. Until then there is nothing to draw — a map of
+          somewhere else is worse than no map.
+        </p>
+      ) : (
       <div className={`parkmain${card || pad ? " withcard" : ""}`}>
         <ParkMap
           plan={drawn} real={blank ? null : shown} facts={facts}
@@ -1864,6 +1916,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           </aside>
         )}
       </div>
+      )}
 
       <ul className="parkkey">
         <li><i className="sw sw-poh" /> Park owned</li>

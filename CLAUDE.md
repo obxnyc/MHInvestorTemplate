@@ -433,6 +433,28 @@ moment it loads, which is before the database has said which park this
 is -- so the wrong park was harvested, and nothing afterwards threw it
 away. A screen now starts as nothing: the spacings, and no rows.
 
+**And then "nothing" was still Cross Creek.** The empty plan was
+`{ ...RETREAT, rows: [] }` -- the rows taken off and *everything else
+kept*, including the centre. So every park nobody had placed opened on
+Fayetteville, along with Cross Creek's bearing, the end its numbers
+count from, and the road its deed line runs out to. The guard above
+allowed that line **by name**, so this check waved through the fourth
+instance of the thing it exists to catch.
+
+The empty plan now starts at `[0, 0]` and carries only what is general:
+how far apart homes and streets usually are, and how big a single-wide
+is. A park with no plan is placed by the pin on the property, which the
+plan endpoint now returns. And **a park nobody has placed gets no map
+at all** -- a sentence saying so, and the box to give it an address. An
+empty screen that says why is not a worse answer than a map of the
+wrong county; it is the only honest one.
+
+Two lessons, both general. **A whitelist in a guard is a hole in the
+guard** -- `one-park-check` now strips comments and forbids the screen
+from naming the default park on any running line, full stop. And
+**stripping the obvious part of a wrong default leaves the rest of
+it**: taking the rows off a park does not stop it being that park.
+
 **A flag that is null before it is false.** `described === false`
 looked like "not described", but the answer is null until it is known,
 and in that window the default drew. Ask `!== true`.

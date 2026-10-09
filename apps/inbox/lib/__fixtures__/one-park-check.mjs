@@ -28,14 +28,53 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const wrong = [];
 
 const screen = readFileSync(join(root, "components/ParkScreen.tsx"), "utf8");
-screen.split("\n").forEach((line, i) => {
-  if (!line.includes("RETREAT")) return;
-  const allowed = line.includes("import ")
-    || line.includes("const EMPTY: Plan = { ...RETREAT, rows: [] }");
-  if (!allowed) {
-    wrong.push(`ParkScreen.tsx:${i + 1} names the default park: ${line.trim()}`);
+
+/** Line comments and block comments taken out, so a rule about what the
+ *  code DOES is not answered by an explanation of what it used to do. */
+function running(src) {
+  const out = [];
+  let inBlock = false;
+  for (const line of src.split("\n")) {
+    let kept = "";
+    for (let i = 0; i < line.length; i++) {
+      if (inBlock) {
+        if (line.startsWith("*/", i)) { inBlock = false; i += 1; }
+        continue;
+      }
+      if (line.startsWith("/*", i)) { inBlock = true; i += 1; continue; }
+      if (line.startsWith("//", i)) break;
+      kept += line[i];
+    }
+    out.push(kept);
   }
+  return out;
+}
+
+// The screen may not name the park written into the code. At all, now:
+// the empty plan it starts from used to be `{ ...RETREAT, rows: [] }`,
+// which took Cross Creek's rows off and kept its CENTRE, its bearing,
+// the end its numbers count from and the road its deed line runs out
+// to -- so every park nobody had placed opened on Fayetteville. The
+// guard allowed that line by name, which is the fourth time one park
+// has been drawn as another and the first time this check waved it
+// through.
+running(screen).forEach((line, i) => {
+  if (!line.includes("RETREAT")) return;
+  wrong.push(`ParkScreen.tsx:${i + 1} names the default park: ${line.trim()}`);
 });
+
+// Nowhere, and meaning it. A starting centre lifted from any real park
+// is that park's ground, whatever else has been stripped off it.
+if (!/^  centre: \[0, 0\],$/m.test(screen)) {
+  wrong.push("the empty plan does not start at [0, 0] -- a park nobody "
+    + "has placed must be nowhere, not somewhere else with the homes "
+    + "taken off");
+}
+if (!/function somewhere\(plan: Plan\): boolean \{/.test(screen)
+    || !/\{!somewhere\(plan\) \? \(/.test(screen)) {
+  wrong.push("the screen draws a map for a park nobody has placed, which "
+    + "means drawing it over whatever ground the starting plan carried");
+}
 
 // The map may not be told to harvest, and homes may not be drawn, for a
 // park whose own plan has not arrived. `described` is null while that is

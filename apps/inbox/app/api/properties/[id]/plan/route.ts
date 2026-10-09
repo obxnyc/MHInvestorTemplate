@@ -28,16 +28,27 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // This park's own layout arrives with 035. Before it, every park drew
   // the one park whose streets were written into the code, which is
   // right with one park and wrong with two.
+  // The property's own pin comes back too. A park with no plan used to
+  // open on whichever park was written into the code, because the empty
+  // plan it started from kept that park's centre -- and the pin on the
+  // property is the one thing that says where THIS park is before
+  // anybody describes it.
   let got0 = await supabase
-    .from("properties").select("id, name, kind, plan").eq("id", id).maybeSingle();
+    .from("properties").select("id, name, kind, plan, lat, lng").eq("id", id)
+    .maybeSingle();
   let plans = true;
   if (got0.error) {
     plans = false;
+    got0 = await supabase
+      .from("properties").select("id, name, kind, lat, lng").eq("id", id).maybeSingle();
+  }
+  if (got0.error) {
     got0 = await supabase
       .from("properties").select("id, name, kind").eq("id", id).maybeSingle();
   }
   const property = got0.data as {
     id: string; name: string; kind: string | null;
+    lat?: number | null; lng?: number | null;
     plan?: Record<string, unknown> | null;
   } | null;
   if (!property) return NextResponse.json({ error: "not found" }, { status: 404 });
