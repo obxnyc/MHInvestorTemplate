@@ -1205,7 +1205,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       {described === false && !fitting && (
         <Describe
           propertyId={propertyId}
-          from={plan.rows.length ? plan : null}
+          // The boundary counts as the park knowing something about
+          // itself, even with no rows yet. Keyed on rows alone, a park
+          // whose line had been drawn but whose homes had not been
+          // described would lose the line the moment it was.
+          from={plan.rows.length || plan.fence?.length ? plan : null}
           canKeep={canKeep}
           onAt={(at) => setPlan((was) => ({ ...was, centre: at }))}
           onLay={(next) => void describeIt(next)} />
