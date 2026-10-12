@@ -244,7 +244,13 @@ export default function LotCard(
         {live ? (
           <>
             <dl className="lotfacts">
-              <dt>Owner</dt><dd>{live.owners?.name ?? "—"}</dd>
+              {/* The owner's name is the way through to everything else
+                  about them: the rest of what they hold, what they are
+                  charged, and the papers for the sale. */}
+              <dt>Owner</dt>
+              <dd>{live.owners?.id
+                ? <a href={`/owners/${live.owners.id}`}>{live.owners.name}</a>
+                : live.owners?.name ?? "—"}</dd>
               <dt>Bought</dt><dd>{live.sold_on} for {money(live.price_cents)}</dd>
               {live.financed && (
                 <>

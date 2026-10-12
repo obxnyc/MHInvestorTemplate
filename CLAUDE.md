@@ -249,6 +249,42 @@ lands where you tapped, it points where you said, it is the size you
 typed, a home split out of a row does not move or turn, and doing any
 of it to one home does not touch its neighbours.
 
+### The sale papers say what the generator says
+
+`mobilehomedocumentgenerator.html` at the repo root is the owner's own
+tool: fill in twenty-four boxes, get a Purchase Agreement and a Park
+Land Lease, print to PDF, send off for signing. Both documents are
+strictly per-home, so eight homes to one investor is sixteen documents
+and sixteen passes through those boxes.
+
+`apps/inbox/lib/papers.ts` is that generator's wording, **lifted
+verbatim**, as pure functions over a typed deal. Nothing rewrites a
+sentence of it. What the app adds is where the numbers come from: the
+owner, the lot, the sale and the park's terms, read from the database.
+
+**A contract that reads almost right reads right**, which is why
+`lib/__fixtures__/papers-check.mjs` compares every fixed sentence in
+`papers.ts` against the generator's own, character for character. It
+also checks that no clause was dropped on the way across.
+
+Two things that harness taught:
+
+The first version of its prose extractor read the TypeScript as prose
+and reported that `export function amortisation(...)` was missing from
+a contract. True, and not the question. **Compare what is inside the
+backticks**, with the `${...}` holes cut out first so no backtick hides
+inside one.
+
+And the expected monthly payment was a number I typed, thirty cents
+wrong. **A figure written into a test is a figure somebody invented.**
+It now checks the payment by paying the loan off -- 240 payments, and
+the balance must land on zero -- with a second case proving a cent more
+a month would not.
+
+The owner's own page (`/owners/<id>`) is where this lives, reached by
+clicking the owner's name on a lot card: every home they hold across
+every park, what they are charged each month, and the papers.
+
 ### A line drawn by eye is not the deed line
 
 Above the map, over a boundary the owner had drawn by hand with the

@@ -1933,6 +1933,73 @@ a.metric:hover{border-color:var(--accent)}
 .lotcard h2{margin:0;font-size:1.05rem;font-weight:700}
 .lotcard .x{margin-left:auto;border:none;background:none;font-size:1.2rem;
   color:var(--muted);line-height:1}
+/* ---- the sale papers ----
+   The paper itself is the generator's own stylesheet, so a document
+   printed from here lands on the page the way the one printed from the
+   standalone file does. */
+.ownerpage{max-width:none}
+.ownertbl{width:100%;border-collapse:collapse;font-size:.84rem;margin:.6rem 0 1rem}
+.ownertbl th{text-align:left;font-size:.68rem;font-weight:700;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.06em;padding:.3rem .5rem;
+  border-bottom:1px solid var(--hair);white-space:nowrap}
+.ownertbl td{padding:.4rem .5rem;border-bottom:1px solid var(--hair-2);
+  color:var(--ink-2)}
+.ownertbl tr:hover td{background:var(--hair-2)}
+.ownertbl input[type=checkbox]{width:auto;margin:0}
+.ownerlist{overflow-x:auto}
+
+.papersetup{border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:1rem 1.1rem;margin:0 0 1.2rem}
+.tabsrow{display:flex;gap:.4rem;flex-wrap:wrap;margin:.2rem 0 .8rem}
+.papergrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));
+  gap:.6rem}
+.papergrid label{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
+  color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.papergrid input{width:100%;box-sizing:border-box;padding:.42rem .55rem;
+  border:1px solid var(--hair);border-radius:8px;background:var(--card);
+  color:var(--ink);font:inherit;font-size:.86rem;text-transform:none;
+  letter-spacing:0;font-weight:400}
+.papertick{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));
+  gap:.35rem;margin:.9rem 0 .2rem}
+.papertickone{display:flex;align-items:center;gap:.45rem;font-size:.82rem;
+  color:var(--ink-2)}
+.papertickone input[type=checkbox]{width:auto;flex:none;margin:0}
+.paperacts{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
+  margin-top:.9rem;padding-top:.8rem;border-top:1px solid var(--hair)}
+
+/* The printable document, as the generator has it. */
+.paper{background:#fff;max-width:8.5in;margin:0 auto 26px;padding:0.9in 0.85in;
+  box-shadow:0 2px 14px rgba(0,0,0,.12);font-family:"Times New Roman",Georgia,serif;
+  font-size:12pt;line-height:1.5;color:#000}
+.paper h2{text-align:center;font-size:14pt;letter-spacing:.5px;margin:0 0 6px}
+.paper .doc-sec{margin:12px 0}
+.paper h3{font-size:12pt;margin:16px 0 4px}
+.paper p{margin:8px 0;text-align:justify}
+.paper .fill{font-weight:700}
+.paper .hint{color:#555;font-size:10pt}
+.paper .sig{margin-top:34px}
+.paper .sig .line{border-bottom:1px solid #000;width:320px;height:1.2em;
+  margin-bottom:2px}
+.paper .sig-block{margin-top:22px}
+.paper .pagebreak{break-before:page}
+.paper .witness{letter-spacing:6px;font-weight:700;text-align:center;margin:14px 0}
+.paper .amort-tbl{width:100%;border-collapse:collapse;font-size:9.5pt;margin-top:6px}
+.paper .amort-tbl th,.paper .amort-tbl td{border:1px solid #999;padding:3px 6px;
+  text-align:right;color:#000}
+/* The app's own table headings are small, grey and letterspaced, which
+   is right on a screen and wrong on a contract. The paper sets its own. */
+.paper .amort-tbl th{background:#eee;text-transform:none;letter-spacing:0;
+  font-size:9.5pt;font-weight:700;color:#000;border:1px solid #999;
+  padding:3px 6px;text-align:right}
+.paper .amort-tbl td:first-child,.paper .amort-tbl th:first-child{text-align:center}
+
+@media print{
+  .noprint,nav,header.sitehead{display:none!important}
+  body{background:#fff}
+  .paper{box-shadow:none;margin:0;max-width:none;padding:0;width:auto}
+  @page{size:letter;margin:0.8in}
+}
+
 /* ---- one pad, being moved ----
    Its own names throughout. `.check` is the setup page's result card --
    bordered, padded, coloured left edge -- and borrowing it for a tick
