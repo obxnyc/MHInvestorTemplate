@@ -32,6 +32,9 @@
   .check label{margin:0;font-weight:600}
   .calc{background:var(--accent-soft);border-radius:7px;padding:9px 11px;font-size:12.5px;margin-top:10px;line-height:1.6}
   .calc b{font-size:15px}
+  .preset-box{background:var(--accent-soft);border:1px solid #cfe0d8;border-radius:10px;padding:12px 14px;margin-bottom:16px}
+  .preset-box label{margin-top:0}
+  .preset-box .hint{display:block;margin-top:6px}
   .toolbar{position:fixed;left:0;bottom:0;width:minmax(360px,440px);max-width:440px;background:#fff;border-top:1px solid var(--line);padding:12px 22px;display:flex;gap:10px}
   button{font:inherit;font-weight:700;font-size:13px;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
   .btn-print{background:var(--accent);color:#fff;flex:1}
@@ -41,6 +44,7 @@
   .tab.on{background:var(--accent);color:#fff}
   details.note{background:#fff8e6;border:1px solid #f0d98a;border-radius:8px;padding:8px 11px;margin:6px 0 14px;font-size:12px}
   details.note summary{cursor:pointer;font-weight:700}
+  .concession{color:#8a5a1f}
 
   /* ---------- The printable document ---------- */
   .paper{background:#fff;max-width:8.5in;margin:0 auto 26px;padding:0.9in 0.85in;box-shadow:0 2px 14px rgba(0,0,0,.12);
@@ -77,13 +81,23 @@
 <div class="app">
   <!-- ============ FORM PANEL ============ -->
   <div class="panel">
-    <h1>Mobile Home Document Generator <span style="font-size:11px;font-weight:700;color:#1f5c46;background:#e7f0ec;border-radius:999px;padding:2px 8px;vertical-align:middle;white-space:nowrap">v3 · North Carolina</span></h1>
-    <p class="sub">Fill in the fields once — the Purchase Agreement (seller‑financed Bill of Sale) and the Park Land Lease build themselves, do the loan math for you, then print to PDF. Your entries stay saved in this browser.</p>
+    <h1>Mobile Home Document Generator <span style="font-size:11px;font-weight:700;color:#1f5c46;background:#e7f0ec;border-radius:999px;padding:2px 8px;vertical-align:middle;white-space:nowrap">v4 · North Carolina</span></h1>
+    <p class="sub">Fill in each investor's variables once — the Purchase Agreement (seller‑financed Bill of Sale) and the Park Land Lease build themselves, do the loan math, then print to PDF. Pick a <b>posture preset</b> below to set your terms; everything stays saved in this browser.</p>
 
     <div class="tabs">
       <span class="tab on" data-doc="both">Both documents</span>
       <span class="tab" data-doc="purchase">Purchase only</span>
       <span class="tab" data-doc="lease">Lease only</span>
+    </div>
+
+    <div class="preset-box">
+      <label for="preset">Deal posture (preset)</label>
+      <select id="preset">
+        <option value="standard" selected>Standard — my terms (most in my favor)</option>
+        <option value="generous">Generous — Habberstad-style (max concessions)</option>
+        <option value="custom">Custom — I'll set each toggle</option>
+      </select>
+      <span class="hint">Standard keeps pricing power and control in your favor. Generous turns on every concession (33% rent cap, sublease right, reserve cap, term protection). Changing any concession toggle switches you to Custom.</span>
     </div>
 
     <fieldset>
@@ -144,14 +158,21 @@
       </div>
       <div class="row">
         <div><label>Notice period (days)</label><input type="number" id="notice" value="60" step="15"></div>
-        <div><label>First‑refusal window (days)</label><input type="number" id="rofr" value="30" step="5"></div>
+        <div><label>First‑refusal window (days)</label><input type="number" id="rofr" value="21" step="1"></div>
       </div>
     </fieldset>
 
-    <fieldset>
-      <legend>Optional protective clauses <span class="hint" style="font-weight:400">— recommended</span></legend>
+    <fieldset data-scope="lease">
+      <legend>Lease posture — your favor ⇄ concessions</legend>
 
-      <div class="check"><input type="checkbox" id="incEscalate" checked><label for="incEscalate">Annual rent escalation (inflation)</label></div>
+      <div class="check"><input type="checkbox" id="incExit" checked><label for="incExit">Exit right on sale/closure of the Park <span class="hint">(protects you — recommended on)</span></label></div>
+      <div class="row" id="exitRow">
+        <div><label>Exit notice (days)</label><input type="number" id="exitDays" value="180" step="30"></div>
+      </div>
+
+      <div class="check"><input type="checkbox" id="incTermProtect"><label for="incTermProtect"><span class="concession">Concession:</span> no termination of a paying homeowner <span class="hint">(except for cause)</span></label></div>
+
+      <div class="check"><input type="checkbox" id="incEscalate"><label for="incEscalate">Annual rent escalation (fixed %/yr)</label></div>
       <div class="row" id="escRow">
         <div><label>Increase %/yr</label><input type="number" id="escPct" value="3" step="0.5"></div>
         <div><label>Applies to</label>
@@ -161,6 +182,19 @@
           </select>
         </div>
       </div>
+
+      <div class="check"><input type="checkbox" id="incRentCap"><label for="incRentCap"><span class="concession">Concession:</span> cap increases at the "33% of the Park" market level</label></div>
+
+      <div class="check"><input type="checkbox" id="incSubletRight"><label for="incSubletRight"><span class="concession">Concession:</span> grant an affirmative sublease right <span class="hint">(default: consent + screening gate)</span></label></div>
+
+      <div class="check"><input type="checkbox" id="incReserveCap"><label for="incReserveCap"><span class="concession">Concession:</span> cap total reserve across homes</label></div>
+      <div class="row" id="reserveCapRow">
+        <div><label>Aggregate cap ($)</label><input type="number" id="reserveCap" value="2500" step="500"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Protective clauses <span class="hint" style="font-weight:400">— recommended on</span></legend>
 
       <div class="check"><input type="checkbox" id="incRentLate" checked><label for="incRentLate">Late fee on lot rent &amp; consulting fee <span class="hint">(lease)</span></label></div>
       <div class="row" id="rentLateRow">
@@ -177,12 +211,13 @@
 
       <div class="check"><input type="checkbox" id="incSecurity" checked><label for="incSecurity">Seller retains security interest / lien until paid in full</label></div>
       <div class="check"><input type="checkbox" id="incInsure" checked><label for="incInsure">Homeowner must insure the home (Seller as loss payee)</label></div>
+      <div class="check"><input type="checkbox" id="incMutualIndem" checked><label for="incMutualIndem">Mutual indemnification <span class="hint">(fair &amp; more enforceable; no duty to "defend")</span></label></div>
       <div class="check"><input type="checkbox" id="incNotary"><label for="incNotary">Include notary acknowledgment block <span class="hint">(not required in NC for the contracts — the DMV title transfer is notarized separately)</span></label></div>
     </fieldset>
 
     <details class="note">
       <summary>⚠ Before you use these — please read</summary>
-      These templates reproduce your existing wording and are a strong starting point, but they are not legal advice. Seller‑financing a home can trigger federal/state rules (SAFE Act, Dodd‑Frank) when the buyer is an individual consumer; investor‑to‑entity deals are usually treated differently. Have a local attorney review once before you reuse. See <b>SUGGESTIONS.md</b> in this project for the full list of gaps I found in the originals.
+      These templates are a strong starting point but are not legal advice. Seller‑financing a home can trigger federal/state rules (SAFE Act, Dodd‑Frank) when the buyer is an individual consumer; investor‑to‑entity deals are usually treated differently. Have a local attorney review once before you reuse. The <b>Generous</b> preset mirrors the concessions negotiated in the Habberstad deal; your <b>Standard</b> preset keeps more in your favor.
     </details>
   </div>
 
@@ -236,25 +271,56 @@ function payment(P,apr,yrs,freq){
 }
 
 /* ---------- state / persistence ---------- */
-const FIELDS=['seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','escPct','escApplies','rentGrace','rentLateFee','graceDays','lateFee'];
-const CHECKS=['incFinance','incAmort','incEscalate','incRentLate','incLate','incSecurity','incInsure','incNotary'];
+const FIELDS=['preset','seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','exitDays','escPct','escApplies','reserveCap','rentGrace','rentLateFee','graceDays','lateFee'];
+const CHECKS=['incFinance','incAmort','incExit','incTermProtect','incEscalate','incRentCap','incSubletRight','incReserveCap','incRentLate','incLate','incSecurity','incInsure','incMutualIndem','incNotary'];
+/* concession controls — changing any flips preset to Custom */
+const CONCESSIONS=['incExit','incTermProtect','incEscalate','incRentCap','incSubletRight','incReserveCap','rofr','reserve','exitDays','reserveCap'];
 let docMode='both';
+let applyingPreset=false;
 
 function saveState(){
   const s={docMode};
   FIELDS.forEach(f=>s[f]=$(f).value);
   CHECKS.forEach(c=>s[c]=$(c).checked);
-  try{localStorage.setItem('mhgen',JSON.stringify(s));}catch(e){}
+  try{localStorage.setItem('mhgen4',JSON.stringify(s));}catch(e){}
 }
 function loadState(){
-  let s;try{s=JSON.parse(localStorage.getItem('mhgen'));}catch(e){}
+  let s;try{s=JSON.parse(localStorage.getItem('mhgen4'));}catch(e){}
   if(!s)return;
   docMode=s.docMode||'both';
   FIELDS.forEach(f=>{if(s[f]!==undefined)$(f).value=s[f];});
   CHECKS.forEach(c=>{if(s[c]!==undefined)$(c).checked=s[c];});
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.doc===docMode));
 }
-function resetAll(){ if(confirm('Clear all entries?')){localStorage.removeItem('mhgen');location.reload();} }
+function resetAll(){ if(confirm('Clear all entries?')){localStorage.removeItem('mhgen4');location.reload();} }
+
+/* ---------- presets ---------- */
+function applyPreset(name){
+  if(name==='custom') return;
+  applyingPreset=true;
+  const set=(id,val)=>{$(id).checked=val;};
+  const num=(id,val)=>{$(id).value=val;};
+  if(name==='standard'){
+    set('incExit',true);       num('exitDays',180);
+    set('incTermProtect',false);
+    set('incEscalate',false);
+    set('incRentCap',false);
+    set('incSubletRight',false);
+    set('incReserveCap',false);
+    set('incMutualIndem',true);
+    num('rofr',21); num('reserve',500);
+  }else if(name==='generous'){
+    set('incExit',true);       num('exitDays',180);
+    set('incTermProtect',true);
+    set('incEscalate',false);
+    set('incRentCap',true);
+    set('incSubletRight',true);
+    set('incReserveCap',true);  num('reserveCap',2500);
+    set('incMutualIndem',true);
+    num('rofr',15); num('reserve',500);
+  }
+  applyingPreset=false;
+}
 
 /* ---------- render ---------- */
 function render(){
@@ -268,7 +334,8 @@ function render(){
   const parkName=esc(v('parkName'))||'the Park';
   const state=esc(v('state'))||'[State]';
   const notice=num('notice')||60;
-  const rofr=num('rofr')||30;
+  const rofr=num('rofr')||21;
+  const exitDays=num('exitDays')||180;
 
   const financed=chk('incFinance');
   $('financeFields').style.display=financed?'':'none';
@@ -284,8 +351,11 @@ function render(){
       : `<span class="hint">Enter price, down payment, rate &amp; term to see the monthly payment.</span>`;
   }
 
-  const escOn=chk('incEscalate'), escPct=num('escPct'), escApplies=v('escApplies');
-  $('escRow').style.opacity=escOn?1:.4;
+  // opacity cues
+  $('escRow').style.opacity=chk('incEscalate')?1:.4;
+  $('exitRow').style.opacity=chk('incExit')?1:.4;
+  $('reserveCapRow').style.opacity=chk('incReserveCap')?1:.4;
+  $('rentLateRow').style.opacity=chk('incRentLate')?1:.4;
   $('lateRow').style.opacity=chk('incLate')?1:.4;
 
   /* ---- PURCHASE AGREEMENT ---- */
@@ -297,7 +367,7 @@ function render(){
       const n=Math.round(term*freq);
       for(let k=1;k<=n;k++){
         const i=bal*r; let pr=pay-i;
-        if(k===n||pr>bal){pr=bal;} // final payment clears balance
+        if(k===n||pr>bal){pr=bal;}
         bal-=pr; totI+=i; totP+=pr;
         rows+=`<tr><td>${k}</td><td>$${money(pay)}</td><td>$${money(pr)}</td><td>$${money(i)}</td><td>$${money(Math.max(bal,0))}</td></tr>`;
         if(bal<=0.005)break;
@@ -320,7 +390,6 @@ function render(){
     }
   }
 
-  // Payment paragraph: financed (installments) vs cash (paid in full)
   const payPara = financed
     ? `<p>That Purchaser has offered to purchase such personal property and has tendered <span class="fill">$${money(down)}</span> by certified funds payable to Seller as a down payment on such purchase, the receipt of which is hereby acknowledged by Seller. The balance of the purchase price or <span class="fill">$${money0(balance)}</span> shall be paid in installments of <span class="fill">$${money(pay)}</span> by ${esc(v('payMethod'))}, with interest accruing on the remaining unpaid balance at the rate of <span class="fill">${rate||'____'}</span> per cent per annum. This loan is a <span class="fill">${term}-year</span> note. There is no penalty for prepayment to the Seller of the balance remaining due.</p>`
     : `<p>That Purchaser has offered to purchase such personal property and has tendered the full purchase price of <span class="fill">$${money(price)}</span> by certified funds payable to Seller as payment in full, the receipt of which is hereby acknowledged by Seller. No balance remains owing and no financing is extended by Seller in connection with this purchase.</p>`;
@@ -353,12 +422,40 @@ function render(){
   `;
 
   /* ---- LEASE ---- */
-  const escClause = escOn ? `<h3>4A. Annual Rent Escalation</h3>
-    <p>Beginning on the first anniversary of the effective date and on each anniversary thereafter, the ${escApplies} shall automatically increase by <span class="fill">${escPct}%</span> over the amount in effect during the preceding year, to account for inflation and rising operating costs. This automatic adjustment is in addition to, and does not limit, the Park Owner's right to adjust rent under Section 4 upon ${notice} days' written notice.</p>`:'';
+  // §2 optional clauses
+  const termProtectClause = chk('incTermProtect')
+    ? ` Notwithstanding the month-to-month nature of this Agreement, Park Owner shall not voluntarily terminate this Agreement while Homeowner is current on all amounts owed to Park Owner, the Seller, or their affiliates, except for cause and upon not less than ${notice} days' prior written notice to Homeowner, or such longer period as applicable law may require.`
+    : '';
+  const exitClause = chk('incExit')
+    ? ` Notwithstanding anything in this Agreement to the contrary, in the event Park Owner sells, transfers, or otherwise disposes of the Park, or ceases to operate the Park as a mobile home community, Park Owner or its successor may terminate this Agreement upon not less than ${exitDays} days' prior written notice to Homeowner, whether or not Homeowner is then current on any amount owed. If a balance is then owed to Seller or its affiliates, Homeowner may, at its option, prepay that balance without penalty or relocate the mobile home, and Park Owner shall cooperate reasonably in any such relocation or payoff.`
+    : '';
+
+  // §4 / §5 optional 33% cap
+  const rentCapTxt = chk('incRentCap')
+    ? `; provided, however, in no event shall the lot rent increase to an amount greater than the lot rent then being paid by at least thirty-three percent (33%) of the homeowners in the Park`
+    : '';
+  const feeCapTxt = chk('incRentCap')
+    ? `; provided, however, in no event shall the consulting fee increase to an amount greater than the consulting fee then being paid by at least thirty-three percent (33%) of the homeowners in the Park`
+    : '';
+
+  const escClause = chk('incEscalate') ? `<h3>4A. Annual Rent Escalation</h3>
+    <p>Beginning on the first anniversary of the effective date and on each anniversary thereafter, the ${v('escApplies')} shall automatically increase by <span class="fill">${num('escPct')}%</span> over the amount in effect during the preceding year. This automatic adjustment is in addition to, and does not limit, the Park Owner's right to adjust rent under Section 4 upon ${notice} days' written notice.</p>`:'';
 
   const rentLateClause = chk('incRentLate') ? `<h3>4B. Late Payment of Rent</h3>
     <p>If any lot rent or consulting fee is not received within <span class="fill">${num('rentGrace')||5}</span> days of its due date, Homeowner shall pay a late charge of <span class="fill">$${money0(num('rentLateFee'))}</span>. Repeated or continued late payment shall constitute cause for termination under Section 9. Any late charge shall not exceed the maximum permitted by applicable law.</p>`:'';
-  $('rentLateRow').style.opacity=chk('incRentLate')?1:.4;
+
+  // §10 indemnification
+  const indemClause = chk('incMutualIndem')
+    ? `<p>Homeowner agrees to indemnify and hold harmless the Park Owner from any loss, damage, or liability arising out of Homeowner's use of the Lot or any violation of this Agreement or Park rules and regulations. Park Owner shall indemnify and hold harmless Homeowner from any loss, damage, or liability arising out of the negligence or willful misconduct of Park Owner or Park Owner's agents, employees, contractors or representatives. Each party shall bear its own costs of defense.</p>`
+    : `<p>Homeowner agrees to indemnify and hold harmless the Park Owner from any loss, damage, or liability arising from Homeowner's use of the Lot or any violation of this Agreement or Park rules and regulations.</p>`;
+
+  // §13(d) renter/subtenant
+  const renterClause = chk('incSubletRight')
+    ? `<p>(d) <b>Renter and Subtenant Approval:</b> Homeowner shall have the right to lease, sublease, license or otherwise permit the occupancy of the mobile home to any third party (a “Subtenant”), with Park Owner's consent, which consent shall not be unreasonably withheld, provided that the proposed Subtenant (i) first satisfies the Park Owner's standard screening criteria, including background, credit and income verification applied on a uniform and non-discriminatory basis, (ii) uses the home for lawful residential purposes, and (iii) agrees in writing to comply with the Park's rules and regulations. Any sublease shall not constitute an assignment or transfer of this Agreement, and Homeowner shall retain all rights under this Lease.</p>`
+    : `<p>(d) <b>Renter and Subtenant Approval:</b> Any renter, tenant, or subtenant occupying the mobile home must first be approved by the Park Owner. The Park Owner's consent shall not be unreasonably withheld, provided the proposed occupant first satisfies the Park Owner's standard screening criteria — including background, credit and income verification applied on a uniform and non-discriminatory basis — and agrees in writing to comply with the Park's rules and regulations.</p>`;
+
+  // §13(e) reserve (optional aggregate cap)
+  const reserveCapTxt = chk('incReserveCap') ? ` (up to a maximum of $${money(num('reserveCap'))} (${dollarsWords(num('reserveCap'))}) in the aggregate)` : '';
 
   const lease = `
     <h2>MOBILE HOME PARK LAND LEASE AGREEMENT</h2>
@@ -368,21 +465,21 @@ function render(){
        <b>Lot Number:</b> <span class="fill">${esc(v('lot'))||'____________'}</span> (hereinafter referred to as "Lot")</p>
 
     <h3>1. Premises</h3>
-    <p>Park Owner agrees to lease to Homeowner, and Homeowner agrees to lease from Park Owner, the parcel of land identified as Lot <span class="fill">${esc(v('lot'))||'________'}</span> in ${parkName} (the “Park”). This lease entitles the Homeowner to place and maintain a mobile home on the designated Lot within the Park.</p>
+    <p>Park Owner agrees to lease to Homeowner, and Homeowner agrees to lease from Park Owner, the parcel of land identified as Lot <span class="fill">${esc(v('lot'))||'________'}</span> in ${parkName} (the “Park”). This lease entitles the Homeowner to place and maintain a mobile home on the designated Lot within the Park. The Lot consists solely of the land comprising the designated home site, together with Homeowner's right to use such common areas, roads and facilities of the Park as Park Owner may from time to time designate for the common use of Park residents, subject to this Lease and the rules and regulations of the Park.</p>
 
     <h3>2. Term</h3>
-    <p>This Agreement shall be effective as of the date above and shall continue in effect on a month‑to‑month basis, unless terminated by either party in accordance with the terms herein.</p>
+    <p>This Agreement shall be effective as of the date above and shall continue in effect on a month‑to‑month basis, unless terminated by either party in accordance with the terms herein.${termProtectClause}${exitClause}</p>
 
     <h3>3. Lot Rent</h3>
     <p>Homeowner agrees to pay to Park Owner monthly rent in the amount of <span class="fill">$${money(num('rent'))}</span> (${dollarsWords(num('rent'))}) for the use of the Lot. This amount is subject to change as specified below.</p>
 
     <h3>4. Rent Adjustment</h3>
-    <p>The monthly lot rent is <span class="fill">$${money(num('rent'))}</span>. Any increase in rent shall be effective ${notice} days following written notice from Park Owner to Homeowner.</p>
+    <p>The monthly lot rent is <span class="fill">$${money(num('rent'))}</span>. Any increase in rent shall be effective ${notice} days following written notice from Park Owner to Homeowner${rentCapTxt}.</p>
     ${escClause}
     ${rentLateClause}
 
     <h3>5. Monthly Consulting Fee</h3>
-    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(num('consult'))}</span> (${dollarsWords(num('consult'))}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintains an interest in the mobile home park land owned by ${parkOwner} or any of its affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days' written notice to the Homeowner.</p>
+    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(num('consult'))}</span> (${dollarsWords(num('consult'))}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintains an interest in the mobile home park land owned by ${parkOwner} or any of its affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days' written notice to the Homeowner${feeCapTxt}.</p>
 
     <h3>6. Park Rules and Regulations</h3>
     <p>Both the Homeowner and the Park Owner agree to comply with all rules and regulations of the Park, as they may be amended from time to time. These rules and regulations will be provided to the Homeowner upon execution of this Agreement and may be updated with reasonable notice. Homeowner is responsible for ensuring that their guests, tenants, and any other occupants of the mobile home also comply with these rules.</p>
@@ -394,10 +491,10 @@ function render(){
     <p>The Homeowner is responsible for maintaining the mobile home in a safe and sanitary condition, including all plumbing, electrical, and mechanical systems within the mobile home. The Park Owner shall maintain the common areas of the Park, including roads, utilities, and any shared amenities, unless otherwise agreed.</p>
 
     <h3>9. Termination</h3>
-    <p>Either party may terminate this Agreement by providing ${notice} days' written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws. Homeowner shall not remove the mobile home from the Lot while any amount is owed to Park Owner or its affiliates without Park Owner's consent.</p>
+    <p>${chk('incTermProtect')?'Subject to the terms set forth in Section 2 hereof, either':'Either'} party may terminate this Agreement by providing ${notice} days' written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws. Homeowner shall not remove the mobile home from the Lot while any amount is owed to Park Owner or its affiliates without Park Owner's consent.</p>
 
     <h3>10. Indemnification</h3>
-    <p>Homeowner agrees to indemnify and hold harmless the Park Owner from any loss, damage, or liability arising from Homeowner's use of the Lot or any violation of this Agreement or Park rules and regulations.</p>
+    ${indemClause}
 
     <h3>11. Governing Law</h3>
     <p>This Agreement shall be governed by and construed in accordance with the laws of the state of <span class="fill">${state}</span>, without regard to its conflict of laws principles.</p>
@@ -406,14 +503,14 @@ function render(){
     <p>This Agreement constitutes the entire understanding between the parties and supersedes any prior negotiations, understandings, or agreements, whether written or oral, between the parties regarding the subject matter hereof.</p>
 
     <h3>13. Right of First Refusal, Sale of Mobile Home, and Renter Approval</h3>
-    <p>(a) <b>Right of First Refusal:</b> In the event the Homeowner wishes to sell the mobile home, the Park Owner shall have the first right of refusal to purchase the mobile home. The Homeowner must provide written notice to the Park Owner of the intent to sell, including the terms of the sale, and the Park Owner shall have ${rofr} days to respond with an offer to purchase the mobile home on the same terms. If the Park Owner does not exercise the right of first refusal, the Homeowner may proceed with the sale to a third party.</p>
-    <p>(b) <b>Park Owner’s Right to Block Sale:</b> The Park Owner may block the sale of the mobile home if the potential buyer is deemed unfit to purchase the home or fails to meet the qualifications for residency in the Park, including but not limited to the buyer’s ability to comply with the Park’s rules and regulations. The Park Owner shall not exercise this right unreasonably.</p>
+    <p>(a) <b>Right of First Refusal:</b> In the event the Homeowner wishes to sell the mobile home, the Park Owner shall have the first right of refusal to purchase the mobile home. The Homeowner must provide written notice to the Park Owner of the intent to sell, including the terms of the sale, and the Park Owner shall have ${rofr} days to respond with an offer to purchase the mobile home on the same terms, and must close within thirty (30) days of such notice. If the Park Owner does not exercise the right of first refusal, or fails to close within said thirty (30) days, the Homeowner may proceed with the sale to a third party.</p>
+    <p>(b) <b>Park Owner’s Consent to Sale:</b> Where the mobile home will remain on the Lot, the Park Owner's consent is required for the sale of the mobile home. Such consent shall not be unreasonably withheld, provided the proposed purchaser meets the qualifications for residency in the Park, including but not limited to the buyer's ability to comply with the Park's rules and regulations.</p>
     <p>(c) <b>Outstanding Debt on Home:</b> Any sale of the mobile home by the Homeowner is contingent upon the payment in full of any existing debt or financial obligations owed on the mobile home. The Homeowner must ensure that all such debts are satisfied prior to completing the sale.</p>
-    <p>(d) <b>Renter Approval:</b> Any new renter or tenant selected by the Homeowner to occupy the mobile home must be approved by the Park Owner. The Park Owner may approve or reject any potential tenant at their sole discretion unless the Park Owner has expressly granted written consent for an exception.</p>
-    <p>(e) <b>Reserve Fund:</b> The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(num('reserve'))}</span> (${dollarsWords(num('reserve'))}) for each mobile home owned by Homeowner in the Park to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund’s availability upon request.</p>
+    ${renterClause}
+    <p>(e) <b>Reserve Fund:</b> The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(num('reserve'))}</span> (${dollarsWords(num('reserve'))}) for each mobile home owned by Homeowner in the Park${reserveCapTxt} to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund’s availability upon request.</p>
 
     <h3>14. Notices</h3>
-    <p>Any notices required to be given under this Agreement shall be delivered in writing. Notices to the Park Owner must be delivered in writing at least ${notice} days prior to any proposed action, such as termination, rent adjustment, or other significant changes. Notices to the Homeowner may be delivered by mail, in person, or by electronic means if agreed upon by both parties.</p>
+    <p>Any notices required to be given under this Agreement shall be delivered in writing. Notices to the Park Owner must be delivered in writing at least ${notice} days prior to any proposed action, such as termination, rent adjustment, or other significant changes. Notices to the Homeowner may be delivered by mail, in person, overnight courier, or by electronic means if agreed upon by both parties.</p>
 
     <h3>15. Counterparts and Electronic Signatures</h3>
     <p>This Agreement may be executed in counterparts, each of which shall constitute an original and all of which together shall constitute one agreement. Electronic and PDF signatures shall be deemed originals and shall be binding upon the parties to the fullest extent permitted by law.</p>
@@ -450,9 +547,20 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
   t.classList.add('on'); docMode=t.dataset.doc; render();
 }));
-[...FIELDS,...CHECKS].forEach(id=>{$(id).addEventListener('input',render);$(id).addEventListener('change',render);});
+
+$('preset').addEventListener('change',()=>{ applyPreset($('preset').value); render(); });
+
+[...FIELDS,...CHECKS].forEach(id=>{
+  const el=$(id);
+  const handler=()=>{
+    if(!applyingPreset && CONCESSIONS.includes(id)) $('preset').value='custom';
+    render();
+  };
+  el.addEventListener('input',handler); el.addEventListener('change',handler);
+});
 
 loadState();
+if(!localStorage.getItem('mhgen4')) applyPreset('standard'); // first run = Standard
 render();
 </script>
 </body>
