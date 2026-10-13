@@ -116,6 +116,28 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     return pack(terms, list, which);
   }, [chosen, terms, which]);
 
+  /**
+   * What the browser calls this page while the papers are up.
+   *
+   * Chrome and Safari print the page's title and its URL into the page
+   * margin unless the tick box is cleared, and a contract headed
+   * `file:///Users/.../Downloads/mobilehomedocumentgenerator (4).html`
+   * does not look like a contract. The tick box is the real answer --
+   * there is no CSS for it, and the one trick that works, a zero page
+   * margin, takes the top and bottom margin off every continuation page
+   * with it. But a title that reads as the document costs nothing and
+   * is the difference between an odd header and an embarrassing one.
+   */
+  useEffect(() => {
+    if (!papers || !owner) return;
+    const was = document.title;
+    const what = which === "purchase" ? "Purchase Agreement"
+      : which === "lease" ? "Park Land Lease"
+      : "Purchase Agreement and Park Land Lease";
+    document.title = `${what} — ${terms.buyer || owner.name}`;
+    return () => { document.title = was; };
+  }, [papers, owner, which, terms.buyer]);
+
   const set = (change: Partial<Terms>) => setTerms((was) => ({ ...was, ...change }));
   const num = (v: string) => (v === "" ? 0 : Number(v));
 

@@ -285,6 +285,22 @@ The owner's own page (`/owners/<id>`) is where this lives, reached by
 clicking the owner's name on a lot card: every home they hold across
 every park, what they are charged each month, and the papers.
 
+**The header at the top of the printed page is the browser**, not the
+document -- Chrome and Safari print the page's title and address into
+the page margin unless the tick box is cleared. There is no CSS for it.
+The one trick that works, `@page { margin: 0 }`, leaves the browser no
+margin to draw in and takes the top and bottom margin off every
+continuation page with it: measured at 14 pages against 10 on the same
+two agreements, which is a page 2 whose text starts at the paper's edge.
+Not a trade worth making on a contract.
+
+So the margin stays, the print dialog's **Headers and footers** is the
+answer (each browser remembers it), and both the app and the generator
+set `document.title` to the document's own name -- because the header
+shows the title beside the address, and a contract headed
+`file:///Users/.../Downloads/mobilehomedocumentgenerator (4).html` is the
+sort of thing that loses a deal.
+
 ### A line drawn by eye is not the deed line
 
 Above the map, over a boundary the owner had drawn by hand with the

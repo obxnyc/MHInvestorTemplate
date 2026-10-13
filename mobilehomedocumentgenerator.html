@@ -174,6 +174,16 @@
     </fieldset>
 
     <details class="note">
+      <summary>🖨 The header at the top of the printed page</summary>
+      That line showing a file path or a web address is your browser, not the
+      document. In Chrome's print window open <b>More settings</b> and clear
+      <b>Headers and footers</b>; in Safari clear <b>Print headers and footers</b>.
+      Each browser remembers it. There is no way to switch it off from inside
+      the page: the only CSS that does also strips the top and bottom margin
+      from every page after the first.
+    </details>
+
+    <details class="note">
       <summary>⚠ Before you use these — please read</summary>
       These templates reproduce your existing wording and are a strong starting point, but they are not legal advice. Seller‑financing a home can trigger federal/state rules (SAFE Act, Dodd‑Frank) when the buyer is an individual consumer; investor‑to‑entity deals are usually treated differently. Have a local attorney review once before you reuse. See <b>SUGGESTIONS.md</b> in this project for the full list of gaps I found in the originals.
     </details>
@@ -417,6 +427,16 @@ function render(){
     (showP?`<div class="doc-sec">${purchase}</div>`:'')+
     (showP&&showL?`<div class="pagebreak"></div>`:'')+
     (showL?`<div class="doc-sec">${lease}</div>`:'');
+
+  /* What the browser prints into the page margin when the "Headers and
+     footers" tick box is left on. It cannot be turned off from here --
+     the only CSS that does it, a zero page margin, also strips the top
+     and bottom margin from every continuation page. A title that reads
+     as the document is the next best thing to a file path in Downloads. */
+  document.title = (docMode==='purchase' ? 'Purchase Agreement'
+    : docMode==='lease' ? 'Park Land Lease'
+    : 'Purchase Agreement and Park Land Lease')
+    + (v('buyer') ? ' — ' + v('buyer') : '');
 
   saveState();
 }

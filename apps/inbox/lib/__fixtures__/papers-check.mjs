@@ -190,6 +190,45 @@ t("and an empty date leaves a line", P.longDate("") === "________________");
     !html.includes("Security Interest"));
 }
 
+// --- the header the browser prints ------------------------------------
+//
+// A contract headed with a file path out of somebody's Downloads folder
+// does not look like a contract. It is the browser's doing and there is
+// no CSS for it: the one trick that works, `@page{margin:0}`, also takes
+// the top and bottom margin off every continuation page -- measured at
+// 14 pages with the margin against 10 without, which is a two-page
+// agreement whose second page starts at the paper's edge.
+//
+// So the page may not try it, and both the app and the generator have to
+// name the document, because a title is what the header shows beside the
+// address.
+const screen = readFileSync(join(here, "../components/OwnerScreen.tsx"), "utf8");
+const css = readFileSync(join(here, "..", "app", "globals.css"), "utf8");
+
+t("the printed page keeps its margins on every page",
+  /@page\{size:letter;margin:0\.8in\}/.test(css)
+  && !/@page\s*\{[^}]*margin:\s*0[;}]/.test(css),
+  "A zero page margin hides the browser's header and takes the top and "
+  + "bottom margin off every page after the first with it.");
+
+t("the app names the document it is printing",
+  /document\.title = `\$\{what\} — \$\{terms\.buyer \|\| owner\.name\}`;/.test(screen),
+  "The header shows the page title beside the address, and `Owner` is "
+  + "no better than a file path.");
+
+t("and puts the old title back when the papers close",
+  /return \(\) => \{ document\.title = was; \};/.test(screen));
+
+t("the generator names it too",
+  /document\.title = \(docMode==='purchase' \? 'Purchase Agreement'/.test(source),
+  "It is still the thing being printed from.");
+
+t("and says where the header comes from",
+  /Headers and footers/.test(source)
+  && /your browser, not the\s*\n?\s*document/.test(source),
+  "Somebody looking at a file path on a contract needs to be told it is "
+  + "the print dialog, not something wrong with the document.");
+
 let failed = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);
