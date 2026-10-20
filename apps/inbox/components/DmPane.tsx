@@ -107,22 +107,47 @@ export default function DmPane(
     return out;
   }
 
+  /**
+   * The message, sent -- and the answer, read.
+   *
+   * This used to fire and forget. Whatever came back, the words were
+   * cleared and the picture was cleared, and a refusal looked exactly
+   * like a success: the composer emptied and no message appeared.
+   * "I hit enter and it goes away and nothing happens."
+   *
+   * So nothing is thrown away until the server has said it took it, and
+   * what it says is put on screen. The route already explains itself --
+   * which attachment is not this thread's, that ten is the limit, that
+   * the attachment could not be kept because a migration has not been
+   * run. All of that was being read and discarded.
+   */
   async function send(e: React.FormEvent) {
     e.preventDefault();
     // A screenshot with no words is a whole message.
     if ((!text.trim() && !files.items.length) || files.busy > 0) return;
     setBusy(true);
+    files.setProblem(null);
     const body = text;
     const media = files.items.map((f) => f.path);
-    setText("");
-    await fetch(`/api/team/${id}`, {
+    const res = await fetch(`/api/team/${id}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body, media }),
-    });
-    // Cleared only once it has gone. Losing the picture along with the message
-    // would mean finding it again.
-    files.clear();
+    }).catch(() => null);
+    const out = await res?.json().catch(() => ({})) ?? {};
     setBusy(false);
+
+    if (!res || !res.ok) {
+      // Kept, both of them. Losing the words AND the picture to a
+      // failure means typing it again and finding it again.
+      files.setProblem(out.error ?? "That didn't send. Try again.");
+      return;
+    }
+
+    // It went, so the composer empties -- but if it went without the
+    // attachment, that is said rather than swallowed.
+    setText("");
+    files.clear();
+    if (out.warning) files.setProblem(out.warning);
     await load();
     refreshList();
   }

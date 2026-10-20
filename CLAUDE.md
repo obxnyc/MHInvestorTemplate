@@ -364,6 +364,38 @@ pass on the fault. A check that cannot tell two fixes apart cannot tell
 you which one broke -- so the one that tests the key asks it with
 nobody working, and the one that tests the guard asks it with somebody.
 
+### A send that failed must not look like a send that worked
+
+Dragging a photo into a team chat and pressing enter emptied the
+composer, dropped the thumbnail, and showed no message. "It goes away
+and nothing happens."
+
+The route was careful and said exactly what was wrong -- which
+attachment is not this thread's, that ten is the limit, that the
+attachment could not be kept because migration 027 has not been run.
+**The send fired the request and never read the answer.** It cleared the
+words and the picture whatever came back, so a refusal and a success
+looked identical from the chair.
+
+Underneath it, a worse one. The route's fallback for the missing column
+drops the attachment and inserts the words -- and a picture with no
+words is a row with an empty body: a message nobody can see, reported
+as sent. It now refuses instead, naming the migration.
+
+Nothing is cleared until the server says it took it, and what it says
+goes on screen. **The same shape as the park layout in a debounce and
+the Saving…/Saved line: silence and success look identical, and the one
+time they are not the same is the time it matters.**
+
+`apps/inbox/lib/__fixtures__/send-check.mjs` has two halves and they are
+not equal. The first states the contract runnably against a stand-in
+server -- but it is a MODEL of the composer, not the composer, and
+changing `DmPane` does not change it. Finding that out cost two guards
+that passed on the fault. **The teeth are the source rules**, and one of
+them checks ordering by position rather than by pattern, because a regex
+for "clears before the fetch" matched none of the ways that line can be
+written.
+
 ### An afternoon of work must not live in a debounce
 
 Fifty-nine homes put down one tap at a time is an afternoon, and the

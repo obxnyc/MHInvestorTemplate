@@ -122,6 +122,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   let lost = false;
   let { error } = await db.from("dm_messages").insert({ ...row, media_paths: paths });
   if (error && missingColumn(error)) {
+    // A picture with no words IS the message. Dropping the picture and
+    // keeping the words leaves an empty bubble nobody can see, which is
+    // indistinguishable from the send having silently failed -- and it
+    // is how "it goes away and nothing happens" looked from the outside.
+    if (!text) {
+      return NextResponse.json({
+        error: "That attachment can't be kept yet — migration 027 hasn't been"
+          + " run, so there is nowhere to record it. Send it with a line of"
+          + " text, or run the migration.",
+      }, { status: 400 });
+    }
     lost = paths.length > 0;
     ({ error } = await db.from("dm_messages").insert(row));
   }
