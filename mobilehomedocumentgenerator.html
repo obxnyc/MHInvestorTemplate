@@ -160,6 +160,11 @@
         <div><label>Notice period (days)</label><input type="number" id="notice" value="60" step="15"></div>
         <div><label>First‑refusal window (days)</label><input type="number" id="rofr" value="21" step="1"></div>
       </div>
+      <div class="row">
+        <div><label>Signature date — you <span class="hint">(Seller / Park Owner)</span></label><input type="date" id="sigDatePO"></div>
+        <div><label>Signature date — buyer <span class="hint">(Homeowner)</span></label><input type="date" id="sigDateHO"></div>
+      </div>
+      <div class="hint" style="margin:2px 0 6px">Leave blank to use the lease effective date (or a blank line on the purchase). Set a date to back‑date the signatures — it prints that date and, if e‑signing, skips the DocuSign auto‑date for that party so your date stays.</div>
     </fieldset>
 
     <fieldset data-scope="lease">
@@ -274,7 +279,7 @@ function payment(P,apr,yrs,freq){
 }
 
 /* ---------- state / persistence ---------- */
-const FIELDS=['preset','seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','exitDays','escPct','escApplies','reserveCap','rentGrace','rentLateFee','graceDays','lateFee'];
+const FIELDS=['preset','seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','sigDatePO','sigDateHO','exitDays','escPct','escApplies','reserveCap','rentGrace','rentLateFee','graceDays','lateFee'];
 const CHECKS=['incFinance','incAmort','incExit','incTermProtect','incRemovalReasonable','incEscalate','incRentCap','incSubletRight','incReserveCap','incRentLate','incLate','incSecurity','incInsure','incMutualIndem','incEsignTags','incNotary'];
 /* concession controls — changing any flips preset to Custom */
 const CONCESSIONS=['incExit','incTermProtect','incRemovalReasonable','incEscalate','incRentCap','incSubletRight','incReserveCap','rofr','reserve','exitDays','reserveCap'];
@@ -343,6 +348,14 @@ function render(){
   const exitDays=num('exitDays')||180;
   // DocuSign AutoPlace anchor tags (invisible light text in the PDF text layer)
   const eSig=(tok)=>chk('incEsignTags')?`<span style="font-size:6pt;color:#eeeeee">${tok}</span>`:'';
+  // Signature-date overrides (blank = lease effective date on the lease; blank line on the purchase)
+  const sigPOraw=v('sigDatePO'), sigHOraw=v('sigDateHO');
+  const dPOtag = sigPOraw?'':eSig('\\dPO\\');   // omit DocuSign date field when a date is typed in
+  const dHOtag = sigHOraw?'':eSig('\\dHO\\');
+  const leasePODate = sigPOraw?shortDate(sigPOraw):shortDate(v('lDate'));
+  const leaseHODate = sigHOraw?shortDate(sigHOraw):shortDate(v('lDate'));
+  const purPODate = sigPOraw?shortDate(sigPOraw):'__________';
+  const purHODate = sigHOraw?shortDate(sigHOraw):'__________';
 
   const financed=chk('incFinance');
   $('financeFields').style.display=financed?'':'none';
@@ -421,8 +434,8 @@ function render(){
     <p>Seller shall provide to Purchaser a fully executed and notarized bill of sale completely detailing the personal property being purchased which shall be delivered upon final payment to Seller, free and clear of all encumbrances, debts, liens, claims, and Seller has no knowledge of any legal impediment to sale of the personal property described above. If ownership of the personal property is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
     <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>SELLER:</b><div class="line">${eSig('\\s3\\')}</div>${seller}</div>
-      <div class="sig-block"><b>BUYER:</b><div class="line">${eSig('\\s4\\')}</div>${buyer} &nbsp; Date: __________ ${eSig('\\d4\\')}</div>
+      <div class="sig-block"><b>SELLER:</b><div class="line">${eSig('\\sPO\\')}</div>${seller} &nbsp; Date: ${purPODate} ${dPOtag}</div>
+      <div class="sig-block"><b>BUYER:</b><div class="line">${eSig('\\sHO\\')}</div>${buyer} &nbsp; Date: ${purHODate} ${dHOtag}</div>
     </div>
     ${amort}
     ${chk('incNotary')?notaryBlock('this Purchase Agreement'):''}
@@ -524,8 +537,8 @@ function render(){
 
     <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>Park Owner:</b><div class="line">${eSig('\\s1\\')}</div>Name: ${parkOwner}<br>Date: ${shortDate(v('lDate'))} ${eSig('\\d1\\')}</div>
-      <div class="sig-block"><b>Homeowner:</b><div class="line">${eSig('\\s2\\')}</div>Name: ${buyer}<br>Date: ${shortDate(v('lDate'))} ${eSig('\\d2\\')}</div>
+      <div class="sig-block"><b>Park Owner:</b><div class="line">${eSig('\\sPO\\')}</div>Name: ${parkOwner}<br>Date: ${leasePODate} ${dPOtag}</div>
+      <div class="sig-block"><b>Homeowner:</b><div class="line">${eSig('\\sHO\\')}</div>Name: ${buyer}<br>Date: ${leaseHODate} ${dHOtag}</div>
     </div>
     ${chk('incNotary')?notaryBlock('this Lease Agreement'):''}
   `;
