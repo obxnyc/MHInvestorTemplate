@@ -172,6 +172,8 @@
 
       <div class="check"><input type="checkbox" id="incTermProtect"><label for="incTermProtect"><span class="concession">Concession:</span> no termination of a paying homeowner <span class="hint">(except for cause)</span></label></div>
 
+      <div class="check"><input type="checkbox" id="incRemovalReasonable"><label for="incRemovalReasonable"><span class="concession">Concession:</span> consent to remove the home "not unreasonably withheld" <span class="hint">(§9)</span></label></div>
+
       <div class="check"><input type="checkbox" id="incEscalate"><label for="incEscalate">Annual rent escalation (fixed %/yr)</label></div>
       <div class="row" id="escRow">
         <div><label>Increase %/yr</label><input type="number" id="escPct" value="3" step="0.5"></div>
@@ -272,9 +274,9 @@ function payment(P,apr,yrs,freq){
 
 /* ---------- state / persistence ---------- */
 const FIELDS=['preset','seller','parkOwner','buyer','parkName','state','pDate','property','price','down','rate','term','freq','payMethod','amortDetail','lDate','lot','rent','consult','reserve','notice','rofr','exitDays','escPct','escApplies','reserveCap','rentGrace','rentLateFee','graceDays','lateFee'];
-const CHECKS=['incFinance','incAmort','incExit','incTermProtect','incEscalate','incRentCap','incSubletRight','incReserveCap','incRentLate','incLate','incSecurity','incInsure','incMutualIndem','incNotary'];
+const CHECKS=['incFinance','incAmort','incExit','incTermProtect','incRemovalReasonable','incEscalate','incRentCap','incSubletRight','incReserveCap','incRentLate','incLate','incSecurity','incInsure','incMutualIndem','incNotary'];
 /* concession controls — changing any flips preset to Custom */
-const CONCESSIONS=['incExit','incTermProtect','incEscalate','incRentCap','incSubletRight','incReserveCap','rofr','reserve','exitDays','reserveCap'];
+const CONCESSIONS=['incExit','incTermProtect','incRemovalReasonable','incEscalate','incRentCap','incSubletRight','incReserveCap','rofr','reserve','exitDays','reserveCap'];
 let docMode='both';
 let applyingPreset=false;
 
@@ -303,6 +305,7 @@ function applyPreset(name){
   if(name==='standard'){
     set('incExit',true);       num('exitDays',180);
     set('incTermProtect',false);
+    set('incRemovalReasonable',false);
     set('incEscalate',false);
     set('incRentCap',false);
     set('incSubletRight',false);
@@ -312,6 +315,7 @@ function applyPreset(name){
   }else if(name==='generous'){
     set('incExit',true);       num('exitDays',180);
     set('incTermProtect',true);
+    set('incRemovalReasonable',true);
     set('incEscalate',false);
     set('incRentCap',true);
     set('incSubletRight',true);
@@ -491,7 +495,7 @@ function render(){
     <p>The Homeowner is responsible for maintaining the mobile home in a safe and sanitary condition, including all plumbing, electrical, and mechanical systems within the mobile home. The Park Owner shall maintain the common areas of the Park, including roads, utilities, and any shared amenities, unless otherwise agreed.</p>
 
     <h3>9. Termination</h3>
-    <p>${chk('incTermProtect')?'Subject to the terms set forth in Section 2 hereof, either':'Either'} party may terminate this Agreement by providing ${notice} days' written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws. Homeowner shall not remove the mobile home from the Lot while any amount is owed to Park Owner or its affiliates without Park Owner's consent.</p>
+    <p>${chk('incTermProtect')?'Subject to the terms set forth in Section 2 hereof, either':'Either'} party may terminate this Agreement by providing ${notice} days' written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws. Homeowner shall not remove the mobile home from the Lot while any amount is owed to Park Owner or its affiliates without Park Owner's consent${chk('incRemovalReasonable')?', which consent shall not be unreasonably withheld':''}.</p>
 
     <h3>10. Indemnification</h3>
     ${indemClause}
