@@ -18,6 +18,22 @@ type Row = {
   owner: string | null; address: string | null; existing: boolean;
   groups: string[]; flags: string[];
 };
+/** What a pull of the maintenance requests came back with. */
+type Issues = {
+  ok: boolean;
+  dryRun: boolean;
+  found: number;
+  filed: number;
+  alreadyHad: number;
+  failed: number;
+  samples: {
+    id: string; title: string | null; description: string | null;
+    tenant: string | null; unit: string | null; property: string | null;
+    status: string | null;
+  }[];
+  error: string | null;
+};
+
 type Undone = {
   ok: boolean; dryRun: boolean; error?: string;
   units: { removed: number };
@@ -54,6 +70,8 @@ export default function RentManagerProbe() {
   const [pulling, setPulling] = useState<"" | "dry" | "real">("");
   const [undone, setUndone] = useState<Undone | null>(null);
   const [undoing, setUndoing] = useState<"" | "dry" | "real">("");
+  const [issues, setIssues] = useState<Issues | null>(null);
+  const [getting, setGetting] = useState<"" | "dry" | "real">("");
 
   async function run() {
     setBusy(true); setFailed(null); setOut(null); setCopied(false);
@@ -96,6 +114,30 @@ export default function RentManagerProbe() {
       setFailed((e as Error).message);
     } finally {
       setPulling("");
+    }
+  }
+
+  /**
+   * The maintenance requests tenants have already submitted.
+   *
+   * Separate from the portfolio import because it is a different cadence:
+   * the portfolio comes across once, and this wants running whenever
+   * somebody wants to know what has come in. Safe to run as often as you
+   * like -- an issue already filed is recognised and skipped.
+   */
+  async function getIssues(go: boolean) {
+    setGetting(go ? "real" : "dry"); setIssues(null); setFailed(null);
+    try {
+      const res = await fetch("/api/rentmanager/issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ go }),
+      });
+      setIssues(await res.json());
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally {
+      setGetting("");
     }
   }
 
@@ -203,6 +245,71 @@ export default function RentManagerProbe() {
           Around sixty requests, one at a time. Two or three minutes.
         </p>
       )}
+
+      {/* The thing a tenant actually did. Above the portfolio import
+          because it is the one somebody opens this page to do: the
+          requests exist, in Rent Manager, and nothing here has them. */}
+      <div className="rmpull">
+        <h3>Maintenance requests from Tenant Web Access</h3>
+        <div className="acts" style={{ justifyContent: "flex-start" }}>
+          <button className="btn" disabled={getting !== ""}
+                  onClick={() => void getIssues(false)}>
+            {getting === "dry" ? "Looking…" : "See what's there — changes nothing"}
+          </button>
+          {issues?.dryRun && issues.ok && issues.found > 0 && (
+            <button className="btn pri" disabled={getting !== ""}
+                    onClick={() => void getIssues(true)}>
+              {getting === "real" ? "Bringing them in…" : `Bring in all ${issues.found}`}
+            </button>
+          )}
+        </div>
+        <p className="hint">
+          When a tenant submits a request in Tenant Web Access, Rent Manager
+          records it and emails a notification. This asks Rent Manager
+          directly instead of waiting for that email, so a request cannot go
+          missing between a mail filter and a webhook. Everything already
+          submitted comes across the first time, and running it again brings
+          only what is new.
+        </p>
+
+        {issues && !issues.ok && (
+          <p className="err">{issues.error ?? "Rent Manager would not answer."}</p>
+        )}
+        {issues?.ok && issues.found === 0 && (
+          <p className="hint">
+            Rent Manager answered, and has no service issues on this account at
+            all. If tenants have been submitting them, they are going somewhere
+            else — check that Tenant Web Access is pointed at this company.
+          </p>
+        )}
+        {issues?.ok && issues.found > 0 && (
+          <>
+            <p className="hint">
+              <strong>{issues.found} found.</strong>{" "}
+              {issues.dryRun
+                ? "Nothing written yet."
+                : `${issues.filed} brought in, ${issues.alreadyHad} already here`
+                  + `${issues.failed ? `, ${issues.failed} could not be` : ""}.`}
+            </p>
+            <ul className="rmlist">
+              {issues.samples.map((i) => (
+                <li key={i.id}>
+                  <strong>{[i.property, i.unit && `Lot ${i.unit}`]
+                    .filter(Boolean).join(" ") || "Somewhere"}</strong>
+                  {" — "}{i.title || i.description || "no description"}
+                  {i.tenant && <span className="dim"> · {i.tenant}</span>}
+                  {i.status && <span className="dim"> · {i.status}</span>}
+                </li>
+              ))}
+            </ul>
+            {issues.found > issues.samples.length && (
+              <p className="hint">
+                …and {issues.found - issues.samples.length} more.
+              </p>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Always here, not only after somebody has just pressed the test.
           Gating it on that meant the whole import disappeared the moment the

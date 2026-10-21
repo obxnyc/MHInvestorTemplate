@@ -364,6 +364,49 @@ pass on the fault. A check that cannot tell two fixes apart cannot tell
 you which one broke -- so the one that tests the key asks it with
 nobody working, and the one that tests the guard asks it with somebody.
 
+### Ask for the thing, do not wait to be told about it
+
+Tenants had been submitting maintenance requests in Rent Manager's
+Tenant Web Access for weeks and none of them reached the inbox.
+
+The email path was built and is correct -- `parseRentManager` reads the
+TWA notification, and `routeEmail` recognises it three ways (the
+`rentmanager.com` sender, the "submitted from TWA" subject, and
+"submitted via TWA" in the body). I suspected that path twice before
+reading it, and both times it was already right.
+
+The path is just long: Rent Manager sends a notification, a Gmail
+filter forwards it, Postmark receives it, a webhook reaches here. A
+request can fall down silently at any of the four, and nothing says so
+until a tenant rings up.
+
+**The issue itself never falls down. It is in Rent Manager, which is
+where the tenant put it.** `/ServiceManagerIssues` is an endpoint the
+probe has always been able to reach, and nothing ever fetched it --
+it appeared twice in the codebase and both were diagnostics. So
+`apps/inbox/lib/rm-issues.ts` asks for them. It backfills everything
+already submitted, and re-running is safe because `ingest` refuses an
+`external_id` it has seen.
+
+The setup page at https://mh-investor-template.vercel.app/setup already
+diagnoses the email half precisely -- including which Postmark status
+means which failure -- so the answer to "is the forward working" was
+always one page away. Read it before theorising.
+
+**Field names from this account are a hypothesis, and the code says so
+out loud.** Rent Manager Express, docs unreachable, no credentials on
+this machine. So every field is read through `pick`, which tries the
+spellings rmAPI is known to use, and the result reports BOTH the record's
+real field names and which spelling answered for each thing. The preview
+button is what settles it. A guess that reports what it saw can be
+corrected in one round; a guess that fails silently cannot be corrected
+at all.
+
+One guard worth keeping: an empty field must not be reported as the one
+that answered. `text()` already nulls the value, so the only thing that
+goes wrong without the empty-string check in `pick` is the MAP -- and
+the map is the entire diagnosis when a field comes back missing.
+
 ### Run the migration against a real Postgres, do not read it
 
 The photo in the team chat was not migration 027 and was not the
