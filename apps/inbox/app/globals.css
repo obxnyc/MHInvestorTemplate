@@ -2670,10 +2670,17 @@ a.metric:hover{border-color:var(--accent)}
    found this at 900px, where nothing about the markup looks wrong. */
 .omni{position:relative;flex:1 1 14rem;min-width:10rem;max-width:26rem;
   margin-left:1rem}
-.omnibox{width:100%;min-width:0;min-height:2.4rem;padding:.45rem .7rem;
+.omnibox{width:100%;min-width:0;min-height:2.4rem;
+  /* Left padding clears the magnifier. Written in the same unit the icon is
+     positioned in, so moving one moves the other. */
+  padding:.45rem .7rem .45rem 2.35rem;
   border:1px solid var(--hair);border-radius:10px;background:var(--sunk);
   color:var(--ink);font:inherit;font-size:.9rem}
-.omnibox::placeholder{color:var(--muted)}
+.omnibox::placeholder{color:var(--muted);font-style:italic}
+
+/* Decoration, and it must never eat a press meant for the box behind it. */
+.omniglass{position:absolute;left:.75rem;top:50%;transform:translateY(-50%);
+  width:1.05rem;height:1.05rem;color:var(--muted);pointer-events:none;z-index:1}
 .omnibox:focus{outline:2px solid var(--accent);outline-offset:1px;
   background:var(--card)}
 /* The browser's own clear button on a search input sits on top of the text

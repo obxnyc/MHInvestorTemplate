@@ -151,12 +151,21 @@ export default function OmniSearch() {
 
   return (
     <div className="omni" ref={wrap}>
+      {/* The magnifier is decoration, not a control: the input beside it is
+          already labelled, and a second thing for a screen reader to
+          announce is noise. */}
+      <svg className="omniglass" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor"
+                strokeWidth="2" />
+        <path d="M12.8 12.8 L17 17" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" />
+      </svg>
       <input
         ref={box}
         className="omnibox"
         type="search"
         value={q}
-        placeholder="Search, or do a sum"
+        placeholder="Command Launch"
         aria-label="Search everything"
         autoComplete="off"
         onFocus={() => setOpen(true)}

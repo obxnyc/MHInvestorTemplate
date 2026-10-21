@@ -335,6 +335,10 @@ const header = `<header class="apphead">
       background:var(--sunk);border-radius:8px"></span>
     <span class="brandname">Larabee Homes</span></a>
   <div class="omni">
+    <svg class="omniglass" viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+      <path d="M12.8 12.8 L17 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+    </svg>
     <input class="omnibox" type="search" value="cross crk" aria-label="Search everything">
     <div class="omnipanel" role="listbox">
       <div class="omnisum"><span class="omnisumq">775 * 12</span>
@@ -454,10 +458,28 @@ const clockedout = `<main class="tsheet">
   </section>
 </main>`;
 
+/* The box as everybody sees it most of the time: empty, with the magnifier
+ * and the placeholder. The header fixture above has text in it, so the
+ * placeholder state was never drawn. */
+const restingBar = `<header class="apphead">
+  <a href="#" class="brandmark"><span class="brandname">Larabee Homes</span></a>
+  <div class="omni">
+    <svg class="omniglass" viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+      <path d="M12.8 12.8 L17 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+    </svg>
+    <input class="omnibox" type="search" placeholder="Command Launch"
+           aria-label="Search everything">
+  </div>
+  <nav class="topnav" aria-label="Main"><a href="#" class="on">Home</a></nav>
+  <span class="av">AP</span>
+</header>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page)">
 ${header}
+<div style="margin-top:22rem">${restingBar}</div>
 <div style="padding:1rem">
 <div class="parkmain withcard">
   <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
