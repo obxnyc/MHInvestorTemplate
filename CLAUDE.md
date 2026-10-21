@@ -106,6 +106,32 @@ The site deploys from `main`. Pushing the feature branch alone changes nothing
 the owner can see; the merge is what ships it. Standing permission to merge
 `claude/twilio-shared-number-property-4i3yu1` into `main`.
 
+**A merge is not a deployment.** Vercel builds when GitHub's webhook tells it
+to, and that webhook does not always arrive -- during a GitHub outage it does
+not arrive at all. Eleven commits sat on `main` through a whole session while
+the live site served a build from fourteen hours earlier, and every screen
+written in that session was a 404 nobody had looked at.
+
+Nothing about that is visible from here: this machine cannot reach
+mh-investor-template.vercel.app, so "I merged it" is the last thing Claude can
+honestly say about whether something shipped.
+
+So **before telling the owner to go and look at a new screen, ask them for**
+https://mh-investor-template.vercel.app/api/whoami **and compare the commit to
+`git log origin/main -1`.** That page exists for exactly this and it was in
+this file the whole time -- three rounds were spent on "it is probably still
+building" and "it is probably your browser" when one link would have answered
+it in the first.
+
+When they do not match, the fix is **Create Deployment** in the left sidebar
+of https://vercel.com/larabee-inbox/mh-investor-template/deployments, branch
+`main`. It builds what is actually on the branch and owes nothing to the
+webhook.
+
+The general shape, and it is the oldest one in this file: **silence and
+success look identical.** A merge that shipped and a merge that went nowhere
+are the same thing on this end. Ask the deployment which it was.
+
 ## Instructions
 
 Short. One task at a time, not a numbered plan with branches in it.
