@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { toE164, publicBase } from "@/lib/twilio";
 import { evaluate, declineMessage, type Answers, type RuleSet } from "@/lib/prequal";
 import { pushToTeam } from "@/lib/push";
+import { openInquiry, knownPlaces } from "@/lib/inquiry";
 import { sendSms, sendEmail } from "@/lib/notify";
 
 export const runtime = "nodejs";
@@ -107,6 +108,26 @@ export async function POST(req: Request) {
     reason_codes: result.reasonCodes,
     booking_token: token,
   }).select("id").single();
+
+  // Somebody who came straight to the form may have no inquiry on file, and
+  // one who rang first already has one. Either way this is the same person
+  // still looking, so the record gets the lot they chose and the fact that
+  // they applied rather than a second row beside the first.
+  //
+  // Nothing is read out of the form's own answers. They are income, credit
+  // and rental history -- the prequalification inputs -- and none of them is
+  // a stated preference. The lot is the one thing here that is.
+  try {
+    await openInquiry(db, {
+      contactId: contact.id,
+      source: "prequal form",
+      unitId: unit.id,
+      text: typeof body.notes === "string" ? body.notes : "",
+      places: await knownPlaces(db),
+    });
+  } catch (e) {
+    console.error("prequal could not open an inquiry", { contact: contact.id, e });
+  }
 
   const criteriaUrl = `${publicBase(req)}/criteria`;
 

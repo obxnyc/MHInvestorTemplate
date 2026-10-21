@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
+import { openInquiry, knownPlaces } from "./inquiry";
 
 export type IntakeSource = "zego" | "zillow" | "website" | "voicemail";
 
@@ -154,7 +155,31 @@ export async function ingest(item: Intake) {
     }
   }
 
-  return { ok: true, conversationId: convo.id, workOrderId };
+  // And a leasing enquiry becomes an inquiry record, for the same reason a
+  // maintenance request becomes a work order: so it can be counted, matched
+  // against an empty lot, and rung back. Up to now it became a thread and
+  // nothing else, which is why `inquiries` has been an empty table.
+  //
+  // The same rule applies as above -- failing here must not cost the thread.
+  // The message is already written. An inquiry that could not be opened is a
+  // gap on a board; a lead that vanished because an insert threw is a lead.
+  let inquiryId: string | null = null;
+  if (item.category === "prospect") {
+    try {
+      const got = await openInquiry(db, {
+        contactId: contact.id,
+        conversationId: convo.id,
+        source: `${item.source} form`,
+        text: item.raw,
+        places: await knownPlaces(db),
+      });
+      inquiryId = got?.id ?? null;
+    } catch (e) {
+      console.error("intake could not open an inquiry", { source: item.source, e });
+    }
+  }
+
+  return { ok: true, conversationId: convo.id, workOrderId, inquiryId };
 }
 
 /**

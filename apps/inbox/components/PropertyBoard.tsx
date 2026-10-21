@@ -7,11 +7,17 @@ import AddressPicker, { type Place } from "@/components/AddressPicker";
 import OwnerPicker, { type Owner } from "@/components/OwnerPicker";
 import { KIND_LIST, kindOf, nextCode, unitWord, type Kind } from "@/lib/property";
 import { money } from "@/lib/prices";
+import { spell, howLong, worrying } from "@/lib/empty";
 
 export type Unit = {
   id: string; label: string; bedrooms: number | null; bathrooms: number | null;
   square_feet: number | null; monthly_rent: number | null;
   is_vacant: boolean; available_on: string | null;
+  /** When it went empty, and whether that date was measured or carried over
+   *  from before anything was measuring. Both null until 037 runs. */
+  vacant_since: string | null; vacant_since_estimated: boolean;
+  /** The one thing stopping it being let. */
+  blocker: string | null;
   home_owner: "ours" | "theirs" | "none";
   home_year: number | null; home_make: string | null; home_serial: string | null;
 };
@@ -28,6 +34,58 @@ export type Property = {
 export type { Kind };
 
 /**
+ * The one thing stopping a lot being let.
+ *
+ * Saved on leaving the box, and it says which of the three states it is in,
+ * because a save that failed and a save that worked look identical from the
+ * chair -- the same fault as the chat send and the park layout debounce.
+ */
+function Blocker(
+  { unitId, was, busy, onSaved }:
+  { unitId: string; was: string | null; busy: boolean; onSaved: () => void },
+) {
+  const [text, setText] = useState(was ?? "");
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+
+  // Somebody else's edit, or a reload, has to win over a box nobody is
+  // typing in -- otherwise this shows yesterday's answer for the rest of the
+  // session. A box being typed in is left alone.
+  useEffect(() => {
+    setState((st) => { if (st === "idle") setText(was ?? ""); return st; });
+  }, [was]);
+
+  const save = async () => {
+    const next = text.trim();
+    if (next === (was ?? "")) { setState("idle"); return; }
+    setState("saving");
+    const res = await fetch(`/api/units/${unitId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ blocker: next }),
+    }).catch(() => null);
+    if (!res || !res.ok) { setState("failed"); return; }
+    setState("saved");
+    onSaved();
+  };
+
+  return (
+    <span className="ublock">
+      <input className="ublockin" value={text} disabled={busy}
+             placeholder="What is stopping it?"
+             aria-label="What is stopping this lot being let"
+             onChange={(e) => { setText(e.target.value); setState("idle"); }}
+             onBlur={save}
+             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+      {state === "saving" ? <span className="ublocksay">Saving…</span>
+       : state === "saved" ? <span className="ublocksay">Saved</span>
+       : state === "failed" ? (
+         <button className="mini" onClick={save}>Didn&apos;t save — try again</button>
+       ) : null}
+    </span>
+  );
+}
+
+/**
  * Every property, and every lot in it.
  *
  * One screen rather than a list that opens a page per park, because the useful
@@ -40,8 +98,9 @@ export type { Kind };
  * markable by the person who let it.
  */
 export default function PropertyBoard(
-  { properties, ready, canEdit, canDelete }:
-  { properties: Property[]; ready: boolean; canEdit: boolean; canDelete: boolean },
+  { properties, ready, clock, canEdit, canDelete }:
+  { properties: Property[]; ready: boolean; clock: boolean;
+    canEdit: boolean; canDelete: boolean },
 ) {
   const router = useRouter();
   const [, start] = useTransition();
@@ -230,6 +289,38 @@ export default function PropertyBoard(
                           <span className={`ustate ${u.is_vacant ? "isvacant" : ""}`}>
                             {u.is_vacant ? "Empty" : "Let"}
                           </span>
+                          {u.is_vacant && (
+                            /* How long, and why. Twelve lots empty is a
+                               number; one empty since July waiting on a floor
+                               and one empty since Tuesday waiting on a
+                               showing are two different problems, and the
+                               count alone cannot tell them apart.
+
+                               No clock at all is said as no clock. Drawing a
+                               lot nobody has measured as empty since today is
+                               what every lot would read as the morning 037 is
+                               run, and it is the one number nobody should
+                               plan around. */
+                            <span className="uempty">
+                              {!clock ? (
+                                <span className="unoclock">Run migration 037 for the clock</span>
+                              ) : (
+                                <span className={worrying(spell(u.vacant_since,
+                                                  { estimated: u.vacant_since_estimated }))
+                                                 ? "uslow" : ""}>
+                                  {howLong(spell(u.vacant_since,
+                                           { estimated: u.vacant_since_estimated }))
+                                   ?? "Empty, nobody has been counting"}
+                                </span>
+                              )}
+                              {clock && canEdit ? (
+                                <Blocker unitId={u.id} was={u.blocker} busy={busy}
+                                         onSaved={refresh} />
+                              ) : u.blocker ? (
+                                <span className="ublockread">{u.blocker}</span>
+                              ) : null}
+                            </span>
+                          )}
                           {canEdit && (
                             <>
                               <button className="mini" disabled={busy}

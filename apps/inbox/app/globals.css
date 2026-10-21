@@ -1404,6 +1404,25 @@ a.metric:hover{border-color:var(--accent)}
   text-transform:uppercase;color:var(--muted)}
 .ustate.isvacant{color:var(--warn)}
 
+/* How long a lot has been empty, and the one thing stopping it.
+   Named for this row and nothing else. `.dim`, `.check`, `.empty` and
+   `.danger` have each been borrowed from another state in this stylesheet
+   and each time it cost a round -- the worst of them put red text on a red
+   button, so the words were not there at all. */
+.uempty{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;
+  width:100%;font-size:.78rem;color:var(--ink-2)}
+.uempty .uslow{color:var(--crit);font-weight:700}
+.unoclock{color:var(--muted);font-style:italic}
+.ublockread{color:var(--muted)}
+.ublock{display:flex;align-items:center;gap:.35rem;flex:1;
+  /* minmax(0,…) rather than a bare flex basis: a bare 1fr is
+     minmax(auto,1fr) and never shrinks below the input's own default
+     width, which is how three of these stopped fitting in a card. */
+  min-width:0}
+.ublockin{flex:1;min-width:6rem;padding:.3rem .45rem;font:inherit;font-size:.78rem;
+  border:1px solid var(--hair);border-radius:6px;background:var(--card);color:var(--ink)}
+.ublocksay{color:var(--muted);white-space:nowrap}
+
 .addunits{margin-top:.9rem}
 .unitrow{display:flex;gap:.4rem;flex-wrap:wrap}
 .unitrow input{flex:1;min-width:5rem;padding:.5rem .6rem;border:1px solid var(--hair);

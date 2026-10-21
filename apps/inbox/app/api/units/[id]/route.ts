@@ -36,6 +36,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if ("availableOn" in body) {
     patch.available_on = String(body.availableOn ?? "").trim() || null;
   }
+  // The one thing stopping this lot being let. The clock beside it is kept by
+  // a trigger rather than from here, because three screens flip is_vacant and
+  // a clock any one of them can forget to start reads zero on the lots that
+  // have been empty longest.
+  if ("blocker" in body) {
+    patch.blocker = String(body.blocker ?? "").trim() || null;
+  }
   for (const [field, col] of [["bathrooms", "bathrooms"], ["squareFeet", "square_feet"],
                              ["homeYear", "home_year"]] as const) {
     if (field in body) {

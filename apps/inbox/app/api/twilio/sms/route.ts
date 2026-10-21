@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkTwilioSignature, formToObject, toE164 } from "@/lib/twilio";
 import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
 import { classify, needsReview, shouldRecategorise } from "@/lib/classify";
+import { openInquiry, knownPlaces } from "@/lib/inquiry";
 import { prettyPhone } from "@/lib/format";
 import { storeInboundMedia } from "@/lib/media";
 import { toEnglish } from "@/lib/translate";
@@ -123,6 +124,30 @@ export async function POST(req: Request) {
       });
 
       convo = { ...convo, category: move.category, team_id: team?.id ?? convo.team_id };
+    }
+  }
+
+  // A text from somebody looking for a home is the commonest leasing enquiry
+  // there is -- the number off a sign -- and until now it became a thread and
+  // nothing else.
+  //
+  // Read on EVERY inbound message from a prospect, not only the first. The
+  // preferences arrive over a conversation: "is 3114 still open?", then "3
+  // bedroom if you have one", then "under 900", then "June". Reading only the
+  // opening text would file the first of those and miss the three that say
+  // what they actually want. mergeWanted is what makes that safe -- a later
+  // message silent about the bedrooms leaves the bedrooms alone.
+  if (convo.category === "prospect") {
+    try {
+      await openInquiry(db, {
+        contactId: contact.id,
+        conversationId: convo.id,
+        source: "sms",
+        text: readable,
+        places: await knownPlaces(db),
+      });
+    } catch (e) {
+      console.error("sms could not open an inquiry", { conversation: convo.id, e });
     }
   }
 

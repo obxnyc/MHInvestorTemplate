@@ -191,6 +191,56 @@ const moving = `
   </div>
 </aside>`;
 
+/* The lot list, with the vacancy clock and the blocker box on it.
+ *
+ * This row is a wrapping flex line that now carries a text field, which is
+ * the exact shape that put the owner card's fields off the side of the page
+ * the first time. A type checker cannot see it and neither can a test that
+ * asks how long a lot has been empty. Four cases, because each fails
+ * differently: a let lot (no clock at all), a short spell, a long one that
+ * reads as the problem, and a database where 037 has not been run.
+ */
+const lots = `<div class="propcard"><div class="propbody">
+<ul class="unitlist">
+  <li><span class="ulabel">3124</span>
+      <span class="uspec">3 bed &middot; 2 bath &middot; 1,064 sq ft</span>
+      <span class="urent">$775/mo</span>
+      <span class="whose ours">Our home<span class="serial">NCX1148821</span></span>
+      <span class="ustate">Let</span>
+      <button class="mini">Mark empty</button>
+      <button class="mini">Details</button></li>
+  <li class="vacant"><span class="ulabel">3114</span>
+      <span class="uspec">3 bed &middot; 2 bath &middot; 1,064 sq ft</span>
+      <span class="urent">$775/mo</span>
+      <span class="whose ours">Our home<span class="serial">NCX1148822</span></span>
+      <span class="ustate isvacant">Empty</span>
+      <button class="mini">Mark let</button>
+      <button class="mini">Details</button>
+      <span class="uempty"><span>Empty 9 days</span>
+        <span class="ublock"><input class="ublockin" value="Waiting on a showing"
+          aria-label="What is stopping this lot being let"></span>
+        <span class="ublocksay">Saved</span></span></li>
+  <li class="vacant"><span class="ulabel">3120</span>
+      <span class="uspec">2 bed &middot; 1 bath</span>
+      <span class="urent">$650/mo</span>
+      <span class="whose theirs">Their home</span>
+      <span class="ustate isvacant">Empty</span>
+      <button class="mini">Mark let</button>
+      <button class="mini">Details</button>
+      <span class="uempty"><span class="uslow">Empty about 3 months</span>
+        <span class="ublock"><input class="ublockin"
+          value="Flooring quote still not back from Carlos"
+          aria-label="What is stopping this lot being let"></span>
+        <button class="mini">Didn&rsquo;t save &mdash; try again</button></span></li>
+  <li class="vacant"><span class="ulabel">3100</span>
+      <span class="uspec">&mdash;</span>
+      <span class="urent">&mdash;</span>
+      <span class="whose none">Bare lot</span>
+      <span class="ustate isvacant">Empty</span>
+      <span class="uempty">
+        <span class="unoclock">Run migration 037 for the clock</span></span></li>
+</ul></div></div>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page);padding:1rem">
@@ -205,7 +255,8 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
 <div class="parkmain withcard" style="margin-top:2rem">
   <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
   ${moving}
-</div></body></html>`;
+</div>
+<div style="margin-top:2rem;max-width:62rem">${lots}</div></body></html>`;
 
 const file = "/tmp/lot-card.html";
 writeFileSync(file, page);
@@ -281,7 +332,10 @@ for (const width of [1440, 1100, 900, 420]) {
       const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
-    for (const el of document.querySelectorAll(".lotcard button, .lotcard a, .lotcard label, .lotcard p, .lotcard h2, .lotcard h3, .lotcard span, .lotcard dt, .lotcard dd")) {
+    const INK = [".lotcard", ".unitlist"]
+      .flatMap((root) => ["button", "a", "label", "p", "h2", "h3", "span", "dt", "dd"]
+      .map((el) => `${root} ${el}`)).join(", ");
+    for (const el of document.querySelectorAll(INK)) {
       if (!el.textContent.trim()) continue;
       if (el.querySelector("*")) continue;
       const ink = (getComputedStyle(el).color.match(/[\d.]+/g) ?? [0, 0, 0])
@@ -303,7 +357,7 @@ for (const width of [1440, 1100, 900, 420]) {
         small.push(`${b.className} ${Math.round(r.width)}x${Math.round(r.height)}px`);
       }
     }
-    for (const card of document.querySelectorAll(".lotcard")) {
+    for (const card of document.querySelectorAll(".lotcard, .unitlist")) {
     const box = card.getBoundingClientRect();
     for (const el of card.querySelectorAll("*")) {
       const r = el.getBoundingClientRect();
