@@ -318,6 +318,33 @@ const where = `<section class="dashgroup"><h2>Where the money is</h2>
       <a class="leakgo" href="#">Send them on</a></li>
 </ul></section>`;
 
+/* The crew clock. A phone in a work glove in a yard, so the 420px pass is
+ * the real one and the others are the check that it does not fall apart on
+ * a tablet. Shown clocked IN, which is the busy state: the break button, the
+ * tracking sentence, the job picker, two nudges and the day so far. */
+const clockin = `<main class="clockwrap">
+  <p class="clockwho">Alex Prieto</p>
+  <button class="clockbig off">Clock out</button>
+  <p class="clocksum">On the clock &middot; 7h 12m today &middot; 30 min break</p>
+  <button class="clockmid">Start break</button>
+  <p class="clocktrail">Sending your position every 10 minutes while you are on
+    the clock. It stops when you clock out.</p>
+  <label class="clockwhere">Which job are you on?
+    <select><option>Choose a property</option>
+      <option>1140 Northside Road Mobile Home Community</option></select></label>
+  <p class="clocknudge">Over 6 hours without a break on the clock. Take your
+    lunch and tap Break so it is on the record.</p>
+  <p class="clocknudge loud">That is 10.2 hours today, over the 10 hour day.
+    Clock out, or tell your foreman why not.</p>
+  <button class="clockmid">Sign off 7h 12m</button>
+  <ul class="clocklist">
+    <li><span class="clockspan">7:02 AM &ndash; 12:04 PM</span>
+        <span class="clockat">1140 Northside Road Mobile Home Community</span></li>
+    <li><span class="clockspan">12:41 PM &ndash; now</span>
+        <span class="clockat">no job set</span></li>
+  </ul>
+</main>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page);padding:1rem">
@@ -335,7 +362,8 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
 </div>
 <div style="margin-top:2rem;max-width:62rem">${lots}</div>
 <main class="wrap" style="margin-top:2rem">${lead}</main>
-<div class="dash" style="margin-top:2rem">${where}</div></body></html>`;
+<div class="dash" style="margin-top:2rem">${where}</div>
+<div style="margin-top:2rem;background:var(--page)">${clockin}</div></body></html>`;
 
 const file = "/tmp/lot-card.html";
 writeFileSync(file, page);
@@ -411,7 +439,7 @@ for (const width of [1440, 1100, 900, 420]) {
       const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
-    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty", ".leak"]
+    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty", ".leak", ".clockwrap"]
       .flatMap((root) => ["button", "a", "label", "p", "h2", "h3", "span", "dt", "dd"]
       .map((el) => `${root} ${el}`)).join(", ");
     for (const el of document.querySelectorAll(INK)) {
@@ -430,13 +458,13 @@ for (const width of [1440, 1100, 900, 420]) {
           + ` ${ratio.toFixed(1)}:1`);
       }
     }
-    for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button")) {
+    for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button, .clockwrap button")) {
       const r = b.getBoundingClientRect();
       if (r.width < 30 || r.height < 30) {
         small.push(`${b.className} ${Math.round(r.width)}x${Math.round(r.height)}px`);
       }
     }
-    for (const card of document.querySelectorAll(".lotcard, .unitlist, .lead, .leadempty, .leak")) {
+    for (const card of document.querySelectorAll(".lotcard, .unitlist, .lead, .leadempty, .leak, .clockwrap")) {
     const box = card.getBoundingClientRect();
     for (const el of card.querySelectorAll("*")) {
       const r = el.getBoundingClientRect();

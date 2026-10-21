@@ -2465,3 +2465,50 @@ a.metric:hover{border-color:var(--accent)}
    line, because it is a caveat on a number rather than a number. */
 .leakshort{width:100%;color:var(--muted);font-size:.8rem}
 .leakgo{margin-left:auto;color:var(--accent-ink);font-size:.82rem;white-space:nowrap}
+
+/* ------------------------------------------------------------------- the clock
+   A phone, in a work glove, in a yard. The button is the screen and
+   everything else is underneath it. `clock*` throughout -- `.check`,
+   `.empty`, `.dim` and `.danger` are all already states in here, and
+   borrowing one has cost a round every time. */
+.clockwrap{max-width:30rem;margin:0 auto;padding:1.2rem 1rem 3rem;
+  display:flex;flex-direction:column;gap:.9rem}
+.clockload{color:var(--muted);text-align:center;padding:3rem 0}
+.clockwho{color:var(--muted);text-align:center;margin:0;font-size:.9rem}
+
+/* Big enough to hit without looking. 58px is well over the 30px floor the
+   picture harness holds a thing-you-aim-at to, and over Apple's 44. */
+.clockbig{min-height:7rem;border:none;border-radius:16px;font:inherit;
+  font-size:1.6rem;font-weight:800;letter-spacing:.01em;cursor:pointer;
+  color:var(--dark-ink);background:var(--dark)}
+.clockbig.off{background:var(--warn);color:#FFFFFF}
+.clockbig:disabled{opacity:.6;cursor:default}
+
+.clockmid{min-height:3.2rem;border:1px solid var(--hair);border-radius:12px;
+  background:var(--card);color:var(--ink);font:inherit;font-size:1rem;
+  font-weight:600;cursor:pointer}
+.clockmid:disabled{opacity:.6;cursor:default}
+
+.clocksum{margin:0;text-align:center;font-size:1.05rem;font-weight:700;color:var(--ink)}
+.clockbad{background:var(--warn-soft);color:var(--crit);border-radius:10px;
+  padding:.7rem .8rem;margin:0;font-size:.92rem;font-weight:600}
+.clocktrail{margin:0;color:var(--muted);font-size:.8rem;line-height:1.45;
+  background:var(--sunk);border-radius:10px;padding:.6rem .7rem}
+.clocknudge{margin:0;background:var(--sunk);border-radius:10px;
+  padding:.7rem .8rem;font-size:.92rem;color:var(--ink-2);line-height:1.45}
+.clocknudge.loud{background:var(--warn-soft);color:var(--crit);font-weight:600}
+
+.clockwhere{display:flex;flex-direction:column;gap:.35rem;font-size:.85rem;
+  color:var(--muted)}
+.clockwhere select{min-height:3rem;padding:.5rem .6rem;border:1px solid var(--hair);
+  border-radius:10px;background:var(--card);color:var(--ink);font:inherit;
+  /* minmax(0,…) in spirit: a bare width never shrinks below the widest
+     option's own width, which is how a select full of long property names
+     pushes a phone screen sideways. */
+  min-width:0;max-width:100%}
+
+.clocklist{list-style:none;margin:.3rem 0 0;padding:0;display:grid;gap:.3rem}
+.clocklist li{display:flex;align-items:baseline;gap:.6rem;
+  padding:.5rem .6rem;border-radius:10px;background:var(--sunk);font-size:.88rem}
+.clockspan{font-weight:700;font-variant-numeric:tabular-nums}
+.clockat{margin-left:auto;color:var(--muted);font-size:.82rem}
