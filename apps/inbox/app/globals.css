@@ -2383,3 +2383,68 @@ a.metric:hover{border-color:var(--accent)}
   border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);
   font-weight:700;font-size:.68rem}
 .fencepts .aslink{margin-left:auto}
+
+/* ------------------------------------------------------------- looking for a home
+   Everybody who is looking, what they said they wanted, and the empty lots
+   they might fit. Named `lead*` throughout rather than reusing `.check`,
+   `.empty`, `.dim` or `.danger` -- each of those is already a state in this
+   stylesheet and borrowing one has cost a round every single time. */
+.leadsay{color:var(--muted);margin:.2rem 0 1rem}
+.leadbad{background:var(--warn-soft);color:var(--crit);border-radius:8px;
+  padding:.6rem .75rem;margin:0 0 1rem;font-size:.9rem}
+.leadnone{color:var(--muted);background:var(--sunk);border-radius:10px;
+  padding:.8rem .9rem;margin:0 0 1.2rem;font-size:.9rem;line-height:1.5}
+.leadquiet{color:var(--muted);font-size:.85rem;margin:.3rem 0 0}
+
+.leadlist{list-style:none;margin:0 0 2rem;padding:0;display:grid;gap:.8rem}
+.lead{background:var(--card);border:1px solid var(--hair);border-radius:12px;
+  padding:.85rem .95rem}
+.leadhead{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
+.leadwho{font-weight:700}
+.leadtel{color:var(--ink-2);font-size:.85rem}
+.leadwait{margin-left:auto;color:var(--muted);font-size:.78rem}
+
+.leadsaid{display:flex;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 0}
+.leadbit{background:var(--sunk);border-radius:8px;padding:.35rem .55rem;
+  /* minmax(0,…) in spirit: a bare flex basis never shrinks below the
+     content's own width, which is how three fields stopped fitting in a
+     card the first time this mistake was made. */
+  min-width:0}
+.leadbit dt{color:var(--muted);font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.04em}
+.leadbit dd{margin:.1rem 0 0;font-size:.88rem;font-weight:600}
+.leadfrom{display:block;color:var(--muted);font-size:.72rem;font-weight:400}
+
+.leadfits{margin:.8rem 0 0}
+.leadfits h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);margin:0 0 .35rem}
+.leadfits ul,.leadempty{list-style:none;margin:0;padding:0;display:grid;gap:.25rem}
+.leadfits li,.leadempty li{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;
+  padding:.4rem .55rem;border-radius:8px;background:var(--sunk);font-size:.85rem}
+.leadfits li.leadnear{background:var(--warn-soft)}
+.leadlot{font-weight:700;min-width:11rem}
+.leadspec{color:var(--ink-2);min-width:9rem}
+.leadyes{margin-left:auto;color:var(--tn-ink);font-size:.78rem}
+.leadbut{margin-left:auto;color:var(--warn);font-size:.78rem}
+
+.leadclose{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;
+  margin:.8rem 0 0;padding-top:.7rem;border-top:1px solid var(--hair-2)}
+.leadask{color:var(--muted);font-size:.8rem}
+/* A decision, not a nudge. 34px is over the 30px floor the picture harness
+   holds these to and under Apple's 44, which is the right trade for a row
+   of eight on a desktop screen. */
+.leadout{min-height:34px;padding:.35rem .7rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:.82rem;cursor:pointer}
+.leadout:hover{background:var(--sunk)}
+.leadout:disabled{opacity:.55;cursor:default}
+/* The two that stop us contacting somebody for good. A left edge and a
+   darker ink rather than a red fill -- a filled red button beside seven
+   plain ones is the one a hand goes to by accident. */
+.leadout.forever{border-left:3px solid var(--warn);color:var(--warn)}
+
+.leadempty{margin-bottom:2rem}
+.leadsince{margin-left:auto;color:var(--ink-2);font-size:.8rem}
+.leadslow{margin-left:auto;color:var(--crit);font-weight:700;font-size:.8rem}
+.leadblock{color:var(--ink-2);font-size:.8rem;width:100%}
+.leadnoblock{color:var(--muted);font-size:.8rem;font-style:italic;width:100%}

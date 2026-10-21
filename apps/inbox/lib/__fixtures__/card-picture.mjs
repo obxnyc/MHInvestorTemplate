@@ -241,6 +241,60 @@ const lots = `<div class="propcard"><div class="propbody">
         <span class="unoclock">Run migration 037 for the clock</span></span></li>
 </ul></div></div>`;
 
+/* Looking for a home. A row of chips, a shortlist, and a row of outcome
+ * buttons that wraps -- and the outcome row is the dangerous one, because
+ * "Bought a house — never contact again" is a long label on a small button
+ * and eight of them have to fit somewhere a thumb can reach.
+ */
+const lead = `<div class="leadlist"><div class="lead">
+  <div class="leadhead">
+    <span class="leadwho">Marcus Oyelaran</span>
+    <a class="leadtel" href="#">+1 910 555 0147</a>
+    <a class="mini" href="#">The conversation</a>
+    <span class="leadwait">Asked 9 days ago &middot; sms</span>
+  </div>
+  <dl class="leadsaid">
+    <div class="leadbit"><dt>Beds</dt><dd>3+<span class="leadfrom">read from &ldquo;3 bedroom&rdquo;</span></dd></div>
+    <div class="leadbit"><dt>Up to</dt><dd>$900<span class="leadfrom">read from &ldquo;under $900&rdquo;</span></dd></div>
+    <div class="leadbit"><dt>Area</dt><dd>Raeford<span class="leadfrom">read from &ldquo;Raeford&rdquo;</span></dd></div>
+    <div class="leadbit"><dt>Pets</dt><dd>No<span class="leadfrom">read from &ldquo;no pets&rdquo;</span></dd></div>
+    <div class="leadbit"><dt>From</dt><dd>2027-06-01</dd></div>
+  </dl>
+  <div class="leadfits"><h3>3 lots to ring them about</h3><ul>
+    <li><span class="leadlot">1140 Northside Rd 51</span>
+        <span class="leadspec">3 bed &middot; $725/mo</span>
+        <span class="leadyes">fits what they asked for</span></li>
+    <li class="leadnear"><span class="leadlot">The Retreat 3120</span>
+        <span class="leadspec">3 bed &middot; $950/mo</span>
+        <span class="leadbut">$950, a little over the $900 they said</span></li>
+    <li class="leadnear"><span class="leadlot">The Retreat 3130</span>
+        <span class="leadspec">3 bed</span>
+        <span class="leadbut">no rent set, wanted up to $900</span></li>
+  </ul></div>
+  <div class="leadclose">
+    <span class="leadask">How did it end?</span>
+    <button class="leadout">Took one of ours</button>
+    <button class="leadout">Rented somewhere else</button>
+    <button class="leadout">Wrong area</button>
+    <button class="leadout">Price did not work</button>
+    <button class="leadout">Did not qualify</button>
+    <button class="leadout forever">Bought a house &mdash; never contact again</button>
+    <button class="leadout forever">Moved away &mdash; never contact again</button>
+    <button class="leadout">Never found out</button>
+    <button class="leadout">Not now</button>
+  </div>
+</div></div>
+<ul class="leadempty">
+  <li><span class="leadlot">The Retreat 3120</span>
+      <span class="leadspec">2 bed &middot; $650/mo</span>
+      <span class="leadslow">Empty about 3 months</span>
+      <span class="leadblock">Flooring quote still not back from Carlos</span></li>
+  <li><span class="leadlot">The Retreat 3114</span>
+      <span class="leadspec">3 bed &middot; $775/mo</span>
+      <span class="leadsince">Empty 9 days</span>
+      <span class="leadnoblock">Nothing said about what is stopping it</span></li>
+</ul>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page);padding:1rem">
@@ -256,7 +310,8 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
   <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
   ${moving}
 </div>
-<div style="margin-top:2rem;max-width:62rem">${lots}</div></body></html>`;
+<div style="margin-top:2rem;max-width:62rem">${lots}</div>
+<main class="wrap" style="margin-top:2rem">${lead}</main></body></html>`;
 
 const file = "/tmp/lot-card.html";
 writeFileSync(file, page);
@@ -332,7 +387,7 @@ for (const width of [1440, 1100, 900, 420]) {
       const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
-    const INK = [".lotcard", ".unitlist"]
+    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty"]
       .flatMap((root) => ["button", "a", "label", "p", "h2", "h3", "span", "dt", "dd"]
       .map((el) => `${root} ${el}`)).join(", ");
     for (const el of document.querySelectorAll(INK)) {
@@ -351,13 +406,13 @@ for (const width of [1440, 1100, 900, 420]) {
           + ` ${ratio.toFixed(1)}:1`);
       }
     }
-    for (const b of document.querySelectorAll(".movepad button, .movestep .btn")) {
+    for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button")) {
       const r = b.getBoundingClientRect();
       if (r.width < 30 || r.height < 30) {
         small.push(`${b.className} ${Math.round(r.width)}x${Math.round(r.height)}px`);
       }
     }
-    for (const card of document.querySelectorAll(".lotcard, .unitlist")) {
+    for (const card of document.querySelectorAll(".lotcard, .unitlist, .lead, .leadempty")) {
     const box = card.getBoundingClientRect();
     for (const el of card.querySelectorAll("*")) {
       const r = el.getBoundingClientRect();

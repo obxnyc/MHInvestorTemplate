@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { spell } from "@/lib/empty";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { prettyPhone, timeAgo } from "@/lib/format";
 import { money } from "@/lib/prices";
@@ -42,6 +43,8 @@ export default async function Home() {
     { data: openJobs }, { data: units }, { data: showings },
     { data: recentDone }, { data: spend }, { count: unclaimed },
     { data: mine },
+    { data: clocks },
+    { count: looking },
   ] = await Promise.all([
     // Asked for in full rather than counted. The count was already here and a
     // count is not an answer: "11 open" says there is work and nothing about
@@ -63,6 +66,16 @@ export default async function Home() {
       .select("id, subject, category, last_message_preview, last_message_at, contacts(full_name, phone)")
       .eq("assigned_to", me.id).neq("status", "closed")
       .order("last_message_at", { ascending: false }).limit(5),
+    // Both of these arrive with 037, and both are asked for on their own so a
+    // database without that migration loses the two new numbers rather than
+    // the whole dashboard. Last in the list because the destructuring above
+    // is positional, and an insert in the middle silently hands every query
+    // after it the wrong rows -- which typechecks only by luck.
+    supabase.from("units")
+      .select("id, monthly_rent, vacant_since, vacant_since_estimated")
+      .eq("is_vacant", true),
+    supabase.from("inquiries").select("id", { count: "exact", head: true })
+      .eq("outcome", "open"),
   ]);
 
   const jobs = openJobs ?? [];
@@ -99,6 +112,19 @@ export default async function Home() {
   // What the empty ones would bring in if they were let. The number an owner
   // actually feels, and the reason vacancy is a cost rather than a count.
   const lostRent = vacant.reduce((a, u) => a + Number(u.monthly_rent ?? 0), 0);
+  // What the empty lots have cost so far, not what they cost per month.
+  //
+  // Only the lots with a measured start date count towards it. A backfilled
+  // date is a guess, and a guess multiplied by a rent is a figure somebody
+  // puts in front of an investor -- so the ones carried over from before
+  // anything was measuring are left out rather than estimated into the total.
+  const goneAlready = Math.round((clocks ?? []).reduce((a, c) => {
+    if (c.vacant_since_estimated) return a;
+    const s = spell(c.vacant_since as string | null);
+    const rent = Number(c.monthly_rent ?? 0);
+    return a + (s && rent ? (s.days / 30.44) * rent : 0);
+  }, 0));
+
   const occupancy = allUnits.length
     ? Math.round(((allUnits.length - vacant.length) / allUnits.length) * 100) : null;
 
@@ -131,10 +157,22 @@ export default async function Home() {
                   : "nothing outstanding"} />
 
         <Metric label="Vacant" value={allUnits.length ? `${vacant.length}` : null}
+                href="/leasing"
                 note={allUnits.length
-                  ? `${money(lostRent * 100)}/mo not coming in${
-                      occupancy === null ? "" : ` · ${occupancy}% occupied`}`
+                  ? [`${money(lostRent * 100)}/mo not coming in`,
+                     occupancy === null ? null : `${occupancy}% occupied`,
+                     // The number that makes somebody act. A lot empty since
+                     // July has already cost a figure, and the monthly rate
+                     // reads as something that is about to happen rather than
+                     // something that has.
+                     goneAlready ? `${money(goneAlready * 100)} gone already` : null]
+                      .filter(Boolean).join(" · ")
                   : "no units on file yet"} />
+
+        <Metric label="Looking for a home" value={looking ?? null} href="/leasing"
+                note={looking
+                  ? "what each of them asked for, and the lots that fit"
+                  : "nothing recorded yet — every enquiry from now on lands here"} />
 
         <Metric label="Showings this week" value={booked}
                 note={turnout === null
