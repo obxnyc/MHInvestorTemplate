@@ -61,6 +61,15 @@ address bar when they land.
 The SQL editor is the second-to-top icon in the far-left rail. The Run button
 is top right; the right answer to a migration is `Success. No rows returned`.
 
+**Every migration raises "Potential issue detected".** The editor flags any
+query containing `alter`, `drop` or `update`, and a migration contains all
+three by definition. Say so in the same message as the link, before they hit
+it -- a warning nobody warned them about reads as "I have been handed
+something dangerous", and stopping to ask costs a round every time.
+
+Then say what the destructive-looking lines actually are, in one sentence, so
+the reassurance is checkable rather than just confident.
+
 ### A filename is not a thing to paste
 
 "Paste in `docs/shared-line/037-....sql`" came back as that path typed into
