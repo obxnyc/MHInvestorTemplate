@@ -8,6 +8,14 @@
   --hair:#E4E8EE;--hair-2:#F0F3F7;
   --accent:#405981;--accent-soft:#EDF1F8;--accent-ink:#2E4160;
   --dark:#101B2D;--dark-ink:#FFFFFF;
+  /* An ink PARTNER for each coloured ground, the same construct as
+     --dark/--dark-ink. These three grounds LIGHTEN in dark mode --
+     --accent goes #405981 -> #8AA4CE -- so a label hard-coded to white
+     measured 7.1:1 by day and 2.5:1 at night. Twenty-two rules did that,
+     and they are the primary buttons: Send, the danger button, the map
+     pin, the clock's Stop. A literal may only sit against a literal; a
+     ground that moves needs an ink that moves with it. */
+  --accent-on:#FFFFFF;--crit-on:#FFFFFF;--warn-on:#FFFFFF;
   --warn:#B0561F;--warn-soft:#FBEFE5;--crit:#8E251F;
   --ground:var(--page);--surface:var(--card);--surface-2:var(--sunk);--rule:var(--hair);
   --radius:10px;
@@ -27,6 +35,7 @@
     --hair:#222932;--hair-2:#1A2028;
     --accent:#8AA4CE;--accent-soft:#171E2A;--accent-ink:#B3C6E4;
     --dark:#E9EDF3;--dark-ink:#0A0D12;
+    --accent-on:#0A0D12;--crit-on:#0A0D12;--warn-on:#0A0D12;
     --warn:#D6884F;--warn-soft:#2A2018;--crit:#CF6A62;
     --mt:#D6924F;--mt-soft:#2A1E14;--mt-ink:#E8B183;
     --pr:#6D9AD8;--pr-soft:#141C29;--pr-ink:#9CC0EE;
@@ -42,6 +51,7 @@
   --hair:#222932;--hair-2:#1A2028;
   --accent:#8AA4CE;--accent-soft:#171E2A;--accent-ink:#B3C6E4;
   --dark:#E9EDF3;--dark-ink:#0A0D12;
+  --accent-on:#0A0D12;--crit-on:#0A0D12;--warn-on:#0A0D12;
   --warn:#D6884F;--warn-soft:#2A2018;--crit:#CF6A62;
   --mt:#D6924F;--mt-soft:#2A1E14;--mt-ink:#E8B183;
   --pr:#6D9AD8;--pr-soft:#141C29;--pr-ink:#9CC0EE;
@@ -447,7 +457,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .chead .sub .dim + .dim::before{content:"·";color:var(--faint);margin-right:.17rem}
 .chead .badge{text-transform:uppercase}
 .takepill{margin-left:auto;border:none;border-radius:999px;padding:.32rem .75rem;
-  font-size:.74rem;font-weight:700;background:var(--warn);color:#fff}
+  font-size:.74rem;font-weight:700;background:var(--warn);color:var(--warn-on)}
 .takepill.mine{background:var(--accent-soft);color:var(--accent-ink)}
 .takepill.other{background:var(--sunk);color:var(--ink-2)}
 /* min-height keeps the floor: whatever else goes wrong in the height chain
@@ -484,7 +494,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .b{padding:.55rem .85rem;border-radius:12px;font-size:.92rem;line-height:1.5;
   letter-spacing:-.004em;white-space:pre-wrap;overflow-wrap:anywhere}
 .in .b{background:var(--sunk);color:var(--ink);border-bottom-left-radius:4px}
-.out .b{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.out .b{background:var(--accent);color:var(--accent-on);border-bottom-right-radius:4px}
 .stamp{font-size:.68rem;color:var(--faint);padding:.15rem .3rem 0;font-weight:500;
   letter-spacing:.005em}
 /* This had no size of its own and was inheriting the page's 16px, so every
@@ -536,7 +546,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   line-height:1.4;max-height:6rem}
 .composer.note .inputrow textarea{background:var(--warn-soft)}
 .sendbtn{width:2.2rem;height:2.2rem;border-radius:50%;border:none;background:var(--accent);
-  color:#fff;font-size:1.05rem;flex:none;display:grid;place-items:center;padding-bottom:.12rem}
+  color:var(--accent-on);font-size:1.05rem;flex:none;display:grid;place-items:center;padding-bottom:.12rem}
 .sendbtn:disabled{opacity:.35}
 .clip{width:2.2rem;height:2.2rem;border-radius:50%;border:1px solid var(--hair);
   background:var(--card);color:var(--muted);flex:none;display:grid;place-items:center}
@@ -594,7 +604,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .recycle .acts{display:flex;gap:.4rem;justify-content:flex-end}
 .recycle button{border:1px solid var(--hair);background:var(--card);color:var(--ink);
   border-radius:7px;padding:.32rem .7rem;font-size:.78rem;font-weight:700}
-.recycle button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.recycle button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-on)}
 .recycle textarea{width:100%;padding:.5rem .65rem;border:1px solid var(--hair);
   border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:.83rem;
   resize:vertical;margin-bottom:.45rem}
@@ -607,7 +617,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .closewarn .acts{display:flex;gap:.4rem;justify-content:flex-end}
 .closewarn button{border:1px solid var(--hair);background:var(--card);color:var(--ink);
   border-radius:7px;padding:.25rem .6rem;font-size:.75rem;font-weight:700}
-.closewarn button.danger{background:var(--crit);border-color:var(--crit);color:#fff}
+.closewarn button.danger{background:var(--crit);border-color:var(--crit);color:var(--crit-on)}
 .btn.close{color:var(--muted)}
 .btn.close:hover{border-color:var(--crit);color:var(--crit)}
 
@@ -617,7 +627,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
   font-size:.85rem}
 .pushbar.quiet{background:var(--sunk);color:var(--muted);font-size:.8rem}
 .pushbar button{margin-left:auto;padding:.35rem .8rem;border:none;border-radius:8px;
-  background:var(--accent);color:#fff;font-weight:700}
+  background:var(--accent);color:var(--accent-on);font-weight:700}
 
 /* ---- calls, audit, legal ---- */
 .inbox,.audit{padding:1rem 1.25rem 3rem;max-width:60rem;margin-inline:auto;width:100%}
@@ -636,7 +646,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .unclaimed{color:var(--warn);font-weight:700}
 .mini{font-size:.72rem;padding:.22rem .6rem;border-radius:7px;border:1px solid var(--hair);
   background:var(--card);color:var(--muted);font-weight:600}
-.mini.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.mini.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-on)}
 .line3 .mini{margin-left:auto}
 .rec{width:100%;margin:.5rem 0 .25rem;height:2rem}
 .scroller{overflow-x:auto;border:1px solid var(--hair);border-radius:10px;
@@ -695,7 +705,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .closewarn button{border:1px solid var(--rule);background:var(--surface);color:var(--ink);
   border-radius:6px;padding:.25rem .6rem;font:inherit;font-size:.75rem;font-weight:600;
   cursor:pointer}
-.closewarn button.danger{background:var(--crit);border-color:var(--crit);color:#fff}
+.closewarn button.danger{background:var(--crit);border-color:var(--crit);color:var(--crit-on)}
 .unsure{margin:.6rem 1.1rem 0;padding:.5rem .7rem;background:var(--warn-soft);
   border-left:3px solid var(--warn);border-radius:0 6px 6px 0;font-size:.78rem;
   color:var(--ink-2);line-height:1.45}
@@ -745,7 +755,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   border-radius:50%;font-size:.72rem;font-weight:800;line-height:1;
   background:var(--sunk);color:var(--muted)}
 .check.good .ck-mark{background:var(--accent-soft);color:var(--accent-ink)}
-.check.bad .ck-mark{background:var(--crit);color:#fff}
+.check.bad .ck-mark{background:var(--crit);color:var(--crit-on)}
 .check.warn .ck-mark{background:var(--warn-soft);color:var(--warn)}
 .check p{margin:.35rem 0 0;font-size:.86rem;line-height:1.5;color:var(--ink-2);
   overflow-wrap:anywhere}
@@ -805,7 +815,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .duepill{margin-left:auto;padding:.16em .5em;border-radius:5px;font-size:.72rem;
   font-weight:700;background:var(--sunk);color:var(--muted)}
 .duepill.due-soon{background:var(--warn-soft);color:var(--warn)}
-.duepill.due-late{background:var(--crit);color:#fff}
+.duepill.due-late{background:var(--crit);color:var(--crit-on)}
 .jobsum{margin:0;font-size:1rem;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
 .jobdetail{margin:.35rem 0 0;color:var(--ink-2);font-size:.88rem;line-height:1.45}
 .jobshots{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem}
@@ -912,7 +922,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   border-left:4px solid var(--faint)}
 .openjobs.due-soon>button{border-left-color:var(--warn);background:var(--warn-soft)}
 .openjobs.due-late>button{border-left-color:var(--crit);background:var(--warn-soft)}
-.openjobs .latecount{padding:.1em .45em;border-radius:5px;background:var(--crit);color:#fff;
+.openjobs .latecount{padding:.1em .45em;border-radius:5px;background:var(--crit);color:var(--crit-on);
   font-size:.68rem;font-weight:800}
 .openjobs .chev{margin-left:auto;color:var(--faint)}
 .openjobs ul{list-style:none;margin:0;padding:.2rem 1.1rem .6rem;display:grid;gap:.3rem}
@@ -935,7 +945,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
    than sitting there looking like a name nobody recognises. */
 .nmbtn{display:flex;align-items:center;gap:.45rem;border:none;background:none;
   padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
-.nmbtn:hover .addname{background:var(--accent);color:#fff}
+.nmbtn:hover .addname{background:var(--accent);color:var(--accent-on)}
 .addname{padding:.1em .4em;border-radius:5px;background:var(--sunk);color:var(--muted);
   font-size:.58rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
   white-space:nowrap}
@@ -951,10 +961,26 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
    rather than a dropdown. A handyman who also does light plumbing has to be
    findable as either. */
 .chipset{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.15rem}
-.chip{padding:.32rem .6rem;border:1px solid var(--hair);border-radius:999px;
-  background:var(--card);color:var(--muted);font-size:.78rem;font-weight:600;
-  min-height:32px}
-.chip:hover{background:var(--sunk)}
+/* ONE definition. There were two, 1350 lines apart, and the later one won
+   everywhere -- so editing this block changed nothing, and the selected chip
+   came out `background:var(--ink);color:#fff`. In dark mode `--ink` is
+   near-WHITE, so that was white on white: 1.2:1, the words simply not there.
+
+   `--dark`/`--dark-ink` is a PAIR and it inverts together -- dark ground with
+   white ink by day, light ground with near-black ink at night. That is what an
+   inverted surface is for, and the fault was not borrowing the wrong token so
+   much as using HALF of a pair plus a literal, which is only a pair in one
+   theme. Fifth time this family has bitten (`.check`, `.empty`, `.danger`, the
+   clock button, now this): a fixed literal may only sit against a fixed
+   literal; anything that moves between themes must move with its partner.
+
+   min-height is here because the duplicate dropped it, which took the owner-
+   kind picker on the lot card down to about 26px -- under the tap floor. */
+.chip{display:inline-block;padding:.32rem .6rem;border:1px solid var(--hair);
+  border-radius:999px;background:var(--card);color:var(--muted);
+  font-size:.78rem;font-weight:600;min-height:32px;cursor:pointer}
+.chip:hover:not(.on):not(:disabled){background:var(--sunk);
+  border-color:var(--accent);color:var(--accent-ink)}
 .chip.on{background:var(--dark);border-color:var(--dark);color:var(--dark-ink)}
 .sheet textarea{width:100%;padding:.6rem .75rem;border:1px solid var(--hair);
   border-radius:9px;background:var(--card);color:var(--ink);font:inherit;
@@ -1091,7 +1117,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .apphead .av{width:2.15rem;height:2.15rem;padding:0;margin-left:.5rem;
   border-radius:50%;font-size:.7rem;background:var(--accent-soft);
   color:var(--accent-ink);border:1px solid var(--hair)}
-.apphead .av:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.apphead .av:hover{background:var(--accent);color:var(--accent-on);border-color:var(--accent)}
 .brandmark{flex:none}
 @media (max-width:640px){
   .apphead{padding:.6rem .8rem;gap:.4rem}
@@ -1292,7 +1318,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .invacts{display:flex;gap:.5rem;justify-content:flex-end}
 .invdone{margin-top:.6rem;padding:.5rem .7rem;border-radius:8px;
   background:var(--tn-soft);color:var(--tn-ink);font-size:.82rem}
-.badge.jurgent{background:var(--crit);color:#fff}
+.badge.jurgent{background:var(--crit);color:var(--crit-on)}
 .badge.jlate{background:var(--warn-soft);color:var(--warn)}
 .badge.j-waiting{background:var(--sunk);color:var(--muted)}
 .badge.j-moving{background:var(--tn-soft);color:var(--tn-ink)}
@@ -1336,7 +1362,7 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .apphead .acctwrap .av{width:2.15rem;height:2.15rem;padding:0;border-radius:50%;
   font-size:.7rem;background:var(--accent-soft);color:var(--accent-ink);
   border:1px solid var(--hair)}
-.apphead .acctwrap .av:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.apphead .acctwrap .av:hover{background:var(--accent);color:var(--accent-on);border-color:var(--accent)}
 .acctwrap .ovmenu{top:2.9rem}
 .ovitem.danger{color:var(--crit)}
 .ovitem.danger:hover{background:var(--warn-soft)}
@@ -1616,7 +1642,7 @@ a.metric:hover{border-color:var(--accent)}
 .sheet.wide .fieldlab select,.sheet.wide .fieldlab input{width:100%;margin-top:.25rem}
 
 /* The button that cannot be undone. Not the primary: the safe way out is. */
-.btn.danger{background:var(--crit);border-color:var(--crit);color:#fff}
+.btn.danger{background:var(--crit);border-color:var(--crit);color:var(--crit-on)}
 .btn.danger:hover{opacity:.92;color:#fff}
 
 
@@ -1679,7 +1705,7 @@ a.metric:hover{border-color:var(--accent)}
   background:var(--card);border:1px solid var(--hair);
   font-size:.76rem;font-weight:700;color:var(--muted)}
 .rmsteps > li.done::before{content:"✓";background:var(--accent);
-  border-color:var(--accent);color:#fff}
+  border-color:var(--accent);color:var(--accent-on)}
 .rmsteps h2{margin:0 0 .3rem;font-size:.98rem;letter-spacing:-.01em}
 .rmsteps p{margin:0 0 .5rem;font-size:.88rem;color:var(--ink-2);line-height:1.55}
 .rmsteps code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.82rem;
@@ -1792,7 +1818,7 @@ a.metric:hover{border-color:var(--accent)}
   font-size:.76rem;font-weight:700;color:var(--muted)}
 .noteslink:hover{border-color:var(--warn);color:var(--ink)}
 .noteslink.has{border-color:var(--warn);color:var(--ink);background:var(--warn-soft)}
-.notecount{font-variant-numeric:tabular-nums;background:var(--warn);color:#fff;
+.notecount{font-variant-numeric:tabular-nums;background:var(--warn);color:var(--warn-on);
   border-radius:999px;min-width:1.05rem;padding:0 .25rem;font-size:.66rem;
   line-height:1.05rem;text-align:center}
 
@@ -1823,7 +1849,7 @@ a.metric:hover{border-color:var(--accent)}
 .sitemain{min-width:0}
 .newlot{width:7rem;padding:.2rem .45rem;border:1px solid var(--accent);
   border-radius:7px;font:inherit;font-size:.8rem;background:var(--card)}
-.siteheadrow .mini.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.siteheadrow .mini.on{background:var(--accent);border-color:var(--accent);color:var(--accent-on)}
 .siteheadrow{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
   font-size:.86rem;color:var(--ink-2);margin-bottom:.5rem}
 .placing{display:flex;align-items:center;gap:.5rem;color:var(--accent-ink);
@@ -1840,7 +1866,7 @@ a.metric:hover{border-color:var(--accent)}
    sits beside the lot it means is a pin pointing at the wrong lot. */
 .pin{position:absolute;transform:translate(-50%,-50%);
   min-width:1.5rem;height:1.5rem;padding:0 .35rem;border-radius:999px;
-  border:2px solid #fff;background:var(--accent);color:#fff;
+  border:2px solid #fff;background:var(--accent);color:var(--accent-on);
   font-size:.68rem;font-weight:800;line-height:1;cursor:pointer;
   box-shadow:0 1px 4px rgba(10,14,18,.45);font-variant-numeric:tabular-nums}
 .pin.empty{background:var(--warn)}
@@ -1854,7 +1880,7 @@ a.metric:hover{border-color:var(--accent)}
 .toplace button{display:inline-flex;align-items:center;gap:.3rem;
   padding:.25rem .5rem;border:1px solid var(--hair);border-radius:7px;
   background:var(--card);font-size:.78rem;font-weight:600}
-.toplace button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.toplace button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-on)}
 .toplace button:disabled{opacity:.45}
 
 .unitcard h4{margin:1rem 0 .3rem;font-size:.72rem;letter-spacing:.06em;
@@ -2310,11 +2336,6 @@ a.metric:hover{border-color:var(--accent)}
 /* Who owns the home: four choices, one tap, saved on the tap. A select
    would hide three of the four and cost a second click. */
 .kindpick{display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.45rem}
-.chip{display:inline-block;padding:.26rem .6rem;border:1px solid var(--hair);
-  border-radius:999px;background:var(--card);font-size:.76rem;font-weight:600;
-  color:var(--ink-2);cursor:pointer}
-.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.chip:hover:not(.on):not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
 
 .lotlist{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.25rem;
   font-size:.8rem;color:var(--ink-2);line-height:1.5}
@@ -2530,7 +2551,7 @@ a.metric:hover{border-color:var(--accent)}
 .tsact{width:100%;min-height:3.5rem;border:none;border-radius:12px;
   font:inherit;font-size:1.05rem;font-weight:700;letter-spacing:.01em;
   cursor:pointer;color:var(--dark-ink);background:var(--dark)}
-.tsact.stop{background:var(--warn);color:#FFFFFF}
+.tsact.stop{background:var(--warn);color:var(--warn-on)}
 .tsact:disabled{opacity:.6;cursor:default}
 
 .tsminor{width:100%;min-height:3rem;border:1px solid var(--hair);
@@ -2650,13 +2671,24 @@ a.metric:hover{border-color:var(--accent)}
 .tscard.today .tsspan{color:#FFFFFF}
 /* The action stays high-contrast against the card rather than blending into
    it -- a button the colour of its own background is a button nobody presses. */
-.tscard.today .tsact{background:#FFFFFF;color:var(--ink)}
-.tscard.today .tsact.stop{background:#FFFFFF;color:var(--offclock)}
+/* A LITERAL, not `var(--ink)`.
+   The background here is a fixed white, in both themes. `--ink` is near-black
+   in light mode and near-WHITE in dark, so this button came out white on
+   white at night -- the words simply were not there, on the one control the
+   entire screen exists for.
+
+   Fourth time a colour has been taken from a token whose other value broke
+   it (`.check`, `.empty`, `.danger`, now this). The rule: a surface that is
+   fixed in both themes must take its ink from a fixed value too. */
+.tscard.today .tsact{background:#FFFFFF;color:#0F1729}
+.tscard.today .tsact.stop{background:#FFFFFF;color:#8E251F}
 .tscard.today .tsminor{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);
   color:#FFFFFF}
 .tscard.today .tsminor:hover{background:rgba(255,255,255,.22)}
+/* Same reason: a fixed white field needs fixed dark text, or the job picker
+   is empty-looking at night. */
 .tscard.today .tsfield select,
-.tscard.today .tsfield input{background:#FFFFFF;color:var(--ink);border-color:transparent}
+.tscard.today .tsfield input{background:#FFFFFF;color:#0F1729;border-color:transparent}
 
 /* Report a repair. Public, read on a phone, often at night. */
 .rep{width:100%;max-width:34rem;margin:0 auto;padding:1.5rem 1rem 4rem}

@@ -544,12 +544,111 @@ if (!exe || !existsSync(exe)) {
 const browser = await chromium.launch(exe ? { executablePath: exe } : {});
 const wrong = [];
 
+/* A FIXED LITERAL MAY ONLY SIT AGAINST A FIXED LITERAL.
+ *
+ * Read from the stylesheet, so it also covers screens this harness does not
+ * draw. The fault it names has now happened six times -- `.check`, `.empty`,
+ * `.danger`, the Clock In button, `.chip`, and twenty-two primary buttons at
+ * once -- and it is always the same shape: one half of the pair is a hex
+ * value, the other is a token that is redefined under
+ * prefers-color-scheme: dark. In one theme they are a pair; in the other
+ * nobody looked.
+ *
+ * `color:#fff` on `background:var(--accent)` measured 7.1:1 by day and
+ * 2.5:1 at night, because --accent goes #405981 -> #8AA4CE. That passes the
+ * contrast floor below -- 2.5 is not "the words are not there" -- so the
+ * browser check cannot be what holds this. The fix was an ink partner per
+ * ground (--accent-on, --crit-on, --warn-on), the same construct the
+ * stylesheet already had in --dark/--dark-ink.
+ *
+ * This is written as a guard rather than a note in CLAUDE.md because the
+ * note WAS in CLAUDE.md, in bold, after the third time, and the fourth and
+ * fifth happened anyway. A rule a person has to remember is a rule that
+ * gets forgotten.
+ */
+{
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const tokens = (re) => {
+    const m = bare.match(re);
+    const o = {};
+    if (m) for (const [, k, v] of m[1].matchAll(/(--[\w-]+)\s*:\s*([^;}]+)/g)) o[k] = v.trim();
+    return o;
+  };
+  const light = tokens(/\n:root\{([\s\S]*?)\n\}/);
+  const dark = tokens(/:root\[data-theme="dark"\]\{([\s\S]*?)\n\}/);
+  const moves = new Set(Object.keys(light).filter(
+    (k) => k in dark && light[k] !== dark[k]));
+  // An alias to a token that moves moves too: --ground:var(--page).
+  for (let pass = 0; pass < 3; pass++) {
+    for (const [k, v] of Object.entries(light)) {
+      for (const [, t] of v.matchAll(/var\((--[\w-]+)\)/g)) {
+        if (moves.has(t)) moves.add(k);
+      }
+    }
+  }
+  if (moves.size < 10) wrong.push(`only ${moves.size} tokens read as theme-dependent -- the token scan broke, not the stylesheet`);
+
+  const lit = /(?<![\w-])(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|white|black)(?![\w-])/i;
+  const movingVars = (v) => [...v.matchAll(/var\((--[\w-]+)\)/g)]
+    .map((m) => m[1]).filter((t) => moves.has(t));
+
+  let i = 0, buf = "";
+  while (i < bare.length) {
+    if (bare[i] !== "{") { buf += bare[i++]; continue; }
+    const sel = buf.trim(); buf = "";
+    let d = 1, j = i + 1;
+    while (j < bare.length && d) { if (bare[j] === "{") d++; else if (bare[j] === "}") d--; j++; }
+    const body = bare.slice(i + 1, j - 1);
+    i = j;
+    if (sel.startsWith("@") || body.includes("{")) continue;
+    const one = (prop) => {
+      const m = body.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;}]+)`));
+      return m ? m[1].trim() : null;
+    };
+    const fg = one("color"), bg = one("background(?:-color)?");
+    if (!fg || !bg) continue;
+    /* The real invariant, and it subsumes the literal case: IF THE GROUND
+     * MOVES BETWEEN THEMES, THE INK MUST MOVE WITH IT. A literal is simply
+     * an ink that does not move.
+     *
+     * Checking only the shape -- literal against token -- passed when the
+     * partner was given the SAME value in both themes, which is the broken
+     * state wearing the right clothes. Asking whether it moves cannot be
+     * fooled that way. */
+    const groundMoves = movingVars(bg).length > 0;
+    const inkMoves = movingVars(fg).length > 0;
+    if (groundMoves && !inkMoves) {
+      wrong.push(`${sel}: the ground moves between themes and the ink does not`
+        + ` -- color:${fg} on background:${bg}.`
+        + (lit.test(fg) ? " Give the ground an ink partner."
+                        : " That partner has the same value in both themes."));
+    }
+  }
+}
+
 // 800 and 390 were added after a panel anchored to the search box's right
 // edge hung off the LEFT of the screen between 700 and 900px -- a band none
 // of the four original widths touched, 900 being exactly the boundary. 390
 // is an actual iPhone rather than a round number.
+/* BOTH THEMES.
+ *
+ * This harness had only ever drawn the daytime version of the application,
+ * and the stylesheet redefines every colour token under
+ * prefers-color-scheme: dark. So a rule like `background:#FFFFFF;
+ * color:var(--ink)` passes every check here and comes out WHITE ON WHITE at
+ * night -- which is what happened to the Clock In button, the one control
+ * the crew screen exists for, and a phone photographed in a dark room is how
+ * it was found.
+ *
+ * The contrast floor below is what catches it; it just never had the other
+ * half of the stylesheet to look at.
+ */
+for (const scheme of ["light", "dark"])
 for (const width of [1440, 1100, 900, 800, 420, 390]) {
-  const p = await browser.newPage({ viewport: { width, height: 1200 } });
+  const p = await browser.newPage({
+    viewport: { width, height: 1200 },
+    colorScheme: scheme,
+  });
   await p.goto(`file://${file}`);
   await p.waitForTimeout(150);
 
@@ -671,19 +770,19 @@ for (const width of [1440, 1100, 900, 800, 420, 390]) {
     };
   });
 
-  await p.screenshot({ path: `/tmp/lot-card-${width}.png`, fullPage: true });
+  await p.screenshot({ path: `/tmp/lot-card-${scheme}-${width}.png`, fullPage: true });
   await p.close();
 
-  if (said.out.length) wrong.push(`${width}px: out of the card -- ${said.out.join(", ")}`);
-  if (said.thin.length) wrong.push(`${width}px: too narrow to use -- ${said.thin.join(", ")}`);
-  if (said.over.length) wrong.push(`${width}px: a tick box stretched -- ${said.over.join(", ")}`);
-  if (said.small.length) wrong.push(`${width}px: too small to hit -- ${said.small.join(", ")}`);
-  if (said.faint.length) wrong.push(`${width}px: words you cannot read -- ${said.faint.join(", ")}`);
-  if (said.gone.length) wrong.push(`${width}px: off the screen -- ${said.gone.join(", ")}`);
-  if (said.sideways) wrong.push(`${width}px: the page scrolls sideways`);
+  if (said.out.length) wrong.push(`${scheme} ${width}px: out of the card -- ${said.out.join(", ")}`);
+  if (said.thin.length) wrong.push(`${scheme} ${width}px: too narrow to use -- ${said.thin.join(", ")}`);
+  if (said.over.length) wrong.push(`${scheme} ${width}px: a tick box stretched -- ${said.over.join(", ")}`);
+  if (said.small.length) wrong.push(`${scheme} ${width}px: too small to hit -- ${said.small.join(", ")}`);
+  if (said.faint.length) wrong.push(`${scheme} ${width}px: words you cannot read -- ${said.faint.join(", ")}`);
+  if (said.gone.length) wrong.push(`${scheme} ${width}px: off the screen -- ${said.gone.join(", ")}`);
+  if (said.sideways) wrong.push(`${scheme} ${width}px: the page scrolls sideways`);
 }
 
 await browser.close();
-console.log("wrote /tmp/lot-card-1440.png and three narrower");
+console.log("wrote /tmp/lot-card-{light,dark}-*.png");
 if (wrong.length) { for (const w of wrong) console.error(" ✗ " + w); process.exit(1); }
 console.log("nothing obviously wrong");
