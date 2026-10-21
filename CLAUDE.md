@@ -124,9 +124,21 @@ building" and "it is probably your browser" when one link would have answered
 it in the first.
 
 When they do not match, the fix is **Create Deployment** in the left sidebar
-of https://vercel.com/larabee-inbox/mh-investor-template/deployments, branch
-`main`. It builds what is actually on the branch and owes nothing to the
-webhook.
+of https://vercel.com/larabee-inbox/mh-investor-template/deployments. It
+builds what is actually on the branch and owes nothing to the webhook.
+
+**Put `main` in that box, not a commit SHA.** Every commit here exists on
+both `main` and the feature branch it was merged from, and Vercel resolves a
+SHA to whichever branch it likes -- it picked the feature branch, warned
+"this commit exists on multiple branches", and offered only **Create Preview
+Deployment**. A preview is not the live site. The branch name gives **Deploy
+to Production**, which is the button that matters.
+
+The Create Deployment dialog is also the only place the real build error is
+printed. The deployments list showed a failed cron deployment as an
+unexplained Preview row; the dialog said "Hobby accounts are limited to daily
+cron jobs" in full. **When a deployment is not happening and the list does not
+say why, open that dialog.**
 
 The general shape, and it is the oldest one in this file: **silence and
 success look identical.** A merge that shipped and a merge that went nowhere
