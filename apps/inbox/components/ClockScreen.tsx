@@ -180,7 +180,27 @@ export default function ClockScreen({ name }: { name: string }) {
     };
     void send();
     const id = setInterval(() => { if (onRef.current) void send(); }, PING_MS);
-    return () => { alive = false; clearInterval(id); };
+
+    // A phone in a pocket with the screen off is not sending anything: every
+    // browser throttles a background tab's timers and most suspend them
+    // outright, and iOS suspends almost at once. So the trail has gaps, and
+    // the sentence above says so rather than claiming a coverage this cannot
+    // have -- a tracking promise that quietly is not kept is worse than an
+    // honest one that is.
+    //
+    // What IS worth doing is a fix the moment the screen comes back, so the
+    // gap is bounded by how long the phone was away rather than by when the
+    // next tick happens to land.
+    const onBack = () => {
+      if (document.visibilityState === "visible" && onRef.current) void send();
+    };
+    document.addEventListener("visibilitychange", onBack);
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onBack);
+    };
   }, [on]);
 
   if (!state) {
@@ -285,8 +305,9 @@ export default function ClockScreen({ name }: { name: string }) {
             followed assumes the worse answer, and they would be right to. */}
         {on ? (
           <p className="tstrail">
-            Your location is recorded every {Math.round(PING_MS / 60_000)} minutes while
-            you are on the clock, and stops when you clock out.
+            Your location is recorded about every {Math.round(PING_MS / 60_000)} minutes
+            while this screen is open and you are on the clock. It stops when you
+            clock out, and while your phone is locked or on another app.
           </p>
         ) : null}
       </section>
