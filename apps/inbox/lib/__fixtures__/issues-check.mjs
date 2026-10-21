@@ -267,8 +267,34 @@ t("and remembers the one that worked",
   + "straight there.");
 
 t("the embeds are retried without them if refused",
-  /await rows\(session, "\/ServiceManagerIssues"\);/.test(mod),
-  "A request with no tenant name on it still beats not knowing it exists.");
+  /await rows\(session, "\/ServiceManagerIssues", budget\);/.test(mod),
+  "A request with no status on it still beats not knowing it exists.");
+
+t("the fetch stops before the function is killed",
+  /if \(Date\.now\(\) > deadline\) return \{ got: out, more: true \};/.test(mod)
+  && /maxDuration = 60;/.test(
+    readFileSync(join(here, "..", "app", "api", "rentmanager", "issues",
+      "route.ts"), "utf8")),
+  "Hobby kills a function at sixty seconds, and a killed function does "
+  + "not return JSON -- it returns whatever Vercel serves, which the "
+  + "browser reports as \"Unexpected end of JSON input\". Stopping with "
+  + "time to spare and saying there is more is a true answer that arrives.");
+
+t("and filing stops too, not just fetching",
+  /if \(Date\.now\(\) > until\) \{ out\.more = true; break; \}/.test(mod),
+  "Each ingest is a round trip of its own; the clock runs during those "
+  + "as well.");
+
+t("a rehearsal reads one page, not forty",
+  /pages: dryRun \? 1 :/.test(mod),
+  "The preview exists to show what the records look like, and the first "
+  + "page answers that.");
+
+t("the browser does not assume the answer is JSON",
+  /const body = await res\.text\(\);/.test(
+    readFileSync(join(here, "..", "components", "RentManagerProbe.tsx"), "utf8")),
+  "`res.json()` on a reply that is not JSON throws a message that names "
+  + "the parser and not the problem.");
 
 t("the route is admin only",
   /me\?\.role !== "admin"/.test(route));

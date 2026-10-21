@@ -4,7 +4,10 @@ import { pullServiceIssues } from "@/lib/rm-issues";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Sixty is the ceiling on Vercel's Hobby plan, and a function killed at
+// the ceiling does not return JSON -- it returns whatever Vercel serves,
+// which the browser then reports as "Unexpected end of JSON input".
+export const maxDuration = 60;
 
 /**
  * Fetch the maintenance requests tenants submitted in Tenant Web Access.

@@ -23,6 +23,7 @@ type Issues = {
   ok: boolean;
   dryRun: boolean;
   found: number;
+  more: boolean;
   filed: number;
   alreadyHad: number;
   failed: number;
@@ -133,7 +134,23 @@ export default function RentManagerProbe() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ go }),
       });
-      setIssues(await res.json());
+      // Read it, then try to parse it. `res.json()` on a reply that is
+      // not JSON throws "Unexpected end of JSON input", which names the
+      // parser and not the problem -- and the problem here was a
+      // function killed at the plan's sixty-second ceiling, which is a
+      // thing somebody can act on only if they are told it.
+      const body = await res.text();
+      try {
+        setIssues(JSON.parse(body));
+      } catch {
+        setFailed(
+          res.status === 504 || res.status === 502 || !body.trim()
+            ? `Rent Manager took too long and the request was cut off after`
+              + ` ${res.status || "no"} — press it again and it will carry on`
+              + " from where it stopped."
+            : `The server answered ${res.status} with something that is not`
+              + ` JSON: ${body.slice(0, 160)}`);
+      }
     } catch (e) {
       setFailed((e as Error).message);
     } finally {
@@ -285,11 +302,18 @@ export default function RentManagerProbe() {
         {issues?.ok && issues.found > 0 && (
           <>
             <p className="hint">
-              <strong>{issues.found} found.</strong>{" "}
+              <strong>{issues.found} found{issues.more ? " so far" : ""}.</strong>{" "}
               {issues.dryRun
                 ? "Nothing written yet."
                 : `${issues.filed} brought in, ${issues.alreadyHad} already here`
                   + `${issues.failed ? `, ${issues.failed} could not be` : ""}.`}
+              {issues.more && (
+                <>
+                  {" "}Rent Manager has more than one run can fetch inside the
+                  time a request is allowed — press the button again and it
+                  carries on. Nothing is fetched twice.
+                </>
+              )}
             </p>
             <ul className="rmlist">
               {issues.samples.map((i) => (

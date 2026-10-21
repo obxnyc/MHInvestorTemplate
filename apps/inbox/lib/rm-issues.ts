@@ -59,6 +59,9 @@ export type PullResult = {
   dryRun: boolean;
   /** What came back, before anything was written. */
   found: number;
+  /** The clock ran out or the page cap was reached, and Rent Manager has
+   *  more. Pressing again carries on from where this stopped. */
+  more: boolean;
   filed: number;
   alreadyHad: number;
   failed: number;
@@ -129,16 +132,38 @@ const text = (v: unknown): string | null => {
  */
 const EMBEDS = "Category,Status,Priority";
 
-async function rows(session: RmSession, path: string): Promise<Record<string, unknown>[]> {
+/**
+ * Pages, until there are no more or the clock runs out.
+ *
+ * The clock is the point. This deployment is on Vercel's Hobby plan,
+ * where a function is killed at sixty seconds -- and when it is killed
+ * the browser does not get a JSON error, it gets whatever Vercel serves
+ * instead, which is how a working pull reported "Unexpected end of JSON
+ * input" and said nothing about why.
+ *
+ * So it stops with time to spare and says there is more, which is a
+ * true answer that arrives. Pressing the button again carries on, since
+ * everything already filed is recognised and skipped.
+ */
+async function rows(
+  session: RmSession, path: string,
+  opts: { pages?: number; deadline?: number } = {},
+): Promise<{ got: Record<string, unknown>[]; more: boolean }> {
   const out: Record<string, unknown>[] = [];
-  for (let p = 1; p <= 40; p++) {
+  const cap = opts.pages ?? 40;
+  const deadline = opts.deadline ?? (Date.now() + 40_000);
+  for (let p = 1; p <= cap; p++) {
+    if (Date.now() > deadline) return { got: out, more: true };
     const join = path.includes("?") ? "&" : "?";
     const res = await fetch(
       `${session.base}${path}${join}pagesize=${PAGE}&pagenumber=${p}`,
       {
         headers: { [session.header]: session.token, Accept: "application/json" },
         cache: "no-store",
-        signal: AbortSignal.timeout(60_000),
+        // Well under what is left, so a slow page cannot eat the whole
+        // allowance and leave nothing to report with.
+        signal: AbortSignal.timeout(
+          Math.max(5_000, Math.min(20_000, deadline - Date.now()))),
       },
     );
     if (!res.ok) {
@@ -147,9 +172,9 @@ async function rows(session: RmSession, path: string): Promise<Record<string, un
     const body = await res.json();
     const batch = Array.isArray(body) ? body as Record<string, unknown>[] : [];
     out.push(...batch);
-    if (batch.length < PAGE) break;
+    if (batch.length < PAGE) return { got: out, more: false };
   }
-  return out;
+  return { got: out, more: true };
 }
 
 /** The record, read into something this app understands. */
@@ -242,12 +267,18 @@ export function detail(issue: Issue): string {
  * before it is believed.
  */
 export async function pullServiceIssues(
-  opts: { dryRun?: boolean; limit?: number } = {},
+  opts: {
+    dryRun?: boolean; limit?: number;
+    /** How many pages at most. */
+    pages?: number;
+    /** How long to spend before stopping and saying there is more. */
+    seconds?: number;
+  } = {},
 ): Promise<PullResult> {
   const dryRun = opts.dryRun !== false;
   const blank: PullResult = {
-    ok: false, signedIn: false, dryRun, found: 0, filed: 0, alreadyHad: 0,
-    failed: 0, shape: null, readAs: {}, samples: [], error: null,
+    ok: false, signedIn: false, dryRun, found: 0, more: false, filed: 0,
+    alreadyHad: 0, failed: 0, shape: null, readAs: {}, samples: [], error: null,
   };
 
   const auth = await rmAuthorize();
@@ -258,12 +289,22 @@ export async function pullServiceIssues(
 
   // With the embeds if they are accepted, without them if they are not. The
   // bare record still carries the issue; it just names fewer things.
+  // A rehearsal reads one page. It exists to show what the records look
+  // like and whether the field names are right, and forty pages of that
+  // is forty round trips to answer a question the first page answers.
+  const budget = {
+    pages: dryRun ? 1 : (opts.pages ?? 40),
+    deadline: Date.now() + (opts.seconds ?? 35) * 1000,
+  };
   let raw: Record<string, unknown>[];
+  let more = false;
   try {
-    raw = await rows(session, `/ServiceManagerIssues?embeds=${EMBEDS}`);
+    const got = await rows(session, `/ServiceManagerIssues?embeds=${EMBEDS}`, budget);
+    raw = got.got; more = got.more;
   } catch {
     try {
-      raw = await rows(session, "/ServiceManagerIssues");
+      const got = await rows(session, "/ServiceManagerIssues", budget);
+      raw = got.got; more = got.more;
     } catch (e) {
       return { ...blank, signedIn: true, error: (e as Error).message };
     }
@@ -278,13 +319,18 @@ export async function pullServiceIssues(
     ...blank,
     ok: true, signedIn: true,
     found: issues.length,
+    more,
     shape: raw[0] ? Object.keys(raw[0]) : null,
     readAs,
     samples: issues.slice(0, 5),
   };
   if (dryRun) return out;
 
+  const until = Date.now() + (opts.seconds ?? 35) * 1000;
   for (const issue of issues) {
+    // Each of these is a round trip of its own. Stopping with time left
+    // and saying there is more beats being killed with nothing said.
+    if (Date.now() > until) { out.more = true; break; }
     try {
       const res = await ingest({
         // The same key the email path uses, so an issue that arrives both

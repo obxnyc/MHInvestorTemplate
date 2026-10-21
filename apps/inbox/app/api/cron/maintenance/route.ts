@@ -4,7 +4,10 @@ import { pullServiceIssues } from "@/lib/rm-issues";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Sixty is the ceiling on Vercel's Hobby plan, and a function killed at
+// the ceiling does not return JSON -- it returns whatever Vercel serves,
+// which the browser then reports as "Unexpected end of JSON input".
+export const maxDuration = 60;
 
 function authorized(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -23,10 +26,20 @@ function authorized(req: Request) {
  * request can fall down silently at any step. So this asks instead.
  *
  * Polling is not the same as realtime and the difference is the interval.
- * Fifteen minutes means a tenant's request is in the inbox within fifteen
- * minutes of them pressing submit, every time, whether or not any mail was
- * forwarded. The email alerts carry on arriving as they do now; this is the
- * copy that lands somewhere a person works.
+ * The schedule in vercel.json asks for the top of every hour.
+ *
+ * WHAT THE PLAN ALLOWS IS NOT WHAT THE SCHEDULE ASKS FOR. On Vercel's
+ * Hobby plan a cron is triggered once a day whatever the expression says,
+ * and within a flexible hour at that. So on Hobby this is a daily backstop
+ * and the button on the Rent Manager page is what brings a request in now.
+ * On Pro the same line gives hourly, and a quarter-hourly expression
+ * gives quarter-hourly -- one setting in vercel.json, no code change.
+ * (Written in words because a cron expression starting with a star and
+ * a slash ends a block comment, which is how this file stopped
+ * compiling the first time.)
+ *
+ * The email alerts carry on arriving as they do now; this is the copy that
+ * lands somewhere a person works.
  *
  * Safe to run as often as the schedule allows: `ingest` refuses an
  * external_id it has already seen, so the only thing a run with nothing new

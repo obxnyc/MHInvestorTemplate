@@ -453,6 +453,34 @@ reason: the fixture could not tell the orderings apart. A record whose
 **A fixture that cannot distinguish the two answers is not testing the
 thing it names.**
 
+### The plan is part of the design
+
+This deployment is on Vercel's **Hobby** plan, and two things I shipped
+assumed otherwise.
+
+**A function is killed at sixty seconds.** `maxDuration = 300` is not a
+grant, it is a request the plan refuses. And a killed function does not
+return JSON -- it returns whatever Vercel serves -- so the browser said
+"Unexpected end of JSON input", which names the parser and tells you
+nothing. The pull now stops with time to spare and reports `more: true`;
+pressing again carries on, because everything already filed is skipped.
+The browser reads the reply as text and parses it itself, so a 504 says
+it was cut off rather than blaming the parser.
+
+**A cron is triggered once a day**, whatever the expression says, within
+a flexible hour. A more frequent expression is not clamped quietly -- it
+can fail the deployment. So the schedule asks for hourly and the doc
+comment says plainly that Hobby gives daily, and that Pro turns the same
+line into what it reads like. One setting, no code change.
+
+A third, smaller: **a cron expression beginning with a star and a slash
+ends a block comment.** Written in words in the source for that reason.
+
+The general shape: **the hosting plan is a constraint on the design, not
+a detail of the deployment.** A timeout, a cron frequency and a function
+size decide what a feature can be, and finding that out from a user's
+screenshot is finding it out late.
+
 ### Run the migration against a real Postgres, do not read it
 
 The photo in the team chat was not migration 027 and was not the
