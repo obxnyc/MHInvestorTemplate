@@ -2793,3 +2793,16 @@ a.metric:hover{border-color:var(--accent)}
   .omni{order:3;flex-basis:100%;max-width:none;min-width:0;margin:0}
   .omnipanel{left:0;right:0;min-width:0}
 }
+
+/* A NEW MESSAGE HAS TO BE VISIBLE WITHOUT READING THE LIST.
+   The only mark an unread row carried was a small "new" pill beside the
+   category badge, and only on staff threads -- so a text that had just
+   arrived looked exactly like one dealt with yesterday. The tint is what you
+   see from arm's length; the weight is what you see when you look.
+   Ink is left alone here, so the row keeps whatever colour its category gave
+   it -- a background that moves with the theme and an ink that does not is
+   the fault card-picture.mjs now fails on. */
+.row.unread{background:var(--accent-soft)}
+.row.unread .rname{font-weight:800}
+.row.unread .rprev{color:var(--ink-2)}
+.row.unread .rtime{color:var(--accent-ink);font-weight:700}

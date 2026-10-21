@@ -36,6 +36,13 @@ export default async function ConversationList(
 
   if (show === "open") query = query.eq("status", "open");
   if (show === "closed") query = query.eq("status", "closed");
+  /* The Unread tab matched NO branch here, so it fell through to no status
+     filter at all and showed every conversation, closed ones included -- a
+     tab that looked like a filter and was a no-op. Narrowing to open is only
+     half of it; which of those are unread cannot be asked of the database,
+     because it depends on the newest INBOUND message, so the rest is done
+     below once that is known. */
+  if (show === "unread") query = query.eq("status", "open");
   if (show === "closing") query = query.gt("closure_prompts", 0).eq("status", "open");
   if (show === "review") query = query.lt("category_confidence", 0.75).eq("status", "open");
   // The category tab narrows whatever the status tab already chose, so
@@ -91,6 +98,50 @@ export default async function ConversationList(
     .filter((r) => !q || r.name.toLowerCase().includes(q.toLowerCase())
       || r.preview.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => b.at.localeCompare(a.at));
+
+  /* IS THERE SOMETHING HERE I HAVE NOT SEEN.
+   *
+   * `conversation_reads` has existed since migration 003 and this list has
+   * never asked it, so a text arriving carried no mark at all while a staff
+   * thread did -- the one kind of message that is always from outside was the
+   * one kind that looked read.
+   *
+   * It is NOT `last_message_at > last_read_at`. The newest message on a thread
+   * is very often one we sent, and a queue that lights up for our own replies
+   * is a queue nobody believes by the end of the week. The question is whether
+   * the newest message FROM OUTSIDE is newer than the last time I looked, so
+   * that is what is asked: the newest inbound per conversation.
+   *
+   * A conversation with inbound messages and no read row at all is unread --
+   * nobody has opened it. Null is "nobody has looked", not "looked at zero". */
+  const ids = (rows ?? []).map((c) => c.id);
+  const [{ data: reads }, { data: inbound }] = ids.length
+    ? await Promise.all([
+        supabase.from("conversation_reads")
+          .select("conversation_id, last_read_at").eq("staff_id", staff!.id)
+          .in("conversation_id", ids),
+        supabase.from("messages")
+          .select("conversation_id, created_at").in("conversation_id", ids)
+          .eq("direction", "inbound")
+          .order("created_at", { ascending: false }).limit(2000),
+      ])
+    : [{ data: [] }, { data: [] }];
+
+  const readAt = new Map((reads ?? []).map(
+    (r) => [r.conversation_id as string, r.last_read_at as string]));
+  // Ordered newest first, so the first one seen for a conversation is its newest.
+  const lastIn = new Map<string, string>();
+  for (const m of inbound ?? []) {
+    if (!lastIn.has(m.conversation_id as string)) {
+      lastIn.set(m.conversation_id as string, m.created_at as string);
+    }
+  }
+  const isUnread = (id: string) => {
+    const got = lastIn.get(id);
+    if (!got) return false;
+    const seen = readAt.get(id);
+    return !seen || got > seen;
+  };
 
   const byCat = new Map<string, { total: number; unclaimed: number }>(
     (counts ?? []).map((r) => [r.category as string, { total: r.total, unclaimed: r.unclaimed }]),
@@ -160,92 +211,127 @@ export default async function ConversationList(
         <QueueSelects who={who} show={show}
                       unclaimed={unclaimed ?? 0} closing={closing ?? 0} />
 
+        {/* ONE LIST, NEWEST FIRST.
+            These were two lists rendered one after the other -- every staff
+            thread above every text -- so a text that arrived just now sat
+            under a colleague's message from twenty hours ago and looked like
+            nothing had come in. Both halves were correctly sorted; stacking
+            them is what threw the order away. The two sorts were each
+            answering a narrower question than the screen was asking. */}
         <ul className="rows">
-          {staffRows.map((t) => (
-            <li key={`dm${t.id}`}>
-              <a href={`/team?t=${t.id}`} data-dm={t.id}
-                 className={`row cat-staff${t.id === selectedId ? " sel" : ""}`}>
-                <span className="avwrap">
-                  <span className="av staffav">{initials(t.name)}</span>
-                </span>
-                <span className="rbody">
-                  <span className="rtop">
-                    <span className="rname">{t.name}</span>
-                    <span className="badge staffbadge">Staff</span>
-                    {t.unread && <span className="pill warn">new</span>}
-                    <span className="rtime">{timeAgo(t.at)}</span>
-                  </span>
-                  <span className="rprev">{t.preview}</span>
-                </span>
-              </a>
-            </li>
-          ))}
-
-          {rows?.map((c) => {
-            const contact = c.contacts as unknown as
-              { id: string; phone: string; full_name: string | null; party: string;
-                language: string | null; unit_id: string | null;
-                units: { label: string | null; properties: { name: string; color: string | null } | null } | null };
-            const holder = c.staff as unknown as { full_name: string } | null;
-            const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
-            const unsure = c.category_confidence !== null && c.category_confidence < 0.75;
-            const prop = propertyOf(c.units as never, contact?.units as never);
-            return (
-              <li key={c.id}>
-                {/* A real link, so middle-click and copy-link work and a
-                    pasted URL opens the thread. The inbox intercepts the plain
-                    click and swaps the pane instead of navigating. */}
-                {/* What the right-click menu needs to act without opening the
-                    thread first. Written here because the list already knows
-                    all of it -- fetching it again on right-click would be a
-                    round trip for a menu that has to feel instant. */}
-                <Link href={`/c/${c.id}`} data-cid={c.id}
-                      data-name={name}
-                      data-phone={contact?.phone ?? ""}
-                      data-contact={contact?.id ?? ""}
-                      data-party={contact?.party ?? ""}
-                      data-unit={contact?.unit_id ?? ""}
-                      data-lang={contact?.language ?? ""}
-                      data-cat={c.category}
-                      data-named={contact?.full_name ? "1" : "0"}
-                      data-claimed={c.assigned_to ? "1" : "0"}
-                      data-mine={c.assigned_to === staff?.id ? "1" : "0"}
-                      className={`row cat-${c.category}${c.id === selectedId ? " sel" : ""}`}
-                      aria-current={c.id === selectedId ? "true" : undefined}>
+          {(() => {
+            const feed = [
+            /* The other half of the Unread tab. It cannot be asked of the
+               database because it turns on the newest INBOUND message against
+               my own read receipt, neither of which is a column on the row. */
+            ...staffRows.filter((t) => show !== "unread" || t.unread).map((t) => ({
+              at: t.at,
+              node: (
+              <li key={`dm${t.id}`}>
+                <a href={`/team?t=${t.id}`} data-dm={t.id}
+                   className={`row cat-staff${t.id === selectedId ? " sel" : ""}`
+                   + `${t.unread ? " unread" : ""}`}>
                   <span className="avwrap">
-                    <Avatar name={name} />
-                    {holder
-                      ? <span className="who-pip" title={holder.full_name}>
-                          {initials(holder.full_name)}
-                        </span>
-                      : <span className="open-pip" title="Nobody has picked this up" />}
+                    <span className="av staffav">{initials(t.name)}</span>
                   </span>
                   <span className="rbody">
                     <span className="rtop">
-                      <span className="rname">{name}</span>
-                      <span className={`badge cat-${c.category}`}>{catLabel(c.category)}</span>
-                      {c.closure_prompts > 0 && (
-                        <span className="pill warn">{c.closure_prompts}&times;</span>
-                      )}
-                      {unsure && <span className="pill grey">unsure</span>}
-                      <span className="rtime">{timeAgo(c.last_message_at)}</span>
+                      <span className="rname">{t.name}</span>
+                      <span className="badge staffbadge">Staff</span>
+                      {t.unread && <span className="pill warn">new</span>}
+                      <span className="rtime">{timeAgo(t.at)}</span>
                     </span>
-                    <span className="rprev">{c.last_message_preview ?? c.subject}</span>
-                    {prop && (
-                      <span className="prop" title={prop.exact ? undefined
-                        : `From ${name}'s unit — no unit set on this thread yet`}>
-                        <span className="pdot" style={{ background: prop.color }} />
-                        <span className="pname">
-                          {prop.name}{prop.unit ? ` · ${prop.unit}` : ""}
-                        </span>
-                      </span>
-                    )}
+                    <span className="rprev">{t.preview}</span>
                   </span>
-                </Link>
+                </a>
+              </li>
+              ),
+            })),
+            ...(rows ?? []).filter((c) => show !== "unread" || isUnread(c.id))
+              .map((c) => ({
+              at: c.last_message_at,
+              node: ((): React.ReactNode => {
+              const contact = c.contacts as unknown as
+                { id: string; phone: string; full_name: string | null; party: string;
+                  language: string | null; unit_id: string | null;
+                  units: { label: string | null; properties: { name: string; color: string | null } | null } | null };
+              const holder = c.staff as unknown as { full_name: string } | null;
+              const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
+              const unsure = c.category_confidence !== null && c.category_confidence < 0.75;
+              const prop = propertyOf(c.units as never, contact?.units as never);
+              return (
+                <li key={c.id}>
+                  {/* A real link, so middle-click and copy-link work and a
+                      pasted URL opens the thread. The inbox intercepts the plain
+                      click and swaps the pane instead of navigating. */}
+                  {/* What the right-click menu needs to act without opening the
+                      thread first. Written here because the list already knows
+                      all of it -- fetching it again on right-click would be a
+                      round trip for a menu that has to feel instant. */}
+                  <Link href={`/c/${c.id}`} data-cid={c.id}
+                        data-name={name}
+                        data-phone={contact?.phone ?? ""}
+                        data-contact={contact?.id ?? ""}
+                        data-party={contact?.party ?? ""}
+                        data-unit={contact?.unit_id ?? ""}
+                        data-lang={contact?.language ?? ""}
+                        data-cat={c.category}
+                        data-named={contact?.full_name ? "1" : "0"}
+                        data-claimed={c.assigned_to ? "1" : "0"}
+                        data-mine={c.assigned_to === staff?.id ? "1" : "0"}
+                        className={`row cat-${c.category}`
+                        + `${c.id === selectedId ? " sel" : ""}`
+                        + `${isUnread(c.id) ? " unread" : ""}`}
+                        aria-current={c.id === selectedId ? "true" : undefined}>
+                    <span className="avwrap">
+                      <Avatar name={name} />
+                      {holder
+                        ? <span className="who-pip" title={holder.full_name}>
+                            {initials(holder.full_name)}
+                          </span>
+                        : <span className="open-pip" title="Nobody has picked this up" />}
+                    </span>
+                    <span className="rbody">
+                      <span className="rtop">
+                        <span className="rname">{name}</span>
+                        <span className={`badge cat-${c.category}`}>{catLabel(c.category)}</span>
+                      {isUnread(c.id) && <span className="pill warn">new</span>}
+                        {c.closure_prompts > 0 && (
+                          <span className="pill warn">{c.closure_prompts}&times;</span>
+                        )}
+                        {unsure && <span className="pill grey">unsure</span>}
+                        <span className="rtime">{timeAgo(c.last_message_at)}</span>
+                      </span>
+                      <span className="rprev">{c.last_message_preview ?? c.subject}</span>
+                      {prop && (
+                        <span className="prop" title={prop.exact ? undefined
+                          : `From ${name}'s unit — no unit set on this thread yet`}>
+                          <span className="pdot" style={{ background: prop.color }} />
+                          <span className="pname">
+                            {prop.name}{prop.unit ? ` · ${prop.unit}` : ""}
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              );
+              })(),
+            })),
+            ].sort((x, y) => (y.at ?? "").localeCompare(x.at ?? ""));
+            /* The empty line keys on WHAT IS RENDERED, not on whether the
+               query returned anything. With the Unread tab filtering after the
+               query, `rows` can be full while the list is empty -- and "No
+               conversations match" under a tab that is doing the matching
+               reads as a broken screen rather than as good news. */
+            if (feed.length) return feed.map((f) => f.node);
+            return (
+              <li className="none">
+                {show === "unread" ? "Nothing unread. Everything here has been seen."
+                                   : "No conversations match."}
               </li>
             );
-          })}
-          {!rows?.length && <li className="none">No conversations match.</li>}
+          })()}
         </ul>
     </div>
   );
