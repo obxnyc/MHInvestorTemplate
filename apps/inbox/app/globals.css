@@ -2466,49 +2466,138 @@ a.metric:hover{border-color:var(--accent)}
 .leakshort{width:100%;color:var(--muted);font-size:.8rem}
 .leakgo{margin-left:auto;color:var(--accent-ink);font-size:.82rem;white-space:nowrap}
 
-/* ------------------------------------------------------------------- the clock
-   A phone, in a work glove, in a yard. The button is the screen and
-   everything else is underneath it. `clock*` throughout -- `.check`,
-   `.empty`, `.dim` and `.danger` are all already states in here, and
-   borrowing one has cost a round every time. */
-.clockwrap{max-width:30rem;margin:0 auto;padding:1.2rem 1rem 3rem;
-  display:flex;flex-direction:column;gap:.9rem}
-.clockload{color:var(--muted);text-align:center;padding:3rem 0}
-.clockwho{color:var(--muted);text-align:center;margin:0;font-size:.9rem}
 
-/* Big enough to hit without looking. 58px is well over the 30px floor the
-   picture harness holds a thing-you-aim-at to, and over Apple's 44. */
-.clockbig{min-height:7rem;border:none;border-radius:16px;font:inherit;
-  font-size:1.6rem;font-weight:800;letter-spacing:.01em;cursor:pointer;
-  color:var(--dark-ink);background:var(--dark)}
-.clockbig.off{background:var(--warn);color:#FFFFFF}
-.clockbig:disabled{opacity:.6;cursor:default}
 
-.clockmid{min-height:3.2rem;border:1px solid var(--hair);border-radius:12px;
-  background:var(--card);color:var(--ink);font:inherit;font-size:1rem;
-  font-weight:600;cursor:pointer}
-.clockmid:disabled{opacity:.6;cursor:default}
+/* --------------------------------------------------------------- the timesheet
+   A phone, in a work glove, in a yard -- and a pay record, which is why the
+   first pass was wrong. One dark square floating in white space with the
+   words wrapped across two lines reads as a prototype, and nobody signs a
+   prototype. Panels with headings, a full-width action, and a figure big
+   enough to read at arm's length.
 
-.clocksum{margin:0;text-align:center;font-size:1.05rem;font-weight:700;color:var(--ink)}
-.clockbad{background:var(--warn-soft);color:var(--crit);border-radius:10px;
-  padding:.7rem .8rem;margin:0;font-size:.92rem;font-weight:600}
-.clocktrail{margin:0;color:var(--muted);font-size:.8rem;line-height:1.45;
-  background:var(--sunk);border-radius:10px;padding:.6rem .7rem}
-.clocknudge{margin:0;background:var(--sunk);border-radius:10px;
-  padding:.7rem .8rem;font-size:.92rem;color:var(--ink-2);line-height:1.45}
-.clocknudge.loud{background:var(--warn-soft);color:var(--crit);font-weight:600}
+   `ts*` throughout. `.check`, `.empty`, `.dim`, `.danger` and `.clock*` are
+   all already states or screens in this stylesheet, and borrowing one has
+   cost a round every single time. */
+.tsheet{width:100%;max-width:34rem;margin:0 auto;padding:1rem 1rem 3rem;
+  display:flex;flex-direction:column;gap:.85rem}
 
-.clockwhere{display:flex;flex-direction:column;gap:.35rem;font-size:.85rem;
-  color:var(--muted)}
-.clockwhere select{min-height:3rem;padding:.5rem .6rem;border:1px solid var(--hair);
-  border-radius:10px;background:var(--card);color:var(--ink);font:inherit;
-  /* minmax(0,…) in spirit: a bare width never shrinks below the widest
-     option's own width, which is how a select full of long property names
-     pushes a phone screen sideways. */
-  min-width:0;max-width:100%}
+.tshead{display:flex;align-items:baseline;justify-content:space-between;
+  gap:.6rem;flex-wrap:wrap;margin:.2rem 0 .1rem}
+.tshead h1{margin:0;font-size:1.35rem;font-weight:800;letter-spacing:-.02em}
+.tswho{margin:0;color:var(--muted);font-size:.92rem;font-weight:600}
+.tsloading{color:var(--muted);text-align:center;padding:4rem 0}
 
-.clocklist{list-style:none;margin:.3rem 0 0;padding:0;display:grid;gap:.3rem}
-.clocklist li{display:flex;align-items:baseline;gap:.6rem;
+.tscard{background:var(--card);border:1px solid var(--hair);border-radius:14px;
+  padding:1rem;display:flex;flex-direction:column;gap:.7rem}
+.tscardhead{display:flex;align-items:center;justify-content:space-between;
+  gap:.6rem;flex-wrap:wrap}
+.tscardhead h2{margin:0;font-size:.78rem;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted)}
+
+.tsbadge{font-size:.7rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;padding:.3rem .55rem;border-radius:999px;
+  background:var(--sunk);color:var(--muted);white-space:nowrap}
+.tsbadge.onclock{background:var(--tn-soft);color:var(--tn-ink)}
+.tsbadge.approved{background:var(--tn-soft);color:var(--tn-ink)}
+.tsbadge.asked{background:var(--warn-soft);color:var(--warn)}
+.tsbadge.declined{background:var(--sunk);color:var(--crit)}
+
+.tsdate{margin:0;color:var(--ink-2);font-size:.92rem}
+/* The figure somebody reads at arm's length with a glove on. Tabular
+   numerals so it does not jiggle as the minutes tick. */
+.tsbig{display:flex;align-items:baseline;gap:.4rem}
+.tshours{font-size:2.75rem;font-weight:800;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;line-height:1}
+.tsunit{color:var(--muted);font-size:.95rem;font-weight:600}
+.tsnote{margin:0;color:var(--muted);font-size:.84rem;line-height:1.5}
+
+/* Full width, and tall enough to hit without looking. 56px is well over the
+   30px floor the picture harness holds a thing-you-aim-at to, and over
+   Apple's 44. */
+.tsact{width:100%;min-height:3.5rem;border:none;border-radius:12px;
+  font:inherit;font-size:1.05rem;font-weight:700;letter-spacing:.01em;
+  cursor:pointer;color:var(--dark-ink);background:var(--dark)}
+.tsact.stop{background:var(--warn);color:#FFFFFF}
+.tsact:disabled{opacity:.6;cursor:default}
+
+.tsminor{width:100%;min-height:3rem;border:1px solid var(--hair);
+  border-radius:12px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:.95rem;font-weight:700;cursor:pointer}
+.tsminor:hover{background:var(--sunk)}
+.tsminor:disabled{opacity:.6;cursor:default}
+.tsminor.wide{margin:0}
+
+/* A link, not a button: it changes what is shown and nothing else. Padded to
+   34px anyway, because it is still a thing a thumb has to find. */
+.tslink{min-height:34px;padding:.3rem .5rem;border:none;background:none;
+  font:inherit;font-size:.84rem;font-weight:700;color:var(--accent-ink);
+  cursor:pointer;border-radius:8px}
+.tslink:hover{background:var(--accent-soft)}
+
+.tsruns{list-style:none;margin:0;padding:0;display:grid;gap:.3rem}
+.tsruns li{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;
   padding:.5rem .6rem;border-radius:10px;background:var(--sunk);font-size:.88rem}
-.clockspan{font-weight:700;font-variant-numeric:tabular-nums}
-.clockat{margin-left:auto;color:var(--muted);font-size:.82rem}
+.tsspan{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tsplace{margin-left:auto;color:var(--muted);font-size:.82rem;text-align:right;
+  /* minmax(0,…) in spirit: without this a long park name refuses to wrap and
+     pushes the row past the card. */
+  min-width:0}
+
+.tsfield{display:flex;flex-direction:column;gap:.3rem}
+.tsfield label{font-size:.78rem;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--muted)}
+.tsfield select,.tsfield input,.tsfield textarea{width:100%;min-width:0;
+  min-height:3rem;padding:.6rem .7rem;border:1px solid var(--hair);
+  border-radius:10px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:1rem}
+.tsfield textarea{min-height:5rem;resize:vertical;line-height:1.5}
+
+.tstrail{margin:0;color:var(--muted);font-size:.8rem;line-height:1.5;
+  background:var(--sunk);border-radius:10px;padding:.6rem .7rem}
+
+.tsalert{margin:0;background:var(--warn-soft);color:var(--crit);
+  border-radius:12px;padding:.8rem .9rem;font-size:.92rem;font-weight:600;
+  line-height:1.5}
+.tsdone{margin:0;background:var(--tn-soft);color:var(--tn-ink);
+  border-radius:12px;padding:.8rem .9rem;font-size:.92rem;font-weight:600}
+.tsnudge{margin:0;background:var(--card);border:1px solid var(--hair);
+  border-radius:12px;padding:.8rem .9rem;font-size:.9rem;color:var(--ink-2);
+  line-height:1.5}
+.tsnudge.loud{background:var(--warn-soft);border-color:transparent;
+  color:var(--crit);font-weight:600}
+
+/* The week. A table because it IS one -- three columns somebody reads down,
+   and a screen reader should say "Tuesday, 7:30, awaiting approval" rather
+   than three unrelated words. */
+.tsweek{width:100%;border-collapse:collapse;font-size:.9rem}
+.tsweek th,.tsweek td{text-align:left;padding:.5rem .3rem;
+  border-bottom:1px solid var(--hair-2)}
+.tsweek thead th{font-size:.7rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted);padding-bottom:.35rem}
+.tsweek tbody th{font-weight:600;color:var(--ink)}
+.tsnum{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.tsstate{color:var(--muted);font-size:.8rem;text-align:right}
+.tsweek tr.tsoff th,.tsweek tr.tsoff td{color:var(--faint)}
+.tsweek tfoot th,.tsweek tfoot td{border-bottom:none;padding-top:.6rem;
+  font-weight:800;color:var(--ink);font-size:.95rem}
+.tsweek tfoot .tsstate{font-weight:600;font-size:.8rem;color:var(--muted)}
+
+.tsform{display:flex;flex-direction:column;gap:.7rem}
+.tsrow{display:flex;gap:.5rem;flex-wrap:wrap}
+.tsrow .tsact,.tsrow .tsminor{flex:1;min-width:9rem;width:auto}
+
+.tsasks{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+.tsasks li{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;
+  padding:.6rem .7rem;border-radius:10px;background:var(--sunk)}
+.tsasksaid{font-weight:700;font-size:.88rem}
+.tsaskwhy{width:100%;color:var(--muted);font-size:.82rem;line-height:1.45;
+  order:3}
+.tsasks .tsbadge{margin-left:auto}
+
+/* The office's side: one row per person, seven narrow columns, and the
+   corrections waiting to be agreed. */
+.tsask{flex-direction:column;align-items:stretch;gap:.45rem}
+.tsask .tsbadge{margin-left:0;align-self:flex-start}
+.tsaskwhat{color:var(--ink-2);font-size:.84rem}
+.tsweek td.tsoff{color:var(--faint)}
+.tsweek tbody th .tsbadge{margin-left:.4rem;font-size:.6rem;padding:.15rem .4rem}

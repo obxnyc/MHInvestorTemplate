@@ -35,6 +35,7 @@ export default function AppHeader(
         ["/properties", "Properties"],
         ["/leasing", "Leasing"],
         ["/clock", "On the clock"],
+        ["/timesheets", "Timesheets"],
         ["/settings", "Settings"],
       ];
 

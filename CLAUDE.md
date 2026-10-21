@@ -942,3 +942,65 @@ One thing that nearly went out silently: the enum statement was wrapped in a
 it safe to re-run, and the handler would have meant the role quietly not
 existing with nothing on screen to say so. **Ask whether the thing is there
 afterwards rather than taking the absence of an error as an answer.**
+
+### A fixture that trips its own guard is testing the guard, not the thing
+
+Half an hour went on a failing check that read, every way I looked at it,
+like `approve_shift_edit` was not committing. The function was correct the
+whole time: the fixture opened a second correction against a shift that
+already had one open, which is exactly what the unique index in 039 refuses,
+and the resulting error came back wearing the clothes of the failure before
+it.
+
+Two things made it take half an hour rather than two minutes.
+
+**I ran the harness twice and compared the two runs to each other.** Each run
+builds a fresh database, so the state printed by one and the check results
+printed by the other were never about the same rows. They contradicted each
+other because they were different worlds.
+
+**And the diagnostics printed in a different order than the results.** `t()`
+collects into an array and prints at the end, so a `console.log` in the middle
+appears ABOVE every ok and FAIL -- including the ones that ran before it. The
+output reads as a timeline and is not one.
+
+The thing that actually settled it was running the migration and the scenario
+by hand in psql and reading what came back. Four commands, and the answer was
+unambiguous. **When a harness and your reading of the code disagree, ask the
+database directly before instrumenting the harness a third time.**
+
+One real guard came out of it. `t("...", () => { try { ... } catch { return
+true; } })` passes on ANY exception, including the wrong one -- so it now
+matches the message: `/that request is not open/`.
+
+### A guard that names a thing breaks when the thing is renamed
+
+The clock screen's source rules listed three allowed setters by name. The
+screen was rewritten with four, and two guards failed -- on a rename, not on
+a fault, which is the same noise as a guard that passes on a fault and
+exactly as useless.
+
+The rule those guards are for is about one thing: the state holding the
+server's record must not be written before the answer has been read. So the
+setter's name is now read out of its own declaration
+(`useState<State | null>`) and the checks are built from that. A proper
+rename moves the guard with the code; deleting the write still fails. Both
+were confirmed by doing each.
+
+The pair to the lesson already in here -- a guard that BANS one name is a
+guard the next person walks past with a different name. Either way: **derive
+the name from the code, do not write it into the check.**
+
+### Two different questions about a property
+
+The crew clock's "Which job are you on?" dropdown came up empty on the first
+phone that opened it. The list was built from the geofences, and a fence
+needs a pin on the map, and most properties have never had one dropped.
+
+Those are not the same question. The fence answers "can the phone tell me
+where this man is" -- which most properties cannot answer. "Which job are you
+on" is about every property on file, and **the whole reason for asking is
+that the phone could not tell.**
+
+Same shape as the park whose features were keyed on what the TILES carried.
+A list keyed on the narrower question looks complete and is empty.

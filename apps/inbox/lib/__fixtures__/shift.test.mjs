@@ -16,7 +16,8 @@ const src = readFileSync(join(here, "..", "shift.ts"), "utf8");
 const js = ts.transpileModule(src, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { worked, nudges, shiftHours, breakMinutesOf, byProperty, dayOf, RULES } =
+const { worked, nudges, shiftHours, breakMinutesOf, byProperty, dayOf,
+        weekStart, week, WEEK_STARTS_ON, RULES } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
 const checks = [];
@@ -187,6 +188,91 @@ t("and a day holding one still totals a real number",
 t("a break longer than the shift does not go negative",
   () => shiftHours(shift({ startedAt: at(9), endedAt: at(10),
     breaks: [{ startedAt: at(9), endedAt: at(14) }] })) === 0);
+
+/* ------------------------------------------------------------------ the week
+ * A timesheet is reviewed by the week, and the week is what payroll asks for.
+ */
+// 21 October 2026 is a Wednesday. In Eastern Daylight Time the offset is 240
+// minutes -- what getTimezoneOffset() gives, minutes to subtract from UTC.
+const ET = 240;
+const wk = (shifts, start, o = {}) =>
+  week(shifts, start, NOW, { offsetMinutes: ET, ...o });
+
+t("the week starts on Monday", () => WEEK_STARTS_ON === 1);
+t("a Wednesday belongs to its Monday",
+  () => weekStart(new Date("2026-10-21T12:00:00Z"), ET) === "2026-10-19");
+t("a Monday is its own week start",
+  () => weekStart(new Date("2026-10-19T12:00:00Z"), ET) === "2026-10-19");
+// The plain subtraction goes negative on Sunday, which is why the +7 is there.
+t("a Sunday belongs to the Monday before it, not the one after",
+  () => weekStart(new Date("2026-10-25T12:00:00Z"), ET) === "2026-10-19");
+
+// A week built from the shifts that exist shows four rows and reads as four
+// days worked. The days off have to be there, empty, or the shape of the
+// week is a guess.
+t("a week is always seven days", () => wk([], "2026-10-19").days.length === 7);
+t("even with nothing in it", () => wk([], "2026-10-19").hours === 0);
+t("and they run Monday to Sunday", () => {
+  const d = wk([], "2026-10-19").days.map((x) => x.day);
+  return d[0] === "2026-10-19" && d[6] === "2026-10-25";
+});
+
+const WEEK = [
+  // Monday, 7am-3pm Eastern = 11:00-19:00 UTC
+  shift({ id: "m", startedAt: "2026-10-19T11:00:00Z", endedAt: "2026-10-19T19:00:00Z",
+          signedOffAt: "2026-10-19T19:05:00Z" }),
+  // Tuesday, 7am-12pm, not signed off
+  shift({ id: "t", startedAt: "2026-10-20T11:00:00Z", endedAt: "2026-10-20T16:00:00Z" }),
+  // Tuesday again, 1pm-4pm, with a break
+  shift({ id: "t2", startedAt: "2026-10-20T17:00:00Z", endedAt: "2026-10-20T20:00:00Z",
+          breaks: [{ startedAt: "2026-10-20T18:00:00Z", endedAt: "2026-10-20T18:30:00Z" }] }),
+];
+const W = wk(WEEK, "2026-10-19");
+t("the week adds up", () => W.hours === 15.5);
+t("Monday has its eight", () => W.days[0].hours === 8);
+t("Tuesday has both of its stretches", () => W.days[1].hours === 7.5);
+t("and both of its shifts", () => W.days[1].shifts.length === 2);
+t("Wednesday is empty and still there", () => W.days[2].hours === 0);
+t("the break minutes are the week's", () => W.breakMinutes === 30);
+
+// Signed off is about the day, and a day nobody worked is not a day somebody
+// agreed -- `every` on an empty list is true, which would mark every day off
+// as signed and make the count meaningless.
+t("a day whose shifts are all agreed is signed off", () => W.days[0].signedOff === true);
+t("a day with an unagreed shift is not", () => W.days[1].signedOff === false);
+t("a day nobody worked is not 'signed off'", () => W.days[2].signedOff === false);
+t("the week counts what is left to agree", () => W.toSign === 2);
+
+// A shift that runs past midnight belongs to the day it started, which is
+// the same rule the day view uses and the one a week can quietly break.
+const LATE = [shift({ id: "n", startedAt: "2026-10-20T02:00:00Z",      // 10pm Mon ET
+                      endedAt: "2026-10-20T06:00:00Z" })];             // 2am Tue ET
+const L = wk(LATE, "2026-10-19");
+t("a night shift is filed on the evening it began", () => L.days[0].hours === 4);
+t("and not on the morning it ended", () => L.days[1].hours === 0);
+
+// The offset is the whole reason the local day is knowable, so it has to
+// change the answer. The same shift read in UTC lands on a different day.
+const U = week(LATE, "2026-10-19", NOW, { offsetMinutes: 0 });
+t("read in UTC the same shift lands on the Tuesday", () => U.days[1].hours === 4);
+t("which is the point of passing an offset at all", () => L.days[0].hours !== U.days[0].hours);
+
+// Running time is kept out of the week's worked total for the same reason it
+// is kept out of the day's: it is not hours worked until it stops.
+const RUN = [shift({ id: "r", startedAt: at(13) })];
+const R = wk(RUN, "2026-10-19");
+t("a running shift is not in the week's hours", () => R.hours === 0);
+t("it is in the week's running total", () => R.running === 4);
+t("and the day it is running on knows it", () => R.days[2].running === 4);
+// Nothing still running can be agreed, because the number is still moving --
+// and the week with no running shift in it cannot tell the two readings
+// apart, so it has to be asked here.
+t("a shift still running is not waiting to be agreed", () => R.toSign === 0);
+t("and once it stops it is",
+  () => wk([{ ...RUN[0], endedAt: at(16) }], "2026-10-19").toSign === 1);
+
+t("a week outside the shifts' range is empty, not a throw",
+  () => wk(WEEK, "2025-01-06").hours === 0);
 
 t("a throwing check is named, not fatal", () => { throw new Error("on purpose"); });
 if (checks.pop()[0] !== "a throwing check is named, not fatal") {

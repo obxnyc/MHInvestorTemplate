@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { readFix, whichSite, defaultRadius, type Fence, type Fix } from "@/lib/fence";
-import { worked, nudges, type Shift, type Rules, RULES } from "@/lib/shift";
+import { worked, nudges, week, weekStart, type Shift, type Rules, RULES } from "@/lib/shift";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +40,23 @@ async function fences(db: Db): Promise<Fence[]> {
   }));
 }
 
+/**
+ * Every property, for "which job are you on?".
+ *
+ * NOT the fences. The picker was built from the fence list and a property
+ * with no pin on the map therefore was not in it -- so the first crew member
+ * to open the screen got an empty dropdown and no way to say where he was.
+ *
+ * Two different questions. The fence answers "can the phone tell me where
+ * this man is", and most properties cannot answer it, because nobody has
+ * dropped a pin on them. "Which job are you on" is about every property we
+ * have, and the whole point of asking is that the phone could not tell.
+ */
+async function places(db: Db) {
+  const { data } = await db.from("properties").select("id, name").order("name");
+  return (data ?? []).map((p) => ({ id: String(p.id), name: String(p.name) }));
+}
+
 async function rulesOf(db: Db): Promise<Rules> {
   const { data } = await db.from("clock_rules").select("*").maybeSingle();
   if (!data) return RULES;
@@ -51,12 +68,8 @@ async function rulesOf(db: Db): Promise<Rules> {
   };
 }
 
-/** Today's shifts for this person, breaks attached. */
-async function today(db: Db, staffId: string): Promise<Shift[]> {
-  // Back to yesterday morning rather than to midnight: a shift that started
-  // at ten last night and is still running is today's problem, and a day
-  // window that begins at midnight would not see it.
-  const from = new Date(Date.now() - 36 * 3_600_000).toISOString();
+/** This person's shifts since `from`, breaks attached. */
+async function since(db: Db, staffId: string, from: string): Promise<Shift[]> {
   const { data } = await db.from("shifts")
     // One string literal. The client infers the row type from the select
     // text, and a joined string turns every field on the result into an
@@ -77,27 +90,77 @@ async function today(db: Db, staffId: string): Promise<Shift[]> {
   }));
 }
 
-async function state(db: Db, staffId: string) {
-  const [shifts, rules, fence] = await Promise.all([
-    today(db, staffId), rulesOf(db), fences(db),
-  ]);
+/**
+ * Everything the screen shows.
+ *
+ * `offset` is what the HANDSET said its timezone offset is, because the
+ * person reading this is the person whose Tuesday it is. A server in UTC
+ * files a shift that started at eight on Monday evening under Tuesday, and
+ * produces a timesheet nobody recognises.
+ */
+async function state(db: Db, staffId: string, offset = 0) {
   const now = new Date();
-  const w = worked(shifts, now, rules);
+  // Back far enough to hold the week being reviewed AND the one before it,
+  // so last week is readable on a Monday morning when this week is empty.
+  const from = new Date(now.getTime() - 21 * 864e5).toISOString();
+
+  const [shifts, rules, where, asks] = await Promise.all([
+    since(db, staffId, from), rulesOf(db), places(db), pending(db, staffId),
+  ]);
+
+  // Today in the handset's own terms, not the server's.
+  const localNow = new Date(now.getTime() - offset * 60_000);
+  const todayKey = localNow.toISOString().slice(0, 10);
+  const todays = shifts.filter((s) =>
+    new Date(new Date(s.startedAt).getTime() - offset * 60_000)
+      .toISOString().slice(0, 10) === todayKey);
+
+  const w = worked(todays, now, rules);
   const open = shifts.find((s) => !s.endedAt) ?? null;
   const onBreak = open?.breaks?.some((b) => !b.endedAt) ?? false;
+  const thisWeek = weekStart(now, offset);
+
   return {
-    shifts, rules, worked: w, onBreak,
+    shifts: todays,
+    rules,
+    worked: w,
+    onBreak,
     openShiftId: open?.id ?? null,
-    nudges: nudges(w, shifts, now, rules),
-    places: fence.map((f) => ({ id: f.propertyId, name: f.name })),
+    nudges: nudges(w, todays, now, rules),
+    places: where,
+    week: week(shifts, thisWeek, now, { offsetMinutes: offset, rules }),
+    lastWeek: week(shifts, lastWeekOf(thisWeek), now, { offsetMinutes: offset, rules }),
+    asks,
   };
 }
 
-export async function GET() {
+const lastWeekOf = (start: string) => {
+  const ms = Date.UTC(Number(start.slice(0, 4)), Number(start.slice(5, 7)) - 1,
+                      Number(start.slice(8, 10))) - 7 * 864e5;
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`
+    + `-${String(d.getUTCDate()).padStart(2, "0")}`;
+};
+
+/** Requests this person has asked about and nobody has decided yet.
+ *
+ *  Tolerant of 039 being absent: without it the screen simply has no
+ *  requests on it rather than failing to load at all. */
+async function pending(db: Db, staffId: string) {
+  const { data, error } = await db.from("shift_edits")
+    .select("id, shift_id, kind, asked_start, asked_end, asked_break_minutes, reason, state, created_at")
+    .eq("staff_id", staffId).order("created_at", { ascending: false }).limit(30);
+  if (error) return [];
+  return data ?? [];
+}
+
+export async function GET(req: Request) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "sign in" }, { status: 401 });
   const db = await supabaseServer();
-  return NextResponse.json(await state(db, me.id));
+  const offset = Number(new URL(req.url).searchParams.get("offset") ?? 0);
+  return NextResponse.json(
+    await state(db, me.id, Number.isFinite(offset) ? offset : 0));
 }
 
 export async function POST(req: Request) {
@@ -108,6 +171,8 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const action = String(body.action ?? "");
   const fix = asFix(body.fix);
+  // The handset's own offset, so every total it gets back is in its own day.
+  const offset = Number.isFinite(Number(body.offset)) ? Number(body.offset) : 0;
 
   if (action === "in") {
     const sites = await fences(db);
@@ -140,7 +205,7 @@ export async function POST(req: Request) {
       }, { status: already ? 409 : 500 });
     }
 
-    return NextResponse.json({ ok: true, shiftId: data!.id, ...await state(db, me.id) });
+    return NextResponse.json({ ok: true, shiftId: data!.id, ...await state(db, me.id, offset) });
   }
 
   if (action === "out") {
@@ -169,7 +234,7 @@ export async function POST(req: Request) {
     }).eq("id", open.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ ok: true, ...await state(db, me.id) });
+    return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
   }
 
   if (action === "break-start" || action === "break-end") {
@@ -188,7 +253,7 @@ export async function POST(req: Request) {
         error: twice ? "You are already on a break." : error.message,
       }, { status: twice ? 409 : 500 });
     }
-    return NextResponse.json({ ok: true, ...await state(db, me.id) });
+    return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
   }
 
   if (action === "sign-off") {
@@ -198,7 +263,7 @@ export async function POST(req: Request) {
       .update({ signed_off_at: new Date().toISOString() })
       .eq("staff_id", me.id).not("ended_at", "is", null).is("signed_off_at", null);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, ...await state(db, me.id) });
+    return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
   }
 
   if (action === "where") {
@@ -211,7 +276,65 @@ export async function POST(req: Request) {
       .update({ property_id: propertyId, property_from: propertyId ? "chosen" : null })
       .eq("id", open.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, ...await state(db, me.id) });
+    return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
+  }
+
+  if (action === "ask") {
+    // A REQUEST IS NOT A CHANGE. Nothing here touches `shifts`. The hours on
+    // the record stay as the clock recorded them until somebody with the
+    // authority to agree says otherwise -- letting a person edit their own
+    // hours and calling it a request is not a request, it is a timesheet
+    // anybody can write.
+    const KINDS = new Set(["never_clocked_in", "missed_clock_in", "missed_clock_out",
+                           "missed_break", "wrong_times", "other"]);
+    const kind = String(body.kind ?? "");
+    if (!KINDS.has(kind)) {
+      return NextResponse.json({ error: "Say what went wrong." }, { status: 400 });
+    }
+    const reason = String(body.reason ?? "").trim();
+    if (reason.length < 3) {
+      return NextResponse.json({
+        error: "Say why in a few words — whoever reads this will not remember the day.",
+      }, { status: 400 });
+    }
+
+    const when = (v: unknown) => {
+      const t = String(v ?? "").trim();
+      if (!t) return null;
+      const d = new Date(t);
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    };
+    const mins = Number(body.breakMinutes);
+
+    const row = {
+      staff_id: me.id,
+      shift_id: String(body.shiftId ?? "") || null,
+      kind,
+      asked_start: when(body.start),
+      asked_end: when(body.end),
+      asked_break_minutes: Number.isFinite(mins) && mins > 0 ? Math.round(mins) : null,
+      reason,
+      state: "asked",
+    };
+    if (kind !== "other" && !row.asked_start && !row.asked_end
+        && row.asked_break_minutes === null) {
+      return NextResponse.json({ error: "Say what the hours should be." }, { status: 400 });
+    }
+
+    const { error } = await db.from("shift_edits").insert(row);
+    if (error) {
+      // Two people arguing with the same stretch of time produces two
+      // approvals and whichever lands second wins, silently.
+      const twice = /shift_edits_one_open_per_shift/.test(error.message);
+      const missing = /relation .*shift_edits.* does not exist/i.test(error.message);
+      return NextResponse.json({
+        error: twice ? "There is already a question open about that shift."
+             : missing ? "Migration 039 has not been run, so questions about hours"
+                       + " cannot be saved yet."
+             : error.message,
+      }, { status: twice ? 409 : 500 });
+    }
+    return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
   }
 
   return NextResponse.json({ error: `not an action: ${action}` }, { status: 400 });

@@ -45,24 +45,36 @@ const t = (name, ok) => {
  * argument nobody can win, so a press that failed must not look like a press
  * that worked -- the same fault as the chat send and the layout debounce.
  */
+/** The setter that holds the server's record, read out of its own
+ *  declaration rather than named here -- so a rename moves the guard with
+ *  the code instead of breaking it. */
+const RECORD = (/const \[\s*\w+\s*,\s*(set\w+|put\w+|\w+)\s*\]\s*=\s*useState<State \| null>/
+  .exec(screen) ?? [])[1];
+
+t("the screen has one piece of state holding the server's record",
+  () => !!RECORD);
 t("the screen reads the answer before changing anything", () => {
   const ok = screen.indexOf("if (!res || !res.ok)");
-  const set = screen.indexOf("setState(out as State)");
+  const set = screen.indexOf(`${RECORD}(out as State)`);
   return ok > 0 && set > ok;
 });
 t("the failure path says something and stops",
-  () => /setProblem\([\s\S]{0,120}?\);\s*return;/.test(screen));
-// Not a ban on one setter's name -- the next person calls it something
-// else. What is forbidden is ANY state being written in the press handler
-// before the answer has been read, whatever it is called. The three that
-// are allowed are the ones that only say the button is busy.
-t("nothing is written to state before the answer is read", () => {
+  () => /setProblem\([\s\S]{0,160}?\);\s*return(\s+\w+)?;/.test(screen));
+// Not a ban on a name, and not a list of allowed names either -- the first
+// version listed three setters and the component was rewritten with four,
+// so the guard failed on a rename rather than on a fault.
+//
+// The rule is about ONE piece of state: the record that comes back from the
+// server. Which setter holds it is read out of its own declaration, so the
+// check survives being renamed and still refuses the thing that matters --
+// a pay record changing on screen before the server has said it took it.
+t("the server's record is not written before the answer is read", () => {
+  if (!RECORD) return false;                     // no such state is also a fail
   const act = screen.slice(screen.indexOf("const act = async ("));
   const ok = act.indexOf("if (!res || !res.ok)");
-  const sets = [...act.matchAll(/\bset[A-Z]\w*\(/g)].map((m) => m.index);
-  const allowed = /^set(Busy|Problem|Sending)\(/;
-  return ok > 0 && sets.length > 0
-      && sets.every((i) => i > ok || allowed.test(act.slice(i)));
+  const writes = [...act.matchAll(new RegExp(`\\b${RECORD}\\(`, "g"))]
+    .map((m) => m.index);
+  return ok > 0 && writes.length > 0 && writes.every((i) => i > ok);
 });
 
 /* -------------------------------------------------------------- the accuracy

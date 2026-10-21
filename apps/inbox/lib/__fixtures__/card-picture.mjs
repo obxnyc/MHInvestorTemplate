@@ -318,40 +318,13 @@ const where = `<section class="dashgroup"><h2>Where the money is</h2>
       <a class="leakgo" href="#">Send them on</a></li>
 </ul></section>`;
 
-/* The crew clock. A phone in a work glove in a yard, so the 420px pass is
- * the real one and the others are the check that it does not fall apart on
- * a tablet. Shown clocked IN, which is the busy state: the break button, the
- * tracking sentence, the job picker, two nudges and the day so far. */
-const clockin = `<main class="clockwrap">
-  <p class="clockwho">Alex Prieto</p>
-  <button class="clockbig off">Clock out</button>
-  <p class="clocksum">On the clock &middot; 7h 12m today &middot; 30 min break</p>
-  <button class="clockmid">Start break</button>
-  <p class="clocktrail">Sending your position every 10 minutes while you are on
-    the clock. It stops when you clock out.</p>
-  <label class="clockwhere">Which job are you on?
-    <select><option>Choose a property</option>
-      <option>1140 Northside Road Mobile Home Community</option></select></label>
-  <p class="clocknudge">Over 6 hours without a break on the clock. Take your
-    lunch and tap Break so it is on the record.</p>
-  <p class="clocknudge loud">That is 10.2 hours today, over the 10 hour day.
-    Clock out, or tell your foreman why not.</p>
-  <button class="clockmid">Sign off 7h 12m</button>
-  <ul class="clocklist">
-    <li><span class="clockspan">7:02 AM &ndash; 12:04 PM</span>
-        <span class="clockat">1140 Northside Road Mobile Home Community</span></li>
-    <li><span class="clockspan">12:41 PM &ndash; now</span>
-        <span class="clockat">no job set</span></li>
-  </ul>
-</main>`;
-
 /* The top bar, with every destination an admin sees.
  *
  * `.topnav` carries min-width:0 and overflow-x:auto so it scrolls inside
  * itself rather than shoving the page sideways -- which is a comment in the
- * stylesheet and was not a check anywhere. Two destinations were added to it
- * (Leasing, On the clock) and a nav that pushes a phone screen sideways is
- * exactly what the picture pass already asks about, so it is asked here.
+ * stylesheet and was not a check anywhere. A nav that pushes a phone screen
+ * sideways is exactly what the picture pass already asks about, and the
+ * account avatar going off the right edge takes the way to sign out with it.
  */
 const header = `<header class="apphead">
   <a href="#" class="brandmark">
@@ -365,6 +338,89 @@ const header = `<header class="apphead">
   </nav>
   <span class="av">AP</span>
 </header>`;
+
+/* The crew timesheet, in its busiest state: on the clock, on a break, a job
+ * still to pick, two nudges, a week with hours in it and a correction
+ * pending. The 420px pass is the real one -- this is read on a phone in a
+ * work glove -- and the rest check it does not fall apart on a tablet.
+ */
+const clockin = `<main class="tsheet">
+  <header class="tshead"><h1>Timesheet</h1><p class="tswho">Alex Prieto</p></header>
+  <section class="tscard">
+    <div class="tscardhead"><h2>Today</h2>
+      <span class="tsbadge onclock">On the Clock</span></div>
+    <p class="tsdate">Wednesday, 21 October</p>
+    <div class="tsbig"><span class="tshours">7:12</span><span class="tsunit">hours</span></div>
+    <p class="tsnote">30 minutes of breaks recorded</p>
+    <button class="tsact stop">Clock Out</button>
+    <button class="tsminor">Begin Break</button>
+    <ul class="tsruns">
+      <li><span class="tsspan">7:02 AM &ndash; 12:04 PM</span>
+          <span class="tsplace">1140 Northside Road Mobile Home Community</span></li>
+      <li><span class="tsspan">12:41 PM &ndash; now</span>
+          <span class="tsplace">No job recorded</span></li>
+    </ul>
+    <div class="tsfield"><label for="job">Which job are you on?</label>
+      <select id="job"><option>Select a property</option>
+        <option>1140 Northside Road Mobile Home Community</option></select></div>
+    <p class="tstrail">Your location is recorded every 10 minutes while you are
+      on the clock, and stops when you clock out.</p>
+  </section>
+  <p class="tsnudge">Over 6 hours without a break on the clock. Take your lunch
+    and tap Break so it is on the record.</p>
+  <p class="tsnudge loud">That is 10.2 hours today, over the 10 hour day. Clock
+    out, or tell your foreman why not.</p>
+  <button class="tsminor wide">Submit 7:12 Hours for Approval</button>
+  <section class="tscard">
+    <div class="tscardhead"><h2>This Week</h2>
+      <button class="tslink">Show Last Week</button></div>
+    <table class="tsweek">
+      <thead><tr><th scope="col">Day</th><th scope="col">Hours</th>
+        <th scope="col">Status</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Mon 19 Oct</th><td class="tsnum">8:00</td>
+            <td class="tsstate">Approved&nbsp;&#10003;</td></tr>
+        <tr><th scope="row">Tue 20 Oct</th><td class="tsnum">7:30</td>
+            <td class="tsstate">Awaiting approval</td></tr>
+        <tr><th scope="row">Wed 21 Oct</th><td class="tsnum">7:12</td>
+            <td class="tsstate">In progress</td></tr>
+        <tr class="tsoff"><th scope="row">Thu 22 Oct</th><td class="tsnum">&mdash;</td>
+            <td class="tsstate"></td></tr>
+        <tr class="tsoff"><th scope="row">Fri 23 Oct</th><td class="tsnum">&mdash;</td>
+            <td class="tsstate"></td></tr>
+        <tr class="tsoff"><th scope="row">Sat 24 Oct</th><td class="tsnum">&mdash;</td>
+            <td class="tsstate"></td></tr>
+        <tr class="tsoff"><th scope="row">Sun 25 Oct</th><td class="tsnum">&mdash;</td>
+            <td class="tsstate"></td></tr>
+      </tbody>
+      <tfoot><tr><th scope="row">Total</th><td class="tsnum">22:42</td>
+        <td class="tsstate">2 to submit</td></tr></tfoot>
+    </table>
+    <p class="tsnote">30 minutes of breaks recorded this week.</p>
+  </section>
+  <section class="tscard">
+    <div class="tscardhead"><h2>Corrections</h2>
+      <button class="tslink">Request an Adjustment</button></div>
+    <div class="tsform">
+      <div class="tsfield"><label for="k">What happened?</label>
+        <select id="k"><option>I started before I clocked in</option></select></div>
+      <div class="tsfield"><label for="st">Actual start</label>
+        <input id="st" type="datetime-local" value="2026-10-21T07:00"></div>
+      <div class="tsfield"><label for="rs">Why</label>
+        <textarea id="rs" rows="3">My phone was dead until half nine.</textarea></div>
+      <div class="tsrow"><button class="tsact go">Send Request</button>
+        <button class="tsminor">Cancel</button></div>
+    </div>
+    <ul class="tsasks">
+      <li><span class="tsasksaid">I took a break and did not record it</span>
+          <span class="tsbadge asked">Pending Review</span>
+          <span class="tsaskwhy">Left the phone in the truck over lunch on Tuesday.</span></li>
+      <li><span class="tsasksaid">I never clocked in that day</span>
+          <span class="tsbadge approved">Approved</span>
+          <span class="tsaskwhy">Started at Northside at seven, phone was dead.</span></li>
+    </ul>
+  </section>
+</main>`;
 
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -462,7 +518,7 @@ for (const width of [1440, 1100, 900, 420]) {
       const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
-    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty", ".leak", ".clockwrap"]
+    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty", ".leak", ".tsheet"]
       .flatMap((root) => ["button", "a", "label", "p", "h2", "h3", "span", "dt", "dd"]
       .map((el) => `${root} ${el}`)).join(", ");
     for (const el of document.querySelectorAll(INK)) {
@@ -491,13 +547,13 @@ for (const width of [1440, 1100, 900, 420]) {
         out.push(`.av off the screen at ${Math.round(r.left)}..${Math.round(r.right)}`);
       }
     }
-    for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button, .clockwrap button")) {
+    for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button, .tsheet button")) {
       const r = b.getBoundingClientRect();
       if (r.width < 30 || r.height < 30) {
         small.push(`${b.className} ${Math.round(r.width)}x${Math.round(r.height)}px`);
       }
     }
-    for (const card of document.querySelectorAll(".lotcard, .unitlist, .lead, .leadempty, .leak, .clockwrap")) {
+    for (const card of document.querySelectorAll(".lotcard, .unitlist, .lead, .leadempty, .leak, .tscard")) {
     const box = card.getBoundingClientRect();
     for (const el of card.querySelectorAll("*")) {
       const r = el.getBoundingClientRect();

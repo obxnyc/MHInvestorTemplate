@@ -228,3 +228,110 @@ export function byProperty(shifts: Shift[], rules: Rules = RULES): {
   for (const k of Object.keys(tagged)) tagged[k] = Math.round(tagged[k] * 100) / 100;
   return { tagged, untagged: Math.round(untagged * 100) / 100 };
 }
+
+/* ------------------------------------------------------------------ the week
+ *
+ * A timesheet is reviewed by the week, not the day, and the week is the thing
+ * a payroll run asks for. Two decisions in here are not arithmetic.
+ *
+ * THE DAY IS THE LOCAL DAY, which means the offset has to come from
+ * somewhere. It comes from the handset, because the person reading the screen
+ * is the person whose Tuesday it is -- and a server in UTC filing a shift that
+ * started at eight on Monday evening under Tuesday is a timesheet nobody
+ * recognises.
+ *
+ * AND A WEEK WITH NOTHING IN IT STILL HAS SEVEN DAYS. A list built from the
+ * shifts that exist shows four rows and reads as four days worked; the days
+ * off have to be there, empty, or the shape of the week is a guess.
+ */
+
+/** Monday by default: the week a payroll run asks for. 0 is Sunday. */
+export const WEEK_STARTS_ON = 1;
+
+const dayMs = (iso: string, offsetMinutes: number) => {
+  const t = new Date(new Date(iso).getTime() - offsetMinutes * 60_000);
+  return Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
+};
+
+const isoDay = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`
+    + `-${String(d.getUTCDate()).padStart(2, "0")}`;
+};
+
+/** The first day of the week `when` falls in, as yyyy-mm-dd in local terms. */
+export function weekStart(
+  when: Date, offsetMinutes = 0, startsOn = WEEK_STARTS_ON,
+): string {
+  const ms = dayMs(when.toISOString(), offsetMinutes);
+  const dow = new Date(ms).getUTCDay();
+  // (dow - startsOn + 7) % 7 is how many days back the week began. Written
+  // with the +7 because a plain subtraction goes negative on Sunday.
+  return isoDay(ms - ((dow - startsOn + 7) % 7) * 864e5);
+}
+
+export type Day = {
+  day: string;                  // yyyy-mm-dd
+  hours: number;                // finished, breaks deducted
+  running: number;              // still on the clock
+  breakMinutes: number;
+  shifts: Shift[];
+  /** True only when every finished shift that day has been agreed. */
+  signedOff: boolean;
+};
+
+export type Week = {
+  start: string;
+  days: Day[];                  // always seven
+  hours: number;
+  running: number;
+  breakMinutes: number;
+  /** Finished shifts in the week that nobody has agreed yet. */
+  toSign: number;
+};
+
+/**
+ * A week of days, every one of them present.
+ *
+ * `now` is a parameter and never the clock. `offsetMinutes` is what
+ * `Date.prototype.getTimezoneOffset` gives -- minutes to SUBTRACT from UTC to
+ * get local, so 240 in Eastern Daylight Time.
+ */
+export function week(
+  shifts: Shift[], start: string, now: Date,
+  opts: { offsetMinutes?: number; rules?: Rules } = {},
+): Week {
+  const off = opts.offsetMinutes ?? 0;
+  const rules = opts.rules ?? RULES;
+
+  const from = Date.UTC(
+    Number(start.slice(0, 4)), Number(start.slice(5, 7)) - 1, Number(start.slice(8, 10)));
+
+  const days: Day[] = [];
+  for (let i = 0; i < 7; i++) {
+    const day = isoDay(from + i * 864e5);
+    // A shift belongs to the day it STARTED on, so one that runs to two in
+    // the morning is one shift on the first day and not two hours on each.
+    const mine = shifts.filter((s) => isoDay(dayMs(s.startedAt, off)) === day);
+    const w = worked(mine, now, rules);
+    const finished = mine.filter((s) => s.endedAt);
+    days.push({
+      day, hours: w.hours, running: w.running, breakMinutes: w.breakMinutes,
+      shifts: mine,
+      // A day with nothing in it is not a day somebody has agreed. `every` on
+      // an empty list is true, which would mark every day off as signed.
+      signedOff: finished.length > 0 && finished.every((s) => s.signedOffAt),
+    });
+  }
+
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return {
+    start,
+    days,
+    hours: round(days.reduce((a, d) => a + d.hours, 0)),
+    running: round(days.reduce((a, d) => a + d.running, 0)),
+    breakMinutes: days.reduce((a, d) => a + d.breakMinutes, 0),
+    toSign: days.reduce((a, d) =>
+      a + d.shifts.filter((s) => s.endedAt && !s.signedOffAt).length, 0),
+  };
+}

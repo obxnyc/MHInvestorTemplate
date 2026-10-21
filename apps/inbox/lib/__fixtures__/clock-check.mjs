@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..", "..", "..", "docs", "shared-line");
 const SQL = join(root, "038-the-clock-and-the-fence.sql");
+const SQL39 = join(root, "039-asking-to-fix-the-hours.sql");
 
 const BIN = ["/usr/lib/postgresql/16/bin", "/usr/lib/postgresql/15/bin",
   "/usr/local/pgsql/bin"].find((d) => existsSync(join(d, "initdb")));
@@ -53,9 +54,9 @@ try {
     try { psql(db, sql); return true; }
     catch (e) { return !String(e.stderr ?? e).includes("ERROR"); }
   };
-  const apply = (db) => run("psql",
+  const apply = (db, file = SQL) => run("psql",
     ["-h", "/tmp", "-p", PORT, "-U", "postgres", "-d", db,
-     "-v", "ON_ERROR_STOP=1", "-f", SQL]);
+     "-v", "ON_ERROR_STOP=1", "-f", file]);
 
   psql("postgres", "create database a;");
 
@@ -241,6 +242,177 @@ try {
       /ended_at IS NULL/i.test(policy), policy.trim().slice(0, 200));
     t("and only against this person's own",
       /staff_id = auth\.uid\(\)/i.test(policy), policy.trim().slice(0, 200));
+
+    /* ------------------------------------------------------------ 039 */
+    let a39 = true, why39 = "";
+    try { apply("a", SQL39); } catch (e) { a39 = false; why39 = String(e.stderr ?? e).slice(-400); }
+    t("039 applies", a39, why39);
+
+    if (a39) {
+      let r39 = true, w39 = "";
+      try { apply("a", SQL39); } catch (e) { r39 = false; w39 = String(e.stderr ?? e).slice(-400); }
+      t("and applies again", r39, w39);
+
+      const S = "'33333333-3333-3333-3333-333333333333'";
+      const ask = (extra) => `insert into shift_edits
+        (shift_id, staff_id, kind, reason ${extra.cols ?? ""})
+        values (${extra.shift ?? S}, ${W}, '${extra.kind ?? "missed_clock_in"}',
+                '${extra.reason ?? "phone was dead"}' ${extra.vals ?? ""});`;
+
+      t("a request goes in",
+        takes("a", ask({ cols: ", asked_start", vals: ", now() - interval '5 hours'" })));
+
+      // "Why" is the entire value of this row six months from now, and a
+      // blank reason makes a correction indistinguishable from somebody
+      // helping themselves to two hours.
+      t("a request with no reason is refused",
+        !takes("a", ask({ reason: "  ", cols: ", asked_start", vals: ", now()" })));
+      t("a request that asks for nothing is refused",
+        !takes("a", ask({ reason: "just because" })));
+      t("but 'other' may ask for nothing, because it is a note",
+        takes("a", ask({ kind: "other", reason: "wrong job on this one",
+                         shift: "null" })));
+      t("a kind nobody has heard of is refused",
+        !takes("a", ask({ kind: "feeling_generous", cols: ", asked_start", vals: ", now()" })));
+      t("an end before its start is refused",
+        !takes("a", ask({ shift: "null", cols: ", asked_start, asked_end",
+                          vals: ", now(), now() - interval '2 hours'" })));
+      t("a break longer than a working day is refused",
+        !takes("a", ask({ kind: "missed_break", shift: "null",
+                          cols: ", asked_break_minutes", vals: ", 600" })));
+
+      // Two people arguing with the same stretch of time produces two
+      // approvals, and whichever lands second wins, silently.
+      t("a second open request on the same shift is refused",
+        !takes("a", ask({ cols: ", asked_start", vals: ", now()" })));
+      t("but a request with no shift on it is always allowed",
+        takes("a", ask({ shift: "null", kind: "never_clocked_in",
+                         cols: ", asked_start, asked_end",
+                         vals: ", now() - interval '9 hours', now() - interval '1 hour'" })));
+
+      // A decision with nobody's name on it is not a decision.
+      t("approving without saying who is refused",
+        !takes("a", `update shift_edits set state = 'approved' where state = 'asked';`));
+      t("approving with a name and a time goes through",
+        takes("a", `update shift_edits set state = 'approved', decided_by = ${W},
+          decided_at = now(), was_start = now() - interval '3 hours'
+          where shift_id = ${S} and state = 'asked';`));
+      t("and once decided, another request on that shift may be opened",
+        takes("a", ask({ cols: ", asked_end", vals: ", now()" })));
+
+      t("nobody signed in may delete a request",
+        psql("a", `select count(*) from information_schema.role_table_grants
+          where table_name = 'shift_edits' and grantee = 'authenticated'
+            and privilege_type = 'DELETE';`).trim() === "0");
+
+      // A request somebody can approve for themselves is not a request, and
+      // the table is where that is true rather than only the route.
+      const decide = psql("a", `select pg_get_expr(polqual, polrelid)
+        from pg_policy where polname = 'office_decides_edits';`);
+      t("only the office may decide a request",
+        /staff_has_role/.test(decide) && /admin/.test(decide), decide.trim().slice(0, 200));
+      const asks = psql("a", `select pg_get_expr(polwithcheck, polrelid)
+        from pg_policy where polname = 'crew_asks_about_own_hours';`);
+      t("and anybody may only ask about their own hours",
+        /staff_id = auth\.uid\(\)/.test(asks), asks.trim().slice(0, 200));
+      t("and may only ever open one as 'asked'",
+        /state = 'asked'/.test(asks), asks.trim().slice(0, 200));
+
+      /* ------------------------------------------ approving is one step
+       * Moving hours on a pay record and recording that they moved must not
+       * be able to come apart. From the application they are two round trips
+       * and a failure between them leaves either hours that moved with
+       * nothing saying why, or a request marked agreed against hours that
+       * never moved -- which is the thing this whole table exists to stop.
+       */
+      psql("a", `insert into shifts (id, staff_id, started_at, ended_at) values
+        ('55555555-5555-5555-5555-555555555555', ${W},
+         '2026-10-20T13:00:00Z', '2026-10-20T20:00:00Z');`);
+      psql("a", `insert into shift_edits
+        (id, shift_id, staff_id, kind, asked_start, reason) values
+        ('66666666-6666-6666-6666-666666666666',
+         '55555555-5555-5555-5555-555555555555', ${W}, 'missed_clock_in',
+         '2026-10-20T11:00:00Z', 'phone was dead until nine');`);
+
+      t("approving moves the hours", () => {
+        psql("a", `select approve_shift_edit(
+          '66666666-6666-6666-6666-666666666666'::uuid, ${W}::uuid);`);
+        return psql("a", `select started_at at time zone 'UTC'
+          from shifts where id = '55555555-5555-5555-5555-555555555555';`)
+          .trim().startsWith("2026-10-20 11:00");
+      });
+      // The whole evidentiary point: both states readable afterwards.
+      t("and keeps what the clock actually had",
+        () => psql("a", `select was_start at time zone 'UTC' from shift_edits
+          where id = '66666666-6666-6666-6666-666666666666';`)
+          .trim().startsWith("2026-10-20 13:00"));
+      t("the end it did not ask about is left alone",
+        () => psql("a", `select ended_at at time zone 'UTC'
+          from shifts where id = '55555555-5555-5555-5555-555555555555';`)
+          .trim().startsWith("2026-10-20 20:00"));
+      t("and the shift records that it was settled by somebody",
+        () => psql("a", `select settled_by is not null
+          from shifts where id = '55555555-5555-5555-5555-555555555555';`).trim() === "t");
+      // Not just "it threw". A check that passes on any exception passes on
+      // the wrong one, and the wrong one here would be a constraint violation
+      // that happens to look like a refusal.
+      t("approving the same request twice is refused for the right reason", () => {
+        try {
+          psql("a", `select approve_shift_edit(
+            '66666666-6666-6666-6666-666666666666'::uuid, ${W}::uuid);`);
+          return false;
+        } catch (e) { return /that request is not open/.test(String(e.stderr ?? e)); }
+      });
+
+      // A day nobody clocked in on has no row to amend, so one is made.
+      psql("a", `insert into shift_edits (id, staff_id, kind, asked_start, asked_end, reason)
+        values ('77777777-7777-7777-7777-777777777777', ${W}, 'never_clocked_in',
+          '2026-10-18T11:00:00Z', '2026-10-18T19:00:00Z', 'was at Northside all day');`);
+      t("a day nobody clocked in on becomes a shift", () => {
+        psql("a", `select approve_shift_edit(
+          '77777777-7777-7777-7777-777777777777'::uuid, ${W}::uuid);`);
+        return psql("a", `select count(*) from shifts
+          where started_at = '2026-10-18T11:00:00Z';`).trim() === "1";
+      });
+      t("and the request now points at it",
+        () => psql("a", `select shift_id is not null from shift_edits
+          where id = '77777777-7777-7777-7777-777777777777';`).trim() === "t");
+      t("one with no start time at all is refused", () => {
+        psql("a", `insert into shift_edits (id, staff_id, kind, asked_end, reason)
+          values ('88888888-8888-8888-8888-888888888888', ${W}, 'never_clocked_in',
+            '2026-10-17T19:00:00Z', 'no idea when I started');`);
+        return !takes("a", `select approve_shift_edit(
+          '88888888-8888-8888-8888-888888888888'::uuid, ${W}::uuid);`);
+      });
+
+      // A break asked for is recorded AS a break, so the day still reads as a
+      // day with a lunch in the middle of it rather than as fewer hours.
+      psql("a", `insert into shifts (id, staff_id, started_at, ended_at) values
+        ('99999999-9999-9999-9999-999999999999', ${W},
+         '2026-10-16T12:00:00Z', '2026-10-16T20:00:00Z');`);
+      psql("a", `insert into shift_edits (shift_id, staff_id, kind, asked_break_minutes, reason)
+        values ('99999999-9999-9999-9999-999999999999', ${W}, 'missed_break', 30,
+          'left the phone in the truck over lunch');`);
+      t("an approved break becomes a break row", () => {
+        psql("a", `select approve_shift_edit(id, ${W}::uuid) from shift_edits
+          where kind = 'missed_break' and state = 'asked';`);
+        return psql("a", `select count(*) from shift_breaks
+          where shift_id = '99999999-9999-9999-9999-999999999999';`).trim() === "1";
+      });
+      t("and it is half an hour long",
+        () => psql("a", `select extract(epoch from (ended_at - started_at)) / 60
+          from shift_breaks where shift_id = '99999999-9999-9999-9999-999999999999';`)
+          .trim().startsWith("30"));
+      t("the break sits inside the shift, not outside it",
+        () => psql("a", `select bool_and(b.started_at >= s.started_at
+                                     and b.ended_at <= s.ended_at)
+          from shift_breaks b join shifts s on s.id = b.shift_id
+          where b.shift_id = '99999999-9999-9999-9999-999999999999';`).trim() === "t");
+
+      t("only the office may run the approval at all",
+        () => /staff_has_role/.test(psql("a",
+          `select prosrc from pg_proc where proname = 'approve_shift_edit';`)));
+    }
   }
 } catch (e) {
   t("the harness ran", false, String(e.stderr ?? e).slice(-400));
