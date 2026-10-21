@@ -346,9 +346,9 @@ const header = `<header class="apphead">
  */
 const clockin = `<main class="tsheet">
   <header class="tshead"><h1>Timesheet</h1><p class="tswho">Alex Prieto</p></header>
-  <section class="tscard">
+  <section class="tscard today onclock">
     <div class="tscardhead"><h2>Today</h2>
-      <span class="tsbadge onclock">On the Clock</span></div>
+      <span class="tsbadge state">On the Clock</span></div>
     <p class="tsdate">Wednesday, 21 October</p>
     <div class="tsbig"><span class="tshours">7:12</span><span class="tsunit">hours</span></div>
     <p class="tsnote">30 minutes of breaks recorded</p>
@@ -422,6 +422,21 @@ const clockin = `<main class="tsheet">
   </section>
 </main>`;
 
+/* Off the clock: the same card in red, with the action reversed. Checked as
+ * well as the green one, because a colour that reads is the one you looked
+ * at and the other is the one that ships wrong. */
+const clockedout = `<main class="tsheet">
+  <header class="tshead"><h1>Timesheet</h1><p class="tswho">Cade Barrow</p></header>
+  <section class="tscard today offclock">
+    <div class="tscardhead"><h2>Today</h2>
+      <span class="tsbadge state">Off the Clock</span></div>
+    <p class="tsdate">Wednesday, 21 October</p>
+    <div class="tsbig"><span class="tshours">0:00</span><span class="tsunit">hours</span></div>
+    <button class="tsact go">Clock In</button>
+    <p class="tsnote">No hours recorded today.</p>
+  </section>
+</main>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page)">
@@ -442,7 +457,8 @@ ${header}
 <div style="margin-top:2rem;max-width:62rem">${lots}</div>
 <main class="wrap" style="margin-top:2rem">${lead}</main>
 <div class="dash" style="margin-top:2rem">${where}</div>
-<div style="margin-top:2rem;background:var(--page)">${clockin}</div></div></body></html>`;
+<div style="margin-top:2rem;background:var(--page)">${clockin}</div>
+<div style="margin-top:2rem;background:var(--page)">${clockedout}</div></div></body></html>`;
 
 const file = "/tmp/lot-card.html";
 writeFileSync(file, page);

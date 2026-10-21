@@ -21,6 +21,7 @@ import { continues } from "@/lib/runs";
 import NotesPanel, { type Note } from "@/components/NotesPanel";
 import Attachment from "@/components/Attachment";
 import IntakeCard from "@/components/IntakeCard";
+import NewJob from "@/components/NewJob";
 
 type Thread = {
   convo: Record<string, unknown>;
@@ -54,10 +55,21 @@ export default function ThreadPane(
   const [error, setError] = useState<string | null>(null);
   const [typing, setTyping] = useState<{ name: string; at: number } | null>(null);
   const [naming, setNaming] = useState(false);
+  const [raising, setRaising] = useState(false);
+  const [trades, setTrades] = useState<{ id: string; label: string }[]>([]);
   // Questions pushed into the box, and what has been ticked off. Held here
   // rather than in the strip so a reload of the thread does not lose them.
   const [insert, setInsert] = useState<{ text: string; n: number }>({ text: "", n: 0 });
   const [asked, setAsked] = useState<string[]>([]);
+
+  useEffect(() => {
+    // The same list the jobs board uses -- it comes back alongside the jobs,
+    // and a second source for it is how the trade on a job raised from a
+    // thread ends up not matching the one on a job raised from the board,
+    // which splits the price history in two.
+    fetch("/api/jobs").then((r) => r.json())
+      .then((d) => setTrades(d.trades ?? [])).catch(() => setTrades([]));
+  }, []);
 
   const load = useCallback(async (conversationId: string) => {
     setError(null);
@@ -152,6 +164,14 @@ export default function ThreadPane(
   const party = contact?.party && contact.party !== "other"
     ? contact.party.replace("_", " ") : null;
 
+  // The last thing THEY said, which is what a work order is about. The last
+  // thing in the thread is as often our own reply, and a job summarised from
+  // "I'll get someone out Tuesday" tells the tech nothing.
+  const lastFromThem = [...data.messages]
+    .reverse()
+    .find((m) => m.direction === "inbound")
+    ?.body as string | undefined ?? "";
+
   const timeline = [
     ...data.messages.map((m) => ({ kind: "message" as const, at: m.created_at as string, m })),
     ...data.notes.map((n) => ({ kind: "note" as const, at: n.created_at as string, n })),
@@ -198,6 +218,29 @@ export default function ThreadPane(
       </div>
 
       <OpenJobs jobs={data.jobs ?? []} />
+
+      {/* A text message is how a repair actually gets reported to a landlord
+          this size, and until now it became a thread and stopped there --
+          `ingest` opens a work order for the FORM sources, where somebody
+          filled in a box headed Issue Title, and deliberately not for a text,
+          because "the heat's a bit funny" is a conversation. But there was no
+          way to promote one either, so the deliberate half had no other half.
+
+          Prefilled from what they wrote, and from the lot their contact
+          record carries. Not created automatically: the lot and the urgency
+          are what make a job dispatchable, and the person reading the thread
+          is the one who knows them. */}
+      {raising ? (
+        <NewJob trades={trades}
+                from={{
+                  conversationId: convo.id,
+                  summary: lastFromThem.slice(0, 120),
+                  detail: lastFromThem,
+                  unitId: contact?.unit_id ?? null,
+                }}
+                onClose={() => setRaising(false)}
+                onMade={() => { setRaising(false); void load(convo.id); }} />
+      ) : null}
       {/* Two different questions, and a vendor's thread only has an answer to
           the second: what is outstanding at this address, and what is this
           person doing for us. */}

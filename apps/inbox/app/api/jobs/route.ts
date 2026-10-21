@@ -66,8 +66,8 @@ export async function POST(req: Request) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
-  const { summary, detail, unitId, urgency, dueAt, tradeId, toKind, toId } =
-    await req.json().catch(() => ({}));
+  const { summary, detail, unitId, urgency, dueAt, tradeId, toKind, toId,
+          conversationId } = await req.json().catch(() => ({}));
 
   const what = String(summary ?? "").trim();
   if (what.length < 3) {
@@ -86,7 +86,11 @@ export async function POST(req: Request) {
   const db = supabaseAdmin();
 
   const { data, error } = await db.from("work_orders").insert({
-    conversation_id: null,
+    // Carried when the job came out of a thread. The two have to point at
+    // each other: the tech's question is "what did they actually say", and
+    // the office's is "did anybody ever reply to this person". A job raised
+    // from a conversation and not linked to it answers neither.
+    conversation_id: String(conversationId ?? "") || null,
     unit_id: String(unitId),
     summary: what.slice(0, 120),
     detail: String(detail ?? "").trim() || null,

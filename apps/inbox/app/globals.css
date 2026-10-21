@@ -2601,3 +2601,57 @@ a.metric:hover{border-color:var(--accent)}
 .tsaskwhat{color:var(--ink-2);font-size:.84rem}
 .tsweek td.tsoff{color:var(--faint)}
 .tsweek tbody th .tsbadge{margin-left:.4rem;font-size:.6rem;padding:.15rem .4rem}
+
+/* The state, as a block of colour you can read across a yard.
+   Green on the clock, red off it, amber on a break.
+
+   Deep enough for white text in both themes: the picture harness fails any
+   words within 1.6:1 of what is behind them, and a mid-tone red with white
+   on it is exactly the red-on-red failure this stylesheet has had before.
+
+   The colour only ever AGREES with the words. Red and green is the one pair
+   a colour-blind man cannot separate, and about one in twelve is -- so "On
+   the Clock" and "Clock Out" are what actually say it. */
+:root{--offclock:#8E251F;--onclock:#145C42;--onbreak:#8A4418}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--offclock:#7A1F1A;--onclock:#0F4B36;--onbreak:#6E3613}
+}
+:root[data-theme="dark"]{--offclock:#7A1F1A;--onclock:#0F4B36;--onbreak:#6E3613}
+
+.tscard.today{border:none;color:#FFFFFF}
+.tscard.today.offclock{background:var(--offclock)}
+.tscard.today.onclock{background:var(--onclock)}
+.tscard.today.onbreak{background:var(--onbreak)}
+.tscard.today h2,
+.tscard.today .tsdate,
+.tscard.today .tsunit,
+.tscard.today .tsnote,
+.tscard.today .tsplace,
+.tscard.today .tsfield label{color:rgba(255,255,255,.82)}
+.tscard.today .tshours{color:#FFFFFF}
+.tscard.today .tsbadge.state{background:rgba(255,255,255,.18);color:#FFFFFF}
+/* The rows and the trail sit on the colour, so they get a translucent well
+   rather than the grey one, which would read as a hole punched in the card. */
+.tscard.today .tsruns li,
+.tscard.today .tstrail{background:rgba(255,255,255,.12);color:rgba(255,255,255,.88)}
+.tscard.today .tsspan{color:#FFFFFF}
+/* The action stays high-contrast against the card rather than blending into
+   it -- a button the colour of its own background is a button nobody presses. */
+.tscard.today .tsact{background:#FFFFFF;color:var(--ink)}
+.tscard.today .tsact.stop{background:#FFFFFF;color:var(--offclock)}
+.tscard.today .tsminor{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);
+  color:#FFFFFF}
+.tscard.today .tsminor:hover{background:rgba(255,255,255,.22)}
+.tscard.today .tsfield select,
+.tscard.today .tsfield input{background:#FFFFFF;color:var(--ink);border-color:transparent}
+
+/* Report a repair. Public, read on a phone, often at night. */
+.rep{width:100%;max-width:34rem;margin:0 auto;padding:1.5rem 1rem 4rem}
+.rep h1{margin:0 0 .5rem;font-size:1.5rem;font-weight:800;letter-spacing:-.02em}
+.replede{margin:0 0 1.2rem;color:var(--ink-2);font-size:.95rem;line-height:1.6}
+.repbad{background:var(--warn-soft);color:var(--crit);border-radius:12px;
+  padding:.8rem .9rem;margin:0 0 1rem;font-size:.92rem;font-weight:600;line-height:1.5}
+.repform{display:flex;flex-direction:column;gap:.9rem}
+/* Off the page rather than display:none -- a hidden field some browsers skip
+   is a honeypot that never catches anything. */
+.repbot{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}

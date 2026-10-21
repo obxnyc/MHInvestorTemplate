@@ -228,11 +228,21 @@ export default function ClockScreen({ name }: { name: string }) {
       {problem ? <p className="tsalert" role="alert">{problem}</p> : null}
       {said ? <p className="tsdone" role="status">{said}</p> : null}
 
-      {/* ---------------------------------------------------------- today */}
-      <section className="tscard">
+      {/* ---------------------------------------------------------- today
+          The card carries the state as a block of colour, readable across a
+          yard at arm's length: green on the clock, red off it.
+
+          The WORDS still carry the answer. Red and green are the one pair a
+          colour-blind man cannot tell apart, and roughly one in twelve of
+          them is -- so the card says "On the Clock" or "Off the Clock" and
+          the button says Clock In or Clock Out, and the colour only agrees
+          with them. The rest of the stylesheet avoids this pair entirely for
+          that reason; here it is the right answer because it is a glance at
+          two states and the text is right there beside it. */}
+      <section className={`tscard today ${on ? (state.onBreak ? "onbreak" : "onclock") : "offclock"}`}>
         <div className="tscardhead">
           <h2>Today</h2>
-          <span className={`tsbadge ${on ? "onclock" : ""}`}>
+          <span className="tsbadge state">
             {on ? (state.onBreak ? "On Break" : "On the Clock") : "Off the Clock"}
           </span>
         </div>

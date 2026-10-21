@@ -19,15 +19,26 @@ type UnitOption = { id: string; label: string };
  * average it exists to produce -- so it is left blank until somebody knows.
  */
 export default function NewJob(
-  { trades, onClose, onMade }:
-  { trades: { id: string; label: string }[]; onClose: () => void; onMade: () => void },
+  { trades, onClose, onMade, from }:
+  {
+    trades: { id: string; label: string }[];
+    onClose: () => void; onMade: () => void;
+    /** Raised out of a conversation rather than from the jobs board.
+     *
+     *  Prefilled, not auto-created: what somebody texted is the start of a
+     *  work order and rarely the whole of it. "The heat's been funny" needs a
+     *  lot number and an urgency before anybody can be sent, and the person
+     *  reading the thread is the one who knows both. */
+    from?: { conversationId: string; summary?: string; detail?: string;
+             unitId?: string | null };
+  },
 ) {
   const [units, setUnits] = useState<UnitOption[] | null>(null);
   const [people, setPeople] = useState<{ staff: Person[]; vendors: Person[] } | null>(null);
 
-  const [summary, setSummary] = useState("");
-  const [detail, setDetail] = useState("");
-  const [unitId, setUnitId] = useState("");
+  const [summary, setSummary] = useState(from?.summary ?? "");
+  const [detail, setDetail] = useState(from?.detail ?? "");
+  const [unitId, setUnitId] = useState(from?.unitId ?? "");
   const [tradeId, setTradeId] = useState("");
   const [urgency, setUrgency] = useState("3");
   const [dueAt, setDueAt] = useState("");
@@ -53,7 +64,8 @@ export default function NewJob(
 
     const res = await fetch("/api/jobs", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ summary, detail, unitId, tradeId, urgency, dueAt, toKind, toId }),
+      body: JSON.stringify({ summary, detail, unitId, tradeId, urgency, dueAt,
+                             toKind, toId, conversationId: from?.conversationId }),
     });
     const out = await res.json().catch(() => ({}));
     setBusy(false);
