@@ -196,6 +196,61 @@ const LOOK = () => {
     };
 };
 
+/* A MENU THAT IS SHUT IS NOT A MENU.
+ *
+ * Everything else here measures a page AT REST, and the thing the owner
+ * photographed only exists once something is open: the account menu, anchored
+ * to the avatar's right edge, opening at -90..94 on every phone width --
+ * ninety pixels off the left of the screen. No check here could see it,
+ * because no check here had ever pressed anything.
+ *
+ * So: press each control in the header, measure, put it back. Cheap, because
+ * there are only a handful, and it is the half of the screen that overlays
+ * everything else. */
+const OPENERS = ".apphead button, .apphead summary, .apphead [aria-haspopup]";
+const probeOpen = async (page, at, out) => {
+  const n = await page.$$eval(OPENERS, (els) => els.length).catch(() => 0);
+  for (let i = 0; i < n; i++) {
+    const els = await page.$$(OPENERS);
+    if (!els[i]) break;
+    const name = await els[i].evaluate(
+      (e) => `${e.tagName.toLowerCase()}.${(e.className || "-").toString().slice(0, 24)}`)
+      .catch(() => "?");
+    await els[i].click({ force: true }).catch(() => {});
+    await page.waitForTimeout(180);
+    const off = await page.evaluate(() => {
+      const bad = [];
+      /* The same rule the at-rest check uses: a nav that scrolls sideways is
+         SUPPOSED to have items past the edge. Without this the tab strip
+         reported four findings on every page and buried the real one. */
+      const scrolls = (el) => {
+        for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+          const ov = getComputedStyle(a).overflowX;
+          if (ov === "auto" || ov === "scroll") return true;
+        }
+        return false;
+      };
+      for (const el of document.querySelectorAll("body *")) {
+        if (scrolls(el)) continue;
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        const st = getComputedStyle(el);
+        if (st.visibility === "hidden" || st.opacity === "0") continue;
+        // A full-width fixed backdrop is meant to cover the screen.
+        if (st.position === "fixed" && r.width >= window.innerWidth) continue;
+        if (r.left < -1 || r.right > window.innerWidth + 1) {
+          bad.push(`${el.tagName.toLowerCase()}.${(el.className || "-").toString().slice(0, 24)}`
+            + ` ${Math.round(r.left)}..${Math.round(r.right)}`);
+        }
+      }
+      return [...new Set(bad)].slice(0, 5);
+    }).catch(() => []);
+    if (off.length) out.push(`${at}: with ${name} open, off the screen -- ${off.join(", ")}`);
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(100);
+  }
+};
+
 /* Both themes, for the same reason card-picture.mjs now draws both: a phone
  * is held in a dark room, and this stylesheet redefines every colour token
  * under prefers-color-scheme: dark. This harness loads the REAL pages, so it
@@ -238,6 +293,7 @@ for (const path of PAGES) {
 
     const tag = `${path.replace(/\//g, "_") || "_root"}-${scheme}-${width}x${height}`;
     await p.screenshot({ path: `/tmp/phone/${tag}.png`, fullPage: true });
+    await probeOpen(p, `${scheme} ${path} at ${width}x${height}`, wrong);
     await p.close();
 
     const at = `${scheme} ${path} at ${width}x${height}`;
@@ -279,6 +335,7 @@ for (const [who, path] of stubUp ? SIGNED_IN : []) {
     const said = await p.evaluate(LOOK);
     await p.screenshot({ path: `/tmp/phone/${path.replace(/\//g, "_") || "_root"}`
       + `-${who}-${scheme}-${width}x${height}.png`, fullPage: true });
+    await probeOpen(p, at, wrong);
     await ctx.close();
     if (said.gone.length) wrong.push(`${at}: off the screen -- ${said.gone.join(", ")}`);
     if (said.sideways) wrong.push(`${at}: the page scrolls sideways`);

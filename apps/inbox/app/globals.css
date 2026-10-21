@@ -2788,7 +2788,18 @@ a.metric:hover{border-color:var(--accent)}
 @media (max-width:900px){
   .apphead{flex-wrap:wrap;row-gap:.5rem}
   .brandmark{order:0}
-  .apphead .av{order:1;margin-left:auto}
+  /* THE FLEX CHILD IS .acctwrap, NOT .av.
+     This said `.apphead .av{order:1;margin-left:auto}`, which styles the
+     avatar INSIDE its wrapper -- an auto margin on a non-flex-child pushes
+     nothing. So on a phone the avatar stayed hard against the brand at
+     59..94 instead of moving to the right, and the account menu, which is
+     anchored to the avatar's right edge and is 184px wide, opened at
+     -90..94: ninety pixels off the left of the screen, at every phone width.
+     That is the panel hanging off the edge in the owner's photograph.
+     Both selectors are kept: the avatar is the flex child on screens where
+     there is no wrapper around it. */
+  .apphead .av, .apphead .acctwrap{order:1;margin-left:auto}
+  .apphead .acctwrap .av{margin-left:0}
   .topnav{order:2;flex-basis:100%;margin-left:0}
   .omni{order:3;flex-basis:100%;max-width:none;min-width:0;margin:0}
   .omnipanel{left:0;right:0;min-width:0}
