@@ -3,11 +3,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireStaff } from "@/lib/supabase-server";
 import { pushToStaff } from "@/lib/push";
 import { toE164 } from "@/lib/twilio";
+import { isRole } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROLES = new Set(["admin", "office", "tech", "shower"]);
 
 /** Somebody asking to be let in.
  *
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
   const name = String(body.fullName ?? "").trim();
   const email = String(body.email ?? "").trim().toLowerCase();
-  const role = ROLES.has(body.role) ? body.role : "office";
+  const role = isRole(body.role) ? body.role : "office";
   if (name.length < 2) {
     return NextResponse.json({ error: "Please give your name." }, { status: 400 });
   }

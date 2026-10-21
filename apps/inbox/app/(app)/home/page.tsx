@@ -8,6 +8,8 @@ import { catLabel, type Category } from "@/lib/category";
 import WhosHere from "@/components/WhosHere";
 import MaintenanceBox from "@/components/MaintenanceBox";
 import type { JobRow } from "@/lib/jobs";
+import { redirect } from "next/navigation";
+import { isClockOnly } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,10 @@ const DONE = ["done", "cancelled"];
  */
 export default async function Home() {
   const me = await requireStaff();
+  // Crew have one job in this application and it is not this screen. The nav
+  // does not offer it -- but a nav is a suggestion and an address bar is not,
+  // so the page itself says no.
+  if (isClockOnly(me?.role)) redirect("/clock");
   if (!me) return null;
   const supabase = await supabaseServer();
 

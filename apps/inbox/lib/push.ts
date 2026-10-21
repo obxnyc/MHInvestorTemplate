@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { supabaseAdmin } from "./supabase-admin";
+import { DESK } from "./roles";
 
 let configured = false;
 function configure() {
@@ -81,7 +82,7 @@ export async function pushToTeam(
   } else {
     // Unrouted thread: fall back to office staff so it cannot sit unseen.
     const { data } = await db.from("staff")
-      .select("id").eq("active", true).in("role", ["admin", "office"]);
+      .select("id").eq("active", true).in("role", DESK);
     ids = (data ?? []).map((r) => r.id);
   }
 

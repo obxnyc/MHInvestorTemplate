@@ -3,6 +3,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Directory from "./Directory";
 import AccessRequests from "./AccessRequests";
+import { ROLES, ROLE_LABEL, ROLE_BLURB, labelOf, isField } from "@/lib/roles";
 import { prettyPhone } from "@/lib/format";
 import { canSmsFromLine } from "@/lib/phone";
 import BackLink from "@/components/BackLink";
@@ -13,9 +14,7 @@ type Staff = {
 };
 type Vendor = { id: string; full_name: string; phone: string };
 
-const ROLE_LABEL: Record<string, string> = {
-  admin: "Admin", office: "Office", tech: "Maintenance", shower: "Showings",
-};
+
 
 /**
  * Who is on the line.
@@ -171,7 +170,7 @@ export default function PeopleAdmin(
                   {!p.active && <span className="tag">no access</span>}
                 </span>
                 <span className="p-sub">
-                  {ROLE_LABEL[p.role] ?? p.role}
+                  {labelOf(p.role)}
                   {p.forward_to ? ` · ${prettyPhone(p.forward_to)}` : ""}
                   {p.forward_to && !canSmsFromLine(p.forward_to) && (
                     <span className="tag" title="The shared line can only text US and Canadian numbers. They get messages in the app instead.">
@@ -181,7 +180,7 @@ export default function PeopleAdmin(
                 </span>
                 {isAdmin && (
                   <span className="p-acts">
-                    {(p.role === "tech" || p.role === "shower") && (
+                    {isField(p.role) && (
                       <button className="mini" disabled={busy}
                               onClick={() => setPin(p)}>Set PIN</button>
                     )}
@@ -217,10 +216,11 @@ export default function PeopleAdmin(
                      placeholder="(252) 555-0142" required />
               <label htmlFor="ir">What they&rsquo;ll be doing</label>
               <select id="ir" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                <option value="office">Office — the inbox, leasing, tenants</option>
-                <option value="admin">Admin — everything, including filings and the audit trail</option>
-                <option value="tech">Maintenance — work orders assigned to them</option>
-                <option value="shower">Showings — prospects and viewings</option>
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]} &mdash; {ROLE_BLURB[r]}
+                  </option>
+                ))}
               </select>
               <button className="btn pri" disabled={busy}>
                 {busy ? "Texting…" : "Text them a link"}
@@ -236,7 +236,7 @@ export default function PeopleAdmin(
                       <li key={i.id}>
                         <span>{i.name || i.phone}</span>
                         <span className="muted">
-                          {i.name ? i.phone : ""} · {ROLE_LABEL[i.role] ?? i.role}
+                          {i.name ? i.phone : ""} · {labelOf(i.role)}
                         </span>
                       </li>
                     ))}
@@ -258,10 +258,11 @@ export default function PeopleAdmin(
               <input id="n" value={name} onChange={(e) => setName(e.target.value)} required />
               <label htmlFor="r">What they do</label>
               <select id="r" value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="office">Office — the inbox, leasing, tenants</option>
-                <option value="admin">Admin — everything, including filings and the audit trail</option>
-                <option value="tech">Maintenance — work orders assigned to them</option>
-                <option value="shower">Showings — prospects and viewings</option>
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]} &mdash; {ROLE_BLURB[r]}
+                  </option>
+                ))}
               </select>
               <label htmlFor="e">Work email</label>
               <input id="e" type="email" value={email}

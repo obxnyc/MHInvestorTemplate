@@ -4,11 +4,11 @@ import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { twilioClient, publicBase, toE164, isValidPhone, canSmsFromLine } from "@/lib/twilio";
 import { prettyPhone } from "@/lib/format";
+import { isRole } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROLES = new Set(["admin", "office", "tech", "shower"]);
 
 /** Text somebody a link that sets them up.
  *
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   if (!isValidPhone(e164)) {
     return NextResponse.json({ error: "That doesn't look like a mobile number." }, { status: 400 });
   }
-  if (!ROLES.has(role)) {
+  if (!isRole(role)) {
     return NextResponse.json({ error: "Pick what they'll be doing." }, { status: 400 });
   }
 

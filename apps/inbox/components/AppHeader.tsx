@@ -4,8 +4,8 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import AccountMenu from "./AccountMenu";
+import { isClockOnly, type Role } from "@/lib/roles";
 
-type Role = "admin" | "office" | "tech";
 
 /**
  * The bar across the top of everything.
@@ -23,12 +23,20 @@ export default function AppHeader(
 ) {
   const path = usePathname();
   const nav_ = useRef<HTMLElement>(null);
-  const nav: [string, string][] = [
-    ["/home", "Home"],
-    ["/", "Messages"],
-    ["/properties", "Properties"],
-    ["/settings", "Settings"],
-  ];
+  // Crew get one destination, because they have one job here. The shared
+  // inbox carries tenants' messages and somebody who is here to say they have
+  // started work has no business reading them -- a nav that offers it is an
+  // invitation, whatever the row policies say underneath.
+  const nav: [string, string][] = isClockOnly(role)
+    ? [["/clock", "On the clock"]]
+    : [
+        ["/home", "Home"],
+        ["/", "Messages"],
+        ["/properties", "Properties"],
+        ["/leasing", "Leasing"],
+        ["/clock", "On the clock"],
+        ["/settings", "Settings"],
+      ];
 
   // If the nav is scrolled sideways, the page you are on can be off the end
   // of it -- and a nav that does not show where you are is worse than one you
@@ -47,7 +55,8 @@ export default function AppHeader(
       {/* The logo goes to YOUR screen, not the shared inbox. Those are
           different questions -- "what am I supposed to be doing" and "what has
           come in" -- and the way home should answer the first. */}
-      <Link href="/home" className="brandmark" aria-label="Larabee Homes — your dashboard">
+      <Link href={isClockOnly(role) ? "/clock" : "/home"} className="brandmark"
+            aria-label="Larabee Homes — your dashboard">
         {/* The actual mark, not two letters in a box. The company has a logo;
             a lettered square in its place reads as a placeholder nobody got
             round to replacing, which is what it was. */}

@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { isRole } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
-const ROLES = new Set(["admin", "office", "tech", "shower"]);
 
 /** Add someone who works here.
  *
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   if (!String(fullName ?? "").trim()) {
     return NextResponse.json({ error: "A name is required." }, { status: 400 });
   }
-  if (!ROLES.has(role)) {
+  if (!isRole(role)) {
     return NextResponse.json({ error: "Pick a role." }, { status: 400 });
   }
   const mail = String(email ?? "").trim().toLowerCase();

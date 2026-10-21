@@ -3,6 +3,7 @@ import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { pushToStaff } from "@/lib/push";
 import { settleEverything } from "@/lib/receipts";
+import { DESK } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
     }
 
     const { data: fallback } = await db.from("staff")
-      .select("id").eq("active", true).in("role", ["admin", "office"]);
+      .select("id").eq("active", true).in("role", DESK);
 
     // Each person hears about their own items and nobody else's.
     const perPerson = new Map<string, typeof queue>();

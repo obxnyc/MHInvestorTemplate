@@ -2,6 +2,7 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { prettyPhone } from "@/lib/format";
 import PeopleAdmin from "@/components/PeopleAdmin";
+import { isField } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function People(
   ]);
 
   const office = (staff ?? []).filter((s) => s.role === "admin" || s.role === "office");
-  const field = (staff ?? []).filter((s) => s.role === "tech" || s.role === "shower");
+  const field = (staff ?? []).filter((s) => isField(s.role));
 
   return (
     <PeopleAdmin

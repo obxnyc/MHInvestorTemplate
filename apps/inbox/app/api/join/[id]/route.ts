@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { isRole } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
-const ROLES = new Set(["admin", "office", "tech", "shower"]);
 
 /** Let somebody in, or not.
  *
@@ -42,7 +42,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: "unknown decision" }, { status: 400 });
   }
 
-  const granted = ROLES.has(role) ? role : request.requested_role;
+  const granted = isRole(role) ? role : request.requested_role;
 
   const auth = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -345,9 +345,32 @@ const clockin = `<main class="clockwrap">
   </ul>
 </main>`;
 
+/* The top bar, with every destination an admin sees.
+ *
+ * `.topnav` carries min-width:0 and overflow-x:auto so it scrolls inside
+ * itself rather than shoving the page sideways -- which is a comment in the
+ * stylesheet and was not a check anywhere. Two destinations were added to it
+ * (Leasing, On the clock) and a nav that pushes a phone screen sideways is
+ * exactly what the picture pass already asks about, so it is asked here.
+ */
+const header = `<header class="apphead">
+  <a href="#" class="brandmark">
+    <span class="brandlogo" style="width:32px;height:32px;display:inline-block;
+      background:var(--sunk);border-radius:8px"></span>
+    <span class="brandname">Larabee Homes</span></a>
+  <nav class="topnav" aria-label="Main">
+    <a href="#" class="on">Home</a><a href="#">Messages</a>
+    <a href="#">Properties</a><a href="#">Leasing</a>
+    <a href="#">On the clock</a><a href="#">Settings</a>
+  </nav>
+  <span class="av">AP</span>
+</header>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>${css}</style></head><body style="background:var(--page);padding:1rem">
+<style>${css}</style></head><body style="background:var(--page)">
+${header}
+<div style="padding:1rem">
 <div class="parkmain withcard">
   <div class="parkwrap"><div style="background:#e8eaee;aspect-ratio:16/10;border-radius:12px"></div></div>
   ${card}
@@ -363,7 +386,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
 <div style="margin-top:2rem;max-width:62rem">${lots}</div>
 <main class="wrap" style="margin-top:2rem">${lead}</main>
 <div class="dash" style="margin-top:2rem">${where}</div>
-<div style="margin-top:2rem;background:var(--page)">${clockin}</div></body></html>`;
+<div style="margin-top:2rem;background:var(--page)">${clockin}</div></div></body></html>`;
 
 const file = "/tmp/lot-card.html";
 writeFileSync(file, page);
@@ -456,6 +479,16 @@ for (const width of [1440, 1100, 900, 420]) {
       if (ratio < 1.6) {
         faint.push(`${el.tagName.toLowerCase()}.${el.className || "-"}`
           + ` ${ratio.toFixed(1)}:1`);
+      }
+    }
+    // The account menu is how somebody signs out, and it sits after a nav
+    // that scrolls. Two destinations were added to that nav; if the shrink
+    // rule ever stops working the avatar leaves the screen and there is no
+    // way back out of the application on a phone.
+    for (const el of document.querySelectorAll(".apphead .av")) {
+      const r = el.getBoundingClientRect();
+      if (r.right > window.innerWidth + 1 || r.left < -1 || !r.width) {
+        out.push(`.av off the screen at ${Math.round(r.left)}..${Math.round(r.right)}`);
       }
     }
     for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button, .clockwrap button")) {

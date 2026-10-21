@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { FIELD } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export async function GET() {
     .from("staff")
     .select("id, full_name")
     .eq("active", true)
-    .in("role", ["tech", "shower"])
+    .in("role", FIELD)
     .not("pin_hash", "is", null)
     .order("full_name");
 
