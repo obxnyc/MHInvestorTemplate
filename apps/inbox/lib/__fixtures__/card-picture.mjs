@@ -326,11 +326,28 @@ const where = `<section class="dashgroup"><h2>Where the money is</h2>
  * sideways is exactly what the picture pass already asks about, and the
  * account avatar going off the right edge takes the way to sign out with it.
  */
+/* The header with the search bar open, which is the state that can go
+ * wrong: a panel that overflows the page, a row whose label collides with
+ * its title, a box squeezed to nothing between the brand and the nav. */
 const header = `<header class="apphead">
   <a href="#" class="brandmark">
     <span class="brandlogo" style="width:32px;height:32px;display:inline-block;
       background:var(--sunk);border-radius:8px"></span>
     <span class="brandname">Larabee Homes</span></a>
+  <div class="omni">
+    <input class="omnibox" type="search" value="cross crk" aria-label="Search everything">
+    <div class="omnipanel" role="listbox">
+      <div class="omnisum"><span class="omnisumq">775 * 12</span>
+        <span class="omnisumv">9,300</span></div>
+      <button class="omnirow on"><span class="omnit">Cross Creek Mobile Home Park</span>
+        <span class="omnik">Property</span></button>
+      <button class="omnirow"><span class="omnit">Rent roll</span>
+        <span class="omnia">$42,310.00 a month from 54 let, $7,425.00 more if the 12 empty were let</span>
+        <span class="omnik">Report</span></button>
+      <button class="omnirow"><span class="omnit">1140 Northside Road 51</span>
+        <span class="omnik">Lot</span></button>
+    </div>
+  </div>
   <nav class="topnav" aria-label="Main">
     <a href="#" class="on">Home</a><a href="#">Messages</a>
     <a href="#">Properties</a><a href="#">Leasing</a>
@@ -534,7 +551,7 @@ for (const width of [1440, 1100, 900, 420]) {
       const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
-    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty", ".leak", ".tsheet"]
+    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty", ".leak", ".tsheet", ".omnipanel"]
       .flatMap((root) => ["button", "a", "label", "p", "h2", "h3", "span", "dt", "dd"]
       .map((el) => `${root} ${el}`)).join(", ");
     for (const el of document.querySelectorAll(INK)) {
@@ -563,7 +580,7 @@ for (const width of [1440, 1100, 900, 420]) {
         out.push(`.av off the screen at ${Math.round(r.left)}..${Math.round(r.right)}`);
       }
     }
-    for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button, .tsheet button")) {
+    for (const b of document.querySelectorAll(".movepad button, .movestep .btn, .leadclose button, .tsheet button, .omnirow")) {
       const r = b.getBoundingClientRect();
       if (r.width < 30 || r.height < 30) {
         small.push(`${b.className} ${Math.round(r.width)}x${Math.round(r.height)}px`);

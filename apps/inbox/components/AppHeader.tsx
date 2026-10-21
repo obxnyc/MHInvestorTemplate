@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import AccountMenu from "./AccountMenu";
 import { isClockOnly, type Role } from "@/lib/roles";
+import OmniSearch from "@/components/OmniSearch";
 
 
 /**
@@ -72,6 +73,11 @@ export default function AppHeader(
           edge, where the shell's overflow:hidden clipped it -- and the way to
           sign out was behind it. A nav that overflows should be swipeable;
           the way out of the app should never move. */}
+      {/* Crew get one screen and no search: there is nothing for them to
+          find, and a box that returns other people's lots to somebody here
+          to clock in is a box that should not be on their phone. */}
+      {!isClockOnly(role) ? <OmniSearch /> : null}
+
       <nav className="topnav" aria-label="Main" ref={nav_}>
         {nav.map(([href, label]) => (
           <Link key={href} href={href} className={on(href) ? "on" : ""}

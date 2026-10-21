@@ -1064,7 +1064,10 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
    narrower than its content, so the nav stayed full width and shoved the
    account menu off the edge instead of scrolling. */
 .topnav{margin-left:auto;display:flex;align-items:center;gap:.25rem;
-  min-width:0;overflow-x:auto;scrollbar-width:none}
+  /* flex-shrink:1 explicitly, beside the search box which has a floor: when
+     the two compete for a narrow header this is the one that gives, because
+     it scrolls and the search box cannot. */
+  min-width:0;flex:0 1 auto;overflow-x:auto;scrollbar-width:none}
 .topnav::-webkit-scrollbar{display:none}
 .topnav a{flex:none;white-space:nowrap;
   padding:.45rem .8rem;border-radius:8px;font-size:.88rem;font-weight:600;
@@ -2655,3 +2658,77 @@ a.metric:hover{border-color:var(--accent)}
 /* Off the page rather than display:none -- a hidden field some browsers skip
    is a honeypot that never catches anything. */
 .repbot{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+
+/* ------------------------------------------------------------- the search bar
+   One box for people who do not know where to click. `omni*` throughout --
+   `.check`, `.empty`, `.dim`, `.danger`, `.clock*` and `.ts*` are all
+   already taken in here. */
+/* `flex:1` with `min-width:0` let this shrink to 26 pixels between 700 and
+   1000px, because the nav's six destinations were winning the squeeze. The
+   nav is the one built to scroll inside itself, so it is the one that gives
+   way: a floor here, and the nav takes what is left. The picture harness
+   found this at 900px, where nothing about the markup looks wrong. */
+.omni{position:relative;flex:1 1 14rem;min-width:10rem;max-width:26rem;
+  margin-left:1rem}
+.omnibox{width:100%;min-width:0;min-height:2.4rem;padding:.45rem .7rem;
+  border:1px solid var(--hair);border-radius:10px;background:var(--sunk);
+  color:var(--ink);font:inherit;font-size:.9rem}
+.omnibox::placeholder{color:var(--muted)}
+.omnibox:focus{outline:2px solid var(--accent);outline-offset:1px;
+  background:var(--card)}
+/* The browser's own clear button on a search input sits on top of the text
+   in some themes and cannot be styled; the panel below is the way out. */
+.omnibox::-webkit-search-decoration,
+.omnibox::-webkit-search-results-button{display:none}
+
+/* The panel does NOT inherit the box's width. The box has a ten-rem floor so
+   it survives a crowded header, and a result row in ten rems is one word per
+   line with the label sitting on top of the title. So the panel is anchored
+   to the right edge and given its own floor, capped at the viewport so a
+   phone cannot scroll sideways. The automated checks were happy with the
+   narrow version -- nothing overflowed and every button cleared 34px. The
+   picture is what said it was unreadable. */
+.omnipanel{position:absolute;top:calc(100% + .4rem);right:0;left:auto;z-index:40;
+  min-width:min(24rem, calc(100vw - 2rem));max-width:calc(100vw - 2rem);
+  background:var(--card);border:1px solid var(--hair);border-radius:12px;
+  box-shadow:0 12px 32px rgba(15,23,41,.14);
+  max-height:70vh;overflow-y:auto;overflow-x:hidden}
+
+.omnisum{display:flex;align-items:baseline;gap:.6rem;padding:.7rem .8rem;
+  background:var(--accent-soft);border-bottom:1px solid var(--hair-2)}
+.omnisumq{color:var(--muted);font-size:.85rem;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.omnisumv{margin-left:auto;font-weight:800;font-size:1.05rem;
+  font-variant-numeric:tabular-nums;color:var(--accent-ink);white-space:nowrap}
+
+/* Two lines, not one. The title and its label share the first; a report's
+   answer gets the whole of the second. Fighting them into one row is how
+   "$42,310.00 a month" ended up printed through the words "Rent roll". */
+.omnirow{display:flex;align-items:baseline;gap:.6rem;width:100%;flex-wrap:wrap;
+  padding:.6rem .8rem;border:none;background:none;font:inherit;text-align:left;
+  cursor:pointer;border-bottom:1px solid var(--hair-2);min-height:34px}
+.omnirow:last-child{border-bottom:none}
+.omnirow.on{background:var(--sunk)}
+.omnit{font-weight:700;font-size:.9rem;color:var(--ink);min-width:0;flex:1}
+/* A report's answer is the point of the row, so it gets the room and the
+   label gets what is left. */
+.omnia{order:3;flex-basis:100%;color:var(--accent-ink);font-size:.82rem;
+  font-weight:600;line-height:1.45;min-width:0}
+.omnik{margin-left:auto;color:var(--muted);font-size:.75rem;text-transform:uppercase;
+  letter-spacing:.05em;white-space:nowrap}
+
+.omninone{padding:.8rem;color:var(--muted);font-size:.85rem;line-height:1.5}
+.omnimeant{border:none;background:none;padding:0;font:inherit;font-weight:700;
+  color:var(--accent-ink);cursor:pointer;text-decoration:underline}
+
+/* On a phone the header wraps into three lines, and the order has to be
+   said or they come out as brand, nav, a stranded avatar, then the search.
+   Brand and account together, then the destinations, then the box. */
+@media (max-width:700px){
+  .apphead{flex-wrap:wrap;row-gap:.5rem}
+  .brandmark{order:0}
+  .apphead .av{order:1;margin-left:auto}
+  .topnav{order:2;flex-basis:100%;margin-left:0}
+  .omni{order:3;flex-basis:100%;max-width:none;min-width:0;margin:0}
+  .omnipanel{left:0;right:0;min-width:0}
+}
