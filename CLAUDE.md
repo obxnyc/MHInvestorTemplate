@@ -730,3 +730,134 @@ from a screenshot produced a park four kilometres from where it stands
 plainly what could not be verified, and let the deployment, which is
 not blocked, do the real call.
 
+
+### A phone does not know where it is, and the answer has an error bar
+
+The crew clock has to say whether somebody is on the property. A browser's
+position comes with an accuracy in metres -- the radius it is about 68% sure
+the handset is inside -- and indoors that is routinely 50 to 200, and on a
+cold start a kilometre. A seventy-five-metre fence tested with
+`distance <= radius` against a fix accurate to two hundred metres is not
+answering the question. It is reading noise, confidently, with somebody's
+wages on the other end.
+
+So `lib/fence.ts` has three answers and not two: inside when the WHOLE error
+circle is inside the fence, outside when the whole of it is outside, and
+**cannot tell** otherwise -- which is the common case, not the edge. A fix
+with no accuracy at all is not a fix with accuracy of zero: a device that did
+not say how sure it is has not said it is certain.
+
+The same shape as the property line that only ever said whether a line
+existed, and `described` keyed on rows, and `has` keyed on a line. **A screen
+that reports a state by testing whether one number is under another answers a
+narrower question than the one being asked, and answers it confidently.**
+
+Two rules around it that are not geometry. **The fix is recorded, never
+enforced** -- a clock-in off site goes in as off site, because a man who
+cannot clock in has no record of his hours at all, which is worse for him and
+much worse in front of a wage claim. And **the tracking belongs to the shift,
+not to the login** -- a ping may only be written against an open shift, in the
+row policy and not only in the route, and the screen says so in a sentence.
+
+### A guard standing behind a second guard is a guard nobody has tested
+
+Four of this round's guards passed when the rule they name was deleted,
+because something else answered first.
+
+The assistance-animal rule looked proven until it was removed and nothing
+changed -- the pet patterns happen not to match "service dog" either. Ask it
+where both rules fire: "I have a dog, she is a service dog".
+
+The bathroom bound could be widened from 4 to 31 without a check noticing,
+because the bedroom bound rejects 11/15 on the eleven. Ask it with 4/15.
+
+The rate rule was never reached, because "an hour" and "a week" are already
+not-a-budget words. What it catches on its own is "$40,000 a year".
+
+And the vagueness threshold was redundant on a 75m fence, where the error-bar
+rule refuses a kilometre-wide fix anyway. What it is for is a big fence: a fix
+accurate to a kilometre, standing on the pin of a 1.5km boundary, is
+geometrically inside and tells you nothing.
+
+In each case the fault was a no-op, and **a fault that is a no-op proves
+nothing**. The fix is never to weaken the code -- it is to find the case where
+only that rule can answer.
+
+### A harness that dies on a fault reads as a harness that is broken
+
+Four faults took a run down with a TypeError and a line number, because an
+assertion reached into a field the fault had just removed. That reads as "the
+harness fell over", not as "the fault defeated this one check", and it is the
+same lesson as the migration that would not apply in 036.
+
+Every assertion is a thunk now, and `t` reports a thrown one as a named
+failure. Wrapping them mechanically needs a scanner that understands comments:
+an apostrophe in a `// person's` comment ran the first version off the end of
+the file.
+
+### An anchor that runs on past its own block
+
+`/action === "sign-off"[\s\S]{0,600}?\.eq\("staff_id", me\.id\)/` matched the
+`.eq` in the block AFTER the one it was about. So deleting the filter from
+sign-off still matched, and a sign-off reaching every person's shifts passed.
+
+**Cut the block out first, then match inside it.** Same family as anchoring on
+the call rather than the words, which cost a round in `inside-check.mjs`.
+
+And a guard that bans one setter's name is a guard the next person walks past
+with a different name. Ask the real question: nothing may be written to state
+before the answer has been read.
+
+### A fixture that gives one of everything cannot tell two answers apart
+
+The best-fit rule in `lib/leaks.ts` -- each person's single best lot, never
+every pairing -- passed with the rule deleted, because the fixture gave each
+person exactly one clean match. With one match, best-of and sum-of-all are the
+same number. Two matching lots, and they differ.
+
+Third time this exact shape has come up (the Service Manager orderings, the
+adrift lots, this). **If you cannot say which number the wrong answer would
+give, the fixture is not asking the question.**
+
+### Things that typecheck and are wrong
+
+**A positional destructure with a query inserted in the middle.** The
+dashboard's `Promise.all` hands every query after the insertion point the
+wrong rows, and it compiles, because the shapes happened to be compatible.
+New queries go at the end.
+
+**A Supabase select built by concatenation.** The client infers the row type
+from the select text, so a joined string turns every field on the result into
+an error rather than a column. One string literal.
+
+**A radius table listing kinds the codebase does not have.** `quad` and
+`apartment` were invented and `mh`, `multi` and `lot` were missing, so three
+real kinds would have fallen to a default wrong for all three. The harness
+reads the kinds out of `property.ts` and checks the two lists against each
+other rather than trusting either.
+
+### What running 038 found that reading it could not
+
+A **GRANT to a role that does not exist is an error, not a no-op** -- the
+migration did not apply at all until the harness created `anon` and
+`authenticated`.
+
+A **policy naming a schema that is not there fails at CREATE POLICY**, not at
+query time, so a missing `auth` schema is a migration that will not apply
+rather than policies that misbehave later.
+
+The whole file **does** survive being pasted into the SQL editor as one
+transaction, which `alter type ... add value` is the sort of statement that
+historically would not. Worth knowing rather than assuming.
+
+And **`revoke delete` changes nothing on a clean database**, because a new
+table grants nothing to `authenticated` anyway -- so that guard was a no-op.
+What the revoke is for is a project carrying a blanket
+`grant all on all tables in schema public`, so the harness hands over that
+grant first and then checks the migration takes it back.
+
+One thing that nearly went out silently: the enum statement was wrapped in a
+`do $$ ... exception when others then null $$`. `if not exists` already makes
+it safe to re-run, and the handler would have meant the role quietly not
+existing with nothing on screen to say so. **Ask whether the thing is there
+afterwards rather than taking the absence of an error as an answer.**
