@@ -26,17 +26,24 @@ function authorized(req: Request) {
  * request can fall down silently at any step. So this asks instead.
  *
  * Polling is not the same as realtime and the difference is the interval.
- * The schedule in vercel.json asks for the top of every hour.
+ * The schedule in vercel.json asks for once a day, and that is not a
+ * preference -- it is the most this plan will accept.
  *
- * WHAT THE PLAN ALLOWS IS NOT WHAT THE SCHEDULE ASKS FOR. On Vercel's
- * Hobby plan a cron is triggered once a day whatever the expression says,
- * and within a flexible hour at that. So on Hobby this is a daily backstop
- * and the button on the Rent Manager page is what brings a request in now.
- * On Pro the same line gives hourly, and a quarter-hourly expression
- * gives quarter-hourly -- one setting in vercel.json, no code change.
- * (Written in words because a cron expression starting with a star and
- * a slash ends a block comment, which is how this file stopped
- * compiling the first time.)
+ * WHAT THE PLAN ALLOWS IS NOT WHAT THE SCHEDULE ASKS FOR, and asking for
+ * more does not get clamped. It FAILS THE BUILD. This line said hourly for
+ * a day and every deployment in that day was refused with "Hobby accounts
+ * are limited to daily cron jobs", so twelve commits of work sat on main
+ * while the live site served the build from before them. Nothing said so
+ * from this end: a merge that shipped and a merge that was refused look
+ * identical here.
+ *
+ * So on Hobby this is a daily backstop and the button on the Rent Manager
+ * page is what brings a request in now. On Pro, an hourly expression
+ * becomes hourly -- one line in vercel.json, no code change, and
+ * `plan-check.mjs` is the thing that has to be told as well.
+ * (The frequency is written in words rather than as an expression because
+ * a cron expression starting with a star and a slash ends a block comment,
+ * which is how this file stopped compiling the first time.)
  *
  * The email alerts carry on arriving as they do now; this is the copy that
  * lands somewhere a person works.

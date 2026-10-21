@@ -533,10 +533,26 @@ The browser reads the reply as text and parses it itself, so a 504 says
 it was cut off rather than blaming the parser.
 
 **A cron is triggered once a day**, whatever the expression says, within
-a flexible hour. A more frequent expression is not clamped quietly -- it
-can fail the deployment. So the schedule asks for hourly and the doc
-comment says plainly that Hobby gives daily, and that Pro turns the same
-line into what it reads like. One setting, no code change.
+a flexible hour. A more frequent expression is not clamped quietly: it
+**FAILS THE BUILD**, with "Hobby accounts are limited to daily cron jobs".
+
+That sentence used to read "can fail the deployment", and the very next
+thing committed after it was `15 * * * *` -- hourly. Every deployment for
+a day was refused. Twelve commits of work sat on `main` while the live
+site served the build from before them, three rounds went on "it is
+probably still building" and "it is probably your browser", and the owner
+found it by opening the Create Deployment dialog, which prints the real
+error where the deployments list does not.
+
+So the schedule asks for once a day, and `lib/__fixtures__/plan-check.mjs`
+holds it there: on Hobby every cron's minute AND hour must be fixed
+numbers, because a star, a step, a list or a range in either one is more
+than one firing. On Pro, change the expression and tell that file the
+plan -- it names the plan in one line for exactly that reason.
+
+**A rule a person has to remember is a rule that gets forgotten.** This
+one was written down in this file, in bold, and shipped against anyway on
+the same day. Writing it down is not the fix; the fix is the suite.
 
 A third, smaller: **a cron expression beginning with a star and a slash
 ends a block comment.** Written in words in the source for that reason.

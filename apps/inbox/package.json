@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:parsers": "node lib/__fixtures__/parsers.test.mjs",
     "test:prequal": "node lib/__fixtures__/prequal.test.mjs",
-    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices && npm run test:park && npm run test:agol && npm run test:footprint && npm run test:harvest && npm run test:osm && npm run test:parkplan && npm run test:rows && npm run test:move && npm run test:inside && npm run test:drop && npm run test:keep && npm run test:still && npm run test:papers && npm run test:send && npm run test:photo && npm run test:issues && npm run test:wanted && npm run test:empty && npm run test:match && npm run test:leaks && npm run test:fence && npm run test:shift && npm run test:clock && npm run test:clock-screen && npm run test:roles",
+    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices && npm run test:park && npm run test:agol && npm run test:footprint && npm run test:harvest && npm run test:osm && npm run test:parkplan && npm run test:rows && npm run test:move && npm run test:inside && npm run test:drop && npm run test:keep && npm run test:still && npm run test:papers && npm run test:send && npm run test:photo && npm run test:issues && npm run test:wanted && npm run test:empty && npm run test:match && npm run test:leaks && npm run test:fence && npm run test:shift && npm run test:clock && npm run test:clock-screen && npm run test:roles && npm run test:plan",
     "test:classify": "node lib/__fixtures__/classify.test.mjs",
     "test:category": "node lib/__fixtures__/category.test.mjs",
     "test:media": "node lib/__fixtures__/media.test.mjs",
@@ -46,7 +46,8 @@
     "test:shift": "node lib/__fixtures__/shift.test.mjs",
     "test:clock": "node lib/__fixtures__/clock-check.mjs",
     "test:clock-screen": "node lib/__fixtures__/clock-screen-check.mjs",
-    "test:roles": "node lib/__fixtures__/roles.test.mjs"
+    "test:roles": "node lib/__fixtures__/roles.test.mjs",
+    "test:plan": "node lib/__fixtures__/plan-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
