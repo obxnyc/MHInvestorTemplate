@@ -1004,8 +1004,11 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
    came out as a centred stack, which is what it was trying not to be. */
 .authalt{display:flex;flex-wrap:wrap;gap:.25rem 1rem;justify-content:space-between;
   margin-top:.75rem}
-.authalt .pinlink{align-self:auto;padding:.35rem 0;min-height:auto;
-  text-decoration:none;font-weight:600}
+/* Same trick, same reason: these sit in a wrapping row and cannot be 44px
+   tall without pushing it apart, so the hit area grows and the layout does
+   not hear about it. */
+.authalt .pinlink{align-self:auto;padding:.7rem .4rem;margin:-.35rem -.4rem;
+  min-height:auto;text-decoration:none;font-weight:600}
 .authalt .pinlink:hover{text-decoration:underline}
 
 /* The PIN is for a different person on a different device -- a tech in a
@@ -1014,8 +1017,15 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .authfoot{display:flex;justify-content:center;align-items:baseline;gap:.35rem;
   margin:1.1rem 0 0;padding-top:.9rem;border-top:1px solid var(--hair);
   color:var(--muted);font-size:.83rem}
-.authfoot .pinlink{padding:0;min-height:auto;align-self:auto;
-  color:var(--accent);text-decoration:none}
+/* The base rule gives this 44px of height; `min-height:auto` here took it
+   back to twenty, on the one link in the application that is explicitly for
+   a man holding a phone in a crawlspace.
+   The padding grows the hit area and the equal negative margin takes the
+   growth back out of the layout, so the sentence it sits inside does not
+   move. Checked by `phone-check.mjs`, which loads the real page at 320,
+   390 and sideways and fails anything under 30px. */
+.authfoot .pinlink{padding:.7rem .45rem;margin:-.7rem -.45rem;min-height:auto;
+  align-self:auto;color:var(--accent);text-decoration:none}
 .authfoot .pinlink:hover{text-decoration:underline;color:var(--accent)}
 
 /* The mark, the same one as the header, over a card that has nothing else on
