@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { spell } from "@/lib/empty";
+import { leaks } from "@/lib/leaks";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { prettyPhone, timeAgo } from "@/lib/format";
 import { money } from "@/lib/prices";
@@ -44,7 +45,9 @@ export default async function Home() {
     { data: recentDone }, { data: spend }, { count: unclaimed },
     { data: mine },
     { data: clocks },
-    { count: looking },
+    { data: asked },
+    { data: doneJobs },
+    { data: bills },
   ] = await Promise.all([
     // Asked for in full rather than counted. The count was already here and a
     // count is not an answer: "11 open" says there is work and nothing about
@@ -72,10 +75,20 @@ export default async function Home() {
     // is positional, and an insert in the middle silently hands every query
     // after it the wrong rows -- which typechecks only by luck.
     supabase.from("units")
-      .select("id, monthly_rent, vacant_since, vacant_since_estimated")
+      // One string literal, not a concatenation: the client infers the row
+      // type from the select text, and a joined string makes every field on
+      // the result an error rather than a column.
+      .select("id, label, bedrooms, monthly_rent, available_on, vacant_since, vacant_since_estimated, blocker, properties(name, address)")
       .eq("is_vacant", true),
-    supabase.from("inquiries").select("id", { count: "exact", head: true })
+    supabase.from("inquiries")
+      .select("id, bedrooms_min, price_ceiling, area, has_pets, move_in_from")
       .eq("outcome", "open"),
+    // Finished work with nothing on it. Ninety days because a job costed six
+    // months late was never going to be costed, and a list that long is one
+    // nobody opens.
+    supabase.from("work_orders").select("id, completed_at, cost_cents")
+      .eq("status", "done").gte("completed_at", quarterBack),
+    supabase.from("vendor_invoices").select("id, amount_cents, emailed_at"),
   ]);
 
   const jobs = openJobs ?? [];
@@ -118,6 +131,51 @@ export default async function Home() {
   // date is a guess, and a guess multiplied by a rent is a figure somebody
   // puts in front of an investor -- so the ones carried over from before
   // anything was measuring are left out rather than estimated into the total.
+  // The empty lots, the people waiting, and the two kinds of money nobody
+  // has filed. Every one of these is tolerant of its migration being absent:
+  // a query that fails comes back as null and its line simply is not there,
+  // rather than taking the dashboard with it.
+  const whereItGoes = leaks({
+    empty: (clocks ?? []).map((u) => {
+      const prop = u.properties as unknown as { name: string; address: string | null } | null;
+      return {
+        id: String(u.id), label: String(u.label ?? ""), property: prop?.name ?? "—",
+        rent: u.monthly_rent === null || u.monthly_rent === undefined
+          ? null : Number(u.monthly_rent),
+        bedrooms: (u.bedrooms as number | null) ?? null,
+        area: prop?.address ?? null,
+        availableOn: (u.available_on as string | null) ?? null,
+        vacantSince: (u.vacant_since as string | null) ?? null,
+        vacantSinceEstimated: Boolean(u.vacant_since_estimated),
+        blocker: (u.blocker as string | null) ?? null,
+      };
+    }),
+    looking: (asked ?? []).map((i) => ({
+      id: String(i.id),
+      wanted: {
+        bedroomsMin: (i.bedrooms_min as number | null) ?? undefined,
+        priceCeiling: i.price_ceiling === null || i.price_ceiling === undefined
+          ? undefined : Number(i.price_ceiling),
+        area: (i.area as string | null) ?? undefined,
+        // A stored false is a stated no. `?? undefined` would turn it back
+        // into "nobody asked", which is a different answer.
+        hasPets: i.has_pets === null || i.has_pets === undefined
+          ? undefined : Boolean(i.has_pets),
+        moveInFrom: (i.move_in_from as string | null) ?? undefined,
+      },
+    })),
+    jobs: (doneJobs ?? []).map((j) => ({
+      id: String(j.id),
+      completedAt: (j.completed_at as string | null) ?? null,
+      costCents: (j.cost_cents as number | null) ?? null,
+    })),
+    invoices: (bills ?? []).map((b) => ({
+      id: String(b.id),
+      amountCents: Number(b.amount_cents ?? 0),
+      emailedAt: (b.emailed_at as string | null) ?? null,
+    })),
+  });
+
   const goneAlready = Math.round((clocks ?? []).reduce((a, c) => {
     if (c.vacant_since_estimated) return a;
     const s = spell(c.vacant_since as string | null);
@@ -169,8 +227,8 @@ export default async function Home() {
                       .filter(Boolean).join(" · ")
                   : "no units on file yet"} />
 
-        <Metric label="Looking for a home" value={looking ?? null} href="/leasing"
-                note={looking
+        <Metric label="Looking for a home" value={(asked ?? []).length || null} href="/leasing"
+                note={(asked ?? []).length
                   ? "what each of them asked for, and the lots that fit"
                   : "nothing recorded yet — every enquiry from now on lands here"} />
 
@@ -204,6 +262,44 @@ export default async function Home() {
         Manager today. They are laid out and empty on purpose — a figure invented
         to fill the space is worse than a gap that says what it is waiting for.
       </p>
+
+      {whereItGoes.length ? (
+        /* Where the money is going, and where there is more of it.
+         *
+         * Money to be had first -- it is the only line anybody can act on
+         * today, and a list that opens with four things going wrong is a list
+         * that gets shut.
+         *
+         * Nothing leaking is nothing here. An empty list is not the same as a
+         * screen of zeroes, and a business with none of these problems should
+         * not be shown a panel telling it so. */
+        <section className="dashgroup">
+          <h2>Where the money is</h2>
+          <ul className="leak">
+            {whereItGoes.map((l) => (
+              <li key={l.key} className={l.upside ? "leakup" : ""}>
+                <span className="leaksays">{l.says}</span>
+                {l.perMonth ? (
+                  <span className="leakfig">
+                    {money(l.perMonth * 100)}{l.key === "unsent" ? "" : "/mo"}
+                    {l.upside ? " if they let" : ""}
+                  </span>
+                ) : (
+                  /* No figure, because the amount is genuinely not known. A
+                     made-up number in the figures that decide what a property
+                     costs to run is worse than a gap somebody can see. */
+                  <span className="leaknofig">amount not known</span>
+                )}
+                {l.gone ? (
+                  <span className="leakgone">{money(l.gone * 100)} gone already</span>
+                ) : null}
+                {l.short ? <span className="leakshort">{l.short.because}</span> : null}
+                {l.go ? <Link className="leakgo" href={l.go.href}>{l.go.said}</Link> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <MaintenanceBox jobs={jobRows} />
 

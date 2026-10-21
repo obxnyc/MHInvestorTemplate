@@ -2448,3 +2448,20 @@ a.metric:hover{border-color:var(--accent)}
 .leadslow{margin-left:auto;color:var(--crit);font-weight:700;font-size:.8rem}
 .leadblock{color:var(--ink-2);font-size:.8rem;width:100%}
 .leadnoblock{color:var(--muted);font-size:.8rem;font-style:italic;width:100%}
+
+/* ------------------------------------------------------------- where the money is
+   One line per leak, and one for the money to be had. `leak*` throughout:
+   `.check`, `.empty`, `.dim` and `.danger` are all already states in here. */
+.leak{list-style:none;margin:.4rem 0 0;padding:0;display:grid;gap:.4rem}
+.leak li{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;
+  padding:.6rem .7rem;border-radius:10px;background:var(--sunk);font-size:.9rem}
+.leak li.leakup{background:var(--tn-soft)}
+.leaksays{font-weight:600;color:var(--ink)}
+.leakfig{font-weight:700;color:var(--warn);white-space:nowrap}
+.leak li.leakup .leakfig{color:var(--tn-ink)}
+.leaknofig{color:var(--muted);font-style:italic;white-space:nowrap}
+.leakgone{color:var(--crit);font-weight:700;white-space:nowrap}
+/* The sentence that says the figure beside it is short. Small, and on its own
+   line, because it is a caveat on a number rather than a number. */
+.leakshort{width:100%;color:var(--muted);font-size:.8rem}
+.leakgo{margin-left:auto;color:var(--accent-ink);font-size:.82rem;white-space:nowrap}

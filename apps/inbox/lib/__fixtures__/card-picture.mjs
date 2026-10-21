@@ -295,6 +295,29 @@ const lead = `<div class="leadlist"><div class="lead">
       <span class="leadnoblock">Nothing said about what is stopping it</span></li>
 </ul>`;
 
+/* Where the money is. One line per leak, the upside first, and a caveat
+ * sentence that has to sit under its own figure rather than beside it. */
+const where = `<section class="dashgroup"><h2>Where the money is</h2>
+<ul class="leak">
+  <li class="leakup"><span class="leaksays">3 people asked for something we have empty right now</span>
+      <span class="leakfig">$2,175/mo if they let</span>
+      <a class="leakgo" href="#">Ring them</a></li>
+  <li><span class="leaksays">12 lots empty</span>
+      <span class="leakfig">$7,425/mo</span>
+      <span class="leakgone">$18,340 gone already</span>
+      <span class="leakshort">4 of them have no rent on file, so the figure is low</span>
+      <a class="leakgo" href="#">See them, longest empty first</a></li>
+  <li><span class="leaksays">5 lots empty over 45 days with nothing said about what is stopping</span>
+      <span class="leakfig">$3,100/mo</span>
+      <a class="leakgo" href="#">Say what each one is waiting on</a></li>
+  <li><span class="leaksays">9 finished jobs with no cost recorded, so that spend is not against any property</span>
+      <span class="leaknofig">amount not known</span>
+      <a class="leakgo" href="#">Put the costs on</a></li>
+  <li><span class="leaksays">2 vendor invoices never sent to the bookkeeper</span>
+      <span class="leakfig">$251</span>
+      <a class="leakgo" href="#">Send them on</a></li>
+</ul></section>`;
+
 const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${css}</style></head><body style="background:var(--page);padding:1rem">
@@ -311,7 +334,8 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
   ${moving}
 </div>
 <div style="margin-top:2rem;max-width:62rem">${lots}</div>
-<main class="wrap" style="margin-top:2rem">${lead}</main></body></html>`;
+<main class="wrap" style="margin-top:2rem">${lead}</main>
+<div class="dash" style="margin-top:2rem">${where}</div></body></html>`;
 
 const file = "/tmp/lot-card.html";
 writeFileSync(file, page);
@@ -387,7 +411,7 @@ for (const width of [1440, 1100, 900, 420]) {
       const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
-    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty"]
+    const INK = [".lotcard", ".unitlist", ".lead", ".leadempty", ".leak"]
       .flatMap((root) => ["button", "a", "label", "p", "h2", "h3", "span", "dt", "dd"]
       .map((el) => `${root} ${el}`)).join(", ");
     for (const el of document.querySelectorAll(INK)) {
@@ -412,7 +436,7 @@ for (const width of [1440, 1100, 900, 420]) {
         small.push(`${b.className} ${Math.round(r.width)}x${Math.round(r.height)}px`);
       }
     }
-    for (const card of document.querySelectorAll(".lotcard, .unitlist, .lead, .leadempty")) {
+    for (const card of document.querySelectorAll(".lotcard, .unitlist, .lead, .leadempty, .leak")) {
     const box = card.getBoundingClientRect();
     for (const el of card.querySelectorAll("*")) {
       const r = el.getBoundingClientRect();
