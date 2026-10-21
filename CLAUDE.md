@@ -52,9 +52,39 @@ fix having failed.
 
 ### Supabase
 
-No project id here yet. Give https://supabase.com/dashboard/projects plus the
-clicks, and say why it cannot be exact. Ask for the address bar once and this
-section stops being a paragraph.
+Organisation **Larabee-inbox**, project **Larabee-inbox**, on the Free plan.
+The branch is `main`, marked PRODUCTION. Still no project ref, because the
+screenshot that gave the names was of the app and not of the address bar --
+so https://supabase.com/dashboard/projects plus the clicks, and ask for the
+address bar when they land.
+
+The SQL editor is the second-to-top icon in the far-left rail. The Run button
+is top right; the right answer to a migration is `Success. No rows returned`.
+
+### A filename is not a thing to paste
+
+"Paste in `docs/shared-line/037-....sql`" came back as that path typed into
+the SQL editor and a `syntax error at or near "docs"`. Of course it did: the
+only thing in the message that looked like something to copy was in a code
+block, and a code block says copy me.
+
+The owner has no checkout. A path means nothing on their machine, and asking
+for file CONTENTS by naming the file is asking them to do a step that does not
+exist for them.
+
+So: link the file on GitHub and say which button copies it.
+
+https://github.com/obxnyc/MHInvestorTemplate/blob/main/docs/shared-line/037-the-vacancy-clock-and-the-inquiry.sql
+
+The copy icon is the two overlapping squares at the top right of the file,
+beside the download arrow. One press puts the whole file on the clipboard,
+which beats four hundred lines of SQL in a chat message and beats a path
+every time.
+
+The general rule, and it is the same one as the whole-link rule at the top:
+**anything the owner has to go and do must be a thing they can click or copy,
+not a thing they have to assemble.** A repo path is an instruction to a person
+with the repo open. Nobody reading these messages has the repo open.
 
 ### The rule when an id is missing
 
