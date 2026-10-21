@@ -364,6 +364,46 @@ pass on the fault. A check that cannot tell two fixes apart cannot tell
 you which one broke -- so the one that tests the key asks it with
 nobody working, and the one that tests the guard asks it with somebody.
 
+### Run the migration against a real Postgres, do not read it
+
+The photo in the team chat was not migration 027 and was not the
+attachment check, both of which I offered before looking. It was this,
+from 013:
+
+    body text not null check (length(trim(body)) > 0)
+
+027 added `media_paths`, the screen started saying "a screenshot with
+no words is a whole message", and nobody came back to the constraint.
+The rule was never "the body must say something" -- it was "the MESSAGE
+must say something", and a photograph says plenty. 036 replaces it.
+
+**The one line that matters has a trap in it that reading cannot
+find.** `array_length('{}', 1)` is null, not zero; a CHECK that
+evaluates to null PASSES; so a constraint written without the coalesce
+lets every empty message through while looking exactly right.
+
+So `apps/inbox/lib/__fixtures__/photo-check.mjs` starts a Postgres,
+builds the table as 013 made it, and runs the migration: the photo-only
+insert must fail BEFORE and go in after, words must still work, empty
+must still be refused, and the whole thing must apply and replay on a
+database where 027 was never run. It skips where there is no postgres,
+the way the picture harnesses skip without a browser.
+
+Three things that cost a round each:
+
+**A fault that is a no-op proves nothing.** `if true and exists (...)`
+is `if exists (...)`, so the guard passed and I nearly believed it had
+teeth.
+
+**A migration that will not apply is the most important failure a
+harness can report**, and it was the one case that threw instead --
+taking the whole run down as "the harness fell over" rather than naming
+it. It is a named check now.
+
+**Dropping `if exists` breaks the replay, not the first apply.** The
+guard was right and my pairing was wrong. When a fault fails a
+different check than expected, read which one before changing anything.
+
 ### A send that failed must not look like a send that worked
 
 Dragging a photo into a team chat and pressing enter emptied the

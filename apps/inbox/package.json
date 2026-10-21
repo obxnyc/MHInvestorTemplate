@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:parsers": "node lib/__fixtures__/parsers.test.mjs",
     "test:prequal": "node lib/__fixtures__/prequal.test.mjs",
-    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices && npm run test:park && npm run test:agol && npm run test:footprint && npm run test:harvest && npm run test:osm && npm run test:parkplan && npm run test:rows && npm run test:move && npm run test:inside && npm run test:drop && npm run test:keep && npm run test:still && npm run test:papers && npm run test:send",
+    "test": "npm run test:parsers && npm run test:prequal && npm run test:classify && npm run test:category && npm run test:media && npm run test:signature && npm run test:dispatch && npm run test:prices && npm run test:rentmanager && npm run test:strays && npm run test:sitemap && npm run test:jobs && npm run test:intake-view && npm run test:invoices && npm run test:park && npm run test:agol && npm run test:footprint && npm run test:harvest && npm run test:osm && npm run test:parkplan && npm run test:rows && npm run test:move && npm run test:inside && npm run test:drop && npm run test:keep && npm run test:still && npm run test:papers && npm run test:send && npm run test:photo",
     "test:classify": "node lib/__fixtures__/classify.test.mjs",
     "test:category": "node lib/__fixtures__/category.test.mjs",
     "test:media": "node lib/__fixtures__/media.test.mjs",
@@ -35,7 +35,8 @@
     "test:keep": "node lib/__fixtures__/keep-check.mjs",
     "test:still": "node lib/__fixtures__/still-check.mjs",
     "test:papers": "node lib/__fixtures__/papers-check.mjs",
-    "test:send": "node lib/__fixtures__/send-check.mjs"
+    "test:send": "node lib/__fixtures__/send-check.mjs",
+    "test:photo": "node lib/__fixtures__/photo-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
