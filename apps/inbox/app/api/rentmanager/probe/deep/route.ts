@@ -35,9 +35,24 @@ const WANTED: [string, string[]][] = [
     "OpenReceivables", "Property", "Unit", "UserDefinedValues", "RentDueDay",
   ]],
   ["Leases", ["Tenant", "Unit", "Property", "MoveOutDate", "LeaseTerms"]],
+  // The three that answer are Category, Status and Priority -- proved
+  // against this account. Property, Unit and Tenant all 404, and the bare
+  // record carries no PropertyID, UnitID or TenantID either, so as this
+  // endpoint hands an issue over IT DOES NOT SAY WHICH LOT IT IS FOR.
+  //
+  // That is the one thing a maintenance request cannot do without, so the
+  // rest of this list is the hunt for where Rent Manager keeps it.
+  // `CreateWebUserID` is on the bare record and is the Tenant Web Access
+  // user who submitted it, which makes the web-user embeds the most
+  // promising of them: resolve that and the tenant, and the tenant's
+  // lease, give the lot.
   ["ServiceManagerIssues", [
-    "Property", "Unit", "Tenant", "Category", "Status", "Priority",
-    "ServiceManagerStatus", "ServiceManagerCategory", "ServiceManagerPriority",
+    "Category", "Status", "Priority",
+    "Locations", "ServiceManagerLocations", "IssueLocations", "Location",
+    "Participants", "ServiceManagerParticipants",
+    "CreateWebUser", "WebUser", "CreateUser", "AssignedToUser",
+    "UserDefinedValues", "Attachments", "History", "ServiceManagerHistory",
+    "WorkOrders", "ServiceManagerWorkOrders", "Notes", "ServiceManagerNotes",
   ]],
   ["Vendors", ["Addresses", "PhoneNumbers", "Contacts"]],
   ["Owners", ["Addresses", "PhoneNumbers", "Contacts", "Properties"]],

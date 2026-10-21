@@ -407,6 +407,52 @@ that answered. `text()` already nulls the value, so the only thing that
 goes wrong without the empty-string check in `pick` is the MAP -- and
 the map is the entire diagnosis when a field comes back missing.
 
+### What the deep probe said about Service Manager
+
+The owner ran it against `larabee.api.rentmanager.com`. This is the
+answer, not a guess, and it corrected three things I had wrong.
+
+**The base record** is `ServiceManagerIssueID, Title, Description,
+Resolution, IsClosed, CloseDate, CloseUserID, AssignedOpenDate,
+AssignedCloseDate, AssignedToUserID, IsCustomerInitiated,
+CustomerDescription, NoteText, CreateDate, CreateUserID, UpdateDate,
+UpdateUserID, CreateWebUserID, IsAllowedToEnter, Age`.
+
+**The embeds that answer are `Category`, `Status` and `Priority`.** My
+first six -- Property, Unit, Tenant, ServiceManagerStatus,
+ServiceManagerCategory, ServiceManagerPriority -- returned 404 every
+one. Asked as a single list, one bad name fails the whole request, so
+that version would have fallen back to bare records and silently
+dropped the status and the category.
+
+**`CustomerDescription` is what the tenant typed; `Description` is what
+the office typed.** On a request somebody submitted themselves the
+first is the one that says what is wrong, so it is read first.
+
+**And the thing that is still open: a Service Manager issue, as this
+endpoint hands it over, does not say which lot it is for.** No
+PropertyID, no UnitID, no TenantID, and those embeds are refused.
+`CreateWebUserID` is the Tenant Web Access user who submitted it and is
+the most promising thread to pull; the deep probe's candidate list is
+now the hunt for it. Until that is answered an issue arrives honestly
+saying its location is unknown, because a request filed against the
+wrong lot is worse than one filed against none.
+
+`IsClosed`, `CloseDate` and `Resolution` are on the record, so closing
+one here can be written back. The VERB rmAPI wants is not documented
+anywhere reachable, so `closeIssue` tries PATCH, PUT and POST-as-a-list,
+reports exactly what each attempt did, and remembers the one that
+worked. It writes those three fields and the id, and nothing else --
+checked as an exact key set, because a check that only asserts the three
+are present lets a fourth be added to somebody's live
+property-management system without anything objecting.
+
+**Three of this round's guards passed on the fault**, all for the same
+reason: the fixture could not tell the orderings apart. A record whose
+`Description` is empty reads the same whichever way round the list is.
+**A fixture that cannot distinguish the two answers is not testing the
+thing it names.**
+
 ### Run the migration against a real Postgres, do not read it
 
 The photo in the team chat was not migration 027 and was not the

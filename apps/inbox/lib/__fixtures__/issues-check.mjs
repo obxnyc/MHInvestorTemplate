@@ -37,6 +37,66 @@ const { readIssue, summarise, detail } = await import(join(here, "rm-issues.gen.
 const checks = [];
 const t = (name, ok, why) => checks.push([name, ok, why]);
 
+// --- the shape THIS account actually returns ---------------------------
+//
+// Not a guess. These are the field names the deep probe got back from
+// larabee.api.rentmanager.com, and the three embeds that answered: the
+// six I guessed first all returned 404, which asked as one list would
+// have failed the whole request and fallen back to bare records.
+{
+  const readAs = {};
+  const i = readIssue({
+    ServiceManagerIssueID: 4412,
+    Title: "Kitchen sink faucet leaking",
+    Description: "Dispatched to Alex",
+    CustomerDescription: "Kitchen sink leaking from riser",
+    Resolution: null,
+    IsClosed: false,
+    CloseDate: null,
+    IsCustomerInitiated: true,
+    NoteText: "",
+    CreateDate: "2026-10-09T14:21:00",
+    CreateWebUserID: 881,
+    IsAllowedToEnter: true,
+    Age: 3,
+    Category: { ServiceManagerCategoryID: 2, Name: "Plumbing" },
+    Status: { ServiceManagerStatusID: 1, Name: "New" },
+    Priority: { ServiceManagerPriorityID: 3, Name: "High" },
+  }, readAs);
+
+  t("the real id field is read", i.id === "4412" && readAs.id === "ServiceManagerIssueID");
+  t("the real title field is read", i.title === "Kitchen sink faucet leaking"
+    && readAs.title === "Title",
+    `readAs.title=${readAs.title} — this account calls it Title, and a `
+    + "list that does not contain it reads every issue as untitled.");
+  // Both are filled here, so the ORDER is the only thing that decides.
+  // With an empty Description the two orderings give the same answer and
+  // the check proves nothing -- which is how it first passed on the fault.
+  t("what the TENANT typed is preferred over what the office did",
+    i.description === "Kitchen sink leaking from riser"
+    && readAs.description === "CustomerDescription",
+    `got "${i.description}" from ${readAs.description} — on a request `
+    + "somebody submitted themselves, CustomerDescription is the one that "
+    + "says what is actually wrong; Description is the office's note."); 
+  t("Category, Status and Priority read as their names",
+    i.category === "Plumbing" && i.status === "New" && i.priority === "High");
+  t("an open issue is not closed", i.closed === false && i.closedOn === null);
+  t("and it honestly has no location",
+    i.property === null && i.unit === null && i.tenant === null,
+    "The record carries no PropertyID, UnitID or TenantID and refuses "
+    + "those embeds. Inventing one would be worse than saying so.");
+}
+
+{
+  const i = readIssue({
+    ServiceManagerIssueID: 1, Title: "Done", IsClosed: true,
+    CloseDate: "2026-10-18T09:00:00", Resolution: "Replaced the riser",
+  });
+  t("a closed issue says so",
+    i.closed === true && i.closedOn === "2026-10-18T09:00:00"
+    && i.resolution === "Replaced the riser");
+}
+
 // --- the shape rmAPI documents: embedded records -----------------------
 {
   const readAs = {};
@@ -168,6 +228,43 @@ t("an id-less record is dropped rather than filed",
   /\.filter\(\(i\) => i\.id\)/.test(mod),
   "Without an id there is no external id, and without that every run "
   + "files it again.");
+
+t("only the three embeds that answer are asked for",
+  /const EMBEDS = "Category,Status,Priority";/.test(mod),
+  "Property, Unit, Tenant, ServiceManagerStatus, ServiceManagerCategory "
+  + "and ServiceManagerPriority every one returned 404 against this "
+  + "account. Asked as one list, a single bad name fails the whole "
+  + "request and the fallback quietly drops the status and the category.");
+
+t("and the missing location is written down rather than papered over",
+  /DOES NOT SAY WHICH LOT IT IS FOR/.test(mod),
+  "The next person to read this needs to know it is an open question, "
+  + "not an oversight.");
+
+{
+  // The whole key set, not merely that the three are present. Asserting
+  // presence let a fourth field be added without anything objecting,
+  // which on somebody's live property-management system is the failure
+  // that matters.
+  const body = /const patch = \{([\s\S]*?)\n  \};/.exec(mod)?.[1] ?? "";
+  const keys = [...body.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]).sort();
+  const want = ["CloseDate", "IsClosed", "Resolution", "ServiceManagerIssueID"];
+  t(`closing writes only the fields it means to (${keys.join(", ")})`,
+    JSON.stringify(keys) === JSON.stringify(want),
+    `wanted exactly ${want.join(", ")}`);
+}
+
+t("and tries each shape rather than assuming one",
+  /const WRITERS: Writer\[\] = \[/.test(mod)
+  && /tried\.push\(\{/.test(mod),
+  "The verb rmAPI wants for an update is not documented anywhere "
+  + "reachable from here. Guessing once and failing silently is the "
+  + "failure this whole module exists to end.");
+
+t("and remembers the one that worked",
+  /worked = w;/.test(mod),
+  "So the searching happens once and every close after it goes "
+  + "straight there.");
 
 t("the embeds are retried without them if refused",
   /await rows\(session, "\/ServiceManagerIssues"\);/.test(mod),

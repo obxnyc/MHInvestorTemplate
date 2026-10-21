@@ -45,6 +45,12 @@ export type Issue = {
   priority: string | null;
   category: string | null;
   createdAt: string | null;
+  /** Rent Manager's own flag, which is the one that decides whether this
+   *  is still somebody's problem. */
+  closed: boolean;
+  closedOn: string | null;
+  /** What was done about it. Written back when we close it here. */
+  resolution: string | null;
 };
 
 export type PullResult = {
@@ -104,12 +110,24 @@ const text = (v: unknown): string | null => {
 /**
  * The embeds that make an issue readable.
  *
- * Asked for together because this is a fetch and not a probe -- if the whole
- * list is refused, the bare records still come back on the retry below, and a
- * request with no tenant name on it still beats not knowing it exists.
+ * These three and no others. The first version of this asked for
+ * Property, Unit, Tenant, ServiceManagerStatus, ServiceManagerCategory
+ * and ServiceManagerPriority, and the deep probe against this account
+ * answered 404 to every single one -- which, asked as one list, would
+ * have failed the whole request and quietly fallen back to bare records
+ * with no status and no category on them.
+ *
+ * What answers is Category, Status and Priority, named plainly.
+ *
+ * NOTE WHAT IS NOT HERE. The issue record carries no PropertyID, no
+ * UnitID and no TenantID, and Property, Unit and Tenant are not embeds
+ * it accepts. So a Service Manager issue, as this endpoint hands it
+ * over, DOES NOT SAY WHICH LOT IT IS FOR. That is not a thing to guess
+ * at: `whereProbe` below is how to find out where Rent Manager keeps
+ * it, and until it does, an issue arrives honestly saying its location
+ * is unknown.
  */
-const EMBEDS = "Property,Unit,Tenant,ServiceManagerStatus,"
-  + "ServiceManagerCategory,ServiceManagerPriority";
+const EMBEDS = "Category,Status,Priority";
 
 async function rows(session: RmSession, path: string): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
@@ -138,21 +156,29 @@ async function rows(session: RmSession, path: string): Promise<Record<string, un
 export function readIssue(
   row: Record<string, unknown>, readAs: Record<string, string> = {},
 ): Issue {
+  // The real names first, from the deep probe against this account. The
+  // alternatives stay behind them because another Rent Manager company
+  // may well differ, and a list that has already been proved right for
+  // the one that matters costs nothing to keep.
   const id = pick(row, ["ServiceManagerIssueID", "IssueID", "ID", "Id"], readAs, "id");
-  const title = pick(row, ["Summary", "Title", "IssueTitle", "Subject", "Name"], readAs, "title");
+  const title = pick(row, ["Title", "Summary", "IssueTitle", "Subject", "Name"], readAs, "title");
+  // `Description` is what the office typed. `CustomerDescription` is what
+  // the tenant typed in Tenant Web Access, which on a request somebody
+  // submitted themselves is the one that says what is actually wrong.
   const description = pick(row,
-    ["Description", "Details", "IssueDescription", "Comment", "Notes"], readAs, "description");
+    ["CustomerDescription", "Description", "Details", "NoteText", "Comment"],
+    readAs, "description");
   const tenant = pick(row, ["Tenant", "TenantName", "Contact"], readAs, "tenant");
   const unit = pick(row, ["Unit", "UnitNumber", "UnitName"], readAs, "unit");
   const property = pick(row, ["Property", "PropertyName"], readAs, "property");
   const status = pick(row,
-    ["ServiceManagerStatus", "Status", "StatusName"], readAs, "status");
+    ["Status", "ServiceManagerStatus", "StatusName"], readAs, "status");
   const priority = pick(row,
-    ["ServiceManagerPriority", "Priority", "PriorityName"], readAs, "priority");
+    ["Priority", "ServiceManagerPriority", "PriorityName"], readAs, "priority");
   const category = pick(row,
-    ["ServiceManagerCategory", "Category", "CategoryName"], readAs, "category");
+    ["Category", "ServiceManagerCategory", "CategoryName"], readAs, "category");
   const createdAt = pick(row,
-    ["CreateDate", "CreatedDate", "DateCreated", "ReportedDate", "CreateUserDate"],
+    ["CreateDate", "CreatedDate", "DateCreated", "ReportedDate"],
     readAs, "createdAt");
 
   // A phone and an email live on the embedded tenant where there is one.
@@ -165,6 +191,9 @@ export function readIssue(
 
   return {
     id: String(id ?? ""),
+    closed: row.IsClosed === true,
+    closedOn: text(pick(row, ["CloseDate"])),
+    resolution: text(pick(row, ["Resolution"])),
     title: text(title),
     description: text(description),
     tenant: text(tenant),
@@ -278,4 +307,110 @@ export async function pullServiceIssues(
     }
   }
   return out;
+}
+
+/**
+ * Closing an issue in Rent Manager, because it was closed here.
+ *
+ * The fields are known, from the deep probe against this account:
+ * `IsClosed`, `CloseDate` and `Resolution` are all on the record. What is
+ * NOT known is the verb and the shape rmAPI wants for an update, and that
+ * is not something to find out by assuming -- a wrong write against
+ * somebody's live property-management system is a worse outcome than no
+ * write at all.
+ *
+ * So it tries, in order, and reports exactly what each attempt did:
+ * PATCH the one record, PUT the one record, then POST a collection of one
+ * (which is how several rmAPI endpoints take updates). The first that is
+ * accepted wins and is remembered for the life of the instance, so the
+ * searching happens once.
+ *
+ * Nothing here deletes, and nothing touches a field other than the three.
+ */
+type Writer = { verb: "PATCH" | "PUT" | "POST"; collection: boolean };
+let worked: Writer | null = null;
+
+const WRITERS: Writer[] = [
+  { verb: "PATCH", collection: false },
+  { verb: "PUT", collection: false },
+  { verb: "POST", collection: true },
+  { verb: "PATCH", collection: true },
+];
+
+export type CloseAttempt = {
+  verb: string;
+  path: string;
+  status: number;
+  ok: boolean;
+  detail: string | null;
+};
+
+export type CloseResult = {
+  ok: boolean;
+  /** Which combination was accepted, so the next one goes straight there. */
+  using: string | null;
+  tried: CloseAttempt[];
+};
+
+export async function closeIssue(
+  issueId: string, resolution: string, when = new Date(),
+): Promise<CloseResult> {
+  const auth = await rmAuthorize();
+  if (!auth.ok) {
+    return { ok: false, using: null, tried: [{
+      verb: "-", path: "-", status: 0, ok: false,
+      detail: "Rent Manager would not accept the sign-in.",
+    }] };
+  }
+  const session = auth.session;
+  const id = Number(issueId);
+  if (!Number.isFinite(id)) {
+    return { ok: false, using: null, tried: [{
+      verb: "-", path: "-", status: 0, ok: false,
+      detail: `"${issueId}" is not a Rent Manager issue id.`,
+    }] };
+  }
+
+  // Only the three. Everything else on the record is somebody else's.
+  const patch = {
+    ServiceManagerIssueID: id,
+    IsClosed: true,
+    CloseDate: when.toISOString(),
+    Resolution: resolution.slice(0, 4000),
+  };
+
+  const tried: CloseAttempt[] = [];
+  const order = worked ? [worked, ...WRITERS.filter((w) => w !== worked)] : WRITERS;
+
+  for (const w of order) {
+    const path = w.collection ? "/ServiceManagerIssues" : `/ServiceManagerIssues/${id}`;
+    try {
+      const res = await fetch(`${session.base}${path}`, {
+        method: w.verb,
+        headers: {
+          [session.header]: session.token,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(w.collection ? [patch] : patch),
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      });
+      const text = (await res.text()).slice(0, 220);
+      tried.push({
+        verb: `${w.verb}${w.collection ? " (as a list)" : ""}`,
+        path, status: res.status, ok: res.ok, detail: res.ok ? null : text,
+      });
+      if (res.ok) {
+        worked = w;
+        return { ok: true, using: `${w.verb} ${path}`, tried };
+      }
+    } catch (e) {
+      tried.push({
+        verb: `${w.verb}${w.collection ? " (as a list)" : ""}`,
+        path, status: 0, ok: false, detail: (e as Error).message,
+      });
+    }
+  }
+  return { ok: false, using: null, tried };
 }
