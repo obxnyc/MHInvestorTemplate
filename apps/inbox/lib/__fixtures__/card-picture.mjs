@@ -352,11 +352,11 @@ const header = `<header class="apphead">
         <span class="omnik">Lot</span></button>
     </div>
   </div>
-  <nav class="topnav" aria-label="Main">
-    <a href="#" class="on">Home</a><a href="#">Messages</a>
-    <a href="#">Properties</a><a href="#">Leasing</a>
-    <a href="#">On the clock</a><a href="#">Settings</a>
-  </nav>
+  <!-- The REAL destinations, taken from AppHeader.tsx rather than retyped.
+       This list had six of the seven, and one link short the header still
+       fitted -- which is why a squeezed search box never reproduced here.
+       A fixture without the real shape hides the bug that matters. -->
+  <nav class="topnav" aria-label="Main"><a href="#" class="on">Home</a><a href="#">Messages</a><a href="#">Properties</a><a href="#">Leasing</a><a href="#">On the clock</a><a href="#">Timesheets</a><a href="#">Settings</a></nav>
   <span class="av">AP</span>
 </header>`;
 
@@ -544,13 +544,49 @@ if (!exe || !existsSync(exe)) {
 const browser = await chromium.launch(exe ? { executablePath: exe } : {});
 const wrong = [];
 
-for (const width of [1440, 1100, 900, 420]) {
+// 800 and 390 were added after a panel anchored to the search box's right
+// edge hung off the LEFT of the screen between 700 and 900px -- a band none
+// of the four original widths touched, 900 being exactly the boundary. 390
+// is an actual iPhone rather than a round number.
+for (const width of [1440, 1100, 900, 800, 420, 390]) {
   const p = await browser.newPage({ viewport: { width, height: 1200 } });
   await p.goto(`file://${file}`);
   await p.waitForTimeout(150);
 
   const said = await p.evaluate(() => {
-    const out = [], thin = [], over = [], small = [], faint = [];
+    const out = [], thin = [], over = [], small = [], faint = [], gone = [];
+
+      // OFF THE SCREEN ALTOGETHER.
+      //
+      // The page-scrolls-sideways check only ever sees overflow to the
+      // RIGHT, because that is the only direction that grows scrollWidth.
+      // A panel hanging off the LEFT is invisible to it, and to every other
+      // check in here, and to a type checker -- which is how a 24rem
+      // dropdown anchored to a squeezed search box ended up half off the
+      // page with nothing complaining.
+      //
+      // Honeypots are deliberately parked at left:-9999px, so anything
+      // invisible or a few pixels across is not what this is about.
+      for (const el of document.querySelectorAll("body *")) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8) continue;
+        const st = getComputedStyle(el);
+        if (st.visibility === "hidden" || st.opacity === "0") continue;
+        // Something inside a sideways scroller is MEANT to be past the edge
+        // -- that is what a scroller is. The nav's own destinations tripped
+        // this on the first run, which is the check being too strict rather
+        // than the nav being wrong.
+        let inScroller = false;
+        for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+          const ov = getComputedStyle(a).overflowX;
+          if (ov === "auto" || ov === "scroll") { inScroller = true; break; }
+        }
+        if (inScroller) continue;
+        if (r.left < -1 || r.right > window.innerWidth + 1) {
+          gone.push(`${el.tagName.toLowerCase()}.${el.className || "-"}`
+            + ` ${Math.round(r.left)}..${Math.round(r.right)}`);
+        }
+      }
     // The point of the nudge buttons is that a pad can be moved without
     // hitting a twelve-pixel rectangle. A nudge button you have to aim
     // at is the same bug one step along, so they have a floor: 30px,
@@ -630,6 +666,7 @@ for (const width of [1440, 1100, 900, 420]) {
     return {
       out: [...new Set(out)], thin: [...new Set(thin)], over: [...new Set(over)],
       small: [...new Set(small)], faint: [...new Set(faint)],
+      gone: [...new Set(gone)],
       sideways: document.documentElement.scrollWidth > window.innerWidth,
     };
   });
@@ -642,6 +679,7 @@ for (const width of [1440, 1100, 900, 420]) {
   if (said.over.length) wrong.push(`${width}px: a tick box stretched -- ${said.over.join(", ")}`);
   if (said.small.length) wrong.push(`${width}px: too small to hit -- ${said.small.join(", ")}`);
   if (said.faint.length) wrong.push(`${width}px: words you cannot read -- ${said.faint.join(", ")}`);
+  if (said.gone.length) wrong.push(`${width}px: off the screen -- ${said.gone.join(", ")}`);
   if (said.sideways) wrong.push(`${width}px: the page scrolls sideways`);
 }
 

@@ -36,7 +36,7 @@ export default function InvoiceForm(
     form.set("jobId", jobId);
     if (prior) form.set("replaces", prior.id);
 
-    const res = await fetch(`/api/jobs/${token}/invoice`, { method: "POST", body: form });
+    const res = await fetch(`/api/jobs/link/${token}/invoice`, { method: "POST", body: form });
     const out = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) { setError(out.error ?? "That didn't send. Try again."); return; }

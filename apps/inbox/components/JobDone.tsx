@@ -35,7 +35,7 @@ export default function JobDone({ token, jobId }: { token: string; jobId: string
     if (waiver) form.set("waiver", waiver);
     for (const f of files ?? []) form.append("photos", f);
 
-    const res = await fetch(`/api/jobs/${token}/complete`, { method: "POST", body: form });
+    const res = await fetch(`/api/jobs/link/${token}/complete`, { method: "POST", body: form });
     const out = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) { setError(out.error ?? "That didn't go through. Try again."); return; }

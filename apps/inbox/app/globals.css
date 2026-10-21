@@ -2728,10 +2728,22 @@ a.metric:hover{border-color:var(--accent)}
 .omnimeant{border:none;background:none;padding:0;font:inherit;font-weight:700;
   color:var(--accent-ink);cursor:pointer;text-decoration:underline}
 
-/* On a phone the header wraps into three lines, and the order has to be
-   said or they come out as brand, nav, a stranded avatar, then the search.
-   Brand and account together, then the destinations, then the box. */
-@media (max-width:700px){
+/* 900px, not 700.
+   Between the two the header was NOT stacked, so the search box was squeezed
+   between the brand and seven destinations down to its ten-rem floor -- and
+   the panel, which is anchored to the box's RIGHT edge and is 24rem wide,
+   extended off the left of the screen. A white rectangle half off the page,
+   over the top of the nav.
+
+   Above 900 there is room for the panel to open leftwards and stay on
+   screen; below it the header stacks and the box spans the full width, so
+   its own left edge is the gutter and the panel cannot overhang. The band in
+   between was the only place it could go wrong, and it is gone rather than
+   patched.
+
+   The order has to be said, or a stacked header comes out as brand, nav, a
+   stranded avatar, then the search. */
+@media (max-width:900px){
   .apphead{flex-wrap:wrap;row-gap:.5rem}
   .brandmark{order:0}
   .apphead .av{order:1;margin-left:auto}

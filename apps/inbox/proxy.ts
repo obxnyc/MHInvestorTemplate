@@ -22,8 +22,12 @@ import { NextResponse, type NextRequest } from "next/server";
 // /trades/apply is a contractor putting themselves forward. It writes to an
 // application queue, never to contacts, so a public form cannot reach a row
 // that already exists.
+// /report is a tenant saying something is broken. Behind a login it is a
+// page no tenant can reach, which is the failure this list's own comment
+// warns about -- added an hour after the page shipped, by somebody who had
+// read that comment and walked past it anyway.
 const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
-                /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//,
+                /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//, /^\/report/,
                 // Says which commit is answering here and nothing else. The
                 // setup check fetches it across domains to find out whether a
                 // custom domain and this one are the same deployment.
