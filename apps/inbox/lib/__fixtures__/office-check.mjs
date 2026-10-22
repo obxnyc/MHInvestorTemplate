@@ -1,0 +1,195 @@
+/** The crew's line to the office.  Run: node lib/__fixtures__/office-check.mjs
+ *
+ *  Two things here, and neither is arithmetic.
+ *
+ *  ONE THREAD, NOT A NEW ONE EACH TIME. Two threads with the same people in
+ *  them means half the history is in the one nobody is looking at -- the same
+ *  reason `oneToOneThread` reuses rather than creates. The thread is found by
+ *  its TITLE rather than by its membership, because membership changes:
+ *  somebody joins the office and a thread matched on "exactly these people"
+ *  silently stops matching.
+ *
+ *  AND THE LINE ABOVE THE MESSAGE IS THE SERVER'S. The office's first reply to
+ *  "I need a part" is "where are you?", and the screen the message was sent
+ *  from already knows. What it must never be is something the browser said --
+ *  a claim about which job somebody is on is worth nothing if the person
+ *  sending it chose the words.
+ */
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import ts from "typescript";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const load = (name) => ts.transpileModule(
+  readFileSync(join(here, "..", `${name}.ts`), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
+).outputText;
+const dep = (name) => "data:text/javascript," + encodeURIComponent(load(name));
+let src = load("office");
+src = src.replaceAll('"@/lib/roles"', `"${dep("roles")}"`);
+const { officeThread, withWhere, OFFICE_THREAD } =
+  await import("data:text/javascript," + encodeURIComponent(src));
+
+const said = [];
+const t = (name, fn) => {
+  let ok = false;
+  try { ok = fn(); } catch (e) { said.push(` ✗ ${name} -- threw: ${e.message}`); return; }
+  said.push(ok ? ` ok ${name}` : ` ✗ ${name}`);
+};
+const ta = async (name, fn) => {
+  let ok = false;
+  try { ok = await fn(); } catch (e) { said.push(` ✗ ${name} -- threw: ${e.message}`); return; }
+  said.push(ok ? ` ok ${name}` : ` ✗ ${name}`);
+};
+
+/* A stand-in for the bits of the client `officeThread` touches. Enough to be
+   wrong in the ways that matter, and no more. */
+const makeDb = (seed) => {
+  const tables = {
+    staff: seed.staff ?? [],
+    dm_threads: seed.dm_threads ?? [],
+    dm_members: seed.dm_members ?? [],
+  };
+  let made = 0;
+  const api = (name) => {
+    let rows = tables[name].slice();
+    const self = {
+      /* PostgREST embeds a joined row under the alias asked for, and the
+         lookup for an existing thread reads `row.thread.title`. A stand-in
+         that returns the flat row leaves `thread` undefined, so no thread is
+         ever found again and every call makes a new one -- which is the
+         FAULT this file exists to catch, reported as a pass of the fixture's
+         own making. Model the embed. */
+      select(cols = "") {
+        if (/thread:thread_id\(/.test(cols)) {
+          rows = rows.map((r) => ({
+            ...r,
+            thread: tables.dm_threads.find((x) => x.id === r.thread_id) ?? null,
+          }));
+        }
+        return self;
+      },
+      eq(k, v) { rows = rows.filter((r) => r[k] === v); return self; },
+      in(k, vs) { rows = rows.filter((r) => vs.includes(r[k])); return self; },
+      maybeSingle() { return Promise.resolve({ data: rows[0] ?? null }); },
+      single() { return Promise.resolve({ data: rows[0] ?? null, error: null }); },
+      insert(v) {
+        const list = Array.isArray(v) ? v : [v];
+        for (const row of list) {
+          if (name === "dm_threads") {
+            made++;
+            row.id = `made${made}`;
+          }
+          tables[name].push({ ...row });
+        }
+        const inserted = tables[name].slice(-list.length);
+        return {
+          select() {
+            return { single: () => Promise.resolve({ data: inserted[0], error: null }) };
+          },
+          then(res) { return Promise.resolve({ data: inserted, error: null }).then(res); },
+        };
+      },
+      then(res) { return Promise.resolve({ data: rows, error: null }).then(res); },
+    };
+    return self;
+  };
+  return { from: api, tables, threadsMade: () => made };
+};
+
+const ME = "crew-1";
+/* THREE desk people, and one of them joins AFTER the thread exists. With one
+   desk person the "catch the thread up" step has nothing to do, and a version
+   that never did it would pass. */
+const STAFF = [
+  { id: ME, role: "crew", active: true },
+  { id: "desk-1", role: "admin", active: true },
+  { id: "desk-2", role: "office", active: true },
+  { id: "desk-3", role: "office", active: true },
+  { id: "tech-1", role: "tech", active: true },
+  { id: "desk-old", role: "office", active: false },
+];
+
+await ta("a crew member with no thread gets one, with every desk in it", async () => {
+  const db = makeDb({ staff: STAFF });
+  const got = await officeThread(db, ME);
+  const members = db.tables.dm_members.filter((m) => m.thread_id === got.id)
+    .map((m) => m.staff_id).sort();
+  return got && db.threadsMade() === 1
+    && JSON.stringify(members) === JSON.stringify([ME, "desk-1", "desk-2", "desk-3"].sort());
+});
+
+await ta("a tech is not the office, and neither is somebody who has left", async () => {
+  const db = makeDb({ staff: STAFF });
+  const got = await officeThread(db, ME);
+  const members = db.tables.dm_members.filter((m) => m.thread_id === got.id)
+    .map((m) => m.staff_id);
+  return !members.includes("tech-1") && !members.includes("desk-old");
+});
+
+await ta("asking twice does NOT make a second thread", async () => {
+  const db = makeDb({ staff: STAFF });
+  const a = await officeThread(db, ME);
+  const b = await officeThread(db, ME);
+  return a.id === b.id && db.threadsMade() === 1;
+});
+
+await ta("somebody who joined the office after the thread was made is added", async () => {
+  const db = makeDb({
+    staff: STAFF,
+    dm_threads: [{ id: "t1", title: OFFICE_THREAD }],
+    // desk-3 is NOT in it: they joined later.
+    dm_members: [
+      { thread_id: "t1", staff_id: ME }, { thread_id: "t1", staff_id: "desk-1" },
+      { thread_id: "t1", staff_id: "desk-2" },
+    ],
+  });
+  const got = await officeThread(db, ME);
+  const members = db.tables.dm_members.filter((m) => m.thread_id === "t1")
+    .map((m) => m.staff_id);
+  return got.id === "t1" && db.threadsMade() === 0 && members.includes("desk-3")
+    // and not added twice
+    && members.filter((m) => m === "desk-1").length === 1;
+});
+
+await ta("an UNTITLED thread with the same people is not mistaken for this one",
+  async () => {
+    /* A one-to-one with a colleague who happens to be in the office is a
+       private thread. Dropping a crew request into it would put it somewhere
+       nobody expects, and is exactly what matching on membership would do. */
+    const db = makeDb({
+      staff: STAFF,
+      dm_threads: [{ id: "priv", title: null }],
+      dm_members: [{ thread_id: "priv", staff_id: ME },
+                   { thread_id: "priv", staff_id: "desk-1" }],
+    });
+    const got = await officeThread(db, ME);
+    return got.id !== "priv" && db.threadsMade() === 1;
+  });
+
+/* ------------------------------------------------- what the office is told */
+
+t("off the clock says so", () =>
+  withWhere("Need a key", null).startsWith("[off the clock]"));
+
+t("on the clock names the job", () => {
+  const out = withWhere("Need a key",
+    { property: "The Retreat", startedAt: "2026-10-21T13:00:00Z" });
+  return /^\[on the clock, on The Retreat, since /.test(out);
+});
+
+/* The case the whole line exists for. "No job recorded" is not the same claim
+   as "on The Retreat", and a version that printed the property name when it
+   had none -- or left the bracket off -- would read as a job nobody can find. */
+t("on the clock with no job recorded says THAT, rather than nothing", () => {
+  const out = withWhere("Need a key", { property: null, startedAt: null });
+  return out.startsWith("[on the clock, no job recorded]");
+});
+
+t("the message itself is kept, under the line", () =>
+  withWhere("  Need a key  ", null).endsWith("\nNeed a key"));
+
+for (const l of said) (l.startsWith(" ✗") ? console.error : console.log)(l);
+if (said.some((l) => l.startsWith(" ✗"))) process.exit(1);
+console.log("one thread to the office, and it says where you were");

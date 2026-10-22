@@ -136,6 +136,14 @@ const TABLES = {
   notes: [], teams: [], markets: [],
 };
 
+/* The seed, kept, so a run can put the tables back.
+   Anything that WRITES changes what the next check reads: two end-to-end
+   posts left an Office thread behind, a fourth row appeared in the inbox, and
+   order-check.mjs failed on "three rows are listed" -- which is the check
+   doing its job about the wrong thing. A harness that depends on accumulated
+   state fails for reasons that have nothing to do with the code. */
+const SEED = structuredClone(TABLES);
+
 createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   const send = (code, body) => {
@@ -148,6 +156,12 @@ createServer((req, res) => {
     res.end(JSON.stringify(body));
   };
   if (req.method === "OPTIONS") return send(204, {});
+  // Put the tables back the way they started. Checks call this first.
+  if (url.pathname === "/__reset") {
+    for (const k of Object.keys(TABLES)) delete TABLES[k];
+    Object.assign(TABLES, structuredClone(SEED));
+    return send(200, { reset: true });
+  }
 
   /* Answer for WHICHEVER token asked. Returning the one user whatever the
      bearer said made the office cookie come back as the crew member, so every
@@ -168,6 +182,31 @@ createServer((req, res) => {
                        expires_in: 3600, refresh_token: "stub", user: USER });
   }
 
+  /* INSERTS, so a feature that WRITES can be exercised end to end rather than
+     only up to the point where it tries. Without this the crew's line to the
+     office could only ever be checked as far as "could not open a thread",
+     which is the stand-in's answer and not the code's. */
+  if (req.method === "POST" && url.pathname.startsWith("/rest/v1/")) {
+    const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      let body = [];
+      try { body = JSON.parse(raw || "[]"); } catch { body = []; }
+      const list = Array.isArray(body) ? body : [body];
+      const made = list.map((row, i) => ({
+        id: row.id ?? `${table}-${(TABLES[table] ?? []).length + i + 1}`,
+        ...row,
+      }));
+      TABLES[table] = (TABLES[table] ?? []).concat(made);
+      const accept = req.headers.accept ?? "";
+      return send(201, accept.includes("vnd.pgrst.object") ? made[0] : made);
+    });
+    return;
+  }
+  // A PATCH is accepted and changes nothing; nothing here reads it back.
+  if (req.method === "PATCH" && url.pathname.startsWith("/rest/v1/")) return send(200, []);
+
   if (url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
     let rows = TABLES[table] ?? [];
@@ -178,6 +217,20 @@ createServer((req, res) => {
        one confidently. */
     for (const [k, v] of url.searchParams) {
       if (["select", "order", "limit", "offset"].includes(k)) continue;
+      /* `is.null` as well as `eq.`. Without it, "the shift that has not ended"
+         matched every shift, the first one came back -- a shift that ended
+         hours ago -- and the context line the whole feature exists for was
+         never exercised. */
+      const isNull = /^is\.null$/.test(v);
+      const isNotNull = /^not\.is\.null$/.test(v);
+      if (isNull || isNotNull) {
+        rows = rows.filter((r) => {
+          const got = r[k];
+          const empty = got === null || got === undefined;
+          return isNull ? empty : !empty;
+        });
+        continue;
+      }
       const m = /^eq\.(.*)$/.exec(v);
       if (!m) continue;
       const want = m[1] === "null" ? null : m[1];
@@ -190,6 +243,28 @@ createServer((req, res) => {
     }
     // PostgREST answers a `.single()` with an object; supabase-js asks for it
     // with this header, so honouring it is what stops pages throwing.
+    /* EMBEDS. PostgREST returns a joined row under the alias asked for, and
+       code reads `row.thread.title` or `row.properties.name`. A stand-in that
+       returns the flat row leaves those undefined -- which does not throw, it
+       just makes every lookup MISS. The crew's line to the office then made a
+       fresh thread on every message, and the end-to-end check reported the
+       stand-in's behaviour as the route's.
+
+       Named explicitly rather than guessed from the column: `thread_id` does
+       not spell `dm_threads`, and a stand-in that guesses wrong is a stand-in
+       that lies in a new place. */
+    const EMBEDS = {
+      dm_members: { thread: ["thread_id", "dm_threads"] },
+      shifts: { properties: ["property_id", "properties"] },
+    };
+    const want = url.searchParams.get("select") ?? "";
+    for (const [alias, [fk, target]] of Object.entries(EMBEDS[table] ?? {})) {
+      if (!new RegExp(`(^|,)\\s*${alias}\\s*[:(]`).test(want)) continue;
+      rows = rows.map((r) => (alias in r ? r : {
+        ...r, [alias]: (TABLES[target] ?? []).find((x) => x.id === r[fk]) ?? null,
+      }));
+    }
+
     const accept = req.headers.accept ?? "";
     if (accept.includes("vnd.pgrst.object")) {
       return rows.length ? send(200, rows[0])

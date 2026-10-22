@@ -112,6 +112,8 @@ const dayName = (ymd: string) =>
 const longDay = (ymd: string) =>
   new Date(`${ymd}T12:00:00`).toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
 
+type AskReply = { ok?: boolean; error?: string; desks?: number };
+
 export default function ClockScreen({ name }: { name: string }) {
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState(false);
@@ -120,6 +122,13 @@ export default function ClockScreen({ name }: { name: string }) {
   const [finding, setFinding] = useState(false);
   const [showLast, setShowLast] = useState(false);
   const [asking, setAsking] = useState(false);
+  /* Reaching the office from the clock. Four separate pieces of state and
+     not one "status" string, because a failed send and an unsent one are
+     different things to be in the middle of and the screen has to say which. */
+  const [ask, setAsk] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sentWord, setSentWord] = useState<string | null>(null);
+  const [askProblem, setAskProblem] = useState<string | null>(null);
   const on = state?.worked.onTheClock ?? false;
   const onRef = useRef(on);
   onRef.current = on;
@@ -334,6 +343,64 @@ export default function ClockScreen({ name }: { name: string }) {
           Submit {hhmm(today.hours)} Hours for Approval
         </button>
       ) : null}
+
+      {/* -------------------------------------------- asking the office */}
+      {/* NOT the shared line. The mainline is the number tenants text, and a
+          crew message arriving there lands in the same queue as a tenant's
+          and gets answered as if it were one. This is the staff thread. */}
+      <section className="tscard">
+        <div className="tscardhead"><h2>Need Something?</h2></div>
+        <p className="tshint">
+          Goes to the office, not to tenants. Which job you are on is sent
+          with it, so nobody has to ask where you are.
+        </p>
+        <textarea className="tsask" rows={3} value={ask} maxLength={2000}
+                  disabled={sending}
+                  placeholder="A part, a key, a dumpster, a question about the unit."
+                  onChange={(e) => {
+                    setAsk(e.target.value);
+                    // The old answer is about the old message.
+                    if (sentWord) setSentWord(null);
+                    if (askProblem) setAskProblem(null);
+                  }} />
+        {askProblem ? <p className="tsbad">{askProblem}</p> : null}
+        {sentWord ? <p className="tsgood">{sentWord}</p> : null}
+        <button className="tsminor wide" disabled={sending || !ask.trim()}
+                onClick={async () => {
+                  setSending(true); setAskProblem(null); setSentWord(null);
+                  const res = await fetch("/api/clock/ask", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ body: ask }),
+                  }).catch(() => null);
+                  setSending(false);
+                  if (!res) {
+                    setAskProblem("That did not send. Check your signal and try again.");
+                    return;
+                  }
+                  /* Read as text and parse here: a function killed at the
+                     sixty-second ceiling does not return JSON, and letting
+                     the parser raise gives "Unexpected end of JSON input",
+                     which names the parser and says nothing about the send. */
+                  const raw = await res.text();
+                  let data: AskReply | null = null;
+                  try { data = JSON.parse(raw) as AskReply; } catch { data = null; }
+                  if (!res.ok || !data?.ok) {
+                    setAskProblem(data?.error
+                      ?? `That did not send (${res.status}). Nothing was sent.`);
+                    return;
+                  }
+                  /* ONLY NOW. Clearing the box before the answer came back is
+                     how a refusal and a success came to look identical in the
+                     team composer, and this is the same shape. */
+                  setAsk("");
+                  setSentWord(data.desks
+                    ? `Sent. ${data.desks} ${data.desks === 1 ? "person" : "people"} at the office can see it.`
+                    : "Kept — but nobody at the office has an account yet, so nobody has been alerted.");
+                }}>
+          {sending ? "Sending…" : "Send to the Office"}
+        </button>
+      </section>
 
       {/* ----------------------------------------------------------- week */}
       <section className="tscard">

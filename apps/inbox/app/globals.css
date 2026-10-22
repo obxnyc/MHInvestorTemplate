@@ -87,7 +87,16 @@ body{background:var(--page);color:var(--ink);
    this a list of timestamps jitters as the digits change. */
 .rtime,.dwhen,.mvalue,.stamp,.delivered,.urent,.cnt,.n{font-variant-numeric:tabular-nums}
 a{color:inherit;text-decoration:none}
-button{font:inherit;cursor:pointer}
+/* `color:inherit` AS WELL AS `font:inherit`.
+   Without it a button that does not state a colour is painted in the
+   browser's own default, which is black -- so `.prophead`, the whole name of
+   every property, was black text on a near-black card at night: 1.2:1. In
+   daylight the default happens to be almost exactly --ink, which is why it
+   survived this long.
+   The same family as every other colour fault here, and the purest form of
+   it: the colour was never stated at all, so it came from somewhere that
+   only knows about one theme. */
+button{font:inherit;color:inherit;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* ---- sign in ----
@@ -2817,3 +2826,47 @@ a.metric:hover{border-color:var(--accent)}
 .row.unread .rname{font-weight:800}
 .row.unread .rprev{color:var(--ink-2)}
 .row.unread .rtime{color:var(--accent-ink);font-weight:700}
+
+/* REACHING THE OFFICE FROM THE CLOCK.
+   Ink and ground are both tokens here, so they move together between themes
+   -- the rule card-picture.mjs now fails on. */
+.tshint{margin:0 0 .5rem;font-size:.8rem;color:var(--muted);line-height:1.45}
+.tsask{width:100%;min-height:5rem;padding:.7rem .8rem;border:1px solid var(--hair);
+  border-radius:10px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:1rem;resize:vertical;box-sizing:border-box}
+.tsask:disabled{opacity:.6}
+/* 16px or the handset zooms the page on focus and never zooms back, which
+   reads as the layout breaking when the keyboard opens. */
+.tsask::placeholder{color:var(--faint)}
+.tsbad,.tsgood{margin:.5rem 0 0;font-size:.85rem;line-height:1.45;
+  padding:.5rem .65rem;border-radius:8px}
+.tsbad{background:var(--warn-soft);color:var(--warn)}
+.tsgood{background:var(--tn-soft);color:var(--tn-ink)}
+.tscard .tsask + .tsminor,.tscard .tsgood + .tsminor,.tscard .tsbad + .tsminor{margin-top:.6rem}
+
+/* A FINGER IS NOT A MOUSE POINTER.
+   These controls are 26 to 30 pixels tall, which is fine to click and hard to
+   tap: the pad of a thumb is about 9mm, and missing one of these means
+   hitting the row behind it. Measured on the real pages by phone-check.mjs
+   across /team, /settings, /jobs, /leasing, /properties and /home.
+
+   `pointer: coarse` rather than a width, because the question is whether a
+   finger is doing the pointing, not how wide the screen is -- a phone held
+   sideways is 844px wide and still a phone, and that is exactly the size the
+   harness checks. `.jobacts .mini` already used 44px; this is that number
+   applied everywhere it was missing.
+
+   align-items keeps the text centred once the box is taller than the text. */
+@media (pointer: coarse) {
+  .cattab, .backlink, .mini, .tslink, .chip {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  /* The tab strip gets its height from the tabs, so it needs the room. */
+  .cattabs { align-items: center }
+  /* The grouping switch on /properties -- "Nothing / Owner / Type". Its
+     buttons carry no class of their own, so they have to be reached through
+     the bar they sit in. */
+  .groupbar button { min-height: 44px; display: inline-flex; align-items: center }
+}

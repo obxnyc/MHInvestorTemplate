@@ -43,6 +43,12 @@ if (!reach) {
     + " Start lib/__fixtures__/stub-supabase.mjs, build against it, then run this.");
   process.exit(0);
 }
+/* Put the stand-in back first. Anything that wrote to it -- a run of the
+   crew's line to the office, somebody poking it by hand -- leaves rows
+   behind, and a fourth row in the list fails "three rows are listed" for a
+   reason that has nothing to do with the ordering this file is about. */
+await fetch(`${STUB}/__reset`).catch(() => null);
+
 const res = await fetch(`${BASE}/`, { headers: { cookie: cookie(DESK) } })
   .catch(() => null);
 if (!res) {

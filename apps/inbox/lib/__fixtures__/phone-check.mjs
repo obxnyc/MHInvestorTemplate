@@ -105,6 +105,8 @@ const sessionFor = (id) => {
   })).toString("base64url");
 };
 const stubUp = await fetch(`${STUB}/rest/v1/staff`).then((r) => r.ok).catch(() => false);
+// Same rows every run, whatever else has written to it since.
+if (stubUp) await fetch(`${STUB}/__reset`).catch(() => null);
 /* SAY SO when the signed-in half is not being checked. A silent skip is the
  * fault this harness has now had twice over. */
 if (!stubUp) {
@@ -132,13 +134,44 @@ const LOOK = () => {
         .map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
       return n.length === 3 ? 0.2126 * n[0] + 0.7152 * n[1] + 0.0722 * n[2] : null;
     };
+    /* COMPOSITE THE LAYERS. Taking the first background with any colour in
+       it and treating it as opaque reported six findings at 1.0:1 on the crew
+       clock, every one of them WRONG: those rows sit on
+       rgba(255,255,255,0.18) over a dark red card, so white text on them is
+       white on dark red and perfectly readable. Read as opaque, it came out
+       white on white.
+
+       A harness that cries wolf six times on the one screen that matters is
+       worse than no harness, because the real finding is in that list too.
+
+       Each layer is blended onto what is behind it until the alpha reaches 1,
+       which is what the browser actually paints. */
+    const parse = (c) => {
+      const n = (c.match(/[\d.]+/g) || []).map(Number);
+      if (n.length < 3) return null;
+      return { r: n[0], g: n[1], b: n[2], a: n.length > 3 ? n[3] : 1 };
+    };
+    const blend = (t, u) => ({ a: 1,
+      r: t.r * t.a + u.r * (1 - t.a),
+      g: t.g * t.a + u.g * (1 - t.a),
+      b: t.b * t.a + u.b * (1 - t.a) });
     const behind = (el) => {
+      const stack = [];
+      /* Start at the ELEMENT, not its parent. Starting at the parent skips a
+         button's own opaque background and measures its text against the page
+         behind it -- which turned six false findings into eight different
+         ones on other screens. Its own background is simply the topmost
+         layer; the compositing below handles it whether it is opaque or not. */
       for (let a = el; a; a = a.parentElement) {
-        const bg = getComputedStyle(a).backgroundColor;
-        const al = (bg.match(/[\d.]+/g) || [])[3];
-        if (bg && bg !== "transparent" && al !== "0") return bg;
+        const c = parse(getComputedStyle(a).backgroundColor);
+        if (!c || !c.a) continue;
+        stack.push(c);
+        if (c.a >= 1) break;
       }
-      return "rgb(255,255,255)";
+      let out = parse(getComputedStyle(document.body).backgroundColor);
+      if (!out || out.a < 1) out = { r: 255, g: 255, b: 255, a: 1 };
+      for (let i = stack.length - 1; i >= 0; i--) out = blend(stack[i], out);
+      return out;
     };
     const scrolls = (el) => {
       for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
@@ -154,7 +187,12 @@ const LOOK = () => {
       if (!el.textContent?.trim()) continue;
       const st = getComputedStyle(el);
       if (st.visibility === "hidden" || st.opacity === "0") continue;
-      const lf = lum(st.color), lb = lum(behind(el));
+      const bg = behind(el);
+      /* Translucent INK over that ground, for the same reason. */
+      const fg0 = parse(st.color);
+      const ink = fg0 && fg0.a < 1 ? blend(fg0, bg) : fg0;
+      const lf = ink ? lum(`rgb(${ink.r},${ink.g},${ink.b})`) : null;
+      const lb = lum(`rgb(${bg.r},${bg.g},${bg.b})`);
       if (lf !== null && lb !== null) {
         const hi = Math.max(lf, lb), lo = Math.min(lf, lb);
         const ratio = (hi + 0.05) / (lo + 0.05);
