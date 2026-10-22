@@ -137,6 +137,10 @@ const TABLES = {
      is finished -- which is the whole reason the dead screen can still offer
      to ask for another on this person's behalf. */
   staff_invites: [
+    // Live, for field staff: the setup screen should offer a PIN, not an email.
+    { id: "iv0", token: "L".repeat(40), full_name: "Tomás Herrera",
+      phone: "+19105550133", role: "crew",
+      expires_at: iso(now + 5 * 24 * 3600e3), used_at: null, reasked_at: null },
     { id: "iv1", token: "s".repeat(40), full_name: "Abel Moreno",
       phone: "+19105550199", role: "crew",
       expires_at: iso(now + 7 * 24 * 3600e3), used_at: iso(now - 3600e3),

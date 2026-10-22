@@ -1,6 +1,8 @@
 "use client";
 import { use, useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-client";
+import PinChoose from "@/components/PinChoose";
+import { useLang } from "@/components/useLang";
 
 /**
  * Taking up an invite, on the phone the text arrived on.
@@ -12,8 +14,9 @@ import { supabaseBrowser } from "@/lib/supabase-client";
  */
 export default function Welcome({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
+  const [lang] = useLang();
   const [state, setState] = useState<"loading" | "form" | "password" | "bad">("loading");
-  const [known, setKnown] = useState<{ name: string | null; phone: string } | null>(null);
+  const [known, setKnown] = useState<{ name: string | null; phone: string; field?: boolean } | null>(null);
   /* A link that is SPENT rather than unheard-of: we still know whose it was,
      which is the whole reason a button can exist here at all. */
   const [spent, setSpent] = useState<{ name: string | null; asked: boolean } | null>(null);
@@ -137,8 +140,8 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
           )}
 
           <p className="authnote">
-            No PIN yet? Ask the office to set you one — it is four digits and
-            it does not expire.
+            No PIN yet? Ask the office for a new setup link — you choose the
+            PIN yourself on it, and nobody else ever sees it.
           </p>
         </div>
       </main>
@@ -150,7 +153,49 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
       <div className="auth-card">
         <p className="brand">Larabee Homes</p>
 
-        {state === "form" ? (
+        {state === "form" && known?.field ? (
+          /* FIELD STAFF SET UP WITH A PIN AND NOTHING ELSE.
+             No email and no password: "a lot of these guys pay for basic
+             phone plans", and sending a man in a driveway off to find an
+             email is where setup is abandoned. The phone the link arrived on
+             is the identity. */
+          <>
+            <h1>Set up your access</h1>
+            <form onSubmit={(e) => e.preventDefault()}>
+              <label htmlFor="n">Your name</label>
+              <input id="n" value={fullName} onChange={(e) => setFullName(e.target.value)}
+                     required autoFocus />
+            </form>
+            <PinChoose
+              lang={lang}
+              submit={async (pin) => {
+                const res = await fetch(`/api/people/invite/${token}/pin`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ pin, fullName }),
+                }).catch(() => null);
+                if (!res) return "That didn't send. Check your signal and try again.";
+                const out = await res.json().catch(() => ({}));
+                if (!res.ok) return out.error ?? "That didn't work.";
+                /* Signed in on the spot, so the first thing they see is the
+                   clock rather than a sign-in page asking for the PIN they
+                   typed four seconds ago. */
+                if (out.signIn) {
+                  await supabaseBrowser().auth.verifyOtp({
+                    token_hash: out.signIn, type: "email",
+                  }).catch(() => null);
+                }
+                location.assign("/clock");
+                return null;
+              }} />
+            {known?.phone && (
+              <p className="authnote">
+                Calls to the shared line will ring {known.phone}. The office can
+                change that later.
+              </p>
+            )}
+          </>
+        ) : state === "form" ? (
           <>
             <h1>Set up your access</h1>
             <p className="muted" style={{ marginBottom: "1rem" }}>

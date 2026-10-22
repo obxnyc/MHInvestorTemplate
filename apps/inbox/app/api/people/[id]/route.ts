@@ -25,12 +25,26 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   if (pin !== undefined) {
-    // The database decides what a PIN may be -- four to eight digits, nothing
-    // anyone would guess first, field staff only. Those rules live in one place
-    // so a second caller cannot quietly disagree with them.
-    const { error } = pin === null
-      ? await db.rpc("clear_staff_pin", { p_staff: id })
-      : await db.rpc("set_staff_pin", { p_staff: id, p_pin: String(pin) });
+    /* THE OFFICE CAN TAKE A PIN AWAY AND CANNOT GIVE ONE.
+     *
+     * "I would prefer not to give people their own PINs. They should make
+     * their own." A PIN somebody else typed is written on a pad by the person
+     * who typed it and read out across a yard, and it signs another man's
+     * hours. The only version of this that means anything is one person
+     * knowing it, so setting one is done by its owner -- from the setup link,
+     * or from their own screen afterwards.
+     *
+     * Clearing stays here, because that is a different power and a real need:
+     * somebody leaves, or tells a mate their number, and the office has to be
+     * able to shut the door the same hour. Taking access away and handing it
+     * out are not the same authority and should not be the same button.
+     */
+    if (pin !== null) {
+      return NextResponse.json({
+        error: "A PIN is set by the person it belongs to. Send them a setup link instead.",
+      }, { status: 400 });
+    }
+    const { error } = await db.rpc("clear_staff_pin", { p_staff: id });
     if (error) {
       return NextResponse.json({ error: error.message.replace(/^.*: /, "") }, { status: 400 });
     }

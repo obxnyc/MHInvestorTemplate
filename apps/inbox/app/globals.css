@@ -2916,3 +2916,14 @@ a.metric:hover{border-color:var(--accent)}
 .langpick button.on{background:var(--dark);border-color:var(--dark);
   color:var(--dark-ink)}
 .langpick button:hover:not(.on){background:var(--sunk)}
+
+/* Choosing your own PIN: on the setup link, and again from the clock. */
+.pinchoose{display:block}
+.pinchoose label{display:block;margin:.8rem 0 .35rem;font-size:.82rem;
+  font-weight:600;color:var(--muted)}
+.pinchoose input{width:100%;padding:.75rem .8rem;min-height:48px;
+  border:1px solid var(--hair);border-radius:var(--radius);
+  background:var(--card);color:var(--ink);
+  /* 16px or the handset zooms the page on focus and does not zoom back. */
+  font-size:16px;letter-spacing:.3em}
+.pinchoose input:disabled{opacity:.6}

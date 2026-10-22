@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { prettyPhone } from "@/lib/format";
+import { FIELD } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
 
   const db = supabaseAdmin();
   const { data } = await db.from("staff_invites")
-    .select("full_name, phone, used_at, expires_at, reasked_at").eq("token", token).maybeSingle();
+    .select("full_name, phone, role, used_at, expires_at, reasked_at").eq("token", token).maybeSingle();
 
   /* SPENT IS NOT THE SAME ANSWER AS NEVER EXISTED.
      Both used to be a bare 404, so the screen could only say "ask the office"
@@ -32,7 +33,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       asked: Boolean(data.reasked_at),
     }, { status: 404 });
   }
-  return NextResponse.json({ ok: true, name: data.full_name, phone: prettyPhone(data.phone) });
+  /* Whether this person signs in with a PIN or an email, as a yes/no rather
+     than the role itself -- anybody holding the link can load this, and
+     "field staff" is the only part of the role that changes what the screen
+     shows. */
+  return NextResponse.json({
+    ok: true, name: data.full_name, phone: prettyPhone(data.phone),
+    field: FIELD.includes(data.role as never),
+  });
 }
 
 /** Taking up an invite: the account is created here, and the person is signed

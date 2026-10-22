@@ -97,12 +97,16 @@ export default function PeopleAdmin(
     refresh();
   }
 
-  async function setPin(person: Staff) {
-    const pin = window.prompt(
-      `Four digits for ${person.full_name}. They'll use this to sign in on a phone.`);
-    if (pin === null) return;
-    if (!await post(`/api/people/${person.id}`, { pin: pin.trim() }, "PATCH")) return;
-    setDone(`${person.full_name}'s PIN is set.`);
+  /* The office can take a PIN away and cannot give one -- see the route. A
+     man tells a mate his number, or leaves; that has to be shut the same
+     hour. Setting one is his own to do, from the link or from his own
+     screen. */
+  async function clearPin(person: Staff) {
+    if (!window.confirm(
+      `Turn off ${person.full_name}'s PIN? They will need a new setup link to `
+      + `choose another one.`)) return;
+    if (!await post(`/api/people/${person.id}`, { pin: null }, "PATCH")) return;
+    setDone(`${person.full_name}'s PIN is turned off.`);
     refresh();
   }
 
@@ -182,7 +186,7 @@ export default function PeopleAdmin(
                   <span className="p-acts">
                     {isField(p.role) && (
                       <button className="mini" disabled={busy}
-                              onClick={() => setPin(p)}>Set PIN</button>
+                              onClick={() => clearPin(p)}>Turn off PIN</button>
                     )}
                     <button className="mini" disabled={busy}
                             onClick={() => toggleActive(p)}>

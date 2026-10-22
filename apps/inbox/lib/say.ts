@@ -110,6 +110,19 @@ export const SAY = {
   noConnection:     { en: "No connection. Check your signal and try again.",
                       es: "Sin conexión. Revisa tu señal e inténtalo de nuevo." },
 
+  // --- choosing your own PIN
+  choosePin:        { en: "Choose your PIN",  es: "Elige tu PIN" },
+  choosePinWhy:     { en: "Four to eight numbers. Only you know it — the office cannot see it and cannot set it for you.",
+                      es: "De cuatro a ocho números. Solo tú lo sabes — la oficina no puede verlo ni ponerlo por ti." },
+  confirmPin:       { en: "Type it again",   es: "Escríbelo otra vez" },
+  pinsDoNotMatch:   { en: "Those two don't match.", es: "Los dos no coinciden." },
+  pinTooShort:      { en: "A PIN is 4 to 8 numbers.", es: "Un PIN es de 4 a 8 números." },
+  savePin:          { en: "Save my PIN",     es: "Guardar mi PIN" },
+  saving:           { en: "Saving…",         es: "Guardando…" },
+  pinSaved:         { en: "Saved. Use it next time you sign in.",
+                      es: "Guardado. Úsalo la próxima vez que entres." },
+  changeMyPin:      { en: "Change my PIN",   es: "Cambiar mi PIN" },
+
   // --- signing in
   signIn:           { en: "Sign in",          es: "Iniciar sesión" },
   whoSigningIn:     { en: "Who's signing in?", es: "¿Quién eres?" },

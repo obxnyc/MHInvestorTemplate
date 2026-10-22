@@ -118,6 +118,7 @@ type Back = { threadId: string | null; unread: number;
 
 import { say, LANGS, LANG_NAME, type Key } from "@/lib/say";
 import { useLang } from "@/components/useLang";
+import PinChoose from "@/components/PinChoose";
 
 export default function ClockScreen({ name }: { name: string }) {
   /* The crew's own words. The handset decides; the toggle is for when it is
@@ -452,6 +453,28 @@ export default function ClockScreen({ name }: { name: string }) {
                 }}>
           {s(sending ? "sending" : "sendToOffice")}
         </button>
+      </section>
+
+      {/* ------------------------------------------------- your own PIN */}
+      {/* Nobody else can set this and nobody else can read it. The office can
+          only turn one off -- which is a different power, and a real one when
+          somebody leaves. */}
+      <section className="tscard">
+        <div className="tscardhead"><h2>{s("changeMyPin")}</h2></div>
+        <PinChoose
+          lang={lang}
+          cta={s("savePin")}
+          submit={async (pin) => {
+            const res = await fetch("/api/me/pin", {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ pin }),
+            }).catch(() => null);
+            if (!res) return s("didNotSend");
+            const out = await res.json().catch(() => ({}));
+            if (!res.ok) return out.error ?? s("didNotGoThrough");
+            return null;
+          }} />
       </section>
 
       {/* ----------------------------------------------------------- week */}
