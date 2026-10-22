@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import PinSignIn from "@/components/PinSignIn";
@@ -32,6 +32,32 @@ const WHO: [Who, string][] = [
 export default function Login() {
   const [who, setWho] = useState<Who>("office");
   const [mode, setMode] = useState<Mode>("password");
+
+  /* A LINK THAT GOES STRAIGHT TO THE PIN BOX.
+   *
+   * The crew's way in was three taps down a page that opens asking for an
+   * email and a password -- neither of which a man on a roof has. The one-use
+   * link he WAS sent dies the moment it is used, and the screen it leaves
+   * behind said "ask the office to send another" with nothing to tap.
+   *
+   * So `/login?pin=1` is a URL the office sends once and he keeps: it opens
+   * on the PIN box, it can be added to the home screen, and it works again
+   * tomorrow. Nothing about it expires, because the PIN is the secret and the
+   * URL is not.
+   *
+   * Set after mount rather than in the initial state so the server and the
+   * browser render the same thing on the first pass -- a mode read from the
+   * query string during render is a hydration mismatch, which React resolves
+   * by throwing the client's version away.
+   */
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("pin") === "1" || q.get("m") === "pin") {
+      setMode("pin");
+      // Staff, which is what the crew are as far as this page is concerned.
+      setWho("office");
+    }
+  }, []);
   const [vendorPhone, setVendorPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

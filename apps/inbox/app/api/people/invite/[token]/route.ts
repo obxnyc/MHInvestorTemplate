@@ -16,10 +16,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
 
   const db = supabaseAdmin();
   const { data } = await db.from("staff_invites")
-    .select("full_name, phone, used_at, expires_at").eq("token", token).maybeSingle();
+    .select("full_name, phone, used_at, expires_at, reasked_at").eq("token", token).maybeSingle();
 
-  if (!data || data.used_at || new Date(data.expires_at) < new Date()) {
-    return NextResponse.json({ ok: false }, { status: 404 });
+  /* SPENT IS NOT THE SAME ANSWER AS NEVER EXISTED.
+     Both used to be a bare 404, so the screen could only say "ask the office"
+     and offer nothing to press. The row survives a spent link -- it is the
+     LINK that is finished, not the invitation -- so we still know who it was
+     for, and that is exactly what is needed to ask for another one on their
+     behalf. A token nobody ever issued tells us nothing and gets no button,
+     because a button that cannot work is worse than a sentence. */
+  if (!data) return NextResponse.json({ ok: false, known: false }, { status: 404 });
+  if (data.used_at || new Date(data.expires_at) < new Date()) {
+    return NextResponse.json({
+      ok: false, known: true, name: data.full_name,
+      asked: Boolean(data.reasked_at),
+    }, { status: 404 });
   }
   return NextResponse.json({ ok: true, name: data.full_name, phone: prettyPhone(data.phone) });
 }

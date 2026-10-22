@@ -14,6 +14,9 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
   const { token } = use(params);
   const [state, setState] = useState<"loading" | "form" | "password" | "bad">("loading");
   const [known, setKnown] = useState<{ name: string | null; phone: string } | null>(null);
+  /* A link that is SPENT rather than unheard-of: we still know whose it was,
+     which is the whole reason a button can exist here at all. */
+  const [spent, setSpent] = useState<{ name: string | null; asked: boolean } | null>(null);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,12 +24,35 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* READ THE BODY EVEN WHEN IT IS A 404.
+     A spent link and a link nobody ever issued are both 404s and are not the
+     same thing: the first still knows whose it was. Rejecting on `!r.ok`
+     threw that away, which is why the screen could only ever say "ask the
+     office". */
   useEffect(() => {
     fetch(`/api/people/invite/${token}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
-      .then((d) => { setKnown(d); setFullName(d.name ?? ""); setState("form"); })
+      .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => ({})) }))
+      .then(({ ok, body }) => {
+        if (ok) { setKnown(body); setFullName(body.name ?? ""); setState("form"); return; }
+        if (body?.known) setSpent({ name: body.name ?? null, asked: Boolean(body.asked) });
+        setState("bad");
+      })
       .catch(() => setState("bad"));
   }, [token]);
+
+  /** Ask the office for a new one, from the dead screen itself. */
+  async function askAgain() {
+    setBusy(true); setError(null);
+    const res = await fetch(`/api/people/invite/${token}/again`, { method: "POST" })
+      .catch(() => null);
+    setBusy(false);
+    if (!res) { setError("That didn't send. Check your signal and try again."); return; }
+    const out = await res.json().catch(() => ({}));
+    /* Nothing is called done until the server says so -- the same rule as the
+       team composer, which cleared the box whatever came back. */
+    if (!res.ok) { setError(out.error ?? "That didn't send."); return; }
+    setSpent((was) => ({ name: was?.name ?? null, asked: true }));
+  }
 
   async function accept(e: React.FormEvent) {
     e.preventDefault();
@@ -71,9 +97,48 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
         <div className="auth-card">
           <p className="brand">Larabee Homes</p>
           <h1>That link is done</h1>
+          {/* A DEAD END IS NOT AN ANSWER.
+              This said "ask the office to send another" and gave nothing to
+              tap. A one-use link dies the moment it is used -- which is
+              correct, it is a setup link -- but the man holding it is now
+              locked out of the thing he clocks in on, and the way back in is
+              a PIN he may already have.
+              So the way back in is a button, and the other half is said too:
+              if he has no PIN, what to ask for. A sentence telling somebody
+              to ask the office is only useful if it says what to ask FOR. */}
           <p className="muted">
-            It has already been used, or it has expired. Ask the office to send
-            another.
+            It has already been used, or it has expired. That is normal — a
+            setup link only works once.
+          </p>
+          <a className="authgo" href="/login?pin=1">Sign in with your PIN</a>
+
+          {spent ? (
+            spent.asked ? (
+              <p className="authnote">
+                The office has been told{spent.name ? ` that ${spent.name} is` : " you are"}
+                {" "}waiting for a new link. They will send one.
+              </p>
+            ) : (
+              <>
+                <button className="authalt2" onClick={askAgain} disabled={busy}>
+                  {busy ? "Asking…" : "Ask the office for a new link"}
+                </button>
+                {error ? <p className="authbad">{error}</p> : null}
+              </>
+            )
+          ) : (
+            /* No row behind this token, so there is nobody to ask on behalf
+               of. Saying that is more use than a button that quietly does
+               nothing. */
+            <p className="authnote">
+              We do not recognise this link. Ask the office to text you a new
+              one.
+            </p>
+          )}
+
+          <p className="authnote">
+            No PIN yet? Ask the office to set you one — it is four digits and
+            it does not expire.
           </p>
         </div>
       </main>

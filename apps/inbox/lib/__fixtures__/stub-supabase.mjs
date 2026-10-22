@@ -133,6 +133,15 @@ const TABLES = {
       dm_messages: [{ body: "Did the plumber ever call you back?",
                       created_at: iso(now - 20 * 3600e3), author_id: "s9" }] } },
   ],
+  /* A setup link that has been used. The row survives; it is the LINK that
+     is finished -- which is the whole reason the dead screen can still offer
+     to ask for another on this person's behalf. */
+  staff_invites: [
+    { id: "iv1", token: "s".repeat(40), full_name: "Abel Moreno",
+      phone: "+19105550199", role: "crew",
+      expires_at: iso(now + 7 * 24 * 3600e3), used_at: iso(now - 3600e3),
+      reasked_at: null },
+  ],
   notes: [], teams: [], markets: [],
 };
 
@@ -212,8 +221,37 @@ createServer((req, res) => {
     });
     return;
   }
-  // A PATCH is accepted and changes nothing; nothing here reads it back.
-  if (req.method === "PATCH" && url.pathname.startsWith("/rest/v1/")) return send(200, []);
+  /* PATCH ACTUALLY WRITES.
+     It used to answer 200 and change nothing, which made every check of a
+     feature that UPDATES hollow: the screen said "the office has been told"
+     and the row was untouched, and the check passed on both. A stand-in that
+     accepts a write it does not perform tells you the thing you were trying
+     to find out is fine. */
+  if (req.method === "PATCH" && url.pathname.startsWith("/rest/v1/")) {
+    const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      let patch = {};
+      try { patch = JSON.parse(raw || "{}"); } catch { patch = {}; }
+      const hit = [];
+      for (const row of TABLES[table] ?? []) {
+        let match = true;
+        for (const [k, v] of url.searchParams) {
+          if (["select", "order", "limit", "offset"].includes(k)) continue;
+          const m = /^eq\.(.*)$/.exec(v);
+          if (m && String(row[k]) !== m[1]) { match = false; break; }
+          if (/^is\.null$/.test(v) && row[k] !== null && row[k] !== undefined) {
+            match = false; break;
+          }
+        }
+        if (match) { Object.assign(row, patch); hit.push(row); }
+      }
+      const accept = req.headers.accept ?? "";
+      return send(200, accept.includes("vnd.pgrst.object") ? (hit[0] ?? null) : hit);
+    });
+    return;
+  }
 
   if (url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
