@@ -2904,3 +2904,15 @@ a.metric:hover{border-color:var(--accent)}
 .authalt2:disabled{opacity:.6}
 .authbad{margin:.6rem 0 0;padding:.5rem .65rem;border-radius:8px;
   background:var(--warn-soft);color:var(--warn);font-size:.85rem;line-height:1.45}
+
+/* English / Español, on the clock screen.
+   Each named in its own language, because somebody looking for a way out of
+   a screen they cannot read is looking for the word they DO know. 44px,
+   because this is a phone and a thumb. */
+.langpick{display:flex;gap:.3rem;margin-left:auto}
+.langpick button{min-height:44px;padding:.4rem .7rem;border-radius:8px;
+  border:1px solid var(--hair);background:var(--card);color:var(--muted);
+  font-size:.78rem;font-weight:700}
+.langpick button.on{background:var(--dark);border-color:var(--dark);
+  color:var(--dark-ink)}
+.langpick button:hover:not(.on){background:var(--sunk)}

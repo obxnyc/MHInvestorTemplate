@@ -116,7 +116,16 @@ type AskReply = { ok?: boolean; error?: string; desks?: number };
 type Back = { threadId: string | null; unread: number;
   last: { body: string; at: string } | null };
 
+import { say, LANGS, LANG_NAME, type Key } from "@/lib/say";
+import { useLang } from "@/components/useLang";
+
 export default function ClockScreen({ name }: { name: string }) {
+  /* The crew's own words. The handset decides; the toggle is for when it is
+     wrong. See lib/say.ts. */
+  const [lang, setLang] = useLang();
+  const s = useCallback(
+    (key: Key, holes?: Record<string, string | number>) => say(key, lang, holes),
+    [lang]);
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -242,8 +251,21 @@ export default function ClockScreen({ name }: { name: string }) {
   return (
     <main className="tsheet">
       <header className="tshead">
-        <h1>Timesheet</h1>
+        <h1>{s("timesheet")}</h1>
         <p className="tswho">{name}</p>
+        {/* Each language named IN ITSELF, always. A Spanish reader looking
+            for a way out of an English screen is looking for the word
+            "Español", not for "Spanish". */}
+        <div className="langpick" role="group" aria-label="Language / Idioma">
+          {LANGS.map((l) => (
+            <button key={l} type="button"
+                    className={l === lang ? "on" : ""}
+                    aria-pressed={l === lang}
+                    onClick={() => setLang(l)}>
+              {LANG_NAME[l]}
+            </button>
+          ))}
+        </div>
       </header>
 
       {problem ? <p className="tsalert" role="alert">{problem}</p> : null}
@@ -262,9 +284,9 @@ export default function ClockScreen({ name }: { name: string }) {
           two states and the text is right there beside it. */}
       <section className={`tscard today ${on ? (state.onBreak ? "onbreak" : "onclock") : "offclock"}`}>
         <div className="tscardhead">
-          <h2>Today</h2>
+          <h2>{s("today")}</h2>
           <span className="tsbadge state">
-            {on ? (state.onBreak ? "On Break" : "On the Clock") : "Off the Clock"}
+            {on ? s(state.onBreak ? "onBreak" : "onTheClock") : s("offTheClock")}
           </span>
         </div>
 
@@ -272,7 +294,7 @@ export default function ClockScreen({ name }: { name: string }) {
 
         <div className="tsbig">
           <span className="tshours">{hhmm(total)}</span>
-          <span className="tsunit">hours</span>
+          <span className="tsunit">{s("hours")}</span>
         </div>
         {today.breakMinutes
           ? <p className="tsnote">{today.breakMinutes} minutes of breaks recorded</p>
@@ -281,14 +303,14 @@ export default function ClockScreen({ name }: { name: string }) {
         <button className={`tsact ${on ? "stop" : "go"}`} disabled={busy}
                 onClick={() => act(on ? "out" : "in")}>
           {busy
-            ? (finding ? "Checking your location…" : "Please wait…")
-            : on ? "Clock Out" : "Clock In"}
+            ? s(finding ? "checkingLocation" : "pleaseWait")
+            : s(on ? "clockOut" : "clockIn")}
         </button>
 
         {on ? (
           <button className="tsminor" disabled={busy}
                   onClick={() => act(state.onBreak ? "break-end" : "break-start")}>
-            {state.onBreak ? "End Break" : "Begin Break"}
+            {s(state.onBreak ? "endBreak" : "beginBreak")}
           </button>
         ) : null}
 
@@ -316,10 +338,10 @@ export default function ClockScreen({ name }: { name: string }) {
             filed against none. */}
         {on && !openShift?.propertyId ? (
           <div className="tsfield">
-            <label htmlFor="job">Which job are you on?</label>
+            <label htmlFor="job">{s("whichJob")}</label>
             <select id="job" disabled={busy} defaultValue=""
                     onChange={(e) => e.target.value && act("where", { propertyId: e.target.value })}>
-              <option value="" disabled>Select a property</option>
+              <option value="" disabled>{s("selectProperty")}</option>
               {state.places.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -350,9 +372,9 @@ export default function ClockScreen({ name }: { name: string }) {
       {unsigned ? (
         <button className="tsminor wide" disabled={busy}
                 onClick={async () => {
-                  if (await act("sign-off")) setSaid("Hours submitted for approval.");
+                  if (await act("sign-off")) setSaid(s("submitted"));
                 }}>
-          Submit {hhmm(today.hours)} Hours for Approval
+          {s("submitHours", { hours: hhmm(today.hours) })}
         </button>
       ) : null}
 
@@ -361,14 +383,13 @@ export default function ClockScreen({ name }: { name: string }) {
           crew message arriving there lands in the same queue as a tenant's
           and gets answered as if it were one. This is the staff thread. */}
       <section className="tscard">
-        <div className="tscardhead"><h2>Need Something?</h2></div>
+        <div className="tscardhead"><h2>{s("needSomething")}</h2></div>
         <p className="tshint">
-          Goes to the office, not to tenants. Which job you are on is sent
-          with it, so nobody has to ask where you are.
+          {s("needSomethingWhy")}
         </p>
         <textarea className="tsask" rows={3} value={ask} maxLength={2000}
                   disabled={sending}
-                  placeholder="A part, a key, a dumpster, a question about the unit."
+                  placeholder={s("needSomethingEg")}
                   onChange={(e) => {
                     setAsk(e.target.value);
                     // The old answer is about the old message.
@@ -404,7 +425,7 @@ export default function ClockScreen({ name }: { name: string }) {
                   }).catch(() => null);
                   setSending(false);
                   if (!res) {
-                    setAskProblem("That did not send. Check your signal and try again.");
+                    setAskProblem(s("didNotSend"));
                     return;
                   }
                   /* Read as text and parse here: a function killed at the
@@ -429,16 +450,16 @@ export default function ClockScreen({ name }: { name: string }) {
                   // The answer lands in the thread, so say where that is.
                   void readBack();
                 }}>
-          {sending ? "Sending…" : "Send to the Office"}
+          {s(sending ? "sending" : "sendToOffice")}
         </button>
       </section>
 
       {/* ----------------------------------------------------------- week */}
       <section className="tscard">
         <div className="tscardhead">
-          <h2>{showLast ? "Last Week" : "This Week"}</h2>
+          <h2>{s(showLast ? "lastWeek" : "thisWeek")}</h2>
           <button className="tslink" onClick={() => setShowLast(!showLast)}>
-            {showLast ? "Show This Week" : "Show Last Week"}
+            {s(showLast ? "showThisWeek" : "showLastWeek")}
           </button>
         </div>
 
@@ -479,7 +500,7 @@ export default function ClockScreen({ name }: { name: string }) {
       {/* -------------------------------------------------------- requests */}
       <section className="tscard">
         <div className="tscardhead">
-          <h2>Corrections</h2>
+          <h2>{s("corrections")}</h2>
           {!asking ? (
             <button className="tslink" onClick={() => setAsking(true)}>
               Request an Adjustment
