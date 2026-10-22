@@ -1016,3 +1016,151 @@ that the phone could not tell.**
 
 Same shape as the park whose features were keyed on what the TILES carried.
 A list keyed on the narrower question looks complete and is empty.
+
+### The half of the application nobody had ever looked at
+
+A photograph of a phone in a dark room found an invisible Clock In button,
+and the picture harness had been green the whole time. It only ever drew the
+daytime theme. The stylesheet redefines every colour token under
+`prefers-color-scheme: dark`, so `background:#FFFFFF;color:var(--ink)` passes
+every check and comes out white on white at night.
+
+It draws both now, and on its first honest run it found a second invisible
+control nobody had reported: `.chip` was defined TWICE, 1350 lines apart, so
+the first block's correct `--dark`/`--dark-ink` pairing was dead code.
+
+Then the measurement. `color:#fff` on `background:var(--accent)` is 7.1:1 by
+day and **2.5:1 at night**, because `--accent` goes `#405981` → `#8AA4CE`.
+Twenty-two rules did that and they are the primary buttons. Each coloured
+ground now has an ink partner that inverts with it.
+
+**2.5:1 is not "the words are not there", so the contrast floor cannot hold
+this.** The guard is a source rule, and the first version of it was wrong in
+an instructive way: it checked the SHAPE -- a literal against a token -- and
+passed when the partner was given the same value in both themes, which is the
+broken state wearing the right clothes. The rule that cannot be fooled is
+**if the ground moves between themes, the ink must move with it.** A literal
+is simply an ink that does not move.
+
+The purest instance came later. `button{font:inherit;cursor:pointer}` never
+set a colour at all, so every button that did not state its own was painted in
+the browser's default black -- the name of every property, black on a
+near-black card. In daylight the default is almost exactly `--ink`, which is
+why it survived. **A colour that is never stated comes from somewhere that
+knows about one theme.**
+
+Writing the rule down is not the fix; this file already said it in bold after
+the third time, and the fourth, fifth and sixth happened anyway.
+
+### Three ways a harness reports success without checking anything
+
+All found in the one file, `phone-check.mjs`, which loads the REAL pages.
+
+**A server that was up and erroring read as no server.** The probe used
+`r.ok`, false for a 500, so a build with no database env -- every page 500ing
+-- was indistinguishable from nothing running, and it exited 0. Only a refused
+connection is a skip. Up-and-broken is a failure that names the likely cause.
+
+**A page that did not load was not a failure.** Next's error page has nothing
+off the screen and nothing too small to tap, so the harness happily measured
+it. A signed-in page that landed on the sign-in wall was measured as if it
+were the page.
+
+**And it could only reach the five public pages**, so the crew clock -- the
+screen it was built for -- was the one thing it could not see. Every finding
+about it came from a photograph. `stub-supabase.mjs` is a stand-in database so
+the signed-in screens render locally, with TWO identities, because `crew` is
+CLOCK_ONLY and is redirected away from every office screen: a crew-only
+fixture checks nothing on /home, /jobs or /timesheets and reports a pass.
+
+The stand-in itself then answered the wrong question three times: it could not
+write, it did not model PostgREST's embeds (so `row.thread.title` was
+undefined, every lookup MISSED rather than threw, and a fresh thread was made
+per message -- reported as the route's behaviour), and it ignored `is.null`,
+so "the shift that has not ended" matched every shift. **A stand-in that
+ignores the question answers the wrong one confidently.**
+
+It resets between runs, because two end-to-end posts left a thread behind and
+another check failed on "three rows are listed" for a reason that had nothing
+to do with what it was about.
+
+### A menu that is shut is not a menu
+
+The owner photographed a panel hanging off the left edge of the phone. It is
+the account menu, at -90..94 on every phone width.
+
+One selector. The header's wrap rule said `.apphead .av{margin-left:auto}`,
+but the flex child is `.acctwrap` -- the avatar is INSIDE it, and an auto
+margin on something that is not a flex child pushes nothing. So the avatar
+stayed hard against the brand and a menu anchored to its right edge opened off
+the screen.
+
+No check could see it, because **everything here measures a page at rest and
+this only exists once something is open.** The harness presses each control in
+the header now, measures, and puts it back.
+
+Two rounds inside that: the first run reported four findings on every page,
+all of them the tab strip, which scrolls sideways on purpose -- the at-rest
+check had a rule for that and the new one did not, and the real finding was
+buried under false ones. And a full-width fixed backdrop is meant to cover the
+screen, so it is not "off" it.
+
+### A check that cries wolf is worse than no check
+
+The contrast check took the first background with any colour in it and treated
+it as opaque. Rows sitting on `rgba(255,255,255,0.18)` over a dark red card
+read as white-on-white: six findings on the crew clock, every one wrong, on
+the one screen that mattered. It composites the layers now, which is what the
+browser paints.
+
+**Worse than no harness, because the real finding is in that list too.**
+
+Fixing it introduced a second fault immediately: starting the walk at the
+parent skipped a button's own background and turned six false findings into
+eight different ones on other screens. Start at the element; its own
+background is just the topmost layer.
+
+### Two sorted lists stacked is not a sorted list
+
+A text that arrived "just now" sat UNDER a colleague's message from twenty
+hours ago. Staff threads and conversations were two correctly-sorted lists
+rendered one after the other, so every staff thread outranked every text
+however old. Both sorts were right. Stacking them threw the order away.
+
+Nothing said a message was new, either. `conversation_reads` has existed since
+migration 003 and the list had never asked it -- so a text, the one kind of
+message that is always from outside, carried no mark while a staff thread did.
+
+And it is **not** `last_message_at > last_read_at`. The newest message on a
+thread is very often one we sent, and a queue that lights up for our own
+replies is a queue nobody believes by the end of the week. The question is
+whether the newest message FROM OUTSIDE is newer than the last time I looked.
+
+The Unread tab, meanwhile, matched no branch in the query at all: it fell
+through to no status filter and showed everything, closed threads included. **A
+tab that looked like a filter and was a no-op.**
+
+Two things the guard for this taught, both the oldest lesson in this file:
+
+The fixture's three rows are INTERLEAVED in time on purpose -- the text newer
+than the staff thread, which is newer than the old conversation. With the
+staff thread oldest or newest, a merged list and a stacked one look identical.
+
+And the read receipt was first set to equal the last message, which makes the
+naive rule and the right one agree. It sits at the INBOUND message with our
+reply after it, so the two answers differ.
+
+### Reaching the office from the clock
+
+The crew had no way to say anything. It goes to the office's staff thread,
+**not the shared line** -- the mainline is the number tenants text, and a crew
+message arriving there lands in the same queue as a tenant's.
+
+One thread per person, found by its TITLE rather than by its membership,
+because membership changes: somebody joins the office and a thread matched on
+"exactly these people" silently stops matching and a second one is made.
+
+**The line above the message is the server's.** The office's first reply to "I
+need a part" is "where are you?", and the screen it was sent from already
+knows. Read from the database, never from the request: a claim about which job
+somebody is on is worth nothing if the person sending it chose the words.
