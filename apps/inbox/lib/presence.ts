@@ -1,3 +1,4 @@
+import { ZONE } from "@/lib/zone";
 /**
  * Who is here, worked out from one timestamp and one word.
  *
@@ -71,5 +72,6 @@ export function since(iso: string | null, now = Date.now()): string {
   if (days === 1) return "yesterday";
   if (days < 30) return `${days} days ago`;
   return new Date(iso).toLocaleDateString("en-US",
-    { month: "short", day: "numeric", year: "numeric" });
+    // On a UTC server, anything after 7pm Eastern is already tomorrow.
+    { timeZone: ZONE, month: "short", day: "numeric", year: "numeric" });
 }

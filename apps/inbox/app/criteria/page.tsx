@@ -17,9 +17,16 @@ export const dynamic = "force-dynamic";
 type Criterion = { key: string; label: string; pass: string; marginal: string; explain: string };
 type Rules = { version: number; guarantor_rescues?: string[]; criteria: Criterion[] };
 
+/* A DATE WITH NO TIME IN IT HAS NO ZONE EITHER, and the fix for one of these
+   is not the fix for a timestamp. "2026-03-04" is the fourth of March
+   wherever you read it. Printing it in Eastern would make it the third,
+   because midnight UTC is 7pm the evening before -- so both sides say UTC and
+   the hour is noon, which no zone on earth can push over a date boundary.
+   `T00:00:00` with no zone on either side happened to round-trip, by relying
+   on the server and the formatter agreeing about a zone neither one named. */
 const asOf = (d: string) =>
-  new Date(d + "T00:00:00").toLocaleDateString("en-US",
-    { year: "numeric", month: "long", day: "numeric" });
+  new Date(d + "T12:00:00Z").toLocaleDateString("en-US",
+    { timeZone: "UTC", year: "numeric", month: "long", day: "numeric" });
 
 export default async function Criteria() {
   const db = supabaseAdmin();

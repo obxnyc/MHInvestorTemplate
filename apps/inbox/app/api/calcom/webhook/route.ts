@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ZONE } from "@/lib/zone";
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendSms, sendEmail } from "@/lib/notify";
@@ -72,8 +73,12 @@ export async function POST(req: Request) {
   const prop = unit?.properties as unknown as { name: string; address: string | null } | undefined;
   const address = `${prop?.name ?? "the home"}${unit?.label ? ` — ${unit.label}` : ""}`;
 
+  /* The zone, said out loud. This runs on a server in UTC, and without it a
+     2pm showing is texted to the prospect as 6pm -- somebody drives to an
+     empty house. Everywhere else that prints a time for a person already
+     uses ZONE; this was the one that did not. */
   const when = new Date(startTime).toLocaleString("en-US", {
-    weekday: "short", month: "short", day: "numeric",
+    timeZone: ZONE, weekday: "short", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit",
   });
 

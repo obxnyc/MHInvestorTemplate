@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DESK } from "@/lib/roles";
+import { ZONE } from "@/lib/zone";
 
 /** The title that marks a thread as somebody's line to the office.
  *
@@ -11,6 +12,10 @@ import { DESK } from "@/lib/roles";
  *  rather than creates, and the same reason applies here.
  */
 export const OFFICE_THREAD = "Office";
+
+/* The zone comes from lib/format.ts, which has had it all along. A second
+   constant holding the same fact is how the role list ended up hardcoded in
+   seven files. */
 
 /**
  * The thread a person on the clock uses to reach the office, made if it is
@@ -81,13 +86,23 @@ export async function officeThread(
 export function withWhere(
   body: string,
   shift: { property?: string | null; startedAt?: string | null } | null,
+  zone: string = ZONE,
 ): string {
   const text = body.trim();
   if (!shift) return `[off the clock]\n${text}`;
   const where = shift.property ? `on ${shift.property}` : "no job recorded";
+  /* THE TIMEZONE HAS TO BE SAID OUT LOUD.
+     `toLocaleTimeString` with no zone uses the machine's, and this runs on a
+     server in UTC -- so a shift that started at 8:08 in the evening was
+     written into the message as "since 12:08 AM". Not a rounding error: a
+     time of day that is wrong by four or five hours, in the one line the
+     office reads to decide whether to drive out, and wrong in a direction
+     that makes a man look like he is on nights.
+     Said explicitly rather than taken from the clock, because the clock here
+     is right and is answering a different question. */
   const since = shift.startedAt
     ? new Date(shift.startedAt).toLocaleTimeString("en-US",
-        { hour: "numeric", minute: "2-digit" })
+        { hour: "numeric", minute: "2-digit", timeZone: zone })
     : null;
   return `[on the clock, ${where}${since ? `, since ${since}` : ""}]\n${text}`;
 }

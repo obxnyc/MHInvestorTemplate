@@ -22,17 +22,11 @@ export function timeAgo(iso: string) {
   return d < 7 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-US", { timeZone: ZONE });
 }
 
-/** Every time in this application is Elizabeth City time.
- *
- *  Not the browser's, and emphatically not the server's -- which is UTC, and
- *  was showing a text sent at 9:02 in the evening as 1:02 AM. A timestamp that
- *  is four hours out is worse than no timestamp: it gets read to a tenant, or
- *  used to argue about when a repair was reported.
- *
- *  Pinned rather than local because the business is in one place. A manager
- *  looking at the inbox from a hotel in Denver needs to see the hour the tenant
- *  meant, not the hour on their own wrist. */
-export const ZONE = "America/New_York";
+/* The zone lives in lib/zone.ts, on its own, so that importing it does not
+   drag this file's phone-number parser along. Re-exported here because
+   everything that formats a time already asks this file for it. */
+import { ZONE } from "@/lib/zone";
+export { ZONE };
 
 export function clockTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-US", {

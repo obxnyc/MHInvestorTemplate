@@ -28,6 +28,7 @@ const load = (name) => ts.transpileModule(
 const dep = (name) => "data:text/javascript," + encodeURIComponent(load(name));
 let src = load("office");
 src = src.replaceAll('"@/lib/roles"', `"${dep("roles")}"`);
+src = src.replaceAll('"@/lib/zone"', `"${dep("zone")}"`);
 const { officeThread, withWhere, OFFICE_THREAD } =
   await import("data:text/javascript," + encodeURIComponent(src));
 
@@ -172,6 +173,25 @@ await ta("an UNTITLED thread with the same people is not mistaken for this one",
 
 t("off the clock says so", () =>
   withWhere("Need a key", null).startsWith("[off the clock]"));
+
+/* THE ZONE. A shift that began at 8:08pm Eastern was written as "since
+   12:08 AM", because the server formats in UTC and nothing said otherwise --
+   wrong by four hours in the one line the office reads to decide whether to
+   drive out. Checked with an instant whose UTC time and Eastern time fall on
+   different SIDES of midnight, because a fixture an hour either way of noon
+   cannot tell a wrong zone from a right one. */
+t("the time is the time where the work is, not where the server is", () => {
+  const out = withWhere("Need a key",
+    // 2026-10-22T00:08Z is 8:08 PM on the 21st in New York.
+    { property: "The Retreat", startedAt: "2026-10-22T00:08:00Z" });
+  return /since 8:08 PM/.test(out) && !/12:08 AM/.test(out);
+});
+
+t("and a different zone is a different time", () => {
+  const out = withWhere("Need a key",
+    { property: "The Retreat", startedAt: "2026-10-22T00:08:00Z" }, "UTC");
+  return /since 12:08 AM/.test(out);
+});
 
 t("on the clock names the job", () => {
   const out = withWhere("Need a key",
