@@ -194,8 +194,16 @@ createServer((req, res) => {
       let body = [];
       try { body = JSON.parse(raw || "[]"); } catch { body = []; }
       const list = Array.isArray(body) ? body : [body];
+      /* `created_at` the way Postgres would, with its default.
+         Without it an inserted row has none, and `row.created_at > seen` is
+         `undefined > seen` -- false. So a crew member's own message was
+         excluded from "has the office replied" by the DATE comparison before
+         the author comparison could matter, and deleting the author filter
+         altogether still passed. A guard standing behind a second guard is a
+         guard nobody has tested. */
       const made = list.map((row, i) => ({
         id: row.id ?? `${table}-${(TABLES[table] ?? []).length + i + 1}`,
+        created_at: new Date().toISOString(),
         ...row,
       }));
       TABLES[table] = (TABLES[table] ?? []).concat(made);

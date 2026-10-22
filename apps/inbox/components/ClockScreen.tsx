@@ -113,6 +113,8 @@ const longDay = (ymd: string) =>
   new Date(`${ymd}T12:00:00`).toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
 
 type AskReply = { ok?: boolean; error?: string; desks?: number };
+type Back = { threadId: string | null; unread: number;
+  last: { body: string; at: string } | null };
 
 export default function ClockScreen({ name }: { name: string }) {
   const [state, setState] = useState<State | null>(null);
@@ -129,6 +131,16 @@ export default function ClockScreen({ name }: { name: string }) {
   const [sending, setSending] = useState(false);
   const [sentWord, setSentWord] = useState<string | null>(null);
   const [askProblem, setAskProblem] = useState<string | null>(null);
+  const [back, setBack] = useState<Back | null>(null);
+  /* What the office has said since this person last opened the thread. Asked
+     for on load and again after sending, because the reply is the half that
+     makes this a conversation rather than a suggestion box. */
+  const readBack = useCallback(async () => {
+    const res = await fetch("/api/clock/ask").catch(() => null);
+    if (!res?.ok) return;
+    setBack(await res.json().catch(() => null));
+  }, []);
+  useEffect(() => { void readBack(); }, [readBack]);
   const on = state?.worked.onTheClock ?? false;
   const onRef = useRef(on);
   onRef.current = on;
@@ -363,8 +375,25 @@ export default function ClockScreen({ name }: { name: string }) {
                     if (sentWord) setSentWord(null);
                     if (askProblem) setAskProblem(null);
                   }} />
+        {back?.unread && back.last ? (
+          <a className="tsback" href={`/team?t=${back.threadId}`}>
+            <strong>
+              The office replied
+              {back.unread > 1 ? ` — ${back.unread} new messages` : ""}
+            </strong>
+            <span>{back.last.body}</span>
+          </a>
+        ) : null}
         {askProblem ? <p className="tsbad">{askProblem}</p> : null}
-        {sentWord ? <p className="tsgood">{sentWord}</p> : null}
+        {sentWord ? (
+          <p className="tsgood">
+            {sentWord}
+            {back?.threadId ? (
+              <> The reply will be in <a href={`/team?t=${back.threadId}`}>your
+                messages</a>.</>
+            ) : null}
+          </p>
+        ) : null}
         <button className="tsminor wide" disabled={sending || !ask.trim()}
                 onClick={async () => {
                   setSending(true); setAskProblem(null); setSentWord(null);
@@ -397,6 +426,8 @@ export default function ClockScreen({ name }: { name: string }) {
                   setSentWord(data.desks
                     ? `Sent. ${data.desks} ${data.desks === 1 ? "person" : "people"} at the office can see it.`
                     : "Kept — but nobody at the office has an account yet, so nobody has been alerted.");
+                  // The answer lands in the thread, so say where that is.
+                  void readBack();
                 }}>
           {sending ? "Sending…" : "Send to the Office"}
         </button>

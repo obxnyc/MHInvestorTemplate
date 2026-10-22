@@ -2870,3 +2870,14 @@ a.metric:hover{border-color:var(--accent)}
      the bar they sit in. */
   .groupbar button { min-height: 44px; display: inline-flex; align-items: center }
 }
+
+/* The office's answer, on the clock screen. Ink and ground both tokens, so
+   they move together between themes. */
+.tsback{display:flex;flex-direction:column;gap:.2rem;margin:0 0 .6rem;
+  padding:.6rem .7rem;border-radius:9px;background:var(--accent-soft);
+  color:var(--accent-ink);text-decoration:none;min-height:44px;
+  justify-content:center}
+.tsback strong{font-size:.85rem}
+.tsback span{font-size:.82rem;color:var(--ink-2);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tsback:hover{background:var(--sunk)}

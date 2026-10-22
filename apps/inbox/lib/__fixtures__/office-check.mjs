@@ -190,6 +190,80 @@ t("on the clock with no job recorded says THAT, rather than nothing", () => {
 t("the message itself is kept, under the line", () =>
   withWhere("  Need a key  ", null).endsWith("\nNeed a key"));
 
+/* ------------------------------------------- and the answer coming back
+ *
+ * Against the running app, because this half lives in the route rather than
+ * in a pure function. Skips when nothing is serving -- but says so, because a
+ * silent skip is the fault this whole round was about.
+ */
+const BASE = process.env.PHONE_CHECK_BASE ?? "http://127.0.0.1:3100";
+const STUB = "http://127.0.0.1:54321";
+const CREW = "11111111-1111-1111-1111-111111111111";
+const DESKID = "22222222-2222-2222-2222-222222222222";
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const cookie = (id) => {
+  const exp = Math.floor(Date.now() / 1e3) + 3600;
+  const jwt = [b64({ alg: "HS256", typ: "JWT" }),
+    b64({ sub: id, aud: "authenticated", role: "authenticated",
+          email: "x@larabeehomesllc.com", exp, iat: exp - 3600,
+          iss: `${STUB}/auth/v1` }), "c3R1Yg"].join(".");
+  return "sb-127-auth-token=base64-" + Buffer.from(JSON.stringify({
+    access_token: jwt, token_type: "bearer", expires_in: 3600, expires_at: exp,
+    refresh_token: "stub-refresh",
+    user: { id, aud: "authenticated", role: "authenticated",
+            email: "x@larabeehomesllc.com", app_metadata: {}, user_metadata: {},
+            created_at: "2026-01-01T00:00:00Z" },
+  })).toString("base64url");
+};
+
+const live = await fetch(`${STUB}/__reset`).then((r) => r.ok).catch(() => false);
+if (!live) {
+  said.push(" -- the round trip was NOT checked: no stand-in at " + STUB
+    + ". Start lib/__fixtures__/stub-supabase.mjs, build against it, serve it.");
+} else {
+  const ask = (init) => fetch(`${BASE}/api/clock/ask`,
+    { headers: { cookie: cookie(CREW) }, ...init })
+    .then((r) => r.text()).then((t) => { try { return JSON.parse(t); } catch { return null; } })
+    .catch(() => null);
+
+  const before = await ask();
+  await ta("nothing asked yet means no thread and nothing waiting",
+    async () => before?.threadId === null && before?.unread === 0);
+
+  const sent = await ask({ method: "POST",
+    headers: { cookie: cookie(CREW), "content-type": "application/json" },
+    body: JSON.stringify({ body: "Need a P-trap for 3124" }) });
+  await ta("asking reaches somebody and says who",
+    async () => sent?.ok === true && sent?.desks >= 1);
+
+  /* THE ONE THAT MATTERS. Without the author filter this reads 1, and the
+     screen tells a crew member the office replied when the only thing in the
+     thread is their own message. Exactly what the inbox list did for months. */
+  const mine = await ask();
+  await ta("MY OWN message does not come back as the office replying",
+    async () => mine?.unread === 0 && mine?.last === null);
+
+  const say = (body, at) => fetch(`${STUB}/rest/v1/dm_messages`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify([{ thread_id: sent.threadId, author_id: DESKID, body,
+                            created_at: at }]),
+  }).catch(() => null);
+
+  await say("Picking one up now, be there by 3.", new Date().toISOString());
+  const answered = await ask();
+  await ta("the office answering shows up, with their words",
+    async () => answered?.unread === 1
+      && /Picking one up now/.test(answered?.last?.body ?? ""));
+
+  /* A reply from BEFORE this person last opened the thread is not news.
+     Without the read-receipt comparison this reads 2, and a badge that counts
+     things already seen is a badge nobody looks at. */
+  await say("This was said before they last looked.", "2020-01-01T00:00:00Z");
+  const older = await ask();
+  await ta("a message older than the last read is not counted as new",
+    async () => older?.unread === 1);
+}
+
 for (const l of said) (l.startsWith(" ✗") ? console.error : console.log)(l);
 if (said.some((l) => l.startsWith(" ✗"))) process.exit(1);
 console.log("one thread to the office, and it says where you were");
