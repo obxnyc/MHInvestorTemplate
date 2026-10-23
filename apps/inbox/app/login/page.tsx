@@ -29,6 +29,34 @@ const WHO: [Who, string][] = [
  * All three identify one person. Nobody shares an account: the name on a reply,
  * the read receipt and the typing indicator would all become lies at once.
  */
+/** What a sign-in email failure actually means, in words somebody can act on.
+ *
+ *  Supabase's BUILT-IN email sender is rate-limited to a handful of messages
+ *  an hour and is not meant for production. When it refuses, it says "email
+ *  rate limit exceeded" -- which names the symptom, says nothing about the
+ *  cause, and gives no way forward. Somebody then waits, tries again, gets
+ *  the same thing, and concludes the address is wrong.
+ *
+ *  The project already pays for Postmark. Pointing Supabase's SMTP settings
+ *  at it lifts the limit permanently, and that is the sentence that belongs
+ *  on screen rather than the provider's own.
+ */
+function sayWhy(message: string): string {
+  if (/rate limit|too many/i.test(message)) {
+    return "No email was sent. The database's built-in mail service only"
+      + " allows a few messages an hour and has hit that limit — this is not"
+      + " about the address you typed. An admin can lift it for good by"
+      + " pointing Supabase's SMTP settings at Postmark, under"
+      + " Authentication → Emails. Until then, a password set directly on the"
+      + " account signs in without any email at all.";
+  }
+  if (/signup|not allowed|disabled/i.test(message)) {
+    return "That address has no account here yet. Ask an admin to add you on"
+      + " the people page.";
+  }
+  return message;
+}
+
 export default function Login() {
   const [who, setWho] = useState<Who>("office");
   const [mode, setMode] = useState<Mode>("password");
@@ -87,7 +115,7 @@ export default function Login() {
     const { error } = await supabase().auth.signInWithOtp({
       email, options: { emailRedirectTo: `${location.origin}/` },
     });
-    if (error) { setState("error"); setMessage(error.message); return; }
+    if (error) { setState("error"); setMessage(sayWhy(error.message)); return; }
     setState("sent");
   }
 
@@ -108,11 +136,20 @@ export default function Login() {
     const { error } = await supabase().auth.resetPasswordForEmail(email, {
       redirectTo: `${location.origin}/auth/reset`,
     });
-    // Answered the same way whether or not the address is one of ours, for the
-    // same reason as above.
-    if (error && !/rate|limit/i.test(error.message)) {
-      setState("error"); setMessage(error.message); return;
+    /* Answered the same way whether or not the address is one of ours -- an
+       error that distinguishes them tells a stranger who has an account.
+       A RATE LIMIT IS NOT THAT. It is about this project, not the address,
+       and swallowing it said "check your email" when nothing had been sent:
+       the exact shape this codebase keeps writing down -- a send that failed
+       must not look like a send that worked. */
+    if (error && /rate limit|too many/i.test(error.message)) {
+      setState("error"); setMessage(sayWhy(error.message)); return;
     }
+    /* Every OTHER error still reads as sent, which was a deliberate choice
+       and stays one: an error here that distinguishes a real address from an
+       unknown one hands a stranger a way to find out who has an account.
+       Only the rate limit breaks out, because it is a fact about this
+       project rather than about the address. */
     setState("sent");
   }
 
