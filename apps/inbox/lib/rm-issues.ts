@@ -333,9 +333,22 @@ export async function pullServiceIssues(
     if (Date.now() > until) { out.more = true; break; }
     try {
       const res = await ingest({
-        // The same key the email path uses, so an issue that arrives both
-        // ways is one thread and not two.
+        /* `source` is the maintenance-intake key, the same one the email
+           path uses -- but it is NOT what stops a double. The duplicate
+           check in `ingest` is on `external_id`, and the two paths cannot
+           agree on one: this knows the Rent Manager issue number, the
+           notification email knows only its own Message-ID, and neither
+           appears in the other. So a request arriving BOTH ways is two
+           threads -- and the comment that used to sit here said the
+           opposite. A comment promising a guarantee the code does not give
+           is worse than no comment: it is where somebody stops looking. */
         source: "zego",
+        /* WHEN THE TENANT SUBMITTED IT, not when we got round to asking.
+           Without this every backfilled issue is stamped now, so eight
+           months of history arrives at the top of the inbox reading "just
+           now" -- which is what "a lot of maintenance requests today"
+           turned out to be. */
+        at: issue.createdAt,
         name: issue.tenant,
         phone: issue.phone,
         email: issue.email,

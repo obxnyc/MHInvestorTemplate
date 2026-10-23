@@ -27,6 +27,18 @@ export type Intake = {
     purpose: "transactional" | "marketing";
     disclosureText: string;
   } | null;
+  /** WHEN IT ACTUALLY HAPPENED, if that is known and is not now.
+   *
+   *  Everything used to be stamped with the moment it was ingested, which is
+   *  right for a text arriving and wrong for a backfill: pulling eight months
+   *  of Rent Manager issues put every one of them at the top of the inbox,
+   *  dated today, reading "just now". "I got a lot of maintenance requests
+   *  today but I feel like we actually only got 2 new ones."
+   *
+   *  Absent means now, which is the common case and the honest default -- a
+   *  source that does not say when something happened has not said it
+   *  happened long ago. */
+  at?: string | null;
 };
 
 /**
@@ -102,6 +114,14 @@ export async function ingest(item: Intake) {
     });
   }
 
+  /* A date in the FUTURE is a clock disagreeing somewhere, and would pin the
+     thread to the top of the inbox forever. Anything ahead of now is treated
+     as now. */
+  const said = item.at ? Date.parse(item.at) : NaN;
+  const when = Number.isFinite(said) && said < Date.now()
+    ? new Date(said).toISOString()
+    : new Date().toISOString();
+
   await db.from("messages").insert({
     conversation_id: convo.id,
     direction: "inbound",
@@ -110,10 +130,11 @@ export async function ingest(item: Intake) {
     external_id: item.externalId,
     status: "received",
     sent_by: null,
+    created_at: when,
   });
 
   await db.from("conversations")
-    .update({ last_message_at: new Date().toISOString(), status: "open",
+    .update({ last_message_at: when, status: "open",
               last_message_preview: item.summary.slice(0, 160) })
     .eq("id", convo.id);
 
@@ -123,6 +144,13 @@ export async function ingest(item: Intake) {
     website: "Website form",
     voicemail: "Voicemail",
   }[item.source];
+  /* OLD NEWS DOES NOT BUZZ EVERY PHONE IN THE OFFICE.
+     A backfill of sixty historical issues sent sixty notifications, each one
+     claiming a maintenance request had just come in. A day is the line: a
+     request from this morning is worth a buzz, one from March is a record
+     being filed. */
+  const FRESH_MS = 24 * 3600 * 1000;
+  if (Date.now() - Date.parse(when) < FRESH_MS) {
   await pushToTeam(convo.team_id, {
     title: `${label}${item.name ? ` — ${item.name}` : ""}`,
     body: item.summary.slice(0, 140),
@@ -131,6 +159,7 @@ export async function ingest(item: Intake) {
     conversationId: convo.id,
     actions: CLAIM_ACTIONS,
   });
+  }
 
   // A maintenance request becomes a job, not just a thread.
   //
