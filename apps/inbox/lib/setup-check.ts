@@ -710,18 +710,50 @@ async function intakeChecks(): Promise<Check[]> {
 
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
-  if (!url || !key) return [];
+  if (!url || !key) {
+    return [{
+      name: "Could not check whether email is arriving",
+      level: "bad",
+      detail: "The database settings are missing, so this could not be asked.",
+      fix: "Fix the database settings above; this answers itself afterwards.",
+    }];
+  }
 
   // Thirty days rather than all time: "one arrived last March" is not an
   // answer to "is this working now".
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
   try {
+    /* `source`, NOT `channel`. `conversations` has no channel column -- that
+       one is on `messages` -- so this asked PostgREST for a filter on a
+       column that is not there, got a 400, and the `return []` below turned
+       that into no check at all.
+       Which means this check, the one that answers "is the maintenance email
+       arriving", HAS NEVER APPEARED ON THE PAGE since it was written. The
+       owner opened the setup page looking for exactly this and found a gap
+       where it should have been. */
     const res = await fetch(
       `${url}/rest/v1/conversations`
-      + `?select=source&channel=neq.sms&created_at=gte.${since}&limit=200`,
+      + `?select=source&source=neq.sms&created_at=gte.${since}&limit=200`,
       { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" },
     );
-    if (!res.ok) return [];
+    /* A QUESTION THAT COULD NOT BE ASKED IS NOT AN ANSWER OF "FINE".
+       Returning [] here reports "nothing to say" when the truth is "I could
+       not look", and those are the two states this whole page exists to tell
+       apart. Same shape as the harness that read a server being up and
+       erroring as no server at all. */
+    if (!res.ok) {
+      const why = await res.text().catch(() => "");
+      return [{
+        name: "Could not check whether email is arriving",
+        level: "bad",
+        detail: `Asking the database for recent non-text conversations failed`
+          + ` with ${res.status}. This check has no opinion either way, which`
+          + ` is not the same as everything being fine.`
+          + (why ? ` The database said: ${why.slice(0, 180)}` : ""),
+        fix: "This is a fault in this page rather than in your settings."
+          + " Nothing about your email setup can be concluded from it.",
+      }];
+    }
     const rows = (await res.json()) as { source: string | null }[];
 
     if (!rows.length) {
@@ -751,7 +783,14 @@ async function intakeChecks(): Promise<Check[]> {
         + " in Messages; turning one into a job is still a person pressing"
         + " Hand off, which is deliberate.",
     }];
-  } catch {
-    return [];
+  } catch (e) {
+    // Same rule: say that it could not look, rather than nothing.
+    return [{
+      name: "Could not check whether email is arriving",
+      level: "bad",
+      detail: "The database could not be reached to answer it: "
+        + String((e as Error).message ?? e).slice(0, 160),
+      fix: "Nothing about your email setup can be concluded from this.",
+    }];
   }
 }
