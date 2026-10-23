@@ -2934,3 +2934,4 @@ a.metric:hover{border-color:var(--accent)}
   background:var(--tn-soft);color:var(--tn-ink);
   border-bottom:1px solid var(--hair)}
 .pullnote.warn{background:var(--warn-soft);color:var(--warn)}
+.pullnote a{color:inherit;text-decoration:underline;text-underline-offset:2px}

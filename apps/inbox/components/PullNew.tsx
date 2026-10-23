@@ -45,11 +45,30 @@ export default function PullNew() {
 
   if (needs) return <p className="pullnote warn">{needs}</p>;
   if (!filed) return null;
+
+  /* ANYTHING THIS FINDS IS SOMETHING THE EMAIL MISSED.
+   *
+   * Rent Manager emails a notification the moment a tenant submits, and that
+   * mail is the real-time path: a Gmail filter forwards it, Postmark takes
+   * it, the webhook files it within seconds. This poll is the backstop.
+   *
+   * So a request turning up HERE is evidence the forward did not deliver it
+   * -- and that is worth saying, because a broken forward is otherwise
+   * perfectly silent. Nothing errors. It reads as a quiet week.
+   *
+   * Said once, beside the thing it is about, rather than left on a settings
+   * page nobody opens until somebody rings up. */
   return (
     <p className="pullnote">
       {filed === 1
-        ? "1 new maintenance request came in from Tenant Web Access."
-        : `${filed} new maintenance requests came in from Tenant Web Access.`}
+        ? "1 maintenance request came in from Tenant Web Access."
+        : `${filed} maintenance requests came in from Tenant Web Access.`}
+      {" "}
+      <a href="/setup">
+        These were found by checking Rent Manager directly. If the email
+        forward were working they would have arrived the moment they were
+        submitted — check it here.
+      </a>
     </p>
   );
 }
