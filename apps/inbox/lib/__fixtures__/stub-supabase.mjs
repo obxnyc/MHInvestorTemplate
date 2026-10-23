@@ -199,6 +199,43 @@ createServer((req, res) => {
      only up to the point where it tries. Without this the crew's line to the
      office could only ever be checked as far as "could not open a thread",
      which is the stand-in's answer and not the code's. */
+  /* RPC. Without this a call to `rpc("claim_issue_pull", …)` fell into the
+     insert branch below and was answered with a created ROW -- truthy, not
+     `true`, so the caller skipped every time and the feature looked like it
+     was working by doing nothing. A stand-in that answers the wrong shape is
+     as misleading as one that answers the wrong value. */
+  if (req.method === "POST" && url.pathname.startsWith("/rest/v1/rpc/")) {
+    const fn = url.pathname.slice("/rest/v1/rpc/".length);
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      let args = {};
+      try { args = JSON.parse(raw || "{}"); } catch { args = {}; }
+      if (fn === "claim_issue_pull") {
+        // The real one is a single atomic statement; this is a stand-in for
+        // the SHAPE of the answer, not for the locking.
+        const row = (TABLES.rm_issue_pulls ??= [{ id: true, started_at: null,
+          finished_at: null, ok: null, filed: 0, error: null }])[0];
+        const stale = (args.p_stale ?? 5) * 60e3;
+        const dead = (args.p_dead ?? 3) * 60e3;
+        const t = (v) => (v ? Date.parse(v) : 0);
+        const may = !row.started_at
+          || (row.finished_at && Date.now() - t(row.finished_at) > stale)
+          || (!row.finished_at && Date.now() - t(row.started_at) > dead);
+        if (may) { row.started_at = new Date().toISOString(); row.finished_at = null; }
+        return send(200, may);
+      }
+      if (fn === "finish_issue_pull") {
+        const row = (TABLES.rm_issue_pulls ??= [{ id: true }])[0];
+        row.finished_at = new Date().toISOString();
+        row.ok = args.p_ok; row.filed = args.p_filed; row.error = args.p_error;
+        return send(200, null);
+      }
+      return send(200, null);
+    });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
     let raw = "";

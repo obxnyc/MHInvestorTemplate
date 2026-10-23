@@ -2927,3 +2927,10 @@ a.metric:hover{border-color:var(--accent)}
   /* 16px or the handset zooms the page on focus and does not zoom back. */
   font-size:16px;letter-spacing:.3em}
 .pinchoose input:disabled{opacity:.6}
+
+/* "2 new maintenance requests came in." Shown only when there is something to
+   say -- a line that appears on every load is a line nobody reads. */
+.pullnote{margin:0;padding:.55rem .9rem;font-size:.82rem;line-height:1.45;
+  background:var(--tn-soft);color:var(--tn-ink);
+  border-bottom:1px solid var(--hair)}
+.pullnote.warn{background:var(--warn-soft);color:var(--warn)}
