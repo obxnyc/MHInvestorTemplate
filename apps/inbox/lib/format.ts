@@ -60,3 +60,46 @@ const SWATCH: [string, string][] = [
 
 export const swatch = (n: string): [string, string] =>
   SWATCH[[...String(n)].reduce((a, c) => a + c.charCodeAt(0), 0) % SWATCH.length];
+
+/** A real, dialable number — or nothing.
+ *
+ *  `contacts.phone` is `not null unique` and is the join key every webhook
+ *  matches on, so a request that arrives with no number still needs
+ *  something in that column. Intake writes a synthetic one:
+ *  `email:rm:issue:251`.
+ *
+ *  That is fine as a key and a disaster on screen. `prettyPhone` hands back
+ *  anything it cannot parse, so the inbox listed a column of threads called
+ *  "email:rm:issue:251", "email:rm:issue:250" -- an internal id where the
+ *  tenant's name should be, which is unreadable and looks broken.
+ *
+ *  So: a number is only a number if it is one. Everything else is nothing,
+ *  and the caller shows what it actually knows instead.
+ */
+export function realPhone(value: string | null | undefined): string | null {
+  const v = (value ?? "").trim();
+  if (!v || !v.startsWith("+")) return null;
+  return /^\+[1-9]\d{6,14}$/.test(v) ? v : null;
+}
+
+/** What to call a thread, given what little may be known about it.
+ *
+ *  In order: the person's name, then their number, then what the thread is
+ *  ABOUT, and only then a generic word. A Rent Manager issue with no tenant
+ *  on it reads as "Water is coming out green" rather than as an id -- which
+ *  is not who, but it is something a person can act on, and it is honest
+ *  about not knowing who.
+ */
+export function threadLabel(
+  fullName: string | null | undefined,
+  phone: string | null | undefined,
+  about: string | null | undefined,
+): string {
+  const named = (fullName ?? "").trim();
+  if (named) return named;
+  const real = realPhone(phone);
+  if (real) return prettyPhone(real);
+  const subject = (about ?? "").trim();
+  if (subject) return subject.length > 60 ? `${subject.slice(0, 57)}…` : subject;
+  return "Unknown sender";
+}

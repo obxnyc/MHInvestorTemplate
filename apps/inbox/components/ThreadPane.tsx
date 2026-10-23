@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { prettyPhone, clockTime, dayLabel, initials } from "@/lib/format";
+import { threadLabel, prettyPhone, clockTime, dayLabel, initials } from "@/lib/format";
 import { catLabel, propertyOf } from "@/lib/category";
 import Composer from "./Composer";
 import AskThese from "./AskThese";
@@ -159,7 +159,11 @@ export default function ThreadPane(
     staff: { full_name: string } | null;
   };
   const contact = convo.contacts;
-  const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
+  /* Not a synthetic key -- see threadLabel. The open thread had the same
+     `email:rm:issue:251` as its heading, which is the id of a row rather
+     than the name of anybody. */
+  const name = threadLabel(contact?.full_name, contact?.phone,
+    convo.subject ?? (data.messages[0]?.body as string | undefined));
   const prop = propertyOf(convo.units as never, contact?.units as never);
   const party = contact?.party && contact.party !== "other"
     ? contact.party.replace("_", " ") : null;

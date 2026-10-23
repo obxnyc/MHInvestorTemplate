@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
-import { prettyPhone, timeAgo, initials } from "@/lib/format";
+import { threadLabel, prettyPhone, timeAgo, initials } from "@/lib/format";
 import Avatar from "@/components/Avatar";
 import { CATEGORIES, CAT_TAB, catLabel, propertyOf, type Category } from "@/lib/category";
 import Search from "@/components/Search";
@@ -256,7 +256,15 @@ export default async function ConversationList(
                   language: string | null; unit_id: string | null;
                   units: { label: string | null; properties: { name: string; color: string | null } | null } | null };
               const holder = c.staff as unknown as { full_name: string } | null;
-              const name = contact?.full_name || prettyPhone(contact?.phone ?? "");
+              /* A synthetic key is not a phone number. Intake has to put
+                 SOMETHING in `contacts.phone` because the column is not
+                 null, so a Rent Manager issue with no tenant on it got
+                 `email:rm:issue:251` -- and the inbox listed a column of
+                 threads with that as their name. `threadLabel` falls through
+                 to what the thread is about instead, which at least says
+                 what is wrong with the house. */
+              const name = threadLabel(contact?.full_name, contact?.phone,
+                c.last_message_preview ?? c.subject);
               const unsure = c.category_confidence !== null && c.category_confidence < 0.75;
               const prop = propertyOf(c.units as never, contact?.units as never);
               return (

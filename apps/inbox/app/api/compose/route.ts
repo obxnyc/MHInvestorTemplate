@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
-import { prettyPhone } from "@/lib/format";
+import { realPhone, prettyPhone } from "@/lib/format";
 import { toE164 } from "@/lib/twilio";
 import type { Recipient } from "@/lib/compose";
 
@@ -67,8 +67,8 @@ export async function GET(req: Request) {
       seen.add(c.id);
       recent.push({
         kind: "contact", id: c.id,
-        name: c.full_name || prettyPhone(c.phone),
-        sub: c.full_name ? prettyPhone(c.phone) : c.party.replace("_", " "),
+        name: c.full_name || (realPhone(c.phone) ? prettyPhone(c.phone) : "Unknown sender"),
+        sub: c.full_name && realPhone(c.phone) ? prettyPhone(c.phone) : c.party.replace("_", " "),
       });
     }
 
@@ -96,8 +96,8 @@ export async function GET(req: Request) {
       .map((p): Recipient => ({ kind: "staff", id: p.id, name: p.full_name, sub: p.role })),
     ...(contacts ?? []).map((c): Recipient => ({
       kind: "contact", id: c.id,
-      name: c.full_name || prettyPhone(c.phone),
-      sub: c.full_name ? prettyPhone(c.phone) : c.party.replace("_", " "),
+      name: c.full_name || (realPhone(c.phone) ? prettyPhone(c.phone) : "Unknown sender"),
+      sub: c.full_name && realPhone(c.phone) ? prettyPhone(c.phone) : c.party.replace("_", " "),
     })),
   ];
 
