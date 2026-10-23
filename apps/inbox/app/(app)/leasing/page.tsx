@@ -1,3 +1,4 @@
+import { canSeeOffice } from "@/lib/roles";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { redirect } from "next/navigation";
@@ -15,7 +16,7 @@ export const metadata = { title: "Looking for a home — Larabee Homes" };
  */
 export default async function Leasing() {
   const me = await requireStaff();
-  if (me?.role !== "admin" && me?.role !== "office") redirect("/");
+  if (!me || !canSeeOffice(me.role)) redirect("/");
 
   const db = supabaseAdmin();
 

@@ -14,7 +14,7 @@
  * invisible until somebody cannot be given a job.
  */
 
-export const ROLES = ["admin", "office", "tech", "shower", "crew"] as const;
+export const ROLES = ["admin", "office", "tech", "shower", "crew", "viewer"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -23,6 +23,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   tech: "Maintenance",
   shower: "Showings",
   crew: "Crew",
+  viewer: "Read only",
 };
 
 /**
@@ -39,6 +40,7 @@ export const ROLE_BLURB: Record<Role, string> = {
   tech: "work orders assigned to them",
   shower: "prospects and viewings",
   crew: "hourly on site — clocks in and out, nothing else",
+  viewer: "can look at everything and change nothing",
 };
 
 /** What to call a role on screen.
@@ -89,3 +91,34 @@ export const CLOCK_ONLY: Role[] = ["crew"];
 
 export const isClockOnly = (v: unknown): boolean =>
   isRole(v) && CLOCK_ONLY.includes(v);
+
+/**
+ * A guest who can only look.
+ *
+ * Reads every screen an office account can and is refused every write, in the
+ * proxy, by HTTP method -- not by hiding buttons. A hidden button is a
+ * suggestion: the route behind it is still a URL and a fetch away, and
+ * somebody poking round a live system is precisely who finds that out.
+ *
+ * Deliberately NOT in DESK: that list decides who is treated as office staff,
+ * and a viewer is a visitor. Not in FIELD either -- no PIN, no keypad.
+ */
+export const isViewer = (v: unknown): boolean => v === "viewer";
+
+/**
+ * May this person LOOK at the office's screens?
+ *
+ * Desk staff, and a read-only guest. Separate from `isDesk` on purpose: that
+ * one answers "is this somebody who works here", which decides things like
+ * who a job can be assigned to, and a visitor is not that.
+ *
+ * The four screens that asked `role !== "admin" && role !== "office"` each
+ * asked it in their own words, which is how a role gets added and missed in
+ * the places that decide whether anybody can ever see it -- the same reason
+ * ROLE_BLURB exists in this file rather than in two forms.
+ *
+ * Nothing about writing is decided here. That is refused in the proxy, by
+ * method, for every route at once.
+ */
+export const canSeeOffice = (role: unknown): boolean =>
+  isDesk(role) || isViewer(role);

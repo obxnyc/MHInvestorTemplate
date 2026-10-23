@@ -28,11 +28,17 @@ const USER = { id: WHO, aud: "authenticated", role: "authenticated",
    which is correct, and means a single crew fixture silently checks nothing
    on /home, /jobs, /timesheets or the inbox. */
 const DESK = "22222222-2222-2222-2222-222222222222";
+const GUEST = "33333333-3333-3333-3333-333333333333";
 const STAFF = [
   { id: WHO, full_name: "Cade Barrow", role: "crew",
     forward_to: null, client_identity: null, active: true,
     created_at: "2026-01-01T00:00:00Z" },
   { id: DESK, full_name: "Dana Reese", role: "admin",
+    forward_to: null, client_identity: null, active: true,
+    created_at: "2026-01-01T00:00:00Z" },
+  // Somebody looking round and saying what they think. Reads everything,
+  // changes nothing.
+  { id: GUEST, full_name: "Robin Vale", role: "viewer",
     forward_to: null, client_identity: null, active: true,
     created_at: "2026-01-01T00:00:00Z" },
 ];

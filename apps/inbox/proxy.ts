@@ -35,6 +35,13 @@ const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /
 
 const isPublic = (path: string) => PUBLIC.some((re) => re.test(path));
 
+/** The methods that only look. Everything else is a change.
+ *
+ *  Listed as what is ALLOWED rather than what is refused: a list of refused
+ *  verbs is one somebody adds PATCH to and forgets, and the failure is
+ *  silent -- a read-only account quietly able to write. */
+const READS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 /** Runs before every navigation (Next 16 renamed this convention from
  *  "middleware" to "proxy"). Refreshes the Supabase session cookie and bounces
  *  signed-out users to /login. Twilio webhooks are excluded -- they carry a
@@ -59,13 +66,60 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
-  if (!user && !isPublic(path)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+
+  /* AN API REQUEST IS NEVER BOUNCED TO THE SIGN-IN PAGE.
+     Twilio, Postmark and the vendor links arrive with a signature or a token
+     and no session at all. Redirecting those to /login would turn every
+     inbound text into an HTML page nobody reads, so an unauthenticated API
+     call simply goes through to the route, which does its own checking. */
+  const api = path.startsWith("/api");
+
+  if (!user) {
+    if (api) return response;
+    if (!isPublic(path)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
+    return response;
   }
+
+  /* READ ONLY MEANS READ ONLY, AND IT IS DECIDED HERE.
+   *
+   * A guest account exists so somebody can look round the application and say
+   * what they think of it. Hiding the buttons would not be that: every one of
+   * these routes is a URL and a fetch away, and a person poking at a live
+   * system is exactly who finds that out. A hidden button is a suggestion.
+   *
+   * So it is refused by METHOD, in the one place every request passes
+   * through, which means there is nothing to remember when the next route is
+   * written. That is the whole reason it is here and not in forty handlers.
+   *
+   * The role is read only for writes by somebody signed in -- a bounded,
+   * small set. Every GET, and every webhook, costs nothing.
+   */
+  if (!READS.has(request.method)) {
+    const { data: me } = await supabase
+      .from("staff").select("role, active").eq("id", user.id).maybeSingle();
+
+    /* FAIL CLOSED. A signed-in session with no staff row behind it is not
+       staff, and the one thing it must not be given is a write. The routes
+       that legitimately run before a staff row exists -- taking up an invite,
+       signing in with a PIN -- carry no session at all and were let through
+       above. */
+    if (!me || me.active === false || me.role === "viewer") {
+      const why = me?.role === "viewer"
+        ? "This account can look at everything and change nothing."
+        : "That account cannot make changes.";
+      return api
+        ? NextResponse.json({ error: why }, { status: 403 })
+        : new NextResponse(why, { status: 403 });
+    }
+  }
+
   return response;
 }
+
 
 /** Files a phone fetches WITHOUT a session, and must get.
  *
@@ -83,5 +137,9 @@ export async function proxy(request: NextRequest) {
 //  One string literal, not a concatenation: Next reads this at compile time and
 //  refuses anything it cannot parse statically.
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|sw\\.js|favicon\\.ico|.*\\.(?:png|jpg|jpeg|webp|svg|ico|webmanifest)$).*)"],
+  //  `api` is NOT excluded any more. It was, which meant a read-only account
+  //  was refused nothing that mattered: the screens are reads, and every
+  //  change in this application is an API call. The proxy lets an
+  //  unauthenticated API request straight through, so webhooks are unaffected.
+  matcher: ["/((?!_next/static|_next/image|sw\\.js|favicon\\.ico|.*\\.(?:png|jpg|jpeg|webp|svg|ico|webmanifest)$).*)"],
 };

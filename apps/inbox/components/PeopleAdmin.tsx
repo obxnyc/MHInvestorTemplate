@@ -3,7 +3,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Directory from "./Directory";
 import AccessRequests from "./AccessRequests";
-import { ROLES, ROLE_LABEL, ROLE_BLURB, labelOf, isField } from "@/lib/roles";
+import { ROLES, ROLE_LABEL, ROLE_BLURB, labelOf, isField, isViewer } from "@/lib/roles";
 import { prettyPhone } from "@/lib/format";
 import { canSmsFromLine } from "@/lib/phone";
 import BackLink from "@/components/BackLink";
@@ -101,6 +101,18 @@ export default function PeopleAdmin(
      man tells a mate his number, or leaves; that has to be shut the same
      hour. Setting one is his own to do, from the link or from his own
      screen. */
+  /* A password an admin types, for a read-only guest and nobody else -- see
+     the route. Everybody who can change anything sets their own. */
+  async function setGuestPassword(person: Staff) {
+    const pw = window.prompt(
+      `A password for ${person.full_name}, to hand over. At least 10 `
+      + `characters. This account can read everything and change nothing.`);
+    if (pw === null) return;
+    if (!await post(`/api/people/${person.id}/password`,
+                    { password: pw.trim() }, "PATCH")) return;
+    setDone(`${person.full_name} can sign in with that password now.`);
+  }
+
   async function clearPin(person: Staff) {
     if (!window.confirm(
       `Turn off ${person.full_name}'s PIN? They will need a new setup link to `
@@ -187,6 +199,12 @@ export default function PeopleAdmin(
                     {isField(p.role) && (
                       <button className="mini" disabled={busy}
                               onClick={() => clearPin(p)}>Turn off PIN</button>
+                    )}
+                    {/* Only a read-only guest. Everybody who can change
+                        something sets their own -- see the route. */}
+                    {isViewer(p.role) && (
+                      <button className="mini" disabled={busy}
+                              onClick={() => setGuestPassword(p)}>Set password</button>
                     )}
                     <button className="mini" disabled={busy}
                             onClick={() => toggleActive(p)}>

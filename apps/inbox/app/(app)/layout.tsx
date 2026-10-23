@@ -1,4 +1,5 @@
 import { requireStaff } from "@/lib/supabase-server";
+import { isViewer } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import PushSetup from "@/components/PushSetup";
 import Heartbeat from "@/components/Heartbeat";
@@ -10,6 +11,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="shell">
+      {/* A read-only guest is TOLD so, once, at the top.
+          Without it the first piece of feedback is "the save button is
+          broken" -- which is true, and is not what anybody wanted to find
+          out. Every write is refused in the proxy whatever this says; this
+          is so the refusal is expected rather than a bug report. */}
+      {isViewer(staff.role) ? (
+        <p className="readonlybar">
+          You are looking at a read-only account. Everything is here to read;
+          nothing you press will change anything.
+        </p>
+      ) : null}
       <AppHeader name={staff.full_name} role={staff.role} />
       {/* No UI. It tells the server this tab is open and whether anybody is
           at it, on whatever screen they happen to be on. */}

@@ -2935,3 +2935,10 @@ a.metric:hover{border-color:var(--accent)}
   border-bottom:1px solid var(--hair)}
 .pullnote.warn{background:var(--warn-soft);color:var(--warn)}
 .pullnote a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+
+/* "You are looking at a read-only account." Shown once at the top, for a
+   guest who would otherwise report the save button as broken. Ink and ground
+   are both tokens, so they move together between themes. */
+.readonlybar{margin:0;padding:.55rem .9rem;font-size:.82rem;line-height:1.45;
+  background:var(--accent-soft);color:var(--accent-ink);
+  border-bottom:1px solid var(--hair)}
