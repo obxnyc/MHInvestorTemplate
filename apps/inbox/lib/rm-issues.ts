@@ -51,12 +51,35 @@ export type Issue = {
   closedOn: string | null;
   /** What was done about it. Written back when we close it here. */
   resolution: string | null;
+  /** WHO SUBMITTED IT, as Rent Manager's own id for the Tenant Web Access
+   *  account that filled the form in.
+   *
+   *  This IS on the bare record and was being read past and thrown away,
+   *  which is the whole reason a request could arrive with nothing to
+   *  identify it. The Property, Unit and Tenant embeds all 404 on this
+   *  account -- measured -- so this number is the only thread on the record
+   *  that leads back to a person, and until now nothing held on to it.
+   *
+   *  It is not a name. It is the key that gets one. */
+  webUserId: string | null;
+  /** The staff account that opened it, where the office raised it rather
+   *  than a tenant. Kept for the same reason: it says which of the two this
+   *  is. */
+  openedById: string | null;
 };
 
 export type PullResult = {
   ok: boolean;
   signedIn: boolean;
   dryRun: boolean;
+  /** How many requests had a tenant put back on them from the web user id.
+   *  Zero with issues missing one means no candidate endpoint answered. */
+  whoFound: number;
+  /** Every path tried for the first lookup, so a failure names the guesses
+   *  rather than just not working. */
+  whoTried?: WhoAttempt[];
+  /** The field names on whatever answered. The map for the next guess. */
+  whoShape?: string[] | null;
   /** What came back, before anything was written. */
   found: number;
   /** The clock ran out or the page cap was reached, and Rent Manager has
@@ -206,6 +229,13 @@ export function readIssue(
     ["CreateDate", "CreatedDate", "DateCreated", "ReportedDate"],
     readAs, "createdAt");
 
+  /* The submitter. `CreateWebUserID` is the Tenant Web Access account that
+     filled the form in -- a tenant. `CreateUserID` is a staff login, which
+     means the office raised it. Both are plain numbers on the bare record. */
+  const webUserId = pick(row,
+    ["CreateWebUserID", "WebUserID", "TenantWebUserID"], readAs, "webUserId");
+  const openedById = pick(row, ["CreateUserID", "CreatedByUserID"], readAs, "openedById");
+
   // A phone and an email live on the embedded tenant where there is one.
   const t = typeof tenant === "object" && tenant ? tenant as Record<string, unknown> : null;
   const phones = t?.PhoneNumbers;
@@ -230,6 +260,8 @@ export function readIssue(
     priority: text(priority),
     category: text(category),
     createdAt: text(createdAt),
+    webUserId: text(webUserId),
+    openedById: text(openedById),
   };
 }
 
@@ -240,6 +272,147 @@ export function summarise(issue: Issue): string {
   const what = issue.title || issue.description || "Maintenance request";
   return [where, what].filter(Boolean).join(" — ");
 }
+
+/* ----------------------------------------------- who submitted a request
+ *
+ * `/ServiceManagerIssues` hands an issue over with no tenant, no phone and
+ * no lot -- the Property, Unit and Tenant embeds all 404 on this account,
+ * which was measured rather than assumed. What IS on the record is
+ * `CreateWebUserID`: Rent Manager's own id for the Tenant Web Access account
+ * that filled the form in.
+ *
+ * It is not a name. It is the key that gets one, and nothing was holding on
+ * to it, which is why a request could arrive identifying nobody.
+ *
+ * WHICH ENDPOINT TURNS THAT KEY IS A HYPOTHESIS. Rent Manager Express, docs
+ * not reachable from here, no credentials on this machine. So this does what
+ * `closeIssue` does with its verb: tries the candidates in order, reports
+ * exactly what each attempt did, and remembers the one that answered. A guess
+ * that reports what it saw can be corrected in one round; a guess that fails
+ * silently cannot be corrected at all.
+ */
+const WHO_PATHS = [
+  (id: string) => `/TenantWebUsers/${id}?embeds=Tenant,Tenant/Unit,Tenant/Unit/Property,Tenant/PhoneNumbers`,
+  (id: string) => `/TenantWebUsers/${id}?embeds=Tenant`,
+  (id: string) => `/TenantWebUsers/${id}`,
+  (id: string) => `/WebUsers/${id}?embeds=Tenant`,
+  (id: string) => `/WebUsers/${id}`,
+  (id: string) => `/TenantWebUsers?filters=TenantWebUserID,eq,${id}&embeds=Tenant`,
+  (id: string) => `/WebUsers?filters=WebUserID,eq,${id}&embeds=Tenant`,
+];
+
+/** Which of them answered last time. Tried first from then on. */
+let whoWorked: number | null = null;
+/** Set once every candidate has failed, so a run stops asking. Asking seven
+ *  times per issue on an account that has never seen API traffic is not a
+ *  good way to behave, and the answer will not have changed within a run. */
+let whoHopeless = false;
+
+export type WhoAttempt = {
+  path: string; status: number; ok: boolean; detail: string | null;
+};
+
+/** What a web user turned out to be, and what was tried to find out. */
+export type Who = {
+  tenant: string | null;
+  phone: string | null;
+  email: string | null;
+  unit: string | null;
+  property: string | null;
+  /** Every attempt, in order, so a failure says which names were tried. */
+  tried: WhoAttempt[];
+  /** The field names on whatever answered -- the map, for the next guess. */
+  shape: string[] | null;
+};
+
+const EMPTY_WHO: Who = {
+  tenant: null, phone: null, email: null, unit: null, property: null,
+  tried: [], shape: null,
+};
+
+export async function whoSubmitted(
+  webUserId: string, session: RmSession,
+): Promise<Who> {
+  if (!webUserId || whoHopeless) return { ...EMPTY_WHO };
+
+  const order = whoWorked === null
+    ? WHO_PATHS.map((_, i) => i)
+    : [whoWorked, ...WHO_PATHS.map((_, i) => i).filter((i) => i !== whoWorked)];
+
+  const tried: WhoAttempt[] = [];
+  for (const i of order) {
+    const path = WHO_PATHS[i]!(webUserId);
+    try {
+      const res = await fetch(`${session.base}${path}`, {
+        headers: { [session.header]: session.token, Accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+      });
+      const body = await res.text();
+      if (!res.ok) {
+        tried.push({ path, status: res.status, ok: false,
+                     detail: body.slice(0, 160) || res.statusText });
+        continue;
+      }
+      let data: unknown;
+      try { data = JSON.parse(body); } catch {
+        tried.push({ path, status: res.status, ok: false,
+                     detail: "answered, but not JSON" });
+        continue;
+      }
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+      if (!row || typeof row !== "object") {
+        tried.push({ path, status: res.status, ok: true,
+                     detail: "answered, but with nothing in it" });
+        continue;
+      }
+
+      /* The tenant may be the record itself or hung off it, and the field
+         names are the same hypothesis as everywhere else in this file. */
+      const t = (row.Tenant ?? row.tenant ?? row) as Record<string, unknown>;
+      const name = text(pick(t, ["Name", "TenantName", "DisplayName", "FullName"]))
+        ?? text(pick(row, ["Name", "TenantName", "DisplayName"]));
+      const u = (t.Unit ?? row.Unit) as Record<string, unknown> | undefined;
+      const prop = (u?.Property ?? t.Property ?? row.Property) as Record<string, unknown> | undefined;
+      const phones = (t.PhoneNumbers ?? row.PhoneNumbers) as unknown;
+
+      const found: Who = {
+        tenant: name,
+        phone: Array.isArray(phones) && phones.length
+          ? text((phones[0] as Record<string, unknown>)?.PhoneNumber
+              ?? (phones[0] as Record<string, unknown>)?.Number)
+          : text(pick(t, ["Phone", "PhoneNumber", "Number"])),
+        email: text(pick(t, ["Email", "EmailAddress"]))
+          ?? text(pick(row, ["Email", "EmailAddress"])),
+        unit: text(pick((u ?? {}) as Record<string, unknown>,
+          ["Name", "UnitNumber", "UnitName"])),
+        property: text(pick((prop ?? {}) as Record<string, unknown>,
+          ["Name", "PropertyName"])),
+        tried: [...tried, { path, status: res.status, ok: true, detail: null }],
+        shape: Object.keys(row),
+      };
+
+      /* A 200 with nothing recognisable on it is not an answer. Remembering
+         it would pin every later lookup to an endpoint that never helps. */
+      if (found.tenant || found.unit || found.property) {
+        whoWorked = i;
+        return found;
+      }
+      tried.push({ path, status: res.status, ok: true,
+                   detail: `answered, but nothing here names a tenant: ${
+                     Object.keys(row).slice(0, 12).join(", ")}` });
+    } catch (e) {
+      tried.push({ path, status: 0, ok: false, detail: (e as Error).message });
+    }
+  }
+
+  // Every one refused. Say so once and stop asking for the rest of this run.
+  whoHopeless = true;
+  return { ...EMPTY_WHO, tried };
+}
+
+/** For the harness: forget what was learned. */
+export function forgetWho() { whoWorked = null; whoHopeless = false; }
 
 /** Everything about the issue, as the body of the message. */
 export function detail(issue: Issue): string {
@@ -305,6 +478,7 @@ export async function pullServiceIssues(
 ): Promise<PullResult> {
   const dryRun = opts.dryRun !== false;
   const blank: PullResult = {
+  whoFound: 0,
     ok: false, signedIn: false, dryRun, found: 0, more: false, filed: 0,
     alreadyHad: 0, failed: 0, shape: null, readAs: {}, samples: [], error: null,
   };
@@ -355,10 +529,40 @@ export async function pullServiceIssues(
   if (dryRun) return out;
 
   const until = Date.now() + (opts.seconds ?? 35) * 1000;
+
+  /* WHO SENT IT, where the record did not say.
+   *
+   * Cached by web user for the run: several requests from the same tenant in
+   * one pull cost one lookup, not one each. Only asked when the issue has no
+   * tenant on it already -- an issue that arrived complete is not improved by
+   * another round trip. */
+  const people = new Map<string, Who>();
+  const lookUp = async (id: string): Promise<Who> => {
+    const had = people.get(id);
+    if (had) return had;
+    const got = await whoSubmitted(id, session);
+    people.set(id, got);
+    if (got.tried.length && !out.whoTried) out.whoTried = got.tried;
+    if (got.shape && !out.whoShape) out.whoShape = got.shape;
+    return got;
+  };
+
   for (const issue of issues) {
     // Each of these is a round trip of its own. Stopping with time left
     // and saying there is more beats being killed with nothing said.
     if (Date.now() > until) { out.more = true; break; }
+    /* Filled in BEFORE filing, so the thread has a name and a number on it
+       from the first moment rather than being corrected later. */
+    if (issue.webUserId && !issue.tenant) {
+      const who = await lookUp(issue.webUserId);
+      issue.tenant ??= who.tenant;
+      issue.phone ??= who.phone;
+      issue.email ??= who.email;
+      issue.unit ??= who.unit;
+      issue.property ??= who.property;
+      if (who.tenant) out.whoFound += 1;
+    }
+
     try {
       const res = await ingest({
         /* `source` is the maintenance-intake key, the same one the email
