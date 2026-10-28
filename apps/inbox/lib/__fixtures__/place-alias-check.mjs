@@ -64,6 +64,11 @@ try {
     create table units (id uuid primary key default gen_random_uuid(),
       property_id uuid not null references properties(id) on delete cascade, label text);
     create table staff (id uuid primary key default gen_random_uuid(), full_name text);
+    -- 045 puts place_hint on this, so the fixture has to have one. A
+    -- migration that touches a table the harness does not build fails
+    -- halfway and takes every statement after it with it.
+    create table conversations (id uuid primary key default gen_random_uuid(),
+      unit_id uuid references units(id) on delete set null);
     insert into properties (id, name) values
       ('00000000-0000-0000-0000-00000000000a','114 Lisas Way'),
       ('00000000-0000-0000-0000-00000000000b','1140 Northside');
@@ -129,6 +134,19 @@ try {
   t("a signed-in client may read aliases", () =>
     psql(`select has_table_privilege('authenticated','place_aliases','select')`)
       === "t");
+  /* The hint is what the screen offers to match, and what the alias is
+     stored under when somebody confirms. Without it the subject line is
+     buried in the first message's body. */
+  t("a thread can remember what the request called the place", () => {
+    psql(`insert into conversations (id, unit_id) values
+          ('00000000-0000-0000-0000-0000000000d1', null)`);
+    psql(`update conversations set place_hint = '114 Lisas Way, 114 Lisas Way'
+           where id = '00000000-0000-0000-0000-0000000000d1'`);
+    return psql(`select place_hint from conversations
+                  where id = '00000000-0000-0000-0000-0000000000d1'`)
+      === "114 Lisas Way, 114 Lisas Way";
+  });
+
   t("and may not write one directly", () =>
     psql(`select has_table_privilege('authenticated','place_aliases','insert')`)
       === "f");

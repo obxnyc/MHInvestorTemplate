@@ -82,8 +82,14 @@ if (probe.code >= 500) {
 const root = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers";
 let exe = process.env.CHROMIUM_PATH;
 if (!exe || !existsSync(exe)) {
+  /* Both spellings. Chromium renamed this folder to chrome-linux64, so a
+     container with a newer build in it launches playwright's own guess --
+     which points at a version that is not installed and fails with a wall of
+     text about running `playwright install`. */
   exe = readdirSync(root).filter((d) => d.startsWith("chromium"))
-    .map((d) => `${root}/${d}/chrome-linux/chrome`).find(existsSync);
+    .flatMap((d) => [`${root}/${d}/chrome-linux/chrome`,
+                     `${root}/${d}/chrome-linux64/chrome`])
+    .find(existsSync);
 }
 
 /* Mint a session the way @supabase/ssr stores one: the cookie is named for

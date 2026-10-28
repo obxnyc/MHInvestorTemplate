@@ -533,8 +533,15 @@ if (!exe || !existsSync(exe)) {
     try {
       for (const d of readdirSync(root)) {
         if (!d.startsWith("chromium-")) continue;
-        const c = join(root, d, "chrome-linux", "chrome");
-        if (existsSync(c)) return c;
+        /* Both spellings. Chromium's own archive renamed this folder from
+           chrome-linux to chrome-linux64, so a container with a newer build
+           in it reports "no playwright here" when playwright is right there
+           -- which reads as the harness being unavailable rather than as one
+           path being out of date. */
+        for (const dir of ["chrome-linux", "chrome-linux64"]) {
+          const c = join(root, d, dir, "chrome");
+          if (existsSync(c)) return c;
+        }
       }
     } catch { /* fall through to playwright's own guess */ }
     return undefined;

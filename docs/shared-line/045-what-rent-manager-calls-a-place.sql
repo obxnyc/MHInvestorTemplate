@@ -38,6 +38,23 @@ create table if not exists place_aliases (
 
 create index if not exists place_aliases_property on place_aliases (property_id);
 
+-- WHAT THE REQUEST SAID THE PLACE WAS, kept on the thread.
+--
+-- Without it the screen cannot offer to match anything: the subject line is
+-- inside the first message's body, and asking somebody to read it back out of
+-- the text and retype it is asking them to do the computer's job. It is also
+-- what the alias is stored under when they confirm.
+--
+-- Null on everything that did not arrive from Tenant Web Access, which is
+-- most things, and null is the honest answer there -- a text message has no
+-- subject line.
+alter table conversations add column if not exists place_hint text;
+
+-- The ones nobody has placed yet, which is the queue this creates.
+create index if not exists conversations_unplaced
+  on conversations (place_hint)
+  where place_hint is not null and unit_id is null;
+
 alter table place_aliases enable row level security;
 revoke all on place_aliases from anon;
 

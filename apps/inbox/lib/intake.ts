@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { placeKey, readHint } from "./alias";
 import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
@@ -134,9 +135,26 @@ export async function ingest(item: Intake) {
   });
 
   await db.from("conversations")
-    .update({ last_message_at: when, status: "open",
-              last_message_preview: item.summary.slice(0, 160) })
+    .update({
+      last_message_at: when, status: "open",
+      last_message_preview: item.summary.slice(0, 160),
+      /* WHAT THE REQUEST CALLED THE PLACE, kept on the thread.
+         Without it the screen cannot offer to match anything: the subject
+         line is buried in the first message's body, and asking somebody to
+         read it back out of the text and retype it is asking them to do the
+         computer's job. The column arrives with migration 045; before that
+         this is dropped, which is why it is sent on its own below rather
+         than failing the whole update. */
+    })
     .eq("id", convo.id);
+
+  if (item.unitHint) {
+    const { error: hintError } = await db.from("conversations")
+      .update({ place_hint: item.unitHint.slice(0, 200) }).eq("id", convo.id);
+    // Before 045 this column does not exist. The request still lands; it
+    // simply cannot be matched from the screen until the migration is run.
+    if (hintError) console.warn("place_hint not stored:", hintError.message);
+  }
 
   const label = {
     zego: "Maintenance request",
@@ -258,8 +276,19 @@ async function openJob(
 async function unitFromHint(
   db: ReturnType<typeof supabaseAdmin>, hint: string,
 ): Promise<string | null> {
+  /* A REMEMBERED ANSWER BEATS ANY PARSING.
+     Somebody looked at this exact place name once and said which property it
+     is. That is not a guess and must not be second-guessed by one. */
+  const { data: alias } = await db.from("place_aliases")
+    .select("unit_id").eq("key", placeKey(hint)).maybeSingle();
+  if (alias?.unit_id) return alias.unit_id as string;
+
   const lot = lotDigits(hint);
-  if (!lot) return null;
+  /* No lot number in the subject is a SINGLE HOME, not a failure. "114 Lisas
+     Way, 114 Lisas Way" has no lot and never could -- and returning null here
+     meant a house could never be matched even when we held it, which is why
+     requests kept arriving filed against nothing. */
+  if (!lot) return unitOfSingleHome(db, hint);
 
   const { data: units } = await db.from("units")
     .select("id, label, properties(name)");
@@ -329,4 +358,43 @@ export async function ingestCourtFiling(f: import("./parse-email").CourtFiling) 
   });
 
   return { ok: true, filingId: row?.id };
+}
+
+/** The unit of a single home, matched on the property's own name or address.
+ *
+ *  A subject with no lot number in it is a house, not a failure to parse.
+ *  "114 Lisas Way, 114 Lisas Way" is Rent Manager naming the property and the
+ *  unit identically, and until now that returned null and the request was
+ *  filed against nothing at all.
+ *
+ *  Matched on the NORMALISED key both ways, so "114 Lisas Way" in our records
+ *  and "114 Lisas Way, 114 Lisas Way" in the subject are the same house. An
+ *  exact string match is the only kind taken: a near miss here is a work
+ *  order on somebody else's home, and the screen can offer a near miss far
+ *  more safely than this can act on one.
+ */
+async function unitOfSingleHome(
+  db: ReturnType<typeof supabaseAdmin>, hint: string,
+): Promise<string | null> {
+  const want = placeKey(hint);
+  const said = readHint(hint);
+  if (!want) return null;
+
+  const { data: props } = await db.from("properties").select("id, name, address");
+  const hit = (props ?? []).filter((p) => {
+    const byName = placeKey(String(p.name ?? "")) === want;
+    const byAddress = placeKey(String(p.address ?? "")) === want;
+    const byPart = said.property
+      && placeKey(String(p.name ?? "")) === placeKey(said.property);
+    return byName || byAddress || byPart;
+  });
+  /* Two properties answering to one name is not a match, it is a question.
+     Picking either would be a coin toss with a work order on it. */
+  if (hit.length !== 1) return null;
+
+  const { data: units } = await db.from("units")
+    .select("id").eq("property_id", hit[0]!.id).limit(2);
+  // One unit is the house itself. More than one is a building, and which
+  // flat it is was never in the subject line.
+  return units?.length === 1 ? (units[0]!.id as string) : null;
 }

@@ -103,8 +103,14 @@ if (!exe || !existsSync(exe)) {
   try {
     for (const d of readdirSync(browsers)) {
       if (!d.startsWith("chromium-")) continue;
-      const c = join(browsers, d, "chrome-linux", "chrome");
-      if (existsSync(c)) { exe = c; break; }
+      // Both spellings: chromium renamed this folder to chrome-linux64, and
+      // a harness that misses it reports "no playwright here" when playwright
+      // is right there -- which reads as unavailable rather than out of date.
+      for (const dir of ["chrome-linux", "chrome-linux64"]) {
+        const c = join(browsers, d, dir, "chrome");
+        if (existsSync(c)) { exe = c; break; }
+      }
+      if (exe) break;
     }
   } catch { /* playwright's own guess */ }
 }

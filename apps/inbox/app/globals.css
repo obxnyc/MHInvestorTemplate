@@ -2942,3 +2942,31 @@ a.metric:hover{border-color:var(--accent)}
 .readonlybar{margin:0;padding:.55rem .9rem;font-size:.82rem;line-height:1.45;
   background:var(--accent-soft);color:var(--accent-ink);
   border-bottom:1px solid var(--hair)}
+
+/* "Not filed against a property." Loud on purpose: a maintenance request
+   nobody can locate is a van with nowhere to drive, and the work order under
+   it just says "Address not set", which nobody goes looking for.
+   Ground and ink are both tokens, so they move together between themes. */
+.unplaced{margin:.8rem 1rem;padding:.9rem 1rem;border-radius:10px;
+  background:var(--warn-soft);border:1px solid var(--warn);
+  border-left-width:4px}
+.unplaced-head{margin:0 0 .35rem;font-size:.95rem;font-weight:800;color:var(--warn)}
+.unplaced-why{margin:0 0 .6rem;font-size:.85rem;line-height:1.5;color:var(--ink-2)}
+.unplaced-why.dim{color:var(--muted);font-size:.78rem;margin-bottom:0}
+.unplaced-picks{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.7rem}
+.unplaced-pick{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;
+  min-height:44px;padding:.5rem .7rem;border-radius:8px;
+  border:1px solid var(--hair);background:var(--card);color:var(--ink);
+  font-size:.82rem;text-align:left}
+.unplaced-pick span{font-size:.74rem;color:var(--muted)}
+.unplaced-pick:hover:not(:disabled){border-color:var(--accent);background:var(--sunk)}
+.unplaced-add{display:block;margin:.6rem 0}
+.unplaced-add label{display:block;margin:.6rem 0 .25rem;font-size:.78rem;
+  font-weight:600;color:var(--muted)}
+.unplaced-add input,.unplaced-add select{width:100%;padding:.6rem .7rem;
+  min-height:44px;border:1px solid var(--hair);border-radius:8px;
+  background:var(--card);color:var(--ink);font-size:16px}
+.unplaced-acts{display:flex;gap:.5rem;margin-top:.8rem;flex-wrap:wrap}
+.unplaced-acts .btn{min-height:44px}
+.unplaced-bad{margin:.6rem 0 0;padding:.5rem .65rem;border-radius:8px;
+  background:var(--card);color:var(--crit);font-size:.82rem}

@@ -18,6 +18,7 @@ import { languageName } from "@/lib/translate";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 import { continues } from "@/lib/runs";
+import PlaceNeeded from "@/components/PlaceNeeded";
 import NotesPanel, { type Note } from "@/components/NotesPanel";
 import Attachment from "@/components/Attachment";
 import IntakeCard from "@/components/IntakeCard";
@@ -150,6 +151,9 @@ export default function ThreadPane(
   const convo = data.convo as {
     id: string; category: string; source: string; status: string;
     subject: string | null; asked: string[] | null;
+    /** What the request called the place, if it came from Tenant Web
+     *  Access. Null on a text message, which has no subject line. */
+    place_hint: string | null;
     category_confidence: number | null; assigned_to: string | null;
     units: unknown;
     contacts: {
@@ -220,6 +224,18 @@ export default function ThreadPane(
                    isMine={convo.assigned_to === data.me} />
         <CloseButton conversationId={convo.id} isClosed={convo.status === "closed"} />
       </div>
+
+      {/* NOT FILED AGAINST ANY PROPERTY.
+          A request arrives knowing the tenant, their number and what Rent
+          Manager calls the place -- and none of that is a property we hold.
+          Left quiet, it reads as an ordinary thread and the work order under
+          it says "Address not set", which nobody goes looking for.
+          Said loudly, it is a job: match it to a property, or add the
+          property. Once either is done the next request from that address
+          files itself, so this is a thing somebody does ONCE per address. */}
+      {convo.place_hint && !prop ? (
+        <PlaceNeeded conversationId={convo.id} hint={convo.place_hint} />
+      ) : null}
 
       <OpenJobs jobs={data.jobs ?? []} />
 
