@@ -299,14 +299,25 @@ export function amortisation(t: Terms, home: Home): string {
  * is the original. Nothing is drawn at all without a signature to draw,
  * so an unsigned pack is exactly the document it was before.
  */
-export function signedBy(t: Terms): string {
-  if (!t.signedPng) return "";
+export function signedBy(t: Terms, on = true): string {
+  if (!on || !t.signedPng) return "";
   return `<img class="sigink" src="${t.signedPng}" alt="Signature">`;
 }
 
+/**
+ * The rule under a signature.
+ *
+ * A line is there to be signed ON. Once somebody has signed, it is a line
+ * ruled through their name for no reason -- so a signed block has the
+ * mark and no rule, and an unsigned one has the rule and no mark.
+ */
+export function signLine(t: Terms, on = true): string {
+  return (on && t.signedPng) ? "" : `<div class="line"></div>`;
+}
+
 /** The date beside a signature: the day it was signed, or a line. */
-export function signedDate(t: Terms): string {
-  return t.signedOn ? shortDate(t.signedOn) : "__________________";
+export function signedDate(t: Terms, on = true): string {
+  return (on && t.signedOn) ? shortDate(t.signedOn) : "__________________";
 }
 
 export function notaryBlock(what: string): string {
@@ -318,7 +329,7 @@ export function notaryBlock(what: string): string {
   </div>`;
 }
 
-export function purchaseAgreement(t: Terms, home: Home): string {
+export function purchaseAgreement(t: Terms, home: Home, sign = true): string {
   const seller = esc(t.seller) || "____________";
   const buyer = esc(t.buyer) || "____________________";
   const price = home.price, down = home.down, balance = price - down;
@@ -355,7 +366,7 @@ export function purchaseAgreement(t: Terms, home: Home): string {
     <p>Seller shall provide to Purchaser a fully executed and notarized bill of sale completely detailing the personal property being purchased which shall be delivered upon final payment to Seller, free and clear of all encumbrances, debts, liens, claims, and Seller has no knowledge of any legal impediment to sale of the personal property described above. If ownership of the personal property is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
     <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>SELLER:</b>${signedBy(t)}<div class="line"></div>${seller}<br>Date: ${signedDate(t)}</div>
+      <div class="sig-block"><b>SELLER:</b>${signedBy(t, sign)}${signLine(t, sign)}${seller}<br>Date: ${signedDate(t, sign)}</div>
       <div class="sig-block"><b>BUYER:</b><div class="line"></div>${buyer}<br>Date: __________________</div>
     </div>
     ${amortisation(t, home)}
@@ -363,7 +374,7 @@ export function purchaseAgreement(t: Terms, home: Home): string {
   `;
 }
 
-export function landLease(t: Terms, home: Home): string {
+export function landLease(t: Terms, home: Home, sign = true): string {
   const parkOwner = esc(t.parkOwner) || "____________";
   const buyer = esc(t.buyer) || "____________________";
   const parkName = esc(home.parkName ?? "") || esc(t.parkName) || "the Park";
@@ -436,7 +447,7 @@ export function landLease(t: Terms, home: Home): string {
 
     <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>Park Owner:</b>${signedBy(t)}<div class="line"></div>Name: ${parkOwner}<br>Date: ${signedDate(t)}</div>
+      <div class="sig-block"><b>Park Owner:</b>${signedBy(t, sign)}${signLine(t, sign)}Name: ${parkOwner}<br>Date: ${signedDate(t, sign)}</div>
       <div class="sig-block"><b>Homeowner:</b><div class="line"></div>Name: ${buyer}<br>Date: __________________</div>
     </div>
     ${t.notary ? notaryBlock("this Lease Agreement") : ""}
@@ -449,14 +460,29 @@ export function landLease(t: Terms, home: Home): string {
  *
  * Eight homes is sixteen documents and one trip to the printer.
  */
+/** Which document in a pack, as the screen and the papers both name it. */
+export const docKey = (i: number, kind: "purchase" | "lease") => `${i}:${kind}`;
+
 export function pack(
   t: Terms, homes: Home[], which: "both" | "purchase" | "lease" = "both",
+  /**
+   * Which documents carry our signature.
+   *
+   * Absent means all of them, which is what "sign this pack" means and
+   * is what the screen asks for unless somebody says otherwise. Eight
+   * homes is sixteen documents and there are real reasons to sign some
+   * and not others -- a lease held back while a lot is surveyed, an
+   * agreement going out for the buyer to counter.
+   */
+  signs?: (key: string) => boolean,
 ): string {
   const parts: string[] = [];
-  for (const home of homes) {
-    if (which !== "lease") parts.push(purchaseAgreement(t, home));
-    if (which !== "purchase") parts.push(landLease(t, home));
-  }
+  homes.forEach((home, i) => {
+    const on = (kind: "purchase" | "lease") =>
+      signs ? signs(docKey(i, kind)) : true;
+    if (which !== "lease") parts.push(purchaseAgreement(t, home, on("purchase")));
+    if (which !== "purchase") parts.push(landLease(t, home, on("lease")));
+  });
   return parts
     .map((html, i) => (i ? `<div class="pagebreak"></div>` : "")
       + `<div class="doc-sec">${html}</div>`)

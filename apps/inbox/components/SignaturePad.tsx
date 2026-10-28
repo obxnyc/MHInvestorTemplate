@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FACES, typedSignature } from "@/lib/signfaces";
 
 /**
  * Where somebody's signature comes from.
@@ -12,12 +13,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * document after that. The buyer's line is never touched.
  */
 export default function SignaturePad(
-  { png, busy, onSave, onClear, said }: {
+  { png, busy, onSave, onClear, said, defaultName }: {
     png: string | null;
     busy: boolean;
     onSave: (png: string) => void;
     onClear: () => void;
     said: string | null;
+    /** Whoever is signed in, so the box is not empty to begin with. */
+    defaultName?: string;
   },
 ) {
   const box = useRef<HTMLCanvasElement>(null);
@@ -25,6 +28,13 @@ export default function SignaturePad(
   /** Whether anything has been drawn since the pad was last cleared. */
   const [marked, setMarked] = useState(false);
   const [tooBig, setTooBig] = useState<string | null>(null);
+
+  /* Typed, drawn, or a photograph. Typed first because it is the one
+     most people want: a name in a hand that looks like a signature,
+     without trying to write with a mouse. */
+  const [how, setHow] = useState<"typed" | "drawn">("typed");
+  const [name, setName] = useState(defaultName ?? "");
+  const [faceKey, setFaceKey] = useState(FACES[0].key);
 
   /* The canvas is sized in device pixels and scaled down in CSS, so a
      signature drawn on a phone is not four times softer than the same
@@ -144,34 +154,85 @@ export default function SignaturePad(
         </>
       ) : (
         <>
-          <p className="dim">Sign in the box with a finger or a mouse, or
-            upload a photograph of your signature on paper.</p>
-          <canvas ref={box} className="signpad"
-                  onPointerDown={down} onPointerMove={move}
-                  onPointerUp={up} onPointerLeave={up} />
-          <div className="paperacts">
-            <button type="button" className="btn pri"
-                    disabled={!marked || busy}
-                    onClick={() => {
-                      const out = trimmed();
-                      if (!out) { setTooBig("Nothing was drawn."); return; }
-                      onSave(out);
-                    }}>
-              {busy ? "Keeping…" : "Keep this signature"}
+          <div className="tabsrow">
+            <button type="button" className={how === "typed" ? "chip on" : "chip"}
+                    onClick={() => { setHow("typed"); setTooBig(null); }}>
+              Type it
             </button>
-            <button type="button" className="btn" disabled={busy}
-                    onClick={wipe}>Start again</button>
-            <label className="btn signfile">
-              Upload a photograph
-              <input type="file" accept="image/*"
-                     onChange={(e) => {
-                       const f = e.target.files?.[0];
-                       e.target.value = "";
-                       if (f) void fromFile(f);
-                     }} />
-            </label>
-            {(said ?? tooBig) && <span className="err">{said ?? tooBig}</span>}
+            <button type="button" className={how === "drawn" ? "chip on" : "chip"}
+                    onClick={() => { setHow("drawn"); setTooBig(null); }}>
+              Draw it
+            </button>
           </div>
+
+          {how === "typed" ? (
+            <>
+              <p className="dim">Type the name to sign with and choose a hand.</p>
+              <label className="signname">Name
+                <input value={name} autoFocus
+                       placeholder="Benjamin Cade Larabee"
+                       onChange={(e) => setName(e.target.value)} />
+              </label>
+              <div className="signfaces">
+                {FACES.map((f) => (
+                  <button key={f.key} type="button"
+                          className={faceKey === f.key ? "signface on" : "signface"}
+                          onClick={() => setFaceKey(f.key)}>
+                    <span style={{ fontFamily: f.family,
+                                   fontSize: `${1.5 * f.scale}rem` }}>
+                      {name.trim() || "Your name"}
+                    </span>
+                    <small>{f.name}</small>
+                  </button>
+                ))}
+              </div>
+              <div className="paperacts">
+                <button type="button" className="btn pri"
+                        disabled={busy || name.trim().length < 2}
+                        onClick={() => {
+                          setTooBig(null);
+                          typedSignature(name, faceKey)
+                            .then(onSave)
+                            .catch((e) => setTooBig(
+                              e instanceof Error ? e.message : String(e)));
+                        }}>
+                  {busy ? "Keeping…" : "Keep this signature"}
+                </button>
+                {(said ?? tooBig) && <span className="err">{said ?? tooBig}</span>}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="dim">Sign in the box with a finger or a mouse, or
+                upload a photograph of your signature on paper.</p>
+              <canvas ref={box} className="signpad"
+                      onPointerDown={down} onPointerMove={move}
+                      onPointerUp={up} onPointerLeave={up} />
+              <div className="paperacts">
+                <button type="button" className="btn pri"
+                        disabled={!marked || busy}
+                        onClick={() => {
+                          const out = trimmed();
+                          if (!out) { setTooBig("Nothing was drawn."); return; }
+                          onSave(out);
+                        }}>
+                  {busy ? "Keeping…" : "Keep this signature"}
+                </button>
+                <button type="button" className="btn" disabled={busy}
+                        onClick={wipe}>Start again</button>
+                <label className="btn signfile">
+                  Upload a photograph
+                  <input type="file" accept="image/*"
+                         onChange={(e) => {
+                           const f = e.target.files?.[0];
+                           e.target.value = "";
+                           if (f) void fromFile(f);
+                         }} />
+                </label>
+                {(said ?? tooBig) && <span className="err">{said ?? tooBig}</span>}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

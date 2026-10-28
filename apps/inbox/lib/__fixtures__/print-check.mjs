@@ -121,6 +121,80 @@ await p.waitForTimeout(500);
    than written down, so a fixture with a third home does not quietly
    start comparing four against four. */
 const onScreen = await p.$$eval(".paper .doc-sec", (n) => n.length);
+/* SIGNING, FOR REAL, IN A BROWSER.
+   The typed signature is a name drawn into a canvas in a webfont, and the
+   whole of what can go wrong is invisible from Node: a canvas asked to
+   draw in a family the browser has not fetched yet does not fail, it
+   quietly draws in the default serif, and a contract goes out signed in
+   Times New Roman. So the faces are compared against the fallback, and
+   the pad is driven the way a person drives it. */
+const typed = { steps: [] };
+try {
+  /* The same name in a cursive face and in the browser's serif. If the
+     face did not load these are the same picture, which is exactly the
+     failure that leaves no trace. */
+  /* Compared against a family that DOES NOT EXIST, not against "serif".
+     A font that loaded but has none of these letters in it -- which is
+     what a Vietnamese subset is, and what was shipped here first -- falls
+     back glyph by glyph to the browser's default. That default is not
+     "serif" on every machine, but it IS exactly what a bogus family name
+     produces, so the two bitmaps are identical when the face is not
+     really being used. Comparing to "serif" let the broken subset pass. */
+  typed.faces = await p.evaluate(async () => {
+    const WORDS = "Benjamin Cade Larabee";
+    const draw = async (family) => {
+      const spec = `60px "${family}"`;
+      try { await document.fonts.load(spec, WORDS); } catch { /* bogus one */ }
+      const c = document.createElement("canvas");
+      c.width = 760; c.height = 110;
+      const g = c.getContext("2d");
+      g.font = spec; g.fillStyle = "#000"; g.textBaseline = "alphabetic";
+      g.fillText(WORDS, 4, 80);
+      return { png: c.toDataURL("image/png"), width: g.measureText(WORDS).width };
+    };
+    const out = {};
+    for (const f of ["SignFlowing", "SignFormal", "SignPenned",
+                     "NoSuchFamilyAnywhere"]) {
+      out[f] = await draw(f);
+      /* AND EACH LETTER ON ITS OWN. A font file that loaded but is
+         missing some of these letters falls back GLYPH BY GLYPH, so the
+         whole name comes out part cursive and part default -- which
+         differs from the full fallback and sails past a check on the
+         whole string. It did: the Vietnamese subset of one of these was
+         shipped and looked like a serif on screen while the harness
+         said it was fine. */
+      out[f].letters = {};
+      for (const ch of ["B", "e", "L", "C", "d"]) {
+        const c = document.createElement("canvas");
+        c.width = 90; c.height = 110;
+        const g = c.getContext("2d");
+        g.font = `60px "${f}"`;
+        g.fillStyle = "#000"; g.textBaseline = "alphabetic";
+        g.fillText(ch, 4, 80);
+        out[f].letters[ch] = c.toDataURL("image/png");
+      }
+    }
+    return out;
+  });
+
+  await p.getByRole("button", { name: "Type it" }).click();
+  await p.locator(".signname input").fill("Benjamin Cade Larabee");
+  await p.locator(".signface").nth(1).click();
+  await p.getByRole("button", { name: "Keep this signature" }).click();
+  await p.waitForTimeout(1200);
+  typed.kept = await p.locator(".signtiny").count();
+  typed.ticked = await p.locator('.signrow input[type="checkbox"]').first().isChecked();
+  typed.inDoc = await p.locator(".paper img.sigink").count();
+  typed.rules = await p.locator(".paper .sig-block .line").count();
+  /* Choose, untick one, and the document it names loses its mark. */
+  await p.getByRole("button", { name: "Choose" }).click();
+  await p.locator(".signpick input").first().uncheck();
+  await p.waitForTimeout(400);
+  typed.afterUntick = await p.locator(".paper img.sigink").count();
+} catch (e) {
+  typed.failed = String(e && e.message || e).split("\n")[0];
+}
+
 /* THE TWO BUTTONS THAT HAND OVER A FILE, pressed. Both are built in the
    browser, so nothing short of a browser can tell whether they work --
    the Node harnesses build the same definitions and would have been
@@ -157,6 +231,45 @@ const t = (name, run) => {
 
 t(`the screen is drawing more than one document (${onScreen})`,
   () => onScreen > 1);
+
+// ---- signing it here rather than in DocuSign --------------------------
+
+t("the signature pad could be driven",
+  () => { if (typed.failed) throw new Error(typed.failed); return true; });
+for (const face of ["SignFlowing", "SignFormal", "SignPenned"]) {
+  t(`the ${face} hand really drew the name`, () => {
+    const f = typed.faces?.[face], none = typed.faces?.NoSuchFamilyAnywhere;
+    if (!f || !none) throw new Error("the faces were never measured");
+    if (f.png === none.png) {
+      throw new Error("drawn exactly as an unknown family is drawn, so the"
+        + " face did not load or has none of these letters in it");
+    }
+    if (Math.abs(f.width - none.width) < 1) {
+      throw new Error(`the name is ${f.width.toFixed(1)}px wide in this face`
+        + " and the same in no face at all");
+    }
+    const missing = Object.keys(f.letters)
+      .filter((ch) => f.letters[ch] === none.letters[ch]);
+    if (missing.length) {
+      throw new Error(`the face has no ${missing.join(", ")} in it --`
+        + " those letters fall back to the browser's own font, so a name"
+        + " comes out part cursive and part not. Wrong subset?");
+    }
+    return true;
+  });
+}
+t("the three hands are three different hands",
+  () => typed.faces
+    && new Set(["SignFlowing", "SignFormal", "SignPenned"]
+      .map((f) => typed.faces[f].png)).size === 3);
+t("a typed name is kept as a signature", () => typed.kept === 1);
+t("and signing is switched on once there is one", () => typed.ticked === true);
+t(`it lands on our line of every document (${typed.inDoc})`,
+  () => typed.inDoc === onScreen);
+t("and no line is ruled under a signature",
+  () => typed.rules === onScreen);
+t("unticking one document takes the mark off that one only",
+  () => typed.afterUntick === onScreen - 1);
 
 // ---- the files the owner actually leaves with -------------------------
 

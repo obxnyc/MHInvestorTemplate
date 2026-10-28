@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import SignaturePad from "@/components/SignaturePad";
 import { describe, homeSentence } from "@/lib/describe";
-import { DEFAULTS, TEMPLATES, templateOf, pack, money0,
+import { DEFAULTS, TEMPLATES, templateOf, pack, docKey, money0,
          type Terms, type Home } from "@/lib/papers";
 
 type Held = {
@@ -104,6 +104,11 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [showPad, setShowPad] = useState(false);
   const [signedOn, setSignedOn] = useState(
     () => new Date().toISOString().slice(0, 10));
+  /* WHICH DOCUMENTS CARRY IT. Null is "all of them", which is what
+     signing a pack means and what almost every deal wants. A set is
+     somebody having said otherwise -- an agreement going out for the
+     buyer to counter, a lease held while a lot is surveyed. */
+  const [signOnly, setSignOnly] = useState<Set<string> | null>(null);
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -294,10 +299,30 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     signing && ink ? { ...terms, signedPng: ink, signedOn } : terms
   ), [terms, signing, ink, signedOn]);
 
+  /** Which documents in the pack carry the mark. */
+  const signs = useMemo(
+    () => (signOnly ? (key: string) => signOnly.has(key) : undefined),
+    [signOnly]);
+
+  /** Every document the pack will contain, in the order it contains them. */
+  const inPack = useMemo(() => {
+    const out: { key: string; lot: string; what: string }[] = [];
+    forPapers.forEach((h, i) => {
+      const lot = h.lot || `home ${i + 1}`;
+      if (which !== "lease") {
+        out.push({ key: docKey(i, "purchase"), lot, what: "Purchase agreement" });
+      }
+      if (which !== "purchase") {
+        out.push({ key: docKey(i, "lease"), lot, what: "Park land lease" });
+      }
+    });
+    return out;
+  }, [forPapers, which]);
+
   const built = useMemo(() => {
     if (!forPapers.length) return "";
-    return pack(onPaper, forPapers, which);
-  }, [forPapers, onPaper, which]);
+    return pack(onPaper, forPapers, which, signs);
+  }, [forPapers, onPaper, which, signs]);
 
   /**
    * What the browser calls this page while the papers are up.
@@ -332,7 +357,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     setWriting(true); setWordSaid(null);
     try {
       const { packDocx, docxName } = await import("@/lib/worddoc");
-      const blob = await packDocx(onPaper, forPapers, which);
+      const blob = await packDocx(onPaper, forPapers, which, signs);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -371,7 +396,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
          why: pdfkit throws inside its own worker looking for metrics
          that are not in the browser's virtual file system. */
       pdfMake.vfs = await timesMetrics();
-      const def = buildPdfDef(onPaper, forPapers, which);
+      const def = buildPdfDef(onPaper, forPapers, which, signs);
       await new Promise<void>((done, fail) => {
         try {
           pdfMake.createPdf(def).download(
@@ -688,6 +713,60 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                         </label>
                       </>
                     )}
+                    {signing && inPack.length > 1 && (
+                      <div className="signwhere">
+                        {/* WHERE IT GOES, said rather than left to be
+                            discovered: the Seller line of an agreement
+                            and the Park Owner line of a lease, never the
+                            buyer's. */}
+                        <p className="dim">
+                          On the <strong>Seller</strong> line of each purchase
+                          agreement and the <strong>Park Owner</strong> line of
+                          each lease. The buyer signs their own.
+                        </p>
+                        <div className="tabsrow">
+                          <button type="button"
+                                  className={signOnly === null ? "chip on" : "chip"}
+                                  onClick={() => setSignOnly(null)}>
+                            All {inPack.length} documents
+                          </button>
+                          <button type="button"
+                                  className={signOnly !== null ? "chip on" : "chip"}
+                                  onClick={() => setSignOnly(
+                                    (was) => was ?? new Set(inPack.map((d) => d.key)))}>
+                            Choose
+                          </button>
+                        </div>
+                        {signOnly !== null && (
+                          <>
+                            <div className="signpick">
+                              {inPack.map((d) => (
+                                <label key={d.key} className="papertickone">
+                                  <input type="checkbox"
+                                         checked={signOnly.has(d.key)}
+                                         onChange={(e) => setSignOnly((was) => {
+                                           const next = new Set(was ?? []);
+                                           if (e.target.checked) next.add(d.key);
+                                           else next.delete(d.key);
+                                           return next;
+                                         })} />
+                                  <span>Lot {d.lot} — {d.what}</span>
+                                </label>
+                              ))}
+                            </div>
+                            {/* Silence and success look alike: a pack with
+                                nothing ticked is an unsigned pack, and
+                                there is no reason to find that out from
+                                the file. */}
+                            {signOnly.size === 0 && (
+                              <p className="err">
+                                Nothing is ticked, so nothing will be signed.
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                     <button type="button" className="btn"
                             onClick={() => setShowPad(true)}>
                       Change signature
@@ -695,6 +774,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                   </>
                 ) : (
                   <SignaturePad png={null} busy={inkBusy} said={inkSaid}
+                                defaultName={terms.parkOwner}
                                 onSave={(v) => void keepInk(v)}
                                 onClear={() => void dropInk()} />
                 )}

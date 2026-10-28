@@ -56,8 +56,10 @@ const asText = (rs: Run[]) => {
 
 export function buildPdfDef(
   terms: Terms, homes: Home[], which: "both" | "purchase" | "lease",
+  /** Which documents carry our signature; absent means all of them. */
+  signs?: (key: string) => boolean,
 ): Record<string, unknown> {
-  const blocks = readPack(pack(terms, homes, which));
+  const blocks = readPack(pack(terms, homes, which, signs));
   const content: Piece[] = [];
   /** Set by a page break and worn by whatever comes next. */
   let breakNext = false;

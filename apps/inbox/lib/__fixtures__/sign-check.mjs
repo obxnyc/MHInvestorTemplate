@@ -101,6 +101,17 @@ t("and the buyer's and homeowner's lines carry nothing",
   () => sigs.filter((x) => theirs.includes(x.label)).length === 4
      && sigs.filter((x) => theirs.includes(x.label)).every((x) => !x.inked));
 
+/* NO RULE UNDER A SIGNATURE. A line is there to be signed ON; once
+   somebody has, it is a line ruled through their name. Counted rather
+   than looked for: the blocks say how many rules there are, and a signed
+   pack has four -- the buyer's and the homeowner's, which are still
+   waiting to be signed. */
+const rules = (blocks) => blocks.filter((b) => b.kind === "rule").length;
+t("a signed pack rules a line only where nobody has signed",
+  () => rules(blocksOf(signed)) === 4);
+t("and an unsigned one rules all eight",
+  () => rules(blocksOf(base)) === 8);
+
 t("an unsigned pack has no mark anywhere",
   () => blocksOf(base).every((b) => b.kind !== "ink")
      && signatureBlocks(blocksOf(base)).every((x) => !x.inked));
@@ -133,6 +144,33 @@ t("and the other side still has a line to date",
 t("an unsigned pack leaves every date blank",
   () => (words(base).match(/Date: _{6,}/g) ?? []).length === 8
      && !/Date: \d/.test(words(base)));
+
+// ---- one document, or all of them -------------------------------------
+//
+// "I should be able to apply it to one page or across all pages." Absent
+// means all, which is what signing a pack means. A set is somebody having
+// said otherwise.
+
+const onlyFirst = (key) => key === papers.docKey(0, "purchase");
+const picked = docparse.readPack(papers.pack(signed, homes, "both", onlyFirst));
+const pickedSigs = signatureBlocks(picked);
+
+t("choosing one document signs exactly that one",
+  () => picked.filter((b) => b.kind === "ink").length === 1);
+/* And it is the RIGHT one. A fixture that only counts cannot tell
+   "signed the first" from "signed the third": the first document's
+   seller block is the first of the eight, so its position says which. */
+t("and it is the one that was chosen",
+  () => pickedSigs[0].label === "SELLER:" && pickedSigs[0].inked === true
+     && pickedSigs.slice(1).every((x) => !x.inked));
+t("the ones not chosen still have a line to sign on",
+  () => rules(picked) === 7);
+t("choosing none signs nothing at all",
+  () => docparse.readPack(papers.pack(signed, homes, "both", () => false))
+    .every((b) => b.kind !== "ink"));
+t("and choosing all is the same as not choosing",
+  () => papers.pack(signed, homes, "both", () => true)
+     === papers.pack(signed, homes, "both"));
 
 // ---- it reaches the files ---------------------------------------------
 

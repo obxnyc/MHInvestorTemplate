@@ -24,12 +24,14 @@ const INCH = 1440;
 
 export async function packDocx(
   terms: Terms, homes: Home[], which: "both" | "purchase" | "lease",
+  /** Which documents carry our signature; absent means all of them. */
+  signs?: (key: string) => boolean,
 ): Promise<Blob> {
   const d = await import("docx");
   const { Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak,
     Table, TableRow, TableCell, WidthType, BorderStyle, convertInchesToTwip } = d;
 
-  const blocks = readPack(pack(terms, homes, which));
+  const blocks = readPack(pack(terms, homes, which, signs));
 
   /* A <br> becomes a break rather than a run of its own, and the empty
      pieces either side of it are dropped -- Word renders them as nothing

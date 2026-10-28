@@ -2050,6 +2050,19 @@ a.metric:hover{border-color:var(--accent)}
   text-transform:uppercase;letter-spacing:.06em;margin-right:.2rem}
 .tplsays{font-size:.8rem;margin:0 0 .6rem}
 
+/* The three hands a typed signature can be written in. Self-hosted, so a
+   signature is the same on every machine and does not depend on anybody
+   else's server being up at the moment somebody signs. All three are SIL
+   Open Font License. `font-display:block` rather than swap: a signature
+   briefly rendered in Times and then replaced is a signature somebody
+   screenshots at the wrong moment. */
+@font-face{font-family:SignFlowing;src:url(/fonts/dancing-script.woff2) format("woff2");
+  font-weight:700;font-display:block}
+@font-face{font-family:SignFormal;src:url(/fonts/great-vibes.woff2) format("woff2");
+  font-weight:400;font-display:block}
+@font-face{font-family:SignPenned;src:url(/fonts/homemade-apple.woff2) format("woff2");
+  font-weight:400;font-display:block}
+
 /* ---- our own signature ----
    The pad is sized in CSS and scaled in device pixels by the component,
    so a line drawn with a finger on a phone is as sharp as one drawn with
@@ -2080,6 +2093,32 @@ a.metric:hover{border-color:var(--accent)}
   align-items:center}
 .signfile input{position:absolute;inset:0;opacity:0;width:100%;
   cursor:pointer}
+.signname{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
+  color:var(--faint);text-transform:uppercase;letter-spacing:.06em;
+  max-width:22rem}
+.signname input{width:100%;box-sizing:border-box;padding:.45rem .6rem;
+  border:1px solid var(--hair);border-radius:8px;background:var(--card);
+  color:var(--ink);font:inherit;font-size:.95rem;text-transform:none;
+  letter-spacing:0;font-weight:400}
+/* The three hands, shown at the size they are chosen at. minmax(0,...)
+   and not a bare 1fr: a bare one never shrinks below the width of a long
+   name set in a wide cursive, and three of those will not fit a phone. */
+.signfaces{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(13rem,100%),1fr));
+  gap:.5rem}
+.signface{display:grid;gap:.1rem;justify-items:start;text-align:left;
+  min-height:4.4rem;padding:.5rem .7rem;border:1px solid var(--hair);
+  border-radius:10px;background:#FFFFFF;color:#101828;cursor:pointer;
+  overflow:hidden}
+.signface>span{display:block;max-width:100%;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;line-height:1.5}
+.signface small{font-size:.66rem;font-weight:700;color:#667085;
+  text-transform:uppercase;letter-spacing:.06em}
+.signface.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.signwhere{width:100%;display:grid;gap:.4rem;margin-top:.2rem;
+  padding-top:.6rem;border-top:1px solid var(--hair)}
+.signwhere .dim{margin:0}
+.signpick{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(17rem,100%),1fr));
+  gap:.25rem}
 .findrow{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
   color:var(--faint);text-transform:uppercase;letter-spacing:.06em;
   max-width:22rem}
