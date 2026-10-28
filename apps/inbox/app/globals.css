@@ -2098,10 +2098,45 @@ a.metric:hover{border-color:var(--accent)}
   padding:3px 6px;text-align:right}
 .paper .amort-tbl td:first-child,.paper .amort-tbl th:first-child{text-align:center}
 
+/* ---- printing a contract ----
+
+   A closing document is not a screenshot of the app. Two separate faults
+   put the app into one, and the second was much the worse of the two.
+
+   THE CHROME PRINTED. The old rule hid `nav` and `header.sitehead`; the
+   app's own header is `.apphead` and was neither, so the brand mark, the
+   avatar and the Command Launch box printed at the top of a purchase
+   agreement, with the alerts prompt under them. Hiding things by name is
+   how the next piece of chrome gets in, so the rule is now the other way
+   round: inside the shell, NOTHING prints except the documents.
+
+   AND THE REST OF THE PACK DID NOT. `.shell` is `height:100dvh;
+   overflow:hidden` and `.boardscroll` is the scroller inside it, so the
+   printed page was the part of the document that happened to be on
+   screen -- four documents went to the printer as one clipped page and
+   nobody was told. Every box between the paper and the page has to give
+   up its height, its overflow and its own decoration, or the browser
+   prints the window instead of the content.
+
+   Hence `visibility` for what shows and `display` for what takes up room:
+   visibility alone leaves the chrome's space behind, and display alone on
+   a parent would take the documents with it. */
 @media print{
-  .noprint,nav,header.sitehead{display:none!important}
-  body{background:#fff}
-  .paper{box-shadow:none;margin:0;max-width:none;padding:0;width:auto}
+  .noprint,nav,header.sitehead,.apphead,.pushbar,.readonlybar{display:none!important}
+  html,body{height:auto!important;overflow:visible!important;background:#fff!important}
+  /* The boxes between the page and the paper stop being a window. */
+  .shell,.portal,.board,.boardscroll,.parkpage,.ownerpage{
+    display:block!important;height:auto!important;max-height:none!important;
+    min-height:0!important;overflow:visible!important;
+    margin:0!important;padding:0!important;border:0!important;
+    border-radius:0!important;box-shadow:none!important;background:#fff!important;
+    max-width:none!important}
+  /* Anything still in the shell that is not the documents takes no ink.
+     A rule by name is a rule the next header walks past. */
+  .shell *{visibility:hidden}
+  .paper,.paper *{visibility:visible}
+  .paper{box-shadow:none;margin:0;max-width:none;padding:0;width:auto;
+    border:0;background:#fff;color:#000}
   @page{size:letter;margin:0.8in}
 }
 
