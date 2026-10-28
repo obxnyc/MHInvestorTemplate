@@ -35,6 +35,7 @@ export default function AppHeader(
         ["/", "Messages"],
         ["/properties", "Properties"],
         ["/leasing", "Leasing"],
+        ["/owners", "Investors"],
         ["/clock", "On the clock"],
         ["/timesheets", "Timesheets"],
         ["/settings", "Settings"],

@@ -2034,6 +2034,39 @@ a.metric:hover{border-color:var(--accent)}
 .paperacts{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
   margin-top:.9rem;padding-top:.8rem;border-top:1px solid var(--hair)}
 
+/* Homes typed in for a deal that is not recorded yet. The table is wide
+   on purpose and the wrapper scrolls sideways; the inputs are sized in ch
+   so a serial number is not typed into a two-character box. */
+.handhomes{margin:.2rem 0 1rem;overflow-x:auto}
+.handhomes h2{font-size:.9rem;margin:0 0 .2rem}
+.handhomes .ownertbl{min-width:40rem}
+.handhomes input{width:100%;box-sizing:border-box;min-width:7ch;
+  padding:.38rem .5rem;border:1px solid var(--hair);border-radius:8px;
+  background:var(--card);color:var(--ink);font:inherit;font-size:.84rem}
+.handhomes td:nth-child(2) input{min-width:22ch}
+.findrow{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
+  color:var(--faint);text-transform:uppercase;letter-spacing:.06em;
+  max-width:22rem}
+.findrow input{width:100%;box-sizing:border-box;padding:.42rem .55rem;
+  border:1px solid var(--hair);border-radius:8px;background:var(--card);
+  color:var(--ink);font:inherit;font-size:.86rem;text-transform:none;
+  letter-spacing:0;font-weight:400}
+
+/* The investors, as cards rather than a table. A table of five columns on
+   a 390px phone wraps every name one word to a line and pushes the way in
+   off the right-hand edge -- which the rules cannot see, because the
+   wrapper scrolls sideways on purpose and nothing is technically off the
+   screen. minmax(0,...) and not a bare 1fr: a bare one never shrinks below
+   the default width of what is inside it. */
+.ownercards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(16rem,100%),1fr));
+  gap:.7rem;margin:.2rem 0 1rem}
+.ownercard{display:grid;gap:.25rem;justify-items:start;
+  border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:.8rem .9rem;min-width:0}
+.ownercard>*{min-width:0;max-width:100%}
+.ownername{font-weight:700;font-size:1rem;color:var(--ink)}
+.ownerheld{margin:.2rem 0 .5rem;font-size:.84rem;color:var(--ink-2)}
+
 /* The printable document, as the generator has it. */
 .paper{background:#fff;max-width:8.5in;margin:0 auto 26px;padding:0.9in 0.85in;
   box-shadow:0 2px 14px rgba(0,0,0,.12);font-family:"Times New Roman",Georgia,serif;
@@ -2869,6 +2902,11 @@ a.metric:hover{border-color:var(--accent)}
      buttons carry no class of their own, so they have to be reached through
      the bar they sit in. */
   .groupbar button { min-height: 44px; display: inline-flex; align-items: center }
+  /* Links inside a table of rows -- the investor's name, the park, the
+     way through to their papers. A table cell makes them exactly as tall
+     as the words, which is sixteen pixels and smaller than a fingertip. */
+  .ownertbl td a,
+  .ownercard .ownername { min-height: 44px; display: inline-flex; align-items: center }
 }
 
 /* The office's answer, on the clock screen. Ink and ground both tokens, so

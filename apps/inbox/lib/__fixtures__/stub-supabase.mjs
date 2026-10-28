@@ -73,7 +73,56 @@ const TABLES = {
   clock_rules: [{ id: true, daily_cap: 10, break_after: 6, break_minutes: 30,
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
-  units: [], work_orders: [], owners: [], inquiries: [],
+  work_orders: [], inquiries: [],
+  /* TWO INVESTORS, NOT ONE, and the second holds nothing.
+     The investors list tallies homes and money per owner, and with a
+     single owner holding everything, "sum over this owner's sales" and
+     "sum over every sale" are the same number -- a fixture that cannot
+     say which one is running is not asking the question. The second one
+     also stands for the case the papers were built for: somebody buying
+     their first home, with no sale recorded to draw them from. */
+  owners: [
+    { id: "ow1", name: "Oak Ridge Holdings", legal_name: "Oak Ridge Holdings LLC",
+      active: true, notes: null },
+    { id: "ow2", name: "Dale Prieto", legal_name: null, active: true, notes: null },
+  ],
+  units: [
+    { id: "u1", label: "3124", property_id: "p1",
+      properties: { id: "p1", name: "The Retreat",
+                    address: "3100 Lady Viola Dr, Fayetteville NC" } },
+    { id: "u2", label: "17", property_id: "p2",
+      properties: { id: "p2", name: "1140 Northside Road Mobile Home Community",
+                    address: "1140 Northside Rd, Elizabeth City NC" } },
+  ],
+  /* Two homes, in two parks, to ow1 -- so "across N parks" has a number
+     to get wrong, and ow2 has nothing. */
+  home_sales: [
+    { id: "hs1", owner_id: "ow1", unit_id: "u1", sold_on: "2025-06-14",
+      price_cents: 4850000, down_cents: 970000, financed: true,
+      monthly_cents: 42500, rate_bps: 750, term_months: 180,
+      first_due_on: "2025-07-01", home_year: 2021, home_make: "Clayton",
+      home_serial: "CLW0214NC", ended_on: null, ended_why: null, note: null,
+      lot_rent_cents: 50000, management_cents: 5000, warranty_cents: 0,
+      tenant_rent_cents: 95000, pet_fee_cents: 0, late_fee_cents: 5000,
+      owner_insures: true,
+      units: { id: "u1", label: "3124", property_id: "p1",
+               properties: { id: "p1", name: "The Retreat",
+                             address: "3100 Lady Viola Dr, Fayetteville NC" } },
+      owners: { id: "ow1", name: "Oak Ridge Holdings" } },
+    { id: "hs2", owner_id: "ow1", unit_id: "u2", sold_on: "2025-09-02",
+      price_cents: 3900000, down_cents: 780000, financed: true,
+      monthly_cents: 34000, rate_bps: 750, term_months: 180,
+      first_due_on: "2025-10-01", home_year: 2019, home_make: "Fleetwood",
+      home_serial: "FLE8891NC", ended_on: null, ended_why: null, note: null,
+      lot_rent_cents: 45000, management_cents: 5000, warranty_cents: 0,
+      tenant_rent_cents: 85000, pet_fee_cents: 0, late_fee_cents: 5000,
+      owner_insures: true,
+      units: { id: "u2", label: "17", property_id: "p2",
+               properties: { id: "p2",
+                 name: "1140 Northside Road Mobile Home Community",
+                 address: "1140 Northside Rd, Elizabeth City NC" } },
+      owners: { id: "ow1", name: "Oak Ridge Holdings" } },
+  ],
   /* THE OWNER'S OWN SCREENSHOT, as rows: a colleague's thread from twenty
      hours ago, and a text that arrived just now. They were rendered as two
      stacked lists, so the twenty-hour-old one sat on top. A fixture where

@@ -16,6 +16,28 @@ type Held = {
   note: string | null;
 };
 
+/**
+ * A home on the deal that is not a recorded sale.
+ *
+ * The purchase agreement is the paper that MAKES the sale, so requiring
+ * the sale to be in the database before it can be drawn is asking for the
+ * outcome before the cause. Price and down stay as typed rather than as
+ * numbers: a field cleared on the way to a new figure is momentarily
+ * empty, and an empty number field read as zero is a contract that sells
+ * a home for nothing.
+ */
+type ByHand = { key: string; lot: string; describedAs: string; price: string; down: string };
+
+const blank = (): ByHand => ({
+  key: Math.random().toString(36).slice(2), lot: "", describedAs: "",
+  price: "", down: "",
+});
+
+const asNum = (v: string) => {
+  const n = Number(v.replace(/[$,\s]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
+
 const dollars = (cents: number | null | undefined) => (cents ?? 0) / 100;
 const asMoney = (cents: number | null | undefined) =>
   cents == null ? "—" : `$${money0(cents / 100)}`;
@@ -52,6 +74,8 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [papers, setPapers] = useState(false);
   const [which, setWhich] = useState<"both" | "purchase" | "lease">("both");
   const [terms, setTerms] = useState<Terms>(DEFAULTS);
+  /** Homes typed in for this deal, which no sale has been recorded for. */
+  const [byHand, setByHand] = useState<ByHand[]>([]);
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -70,26 +94,30 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   // The deal's own terms, taken from the homes themselves. A rate typed
   // once and read back from eight sales is a rate nobody re-keys.
   useEffect(() => {
-    if (seeded || !owner || !homes.length) return;
-    const first = homes[0];
+    // Seeded as soon as the investor is known, not when a sale is. An
+    // investor with nothing recorded yet is the one buying their first
+    // home, and the buyer's name and today's date are the two things the
+    // papers need most.
+    if (seeded || !owner || asking) return;
+    const first: Held | undefined = homes[0];
     const today = new Date().toISOString().slice(0, 10);
     setTerms((was) => ({
       ...was,
       buyer: owner.legal_name?.trim() || owner.name,
-      parkName: first.parkName || was.parkName,
-      agreedOn: first.soldOn ?? today,
-      leaseFrom: first.soldOn ?? today,
-      financed: first.financed,
-      ratePct: first.rateBps != null ? first.rateBps / 100 : was.ratePct,
-      termYears: first.termMonths ? Math.round(first.termMonths / 12) : was.termYears,
-      lotRent: first.lotRentCents != null ? dollars(first.lotRentCents) : was.lotRent,
-      consulting: first.consultingCents != null
+      parkName: first?.parkName || was.parkName,
+      agreedOn: first?.soldOn ?? today,
+      leaseFrom: first?.soldOn ?? today,
+      financed: first ? first.financed : was.financed,
+      ratePct: first?.rateBps != null ? first.rateBps / 100 : was.ratePct,
+      termYears: first?.termMonths ? Math.round(first.termMonths / 12) : was.termYears,
+      lotRent: first?.lotRentCents != null ? dollars(first.lotRentCents) : was.lotRent,
+      consulting: first?.consultingCents != null
         ? dollars(first.consultingCents) : was.consulting,
-      lateFee: first.lateFeeCents != null ? dollars(first.lateFeeCents) : was.lateFee,
+      lateFee: first?.lateFeeCents != null ? dollars(first.lateFeeCents) : was.lateFee,
     }));
     setPicked(Object.fromEntries(homes.map((h) => [h.saleId, true])));
     setSeeded(true);
-  }, [seeded, owner, homes]);
+  }, [seeded, owner, asking, homes]);
 
   const chosen = useMemo(
     () => homes.filter((h) => picked[h.saleId]), [homes, picked]);
@@ -105,16 +133,57 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     return { owes, rent, net: rent - owes };
   }, [homes]);
 
-  const built = useMemo(() => {
-    if (!chosen.length) return "";
-    const list: Home[] = chosen.map((h) => ({
+  /** The homes typed in that are worth drawing: a row with nothing in it
+   *  is a row somebody has not filled in yet, not a home for nothing. */
+  const handed = useMemo(
+    () => byHand.filter((h) => h.lot.trim() || h.describedAs.trim() || asNum(h.price)),
+    [byHand]);
+
+  const forPapers = useMemo<Home[]>(() => [
+    ...chosen.map((h) => ({
       lot: h.lot,
+      parkName: h.parkName || undefined,
       describedAs: describe(h),
       price: dollars(h.priceCents),
       down: dollars(h.downCents),
-    }));
-    return pack(terms, list, which);
-  }, [chosen, terms, which]);
+    })),
+    ...handed.map((h) => ({
+      lot: h.lot.trim(),
+      describedAs: h.describedAs.trim(),
+      price: asNum(h.price),
+      down: asNum(h.down),
+    })),
+  ], [chosen, handed]);
+
+  /**
+   * Typed-in homes that are not ready to print.
+   *
+   * A price of nothing renders as $0.00 on the agreement -- a contract
+   * selling a home for zero dollars, which reads exactly like a contract
+   * and is not one. So printing is refused rather than producing it, the
+   * same way a send that cannot keep its attachment refuses rather than
+   * inserting a message nobody can see.
+   */
+  const notReady = useMemo(
+    () => handed.filter((h) => !asNum(h.price)), [handed]);
+
+  /**
+   * The parks the ticked homes stand in.
+   *
+   * The terms below are the DEAL's: one rate, one lot rent, one park
+   * owner. Homes in two parks at the same lot rent is a coincidence, not
+   * a deal, and the screen has no way to know which of the two the typed
+   * figures belong to -- so it says so rather than printing both.
+   */
+  const spread = useMemo(() => {
+    const seen = new Set(chosen.map((h) => h.parkName).filter(Boolean));
+    return [...seen].sort();
+  }, [chosen]);
+
+  const built = useMemo(() => {
+    if (!forPapers.length) return "";
+    return pack(terms, forPapers, which);
+  }, [forPapers, terms, which]);
 
   /**
    * What the browser calls this page while the papers are up.
@@ -153,9 +222,16 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
           <span className="parkkept">{owner.legal_name}</span>
         )}
         <div className="parkacts">
+          {/* Not disabled on an empty investor. The papers for their first
+              home are the papers most worth drawing, and the home can be
+              typed in below. */}
           <button type="button" className={papers ? "btn pri" : "btn"}
-                  onClick={() => setPapers((v) => !v)}
-                  disabled={!homes.length}>
+                  onClick={() => {
+                    setPapers((v) => !v);
+                    if (!papers && !homes.length && !byHand.length) {
+                      setByHand([blank()]);
+                    }
+                  }}>
             {papers ? "Done" : "Sale papers"}
           </button>
         </div>
@@ -164,7 +240,11 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       {!homes.length ? (
         <p className="parkhint noprint">
           Nothing is recorded against this owner yet. A home becomes theirs
-          when a sale is recorded on its lot card.
+          when a sale is recorded on its lot card — but the papers do not
+          wait on that:{" "}
+          {papers
+            ? <>type the home in below.</>
+            : <>press <strong>Sale papers</strong> and type the home in.</>}
         </p>
       ) : (
         <p className="parktally noprint">
@@ -225,14 +305,82 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
         <>
           <div className="papersetup noprint">
             <p className="parkhint">
-              {chosen.length} of {homes.length} ticked —{" "}
+              {forPapers.length === 0 && <>Nothing on the deal yet — </>}
+              {homes.length > 0 && <>{chosen.length} of {homes.length} ticked</>}
+              {homes.length > 0 && handed.length > 0 && ", "}
+              {handed.length > 0 && (
+                <>{handed.length} typed in by hand</>
+              )}
+              {(homes.length > 0 || handed.length > 0) && " — "}
               <strong>
-                {which === "both" ? chosen.length * 2 : chosen.length} document
-                {(which === "both" ? chosen.length * 2 : chosen.length) === 1 ? "" : "s"}
-              </strong>. Everything below is filled from the sales already
-              recorded; change it here and the papers change with it.
+                {which === "both" ? forPapers.length * 2 : forPapers.length} document
+                {(which === "both" ? forPapers.length * 2 : forPapers.length) === 1 ? "" : "s"}
+              </strong>.{" "}
+              {homes.length > 0
+                ? <>Everything below is filled from the sales already
+                    recorded; change it here and the papers change with it.</>
+                : <>Type the home into <strong>Homes on this deal</strong> and
+                    set the terms below.</>}{" "}
               Nothing typed here is written back to a lot.
             </p>
+
+            {spread.length > 1 && (
+              <p className="err">
+                The ticked homes are in {spread.length} parks —{" "}
+                {spread.join(" and ")}. Each lease names its own park, but the
+                lot rent, the consulting fee and the rest below are one set of
+                figures across all of them. If the parks are on different
+                terms, draw them as separate deals.
+              </p>
+            )}
+
+            <div className="handhomes">
+              <h2>Homes on this deal</h2>
+              <p className="dim">
+                Anything typed here is drawn on the papers and nowhere else.
+                Record the sale on the lot card when it closes.
+              </p>
+              <table className="ownertbl">
+                <thead>
+                  <tr><th>Lot</th><th>Home, as it is described</th>
+                      <th>Price $</th><th>Down $</th><th /></tr>
+                </thead>
+                <tbody>
+                  {byHand.map((h, i) => (
+                    <tr key={h.key}>
+                      <td><input value={h.lot} aria-label={`Lot, home ${i + 1}`}
+                                 onChange={(e) => setByHand((was) => was.map((r) =>
+                                   r.key === h.key ? { ...r, lot: e.target.value } : r))} /></td>
+                      <td><input value={h.describedAs} aria-label={`Home ${i + 1}`}
+                                 placeholder="2021 Clayton 16x76, 3/2, Serial# ..."
+                                 onChange={(e) => setByHand((was) => was.map((r) =>
+                                   r.key === h.key ? { ...r, describedAs: e.target.value } : r))} /></td>
+                      <td><input value={h.price} inputMode="decimal" aria-label={`Price, home ${i + 1}`}
+                                 onChange={(e) => setByHand((was) => was.map((r) =>
+                                   r.key === h.key ? { ...r, price: e.target.value } : r))} /></td>
+                      <td><input value={h.down} inputMode="decimal" aria-label={`Down payment, home ${i + 1}`}
+                                 onChange={(e) => setByHand((was) => was.map((r) =>
+                                   r.key === h.key ? { ...r, down: e.target.value } : r))} /></td>
+                      <td><button type="button" className="btn"
+                                  onClick={() => setByHand((was) =>
+                                    was.filter((r) => r.key !== h.key))}>
+                        Take off
+                      </button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button type="button" className="btn"
+                      onClick={() => setByHand((was) => [...was, blank()])}>
+                Add a home
+              </button>
+              {handed.some((h) => !h.describedAs.trim()) && (
+                <p className="err">
+                  A home with no description leaves the line that identifies
+                  it blank. Year, make, size and serial number.
+                </p>
+              )}
+            </div>
 
             <div className="tabsrow">
               {(["both", "purchase", "lease"] as const).map((k) => (
@@ -319,17 +467,26 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
 
             <div className="paperacts">
               <button type="button" className="btn pri"
-                      disabled={!chosen.length}
+                      disabled={!forPapers.length || notReady.length > 0}
                       onClick={() => window.print()}>
                 Print / save as PDF
               </button>
-              <span className="dim">
-                Save each one and send it off for signing as you do now.
-              </span>
+              {notReady.length > 0 ? (
+                <span className="err">
+                  {notReady.length} typed-in home
+                  {notReady.length === 1 ? " has" : "s have"} no price. The
+                  agreement would sell {notReady.length === 1 ? "it" : "them"}{" "}
+                  for nothing.
+                </span>
+              ) : (
+                <span className="dim">
+                  Save each one and send it off for signing as you do now.
+                </span>
+              )}
             </div>
           </div>
 
-          {chosen.length > 0 && (
+          {forPapers.length > 0 && (
             <div className="paper" dangerouslySetInnerHTML={{ __html: built }} />
           )}
         </>

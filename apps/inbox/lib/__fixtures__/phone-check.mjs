@@ -42,6 +42,11 @@ const SIGNED_IN = [
   ["crew", "/clock"], ["crew", "/team"], ["crew", "/settings"],
   ["desk", "/home"], ["desk", "/timesheets"], ["desk", "/jobs"],
   ["desk", "/leasing"], ["desk", "/properties"], ["desk", "/"],
+  ["desk", "/owners"],
+  // The investor with two homes, and the one with none. The papers are
+  // drawn on both -- the empty one is the screen somebody reaches when
+  // they are selling a first home, and it was the screen with no way in.
+  ["desk", "/owners/ow1"], ["desk", "/owners/ow2"],
 ];
 // A phone, a small phone, and a phone held sideways.
 const SIZES = [[390, 844], [320, 568], [844, 390]];
@@ -301,7 +306,8 @@ const probeOpen = async (page, at, out) => {
  * is the one that should have caught the white-on-white Clock In button, and
  * it missed it twice over -- it only ever asked for the daytime theme, and it
  * had no contrast check at all. */
-for (const scheme of ["light", "dark"]) {
+const SCHEMES = ["light", "dark"];
+for (const scheme of SCHEMES) {
 for (const path of PAGES) {
   for (const [width, height] of SIZES) {
     const p = await browser.newPage({
@@ -393,7 +399,12 @@ for (const [who, path] of stubUp ? SIGNED_IN : []) {
 }
 
 await browser.close();
-console.log(`looked at ${PAGES.length} pages at ${SIZES.length} sizes; `
-  + `screenshots in /tmp/phone`);
+/* SAY WHAT WAS LOOKED AT, not what the public half was. This line read
+   "looked at 5 pages" whether or not the nine signed-in screens had been
+   checked -- which is the silent skip this harness exists to have stopped,
+   wearing the summary's clothes instead of the loop's. */
+console.log(`looked at ${PAGES.length} public and `
+  + `${stubUp ? SIGNED_IN.length : 0} signed-in screens, at ${SIZES.length} `
+  + `sizes in ${SCHEMES.length} themes; screenshots in /tmp/phone`);
 if (wrong.length) { for (const w of wrong) console.error(" ✗ " + w); process.exit(1); }
 console.log("nothing obviously wrong");

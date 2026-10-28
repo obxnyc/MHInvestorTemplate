@@ -60,6 +60,16 @@ export type Terms = {
 export type Home = {
   /** The lot as the park files it: "17", "3124". */
   lot: string;
+  /**
+   * The park this one stands in, where it is not the deal's.
+   *
+   * Everything else on a deal is genuinely per-deal -- one rate, one lot
+   * rent, one set of dates. The park is not: an investor taking four
+   * homes at the Retreat and one at Northside would otherwise get five
+   * leases all naming whichever park happened to be first, and a lease
+   * naming the wrong park is a lease about land we did not let them.
+   */
+  parkName?: string;
   /** Make, model, beds/baths, serial -- the paragraph that identifies it. */
   describedAs: string;
   price: number;
@@ -261,7 +271,7 @@ export function purchaseAgreement(t: Terms, home: Home): string {
 export function landLease(t: Terms, home: Home): string {
   const parkOwner = esc(t.parkOwner) || "____________";
   const buyer = esc(t.buyer) || "____________________";
-  const parkName = esc(t.parkName) || "the Park";
+  const parkName = esc(home.parkName ?? "") || esc(t.parkName) || "the Park";
   const state = esc(t.state) || "[State]";
   const notice = t.noticeDays || 60;
   const rofr = t.rofrDays || 30;
