@@ -68,6 +68,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [byHand, setByHand] = useState<ByHand[]>([]);
   /** What the papers call each recorded home, where somebody has said. */
   const [saidAs, setSaidAs] = useState<Record<string, string>>({});
+  /** Making the Word file, and anything that went wrong doing it. */
+  const [writing, setWriting] = useState(false);
+  const [wordSaid, setWordSaid] = useState<string | null>(null);
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -198,6 +201,34 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     document.title = `${what} — ${terms.buyer || owner.name}`;
     return () => { document.title = was; };
   }, [papers, owner, which, terms.buyer]);
+
+  /**
+   * Nothing is claimed until the file exists.
+   *
+   * The whole module is loaded on the press rather than with the page --
+   * it is a few hundred kilobytes of Word writer that most visits to this
+   * screen never need.
+   */
+  const saveWord = async () => {
+    setWriting(true); setWordSaid(null);
+    try {
+      const { packDocx, docxName } = await import("@/lib/worddoc");
+      const blob = await packDocx(terms, forPapers, which);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = docxName(terms.buyer || owner?.name || "", which);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) {
+      setWordSaid(`The Word file could not be made: ${
+        e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setWriting(false);
+    }
+  };
 
   const set = (change: Partial<Terms>) => setTerms((was) => ({ ...was, ...change }));
   const num = (v: string) => (v === "" ? 0 : Number(v));
@@ -502,7 +533,18 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             </div>
 
             <div className="paperacts">
+              {/* THE FILE THE OWNER ACTUALLY SENDS. The browser's print
+                  dialog writes the date and the page's address into the
+                  margin of every page unless somebody clears a tick box,
+                  and no stylesheet can reach it -- so for anything that
+                  gets recorded or signed, the file has to be one we make
+                  rather than one the browser makes. */}
               <button type="button" className="btn pri"
+                      disabled={!forPapers.length || notReady.length > 0 || writing}
+                      onClick={() => void saveWord()}>
+                {writing ? "Making it…" : "Download Word (.docx)"}
+              </button>
+              <button type="button" className="btn"
                       disabled={!forPapers.length || notReady.length > 0}
                       onClick={() => window.print()}>
                 Print / save as PDF
@@ -514,9 +556,14 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                   agreement would sell {notReady.length === 1 ? "it" : "them"}{" "}
                   for nothing.
                 </span>
+              ) : wordSaid ? (
+                <span className="err">{wordSaid}</span>
               ) : (
                 <span className="dim">
-                  Save each one and send it off for signing as you do now.
+                  The Word file carries nothing but the documents. Printing
+                  from the browser adds the date and this page’s address to
+                  every margin unless <strong>Headers and footers</strong> is
+                  cleared in the print dialog.
                 </span>
               )}
             </div>
