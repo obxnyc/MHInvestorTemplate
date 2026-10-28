@@ -304,6 +304,55 @@ t("the shape it saw is reported back",
   "The field names are a hypothesis. The preview has to say what actually "
   + "came back, or the next guess is as blind as the first.");
 
+/* ------------------------------------------- what Rent Manager did not say
+ *
+ * A request can arrive with no tenant, no number and no lot, because this
+ * endpoint hands the issue over without them. Left blank, that reads as the
+ * inbox having lost the details -- which is the complaint it produced. Said
+ * out loud, it is a known gap with a known cause and a way round it.
+ */
+{
+  const bare = detail(readIssue({
+    ServiceManagerIssueID: 251,
+    Title: "Water is coming out green",
+    CreateDate: "2026-10-26T09:53:00",
+  }));
+  t("a request with nothing on it SAYS so rather than leaving a gap",
+    /did not say/.test(bare),
+    "A blank answers 'we do not have this' and 'nobody has looked' the same way.");
+  t("and names all three things that are missing",
+    /who submitted it/.test(bare) && /contact them/.test(bare)
+      && /which lot/.test(bare),
+    bare.slice(-240));
+  t("and says where they DO come from, which is the way out",
+    /notification email/.test(bare), bare.slice(-240));
+
+  /* THE PAIR THAT MAKES THAT MEAN ANYTHING. A line that always appears is
+     not a report, it is decoration -- and it would be read as "no contact
+     details" on a request that has them, which is worse than silence. */
+  const full = detail(readIssue({
+    ServiceManagerIssueID: 252,
+    Title: "Leak",
+    Tenant: { Name: "Jane Doe", Phone: "(910) 555-0133", Email: "j@example.com" },
+    Property: { Name: "The Retreat" },
+    Unit: { Name: "51" },
+    CreateDate: "2026-10-26T09:53:00",
+  }));
+  t("a request that HAS a tenant says nothing about anything missing",
+    !/did not say/.test(full), full.slice(-240));
+
+  /* And a half-known one names only what is actually absent. */
+  const half = detail(readIssue({
+    ServiceManagerIssueID: 253,
+    Title: "Door",
+    Tenant: { Name: "Abel Moreno" },
+    CreateDate: "2026-10-26T09:53:00",
+  }));
+  t("a half-known request names only what is actually absent",
+    /did not say/.test(half) && !/who submitted it/.test(half)
+      && /which lot/.test(half), half.slice(-240));
+}
+
 let failed = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);

@@ -243,6 +243,29 @@ export function summarise(issue: Issue): string {
 
 /** Everything about the issue, as the body of the message. */
 export function detail(issue: Issue): string {
+  /* WHAT IS MISSING IS SAID, NOT LEFT BLANK.
+   *
+   * A request can arrive here with no tenant, no number and no lot, because
+   * `/ServiceManagerIssues` hands the issue over without them -- the Property,
+   * Unit and Tenant embeds all 404 on this account and the bare record carries
+   * no PropertyID, UnitID or TenantID either. Proved by the probe, not
+   * assumed.
+   *
+   * Left blank, that reads as the inbox losing the details. Said out loud, it
+   * is a known gap with a known cause and somebody can act on it: the
+   * notification email carries the tenant's name, their number and the lot in
+   * its subject line, so a request that came the other way has all three.
+   *
+   * The same rule as the property line that only ever said whether a line
+   * existed. A screen that leaves a field empty is answering "we do not have
+   * this" and "nobody has looked" with the same blank.
+   */
+  const missing = [
+    !issue.tenant && "who submitted it",
+    !issue.phone && !issue.email && "any way to contact them",
+    !issue.unit && !issue.property && "which lot it is for",
+  ].filter(Boolean) as string[];
+
   return [
     issue.title && `Issue: ${issue.title}`,
     issue.description && `Description: ${issue.description}`,
@@ -256,6 +279,11 @@ export function detail(issue: Issue): string {
     issue.status && `Status: ${issue.status}`,
     issue.createdAt && `Submitted: ${issue.createdAt}`,
     `\nFrom Rent Manager Service Manager, issue ${issue.id}.`,
+    missing.length
+      && `Rent Manager did not say ${missing.join(", nor ")}. It does not put`
+         + ` that on a Service Manager issue. The notification email does —`
+         + ` tenant, number and lot — so a request that arrives by email`
+         + ` carries all of it.`,
   ].filter(Boolean).join("\n");
 }
 
