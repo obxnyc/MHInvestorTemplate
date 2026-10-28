@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DEFAULTS, pack, money0, type Terms, type Home } from "@/lib/papers";
+import { describe, homeSentence } from "@/lib/describe";
+import { DEFAULTS, TEMPLATES, templateOf, pack, money0,
+         type Terms, type Home } from "@/lib/papers";
 
 type Held = {
   saleId: string; unitId: string | null; lot: string;
@@ -42,18 +44,6 @@ const dollars = (cents: number | null | undefined) => (cents ?? 0) / 100;
 const asMoney = (cents: number | null | undefined) =>
   cents == null ? "—" : `$${money0(cents / 100)}`;
 
-/** The paragraph that identifies a home on a bill of sale. */
-export function describe(h: {
-  homeYear: number | null; homeMake: string | null; homeSerial: string | null;
-}): string {
-  const bits = [
-    h.homeYear ? String(h.homeYear) : "",
-    h.homeMake ?? "",
-    h.homeSerial ? `Serial# ${h.homeSerial}` : "",
-  ].filter(Boolean);
-  return bits.join(" ");
-}
-
 /**
  * One investor's page.
  *
@@ -76,6 +66,8 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [terms, setTerms] = useState<Terms>(DEFAULTS);
   /** Homes typed in for this deal, which no sale has been recorded for. */
   const [byHand, setByHand] = useState<ByHand[]>([]);
+  /** What the papers call each recorded home, where somebody has said. */
+  const [saidAs, setSaidAs] = useState<Record<string, string>>({});
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -143,7 +135,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     ...chosen.map((h) => ({
       lot: h.lot,
       parkName: h.parkName || undefined,
-      describedAs: describe(h),
+      describedAs: saidAs[h.saleId] ?? homeSentence(h),
       price: dollars(h.priceCents),
       down: dollars(h.downCents),
     })),
@@ -153,7 +145,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       price: asNum(h.price),
       down: asNum(h.down),
     })),
-  ], [chosen, handed]);
+  ], [chosen, handed, saidAs]);
 
   /**
    * Typed-in homes that are not ready to print.
@@ -337,8 +329,11 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <div className="handhomes">
               <h2>Homes on this deal</h2>
               <p className="dim">
-                Anything typed here is drawn on the papers and nowhere else.
-                Record the sale on the lot card when it closes.
+                The second column is the line that comes after
+                “certain personal property, to wit:”. The sale records only
+                the year, the make and the serial number, so finish it here
+                with the size, the bedrooms and anything else the home is
+                identified by. Nothing typed here is written back to a lot.
               </p>
               <table className="ownertbl">
                 <thead>
@@ -346,6 +341,33 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                       <th>Price $</th><th>Down $</th><th /></tr>
                 </thead>
                 <tbody>
+                  {/* The ticked sales, with their description open to be
+                      finished. It is the line after "certain personal
+                      property, to wit:" and the database holds only three
+                      words of it. */}
+                  {chosen.map((h) => (
+                    <tr key={h.saleId}>
+                      <td><strong>{h.lot}</strong></td>
+                      <td><input value={saidAs[h.saleId] ?? homeSentence(h)}
+                                 aria-label={`Home on lot ${h.lot}`}
+                                 onChange={(e) => setSaidAs((was) => (
+                                   { ...was, [h.saleId]: e.target.value }))} /></td>
+                      <td>{asMoney(h.priceCents)}</td>
+                      <td>{asMoney(h.downCents)}</td>
+                      <td>
+                        {saidAs[h.saleId] != null && (
+                          <button type="button" className="btn"
+                                  onClick={() => setSaidAs((was) => {
+                                    const next = { ...was };
+                                    delete next[h.saleId];
+                                    return next;
+                                  })}>
+                            Put back
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                   {byHand.map((h, i) => (
                     <tr key={h.key}>
                       <td><input value={h.lot} aria-label={`Lot, home ${i + 1}`}
@@ -381,6 +403,20 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                 </p>
               )}
             </div>
+
+            <div className="tplrow">
+              <span className="tpllabel">Template</span>
+              {TEMPLATES.map((tpl) => (
+                <button key={tpl.key} type="button"
+                        className={templateOf(terms) === tpl.key ? "chip on" : "chip"}
+                        onClick={() => tpl.key !== "custom" && set(tpl.changes)}>
+                  {tpl.name}
+                </button>
+              ))}
+            </div>
+            <p className="dim tplsays">
+              {TEMPLATES.find((x) => x.key === templateOf(terms))?.blurb}
+            </p>
 
             <div className="tabsrow">
               {(["both", "purchase", "lease"] as const).map((k) => (

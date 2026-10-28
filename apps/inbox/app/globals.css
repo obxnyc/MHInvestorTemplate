@@ -2044,6 +2044,11 @@ a.metric:hover{border-color:var(--accent)}
   padding:.38rem .5rem;border:1px solid var(--hair);border-radius:8px;
   background:var(--card);color:var(--ink);font:inherit;font-size:.84rem}
 .handhomes td:nth-child(2) input{min-width:22ch}
+.tplrow{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;
+  margin:.6rem 0 .2rem}
+.tpllabel{font-size:.68rem;font-weight:700;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.06em;margin-right:.2rem}
+.tplsays{font-size:.8rem;margin:0 0 .6rem}
 .findrow{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
   color:var(--faint);text-transform:uppercase;letter-spacing:.06em;
   max-width:22rem}

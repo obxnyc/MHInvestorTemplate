@@ -107,6 +107,69 @@ export const DEFAULTS: Terms = {
   amortDetail: "annual",
 };
 
+/**
+ * The three templates.
+ *
+ * Only the switches and the notice periods: the money on a deal is typed
+ * in every time and a template that silently changed a rate or a lot rent
+ * would be a template that changed the price of the home.
+ *
+ * `changes` is applied over whatever is on screen, so picking a template
+ * after filling the figures in keeps the figures.
+ */
+export type Template = {
+  key: string;
+  name: string;
+  /** What it switches, in the words the screen shows beside it. */
+  blurb: string;
+  changes: Partial<Terms>;
+};
+
+export const TEMPLATES: Template[] = [
+  {
+    key: "house",
+    name: "Larabee Homes",
+    blurb: "Annual escalation, late fee, lien until paid, 60 days' notice,"
+      + " 30 days to match an offer.",
+    changes: {
+      escalate: true, escalatePct: 3,
+      escalateApplies: "lot rent and consulting fee",
+      late: true, graceDays: 10,
+      security: true, insure: true, amortise: true,
+      noticeDays: 60, rofrDays: 30,
+    },
+  },
+  {
+    key: "investor",
+    name: "Investor-friendly",
+    blurb: "No escalation, no late fee, no lien, 90 days' notice,"
+      + " 15 days to match an offer.",
+    changes: {
+      escalate: false,
+      late: false, graceDays: 15,
+      security: false, insure: true, amortise: true,
+      noticeDays: 90, rofrDays: 15,
+    },
+  },
+  {
+    key: "custom",
+    name: "Custom",
+    blurb: "Every switch below is yours. Changing any of them puts the"
+      + " papers here.",
+    changes: {},
+  },
+];
+
+/** Which template the terms on screen match, or "custom". */
+export function templateOf(t: Terms): string {
+  for (const tpl of TEMPLATES) {
+    if (tpl.key === "custom") continue;
+    const keys = Object.keys(tpl.changes) as (keyof Terms)[];
+    if (keys.every((k) => t[k] === tpl.changes[k])) return tpl.key;
+  }
+  return "custom";
+}
+
 // ---- the generator's own helpers, unchanged ---------------------------
 
 export const money = (n: number) =>
@@ -248,9 +311,9 @@ export function purchaseAgreement(t: Terms, home: Home): string {
 
   return `
     <h2>PURCHASE AGREEMENT</h2>
-    <p>THIS PURCHASE AGREEMENT, made this the <span class="fill">${longDate(t.agreedOn)}</span>, by <span class="fill">${buyer}</span>, Purchaser, and <span class="fill">${seller}</span>, Seller.</p>
+    <p>THIS PURCHASE AGREEMENT, made this <span class="fill">${longDate(t.agreedOn)}</span>, by <span class="fill">${buyer}</span>, Purchaser, and <span class="fill">${seller}</span>, Seller.</p>
     <p class="witness">W I T N E S S E T H</p>
-    <p>That Seller has offered to sell certain personal property to wit:</p>
+    <p>That Seller has offered to sell certain personal property, to wit:</p>
     <p class="fill" style="text-align:left">${esc(home.describedAs) || "________________________________________________________________"}</p>
     ${payPara}
     ${lateClause}
@@ -260,8 +323,8 @@ export function purchaseAgreement(t: Terms, home: Home): string {
     <p>Seller shall provide to Purchaser a fully executed and notarized bill of sale completely detailing the personal property being purchased which shall be delivered upon final payment to Seller, free and clear of all encumbrances, debts, liens, claims, and Seller has no knowledge of any legal impediment to sale of the personal property described above. If ownership of the personal property is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
     <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>SELLER:</b><div class="line"></div>${seller}</div>
-      <div class="sig-block"><b>BUYER:</b><div class="line"></div>${buyer}</div>
+      <div class="sig-block"><b>SELLER:</b><div class="line"></div>${seller}<br>Date: __________________</div>
+      <div class="sig-block"><b>BUYER:</b><div class="line"></div>${buyer}<br>Date: __________________</div>
     </div>
     ${amortisation(t, home)}
     ${t.notary ? notaryBlock("this Purchase Agreement") : ""}
@@ -285,9 +348,9 @@ export function landLease(t: Terms, home: Home): string {
   return `
     <h2>MOBILE HOME PARK LAND LEASE AGREEMENT</h2>
     <p>This Mobile Home Park Land Lease Agreement (“Agreement”) is made and entered into as of the <span class="fill">${longDate(t.leaseFrom)}</span>, by and between:</p>
-    <p><b>Park Owner:</b> ${parkOwner} (hereinafter referred to as "Park Owner")<br>
-       <b>Mobile Home Owner:</b> ${buyer} (hereinafter referred to as "Homeowner")<br>
-       <b>Lot Number:</b> <span class="fill">${lot || "____________"}</span> (hereinafter referred to as "Lot")</p>
+    <p><b>Park Owner:</b> ${parkOwner} (hereinafter referred to as “Park Owner”)<br>
+       <b>Mobile Home Owner:</b> ${buyer} (hereinafter referred to as “Homeowner”)<br>
+       <b>Lot Number:</b> <span class="fill">${lot || "____________"}</span> (hereinafter referred to as “Lot”)</p>
 
     <h3>1. Premises</h3>
     <p>Park Owner agrees to lease to Homeowner, and Homeowner agrees to lease from Park Owner, the parcel of land identified as Lot <span class="fill">${lot || "________"}</span> in ${parkName} (the “Park”). This lease entitles the Homeowner to place and maintain a mobile home on the designated Lot within the Park.</p>
@@ -303,7 +366,7 @@ export function landLease(t: Terms, home: Home): string {
     ${escClause}
 
     <h3>5. Monthly Consulting Fee</h3>
-    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(t.consulting)}</span> (${dollarsWords(t.consulting)}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintains an interest in the mobile home park land owned by ${parkOwner} or any of his affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days' written notice to the Homeowner.</p>
+    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(t.consulting)}</span> (${dollarsWords(t.consulting)}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintain an interest in the mobile home park land owned by ${parkOwner} or any of its affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days' written notice to the Homeowner.</p>
 
     <h3>6. Park Rules and Regulations</h3>
     <p>Both the Homeowner and the Park Owner agree to comply with all rules and regulations of the Park, as they may be amended from time to time. These rules and regulations will be provided to the Homeowner upon execution of this Agreement and may be updated with reasonable notice. Homeowner is responsible for ensuring that their guests, tenants, and any other occupants of the mobile home also comply with these rules.</p>
@@ -331,15 +394,18 @@ export function landLease(t: Terms, home: Home): string {
     <p>(b) <b>Park Owner’s Right to Block Sale:</b> The Park Owner may block the sale of the mobile home if the potential buyer is deemed unfit to purchase the home or fails to meet the qualifications for residency in the Park, including but not limited to the buyer’s ability to comply with the Park’s rules and regulations. The Park Owner’s decision shall be final and binding.</p>
     <p>(c) <b>Outstanding Debt on Home:</b> Any sale of the mobile home by the Homeowner is contingent upon the payment in full of any existing debt or financial obligations owed on the mobile home. The Homeowner must ensure that all such debts are satisfied prior to completing the sale.</p>
     <p>(d) <b>Renter Approval:</b> Any new renter or tenant selected by the Homeowner to occupy the mobile home must be approved by the Park Owner. The Park Owner may approve or reject any potential tenant at their sole discretion unless the Park Owner has expressly granted written consent for an exception.</p>
-    <p>(e) <b>Reserve Fund:</b> The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(t.reserve)}</span> (${dollarsWords(t.reserve)}) to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund’s availability upon request.</p>
 
     <h3>14. Notices</h3>
     <p>Any notices required to be given under this Agreement shall be delivered in writing. Notices to the Park Owner must be delivered in writing at least ${notice} days prior to any proposed action, such as termination, rent adjustment, or other significant changes. Notices to the Homeowner may be delivered by mail, in person, or by electronic means if agreed upon by both parties.</p>
 
+
+    <h3>15. Reserve Fund</h3>
+    <p>The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(t.reserve)}</span> (${dollarsWords(t.reserve)}) to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund’s availability upon request.</p>
+
     <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>Park Owner:</b><div class="line"></div>Name: ${parkOwner}<br>Date: ${shortDate(t.leaseFrom)}</div>
-      <div class="sig-block"><b>Homeowner:</b><div class="line"></div>Name: ${buyer}<br>Date: ${shortDate(t.leaseFrom)}</div>
+      <div class="sig-block"><b>Park Owner:</b><div class="line"></div>Name: ${parkOwner}<br>Date: __________________</div>
+      <div class="sig-block"><b>Homeowner:</b><div class="line"></div>Name: ${buyer}<br>Date: __________________</div>
     </div>
     ${t.notary ? notaryBlock("this Lease Agreement") : ""}
   `;

@@ -39,7 +39,7 @@ const t = (name, run) => {
   results.push([name, ok, why]);
 };
 
-const { pack, DEFAULTS } = await load("lib/papers.ts");
+const { pack, DEFAULTS, TEMPLATES, templateOf } = await load("lib/papers.ts");
 
 // ---- a deal with nothing recorded against it -------------------------
 
@@ -78,6 +78,81 @@ t("two homes typed in make two agreements, not one",
   () => (two.match(/<h2>PURCHASE AGREEMENT<\/h2>/g) ?? []).length === 2);
 t("and two leases, one per lot",
   () => two.includes("3124") && two.includes("3126"));
+
+// ---- the line that says which home ------------------------------------
+
+const { homeSentence } = await load("lib/describe.ts");
+const recorded = {
+  homeYear: 2021, homeMake: "Clayton", homeSerial: "CLW0214NC",
+  lot: "3124", parkName: "The Retreat",
+  parkAddress: "3100 Lady Viola Dr, Fayetteville NC",
+};
+const said = homeSentence(recorded);
+t("the home is identified by year, make and serial",
+  () => said.includes("2021") && said.includes("Clayton")
+     && said.includes("Serial# CLW0214NC"));
+t("and by where it stands, which is the half that was missing",
+  () => said.includes("Lot 3124") && said.includes("The Retreat")
+     && said.includes("3100 Lady Viola Dr"));
+// A home nobody recorded a make for still has to say where it is, and a
+// home whose park is unknown still has to say what it is -- a fixture
+// with every field filled cannot tell those two apart.
+t("a home with no make still says where it stands",
+  () => homeSentence({ ...recorded, homeYear: null, homeMake: null,
+                       homeSerial: null }).startsWith("situated on Lot 3124"));
+t("and a home with no park still says what it is",
+  () => homeSentence({ ...recorded, lot: "", parkName: "", parkAddress: null })
+        === "2021 Clayton Serial# CLW0214NC");
+
+// ---- the three templates ---------------------------------------------
+//
+// Two of them have to produce DIFFERENT documents or the picker is a row
+// of buttons that does nothing, and a fixture that cannot say which
+// document it is looking at cannot tell you that.
+
+const tpl = (key) => {
+  const found = TEMPLATES.find((x) => x.key === key);
+  return { ...deal, ...(found ? found.changes : {}) };
+};
+const house = pack(tpl("house"), typedIn, "both");
+const investor = pack(tpl("investor"), typedIn, "both");
+
+t("there are three templates", () => TEMPLATES.length === 3);
+t("the house template carries the annual escalation",
+  () => /Annual Rent Escalation/.test(house));
+t("and the investor-friendly one does not",
+  () => !/Annual Rent Escalation/.test(investor));
+t("the house template keeps a lien until the home is paid for",
+  () => /Security Interest\./.test(house));
+t("and the investor-friendly one does not",
+  () => !/Security Interest\./.test(investor));
+t("the house template charges a late fee",
+  () => /Late Payment/.test(house));
+t("and the investor-friendly one does not",
+  () => !/Late Payment/.test(investor));
+// Not merely "investor-friendly has fewer clauses": both insure the home,
+// so the difference is the three above and not a blanket subtraction.
+t("both of them insure the home",
+  () => /Insurance &amp; Taxes/.test(house) && /Insurance &amp; Taxes/.test(investor));
+t("and they give different notice periods",
+  () => tpl("house").noticeDays !== tpl("investor").noticeDays
+     && house.includes(`${tpl("house").noticeDays} days`)
+     && investor.includes(`${tpl("investor").noticeDays} days`));
+
+/* A TEMPLATE MAY NOT TOUCH THE MONEY. The figures on a deal are typed in
+   every time, and a template that quietly moved a rate or a lot rent
+   would be a template that changed the price of the home. */
+const MONEY_KEYS = ["ratePct", "termYears", "perYear", "lotRent", "consulting",
+  "reserve", "lateFee", "escalatePct"];
+t("no template changes a figure except the escalation per cent", () =>
+  TEMPLATES.every((x) => Object.keys(x.changes).every(
+    (k) => !MONEY_KEYS.includes(k) || k === "escalatePct")));
+
+t("the screen can tell which template is showing",
+  () => templateOf(tpl("house")) === "house"
+     && templateOf(tpl("investor")) === "investor");
+t("and calls it custom once a switch is moved by hand",
+  () => templateOf({ ...tpl("house"), security: false }) === "custom");
 
 // ---- one deal, two parks ---------------------------------------------
 //
@@ -165,6 +240,27 @@ t("the papers that appear on screen are the drawn list too",
   () => drawnOut != null && drawn != null && drawnOut.includes(drawn));
 
 // The thing that makes a home typed in by hand possible at all.
+t("the template picker is on the screen",
+  () => /TEMPLATES\.map/.test(live) && /templateOf\(terms\)/.test(live));
+/* TWO PLACES, ASKED SEPARATELY. The box has to show what was typed and
+   the papers have to read it, and `saidAs` appearing once anywhere in the
+   file satisfies a rule that only greps for the name -- so taking the
+   binding off the box passed while the box was showing the default and
+   ignoring every edit. */
+t("the box shows what was typed into it", () => {
+  const at = live.indexOf("Home on lot");
+  if (at < 0) return false;
+  const open = live.lastIndexOf("<input", at);
+  return open >= 0 && live.slice(open, at).includes("saidAs[h.saleId]");
+});
+t("and the papers are drawn from it", () => {
+  // Inside the mapping over the ticked sales, not the first `describedAs:`
+  // in the file -- which is the type declaration for a home typed by hand.
+  const at = live.indexOf("chosen.map(");
+  if (at < 0) return false;
+  const said = live.indexOf("describedAs:", at);
+  return said >= 0 && live.slice(said, said + 120).includes("saidAs[h.saleId]");
+});
 t("the screen says when the ticked homes are not one deal",
   () => /spread\.length\s*>\s*1/.test(live));
 t("there is a way to add a home by hand",
