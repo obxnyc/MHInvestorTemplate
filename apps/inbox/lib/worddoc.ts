@@ -42,6 +42,8 @@ export async function packDocx(
 
   const body: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] = [];
   let pending: Block[] = [];
+  /** Whether the block just placed was our signature. */
+  let inked = false;
 
   /** A run of table rows becomes one table; everything else is a paragraph. */
   const flushRows = () => {
@@ -88,12 +90,26 @@ export async function packDocx(
           children: b.runs.map((r) => new TextRun({ text: r.text, bold: false })),
         }));
         break;
+      case "ink":
+        /* Our signature, above the line rather than through it. 150 x 45
+           points is about two inches by six-tenths: a signature, not a
+           banner. docx wants the bytes, so the data URL is unpacked. */
+        body.push(new Paragraph({
+          spacing: { before: 260, after: 0 },
+          children: [new d.ImageRun({
+            type: "png",
+            data: Uint8Array.from(
+              Buffer.from(b.src.replace(/^data:image\/png;base64,/, ""), "base64")),
+            transformation: { width: 150, height: 45 },
+          })],
+        }));
+        break;
       case "rule":
         /* The line somebody signs on. A bottom border on an empty
            paragraph, because an underscore run is a row of underscores
            that wraps and a drawing object is not editable in Word. */
         body.push(new Paragraph({
-          spacing: { before: 320, after: 40 },
+          spacing: { before: inked ? 20 : 320, after: 40 },
           border: { bottom: { style: BorderStyle.SINGLE, size: 6,
                               color: "000000", space: 1 } },
           children: [new TextRun("")],

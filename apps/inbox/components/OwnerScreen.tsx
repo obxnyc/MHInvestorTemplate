@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import SignaturePad from "@/components/SignaturePad";
 import { describe, homeSentence } from "@/lib/describe";
 import { DEFAULTS, TEMPLATES, templateOf, pack, money0,
          type Terms, type Home } from "@/lib/papers";
@@ -91,6 +92,18 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   /** False when migration 046 has not been run. Not the same as no draft. */
   const [canKeep, setCanKeep] = useState(true);
+
+  /* OUR SIDE, SIGNED BEFORE IT GOES OUT. Kept once and read back here, so
+     it never travels in the deal draft: it is the same mark on every
+     document and there is no reason for a copy of it per investor. */
+  const [ink, setInk] = useState<string | null>(null);
+  const [canSign, setCanSign] = useState(true);
+  const [inkBusy, setInkBusy] = useState(false);
+  const [inkSaid, setInkSaid] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
+  const [showPad, setShowPad] = useState(false);
+  const [signedOn, setSignedOn] = useState(
+    () => new Date().toISOString().slice(0, 10));
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -105,6 +118,47 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     setHomes(out.homes ?? []);
   }, [ownerId]);
   useEffect(() => { void load(); }, [load]);
+
+  const readInk = useCallback(async () => {
+    try {
+      const res = await fetch("/api/me/signature", { cache: "no-store" });
+      const out = await res.json().catch(() => ({}));
+      if (out.keeping === false) setCanSign(false);
+      setInk(typeof out.png === "string" ? out.png : null);
+    } catch { /* the papers still work; they are simply not signed */ }
+  }, []);
+  useEffect(() => { void readInk(); }, [readInk]);
+
+  const keepInk = async (png: string) => {
+    setInkBusy(true); setInkSaid(null);
+    try {
+      const res = await fetch("/api/me/signature", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ png }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) { setInkSaid(out.error ?? "That did not save."); return; }
+      /* Only once the server has it: a signature shown on screen that was
+         refused is a document somebody thinks is signed. */
+      setInk(png);
+      setShowPad(false);
+      setSigning(true);
+    } catch (e) {
+      setInkSaid(e instanceof Error ? e.message : "That did not save.");
+    } finally { setInkBusy(false); }
+  };
+
+  const dropInk = async () => {
+    setInkBusy(true); setInkSaid(null);
+    try {
+      const res = await fetch("/api/me/signature", { method: "DELETE" });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) { setInkSaid(out.error ?? "That did not work."); return; }
+      setInk(null); setSigning(false); setShowPad(true);
+    } catch (e) {
+      setInkSaid(e instanceof Error ? e.message : "That did not work.");
+    } finally { setInkBusy(false); }
+  };
 
   /* THE DRAFT COMES FIRST. Seeding from the recorded sales and then
      laying the draft over it would flash the wrong figures and, worse,
@@ -228,10 +282,22 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     return [...seen].sort();
   }, [chosen]);
 
+  /**
+   * The terms as they go onto paper.
+   *
+   * The signature is not part of the deal and is not kept with it -- it
+   * is the same mark on every document this person sends -- so it is put
+   * on here rather than carried in `terms` all the way through the
+   * screen. Nothing is signed unless somebody has asked for it to be.
+   */
+  const onPaper = useMemo<Terms>(() => (
+    signing && ink ? { ...terms, signedPng: ink, signedOn } : terms
+  ), [terms, signing, ink, signedOn]);
+
   const built = useMemo(() => {
     if (!forPapers.length) return "";
-    return pack(terms, forPapers, which);
-  }, [forPapers, terms, which]);
+    return pack(onPaper, forPapers, which);
+  }, [forPapers, onPaper, which]);
 
   /**
    * What the browser calls this page while the papers are up.
@@ -266,7 +332,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     setWriting(true); setWordSaid(null);
     try {
       const { packDocx, docxName } = await import("@/lib/worddoc");
-      const blob = await packDocx(terms, forPapers, which);
+      const blob = await packDocx(onPaper, forPapers, which);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -305,7 +371,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
          why: pdfkit throws inside its own worker looking for metrics
          that are not in the browser's virtual file system. */
       pdfMake.vfs = await timesMetrics();
-      const def = buildPdfDef(terms, forPapers, which);
+      const def = buildPdfDef(onPaper, forPapers, which);
       await new Promise<void>((done, fail) => {
         try {
           pdfMake.createPdf(def).download(
@@ -598,6 +664,48 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                   : "Nothing saved for this investor yet — press Save and it"
                     + " will be here next time."}
             </p>
+
+            {/* SIGNING OUR OWN LINE. Both of our blocks on every document
+                in the pack -- Seller on the agreement, Park Owner on the
+                lease. The buyer's line is never touched: they sign
+                wherever they sign. */}
+            {canSign && (
+              <div className="signrow">
+                {ink && !showPad ? (
+                  <>
+                    <label className="papertickone">
+                      <input type="checkbox" checked={signing}
+                             onChange={(e) => setSigning(e.target.checked)} />
+                      <span>Sign these as Seller and Park Owner</span>
+                    </label>
+                    {signing && (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img className="signtiny" src={ink} alt="Your signature" />
+                        <label className="signdate">Signed on
+                          <input type="date" value={signedOn}
+                                 onChange={(e) => setSignedOn(e.target.value)} />
+                        </label>
+                      </>
+                    )}
+                    <button type="button" className="btn"
+                            onClick={() => setShowPad(true)}>
+                      Change signature
+                    </button>
+                  </>
+                ) : (
+                  <SignaturePad png={null} busy={inkBusy} said={inkSaid}
+                                onSave={(v) => void keepInk(v)}
+                                onClear={() => void dropInk()} />
+                )}
+              </div>
+            )}
+            {!canSign && (
+              <p className="dim tplsays">
+                Signing here needs migration 047 run on the database. The
+                documents still come out with a blank line to sign on.
+              </p>
+            )}
 
             <div className="tplrow">
               <span className="tpllabel">Template</span>

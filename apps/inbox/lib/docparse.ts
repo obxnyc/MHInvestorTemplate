@@ -21,6 +21,7 @@ export type Block =
   | { kind: "p"; runs: Run[]; align?: "center" | "left" }
   | { kind: "spaced"; runs: Run[] }          // the W I T N E S S E T H line
   | { kind: "rule" }                          // a signature line
+  | { kind: "ink"; src: string }              // our signature, above one
   | { kind: "row"; cells: string[]; head?: boolean }
   | { kind: "break" };                        // start a new page
 
@@ -139,6 +140,17 @@ export function readPack(html: string): Block[] {
         where = /witness/.test(classOf(attrs)) ? "spaced" : "p";
         align = /fill/.test(classOf(attrs)) ? "left" : undefined;
         break;
+      case "img": {
+        /* Our signature. Only ever the one class: an image in one of
+           these documents is a signature and nothing else, and a rule
+           that accepted any <img> would put whatever arrived into a
+           contract. */
+        if (/sigink/.test(classOf(attrs))) {
+          const src = (attrs.match(/src\s*=\s*"([^"]*)"/) ?? [])[1];
+          if (src) { flush(); out.push({ kind: "ink", src }); }
+        }
+        break;
+      }
       case "div": {
         const cls = classOf(attrs);
         if (/pagebreak/.test(cls)) { flush(); out.push({ kind: "break" }); }

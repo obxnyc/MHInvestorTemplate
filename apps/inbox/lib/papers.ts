@@ -54,6 +54,20 @@ export type Terms = {
   amortise: boolean;
   /** "annual" for one row a year, "monthly" for one a payment. */
   amortDetail: "annual" | "monthly";
+
+  /**
+   * OUR SIDE, SIGNED BEFORE IT GOES OUT.
+   *
+   * A PNG as a data URL, drawn on the signature line of the Seller and
+   * the Park Owner blocks -- never on the Purchaser's or the
+   * Homeowner's, who sign for themselves wherever they sign.
+   *
+   * Absent means an unsigned document with a line to sign on, which is
+   * what this has always produced and remains the default.
+   */
+  signedPng?: string;
+  /** The day it was signed, as yyyy-mm-dd. Blank leaves the line. */
+  signedOn?: string;
 };
 
 /** One home in the deal. Dollars, not cents: these go on paper. */
@@ -277,6 +291,24 @@ export function amortisation(t: Terms, home: Home): string {
         <tr><td><b>Total</b></td><td><b>$${money0(totP)}</b></td><td><b>$${money0(totI)}</b></td><td></td></tr></tbody></table>`;
 }
 
+/**
+ * What sits on our side of a signature line.
+ *
+ * The image goes ABOVE the rule rather than on it, because a signature
+ * written through a printed line is what a photocopy looks like and this
+ * is the original. Nothing is drawn at all without a signature to draw,
+ * so an unsigned pack is exactly the document it was before.
+ */
+export function signedBy(t: Terms): string {
+  if (!t.signedPng) return "";
+  return `<img class="sigink" src="${t.signedPng}" alt="Signature">`;
+}
+
+/** The date beside a signature: the day it was signed, or a line. */
+export function signedDate(t: Terms): string {
+  return t.signedOn ? shortDate(t.signedOn) : "__________________";
+}
+
 export function notaryBlock(what: string): string {
   return `<div class="sig" style="margin-top:30px;font-size:11pt">
     <p><b>ACKNOWLEDGMENT</b></p>
@@ -323,7 +355,7 @@ export function purchaseAgreement(t: Terms, home: Home): string {
     <p>Seller shall provide to Purchaser a fully executed and notarized bill of sale completely detailing the personal property being purchased which shall be delivered upon final payment to Seller, free and clear of all encumbrances, debts, liens, claims, and Seller has no knowledge of any legal impediment to sale of the personal property described above. If ownership of the personal property is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
     <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>SELLER:</b><div class="line"></div>${seller}<br>Date: __________________</div>
+      <div class="sig-block"><b>SELLER:</b>${signedBy(t)}<div class="line"></div>${seller}<br>Date: ${signedDate(t)}</div>
       <div class="sig-block"><b>BUYER:</b><div class="line"></div>${buyer}<br>Date: __________________</div>
     </div>
     ${amortisation(t, home)}
@@ -404,7 +436,7 @@ export function landLease(t: Terms, home: Home): string {
 
     <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
     <div class="sig">
-      <div class="sig-block"><b>Park Owner:</b><div class="line"></div>Name: ${parkOwner}<br>Date: __________________</div>
+      <div class="sig-block"><b>Park Owner:</b>${signedBy(t)}<div class="line"></div>Name: ${parkOwner}<br>Date: ${signedDate(t)}</div>
       <div class="sig-block"><b>Homeowner:</b><div class="line"></div>Name: ${buyer}<br>Date: __________________</div>
     </div>
     ${t.notary ? notaryBlock("this Lease Agreement") : ""}

@@ -77,6 +77,9 @@ const TABLES = {
   /* Empty on purpose: the owner screen has to be right for an investor
      nobody has saved a deal for, which is every investor the first time. */
   deal_drafts: [],
+  /* Nobody has signed: the papers panel has to be right before anyone
+     has, which is every account the first time. */
+  signatures: [],
   /* TWO INVESTORS, NOT ONE, and the second holds nothing.
      The investors list tallies homes and money per owner, and with a
      single owner holding everything, "sum over this owner's sales" and

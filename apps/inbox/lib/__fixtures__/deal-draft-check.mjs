@@ -170,6 +170,13 @@ try {
   t("and a caller with no session sees nothing at all", () =>
     refuses(`set role anon; select count(*) from deal_drafts`));
 
+} catch (e) {
+  /* The named check above has already recorded what went wrong. Letting
+     this out would print a stack trace and no results at all, which reads
+     as "the harness fell over" rather than "the migration did not
+     apply" -- the most important thing a harness like this can say. */
+  const why = String(e && e.message || e).replace(/\s+/g, " ").trim();
+  if (!/^stopping:/.test(why)) checks.push(["the harness ran to the end", false, why]);
 } finally {
   try { run(...asPg(`${BIN}/pg_ctl -D ${dir}/d -m immediate stop`)); } catch { /* down already */ }
   rmSync(dir, { recursive: true, force: true });

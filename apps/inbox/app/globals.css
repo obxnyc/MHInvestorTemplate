@@ -2049,6 +2049,37 @@ a.metric:hover{border-color:var(--accent)}
 .tpllabel{font-size:.68rem;font-weight:700;color:var(--faint);
   text-transform:uppercase;letter-spacing:.06em;margin-right:.2rem}
 .tplsays{font-size:.8rem;margin:0 0 .6rem}
+
+/* ---- our own signature ----
+   The pad is sized in CSS and scaled in device pixels by the component,
+   so a line drawn with a finger on a phone is as sharp as one drawn with
+   a mouse. `touch-action:none` or the first stroke scrolls the page
+   instead of drawing. */
+.signrow{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;
+  margin:.2rem 0 .8rem;padding:.7rem .8rem;border:1px solid var(--hair);
+  border-radius:12px;background:var(--card)}
+.signwrap{width:100%;display:grid;gap:.5rem}
+.signwrap .dim{margin:0}
+.signpad{width:100%;max-width:26rem;height:9rem;box-sizing:border-box;
+  border:1px dashed var(--hair);border-radius:10px;background:#FFFFFF;
+  touch-action:none;cursor:crosshair}
+/* The signature is ink on white in the document, so it is shown on white
+   here too -- at night a dark card behind it would hide the very thing
+   being checked. */
+.signhave{max-width:16rem;max-height:5rem;background:#FFFFFF;
+  border:1px solid var(--hair);border-radius:8px;padding:.3rem .5rem}
+.signtiny{height:2.1rem;background:#FFFFFF;border:1px solid var(--hair);
+  border-radius:6px;padding:.1rem .3rem}
+.signdate{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
+  color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.signdate input{padding:.38rem .5rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);color:var(--ink);font:inherit;
+  font-size:.84rem;text-transform:none;letter-spacing:0;font-weight:400}
+/* A file input that looks like the buttons beside it. */
+.signfile{position:relative;overflow:hidden;display:inline-flex;
+  align-items:center}
+.signfile input{position:absolute;inset:0;opacity:0;width:100%;
+  cursor:pointer}
 .findrow{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
   color:var(--faint);text-transform:uppercase;letter-spacing:.06em;
   max-width:22rem}
@@ -2081,6 +2112,9 @@ a.metric:hover{border-color:var(--accent)}
 .paper h3{font-size:12pt;margin:16px 0 4px}
 .paper p{margin:8px 0;text-align:justify}
 .paper .fill{font-weight:700}
+/* Our signature, above the line rather than through it: a signature
+   written across a printed rule is what a photocopy looks like. */
+.paper .sigink{display:block;max-height:46px;max-width:200px;margin:14px 0 2px}
 .paper .hint{color:#555;font-size:10pt}
 .paper .sig{margin-top:34px}
 .paper .sig .line{border-bottom:1px solid #000;width:320px;height:1.2em;

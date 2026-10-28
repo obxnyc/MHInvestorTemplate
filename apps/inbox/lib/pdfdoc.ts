@@ -66,6 +66,9 @@ export function buildPdfDef(
     content.push(piece);
   };
 
+  /** Whether the block just before was our signature, so the line under
+   *  it sits against it rather than a paragraph's distance below. */
+  let inked = false;
   let rows: Extract<Block, { kind: "row" }>[] = [];
   const flushRows = () => {
     if (!rows.length) return;
@@ -101,13 +104,20 @@ export function buildPdfDef(
         push({ text: asText(b.runs), alignment: "center",
                margin: [0, 6, 0, 6] });
         break;
+      case "ink":
+        /* Above the line, not through it. Sized in points: 150 x 45 is
+           about two inches by six-tenths, which is a signature rather
+           than a banner across the page. The aspect is left to fit
+           inside that box so a wide scrawl is not stretched tall. */
+        push({ image: b.src, fit: [150, 45], margin: [0, 14, 0, 0] });
+        break;
       case "rule":
         /* The line somebody signs on. Drawn rather than typed, because a
            run of underscores wraps at the margin and breaks across a
            page as readily as any other text. */
         push({ canvas: [{ type: "line", x1: 0, y1: 0, x2: TEXT_WIDTH, y2: 0,
                           lineWidth: 0.8 }],
-               margin: [0, 22, 0, 3] });
+               margin: [0, inked ? 2 : 22, 0, 3] });
         break;
       case "break":
         breakNext = true;
@@ -122,6 +132,10 @@ export function buildPdfDef(
                lineHeight: 1.25, margin: [0, 0, 0, 7] });
       }
     }
+    /* Set after the block is placed, so the rule that follows a
+       signature reads it as "the thing before me was ink" rather than
+       asking about itself. */
+    inked = b.kind === "ink";
   }
   flushRows();
 
