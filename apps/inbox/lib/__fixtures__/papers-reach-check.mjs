@@ -219,16 +219,27 @@ t("the Sale papers button is in the source", () => Boolean(salePapers));
 t("and it is never disabled",
   () => salePapers != null && !/disabled/.test(salePapers));
 
-const printBtn = (() => {
-  const at = live.indexOf("window.print()");
+/* The two buttons that hand over a file. `window.print()` used to be one
+   of them and is gone: the browser's print dialog writes the date and
+   this page's address into the margin of every page and no stylesheet
+   can reach it, so a document that gets recorded cannot come from it. */
+const fileBtn = (label) => {
+  const at = live.indexOf(label);
   if (at < 0) return null;
   const open = live.lastIndexOf("<button", at);
   return open < 0 ? null : live.slice(open, at);
-})();
-t("the print button reads the drawn list, not the recorded one",
-  () => printBtn != null && drawn != null && printBtn.includes(drawn));
-t("and refuses while a typed-in home has no price",
-  () => printBtn != null && /notReady\.length\s*>\s*0/.test(printBtn));
+};
+t("the browser's print dialog is not offered for a document",
+  () => !/window\.print\(\)/.test(live));
+for (const [label, call] of [["Download Word", "saveWord"],
+                             ["Download PDF", "savePdf"]]) {
+  const btn = fileBtn(label);
+  t(`the ${label} button is there`, () => btn != null && btn.includes(call));
+  t(`${label} reads the drawn list, not the recorded one`,
+    () => btn != null && drawn != null && btn.includes(drawn));
+  t(`${label} refuses while a typed-in home has no price`,
+    () => btn != null && /notReady\.length\s*>\s*0/.test(btn));
+}
 
 const drawnOut = (() => {
   const at = live.indexOf("dangerouslySetInnerHTML");
@@ -240,6 +251,50 @@ t("the papers that appear on screen are the drawn list too",
   () => drawnOut != null && drawn != null && drawnOut.includes(drawn));
 
 // The thing that makes a home typed in by hand possible at all.
+// ---- what was typed is still there tomorrow ---------------------------
+//
+// "I changed these items and when the page reloads it goes away." Eight
+// homes' worth of figures, switches and descriptions is an afternoon, and
+// it lived in a browser tab.
+
+t("there is a Save for the deal",
+  () => /keepDeal/.test(live) && /method: "PUT"/.test(live));
+
+/* NOTHING IS MARKED SAVED UNTIL THE SERVER SAYS SO, which is the rule
+   that makes the Saved line worth reading. Asked by position inside the
+   handler rather than by pattern: a regex for "sets the mark after the
+   answer" matches none of the ways that can be written. */
+t("the mark is not set before the answer has been read", () => {
+  const at = live.indexOf("const keepDeal");
+  if (at < 0) return false;
+  const block = live.slice(at, at + 1400);
+  const sent = block.indexOf("await fetch");
+  const marked = block.indexOf("setBaseline(");
+  return sent >= 0 && marked > sent;
+});
+/* And it marks the text that was SENT, not whatever is on screen by the
+   time the answer comes back -- otherwise a keystroke during the round
+   trip is quietly reported as saved. */
+t("and it marks what was sent, not what is on screen now", () => {
+  const at = live.indexOf("const keepDeal");
+  const block = live.slice(at, at + 1400);
+  return /const body = dealText;/.test(block)
+    && /setBaseline\(body\)/.test(block);
+});
+t("a failed save says so and offers to try again",
+  () => /setSaveSaid\(/.test(live) && /Try again/.test(live));
+/* The migration not having run is not the same as nothing being saved,
+   and a screen that cannot tell them apart says "Saved" into a table
+   that is not there. */
+t("and the screen can tell a missing table from an empty one",
+  () => /canKeep/.test(live) && /046/.test(live));
+/* The draft has to be read before the recorded sales seed the screen, or
+   the seed races it and the afternoon is overwritten by the database. */
+t("the draft is read before anything is seeded from the sales", () => {
+  const at = live.indexOf("if (seeded ||");
+  return at > 0 && /!draftRead/.test(live.slice(at, at + 120));
+});
+
 t("the template picker is on the screen",
   () => /TEMPLATES\.map/.test(live) && /templateOf\(terms\)/.test(live));
 /* TWO PLACES, ASKED SEPARATELY. The box has to show what was typed and

@@ -20,7 +20,7 @@
  * database on 54321, the way phone-check does, and skips with a reason
  * when either is missing rather than passing.
  */
-import { existsSync, readdirSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, mkdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
 const BASE = process.env.PHONE_CHECK_BASE ?? "http://127.0.0.1:3100";
@@ -108,6 +108,12 @@ await ctx.addCookies([{ name: "sb-127-auth-token",
   value: sessionFor("22222222-2222-2222-2222-222222222222"),
   domain: "127.0.0.1", path: "/" }]);
 const p = await ctx.newPage();
+/* WHAT THE PAGE SAYS WENT WRONG. The PDF is built in the tab, and when
+   pdfkit could not find its font metrics it threw inside its own worker:
+   nothing on screen, no file, no error -- a button that did nothing. */
+const noise = [];
+p.on("pageerror", (e) => noise.push(String(e)));
+p.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 await p.goto(`${BASE}${WHO}`, { waitUntil: "networkidle" });
 await p.getByRole("button", { name: "Sale papers" }).click();
 await p.waitForTimeout(500);
@@ -115,6 +121,25 @@ await p.waitForTimeout(500);
    than written down, so a fixture with a third home does not quietly
    start comparing four against four. */
 const onScreen = await p.$$eval(".paper .doc-sec", (n) => n.length);
+/* THE TWO BUTTONS THAT HAND OVER A FILE, pressed. Both are built in the
+   browser, so nothing short of a browser can tell whether they work --
+   the Node harnesses build the same definitions and would have been
+   perfectly happy with a page that downloaded nothing at all. */
+const got = {};
+for (const [label, ext] of [["Download PDF", ".pdf"], ["Download Word", ".docx"]]) {
+  try {
+    const wait = p.waitForEvent("download", { timeout: 90000 });
+    await p.getByRole("button", { name: label }).click();
+    const file = await wait;
+    const where = `/tmp/print/${file.suggestedFilename()}`;
+    await file.saveAs(where);
+    got[label] = { name: file.suggestedFilename(), ext, where };
+  } catch (e) {
+    got[label] = { failed: String(e && e.message || e).split("\n")[0] };
+  }
+}
+const onScreenErr = await p.$$eval(".paperacts .err", (n) => n.map((x) => x.textContent));
+
 await p.pdf({ path: out, format: "Letter", printBackground: true,
               margin: { top: "0.8in", bottom: "0.8in",
                         left: "0.8in", right: "0.8in" } });
@@ -132,6 +157,23 @@ const t = (name, run) => {
 
 t(`the screen is drawing more than one document (${onScreen})`,
   () => onScreen > 1);
+
+// ---- the files the owner actually leaves with -------------------------
+
+for (const [label, ext] of [["Download PDF", ".pdf"], ["Download Word", ".docx"]]) {
+  const r = got[label];
+  t(`${label} hands over a file`,
+    () => { if (r.failed) throw new Error(r.failed); return !r.failed; });
+  t(`and it is named for the documents, ending ${ext}`,
+    () => !r.failed && r.name.endsWith(ext)
+       && /Purchase Agreement and Park Land Lease/.test(r.name));
+  t(`and it is not empty`,
+    () => !r.failed && statSync(r.where).size > 5000);
+}
+t("nothing on the page reported a failure",
+  () => onScreenErr.length === 0);
+t("and the tab threw nothing",
+  () => { if (noise.length) throw new Error(noise.join(" | ")); return true; });
 
 // ---- nothing but the documents ---------------------------------------
 

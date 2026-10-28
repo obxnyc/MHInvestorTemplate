@@ -28,6 +28,12 @@ type Held = {
  * empty, and an empty number field read as zero is a contract that sells
  * a home for nothing.
  */
+/** Only what this screen touches: pdfmake has no types of its own here. */
+type PdfMake = {
+  fonts: unknown; vfs: unknown;
+  createPdf: (def: unknown) => { download: (name: string, cb: () => void) => void };
+};
+
 type ByHand = { key: string; lot: string; describedAs: string; price: string; down: string };
 
 const blank = (): ByHand => ({
@@ -68,9 +74,23 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [byHand, setByHand] = useState<ByHand[]>([]);
   /** What the papers call each recorded home, where somebody has said. */
   const [saidAs, setSaidAs] = useState<Record<string, string>>({});
-  /** Making the Word file, and anything that went wrong doing it. */
+  /** Making a file, and anything that went wrong doing it. */
   const [writing, setWriting] = useState(false);
   const [wordSaid, setWordSaid] = useState<string | null>(null);
+
+  /* KEEPING THE DEAL. Eight homes' worth of figures and descriptions is an
+     afternoon, and until now a reload took it with no warning that it
+     would. `kept` is the deal as the server last confirmed it, so the
+     screen can say whether what is on it has been saved -- "saved" worked
+     out from the last press is a claim, not an answer. */
+  const [baseline, setBaseline] = useState<string | null>(null);
+  /** Whether a draft was read back, as opposed to one never being saved. */
+  const [drafted, setDrafted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveSaid, setSaveSaid] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  /** False when migration 046 has not been run. Not the same as no draft. */
+  const [canKeep, setCanKeep] = useState(true);
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -86,6 +106,39 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   }, [ownerId]);
   useEffect(() => { void load(); }, [load]);
 
+  /* THE DRAFT COMES FIRST. Seeding from the recorded sales and then
+     laying the draft over it would flash the wrong figures and, worse,
+     race it. So nothing is seeded until this has answered. */
+  const [draftRead, setDraftRead] = useState(false);
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/owners/${ownerId}/deal`, { cache: "no-store" });
+        const out = await res.json().catch(() => ({}));
+        if (gone) return;
+        if (out.saving === false) setCanKeep(false);
+        const d = out.deal as null | {
+          terms?: Terms; which?: "both" | "purchase" | "lease";
+          picked?: Record<string, boolean>; byHand?: ByHand[];
+          saidAs?: Record<string, string>;
+        };
+        if (d && d.terms) {
+          setTerms(d.terms);
+          if (d.which) setWhich(d.which);
+          setPicked(d.picked ?? {});
+          setByHand(d.byHand ?? []);
+          setSaidAs(d.saidAs ?? {});
+          setSavedAt(out.savedAt ?? null);
+          setDrafted(true);
+          setSeeded(true);
+        }
+      } catch { /* the screen still works; it simply has nothing kept */ }
+      if (!gone) setDraftRead(true);
+    })();
+    return () => { gone = true; };
+  }, [ownerId]);
+
   // The deal's own terms, taken from the homes themselves. A rate typed
   // once and read back from eight sales is a rate nobody re-keys.
   useEffect(() => {
@@ -93,7 +146,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     // investor with nothing recorded yet is the one buying their first
     // home, and the buyer's name and today's date are the two things the
     // papers need most.
-    if (seeded || !owner || asking) return;
+    if (seeded || !owner || asking || !draftRead) return;
     const first: Held | undefined = homes[0];
     const today = new Date().toISOString().slice(0, 10);
     setTerms((was) => ({
@@ -112,7 +165,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     }));
     setPicked(Object.fromEntries(homes.map((h) => [h.saleId, true])));
     setSeeded(true);
-  }, [seeded, owner, asking, homes]);
+  }, [seeded, owner, asking, draftRead, homes]);
 
   const chosen = useMemo(
     () => homes.filter((h) => picked[h.saleId]), [homes, picked]);
@@ -230,6 +283,86 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     }
   };
 
+  /**
+   * The PDF, made here rather than by the print dialog.
+   *
+   * Printing put the date and this page's address in the margin of every
+   * page, which a recorded document cannot carry, and no stylesheet can
+   * reach that margin. So the button that made a bad file is gone and
+   * this one makes the file itself.
+   */
+  const savePdf = async () => {
+    setWriting(true); setWordSaid(null);
+    try {
+      const [{ buildPdfDef, TIMES, pdfName, timesMetrics }, mod] = await Promise.all([
+        import("@/lib/pdfdoc"),
+        import("pdfmake/build/pdfmake"),
+      ]);
+      const pdfMake = (mod as unknown as { default?: PdfMake } & PdfMake).default
+        ?? (mod as unknown as PdfMake);
+      pdfMake.fonts = TIMES;
+      /* Without these the file never appears and nothing on screen says
+         why: pdfkit throws inside its own worker looking for metrics
+         that are not in the browser's virtual file system. */
+      pdfMake.vfs = await timesMetrics();
+      const def = buildPdfDef(terms, forPapers, which);
+      await new Promise<void>((done, fail) => {
+        try {
+          pdfMake.createPdf(def).download(
+            pdfName(terms.buyer || owner?.name || "", which), () => done());
+        } catch (e) { fail(e); }
+      });
+    } catch (e) {
+      setWordSaid(`The PDF could not be made: ${
+        e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  /** Everything typed on this screen, as one value. */
+  const deal = useMemo(() => ({
+    v: 1 as const, terms, which, picked, byHand, saidAs,
+  }), [terms, which, picked, byHand, saidAs]);
+  const dealText = useMemo(() => JSON.stringify(deal), [deal]);
+  const unsaved = baseline !== null && baseline !== dealText;
+
+  /* The mark against which "unsaved" is measured, taken once the screen
+     has settled -- from the draft if there was one, from the sales if
+     there was not. Before it is set, nothing is reported either way,
+     because a screen that is still loading has not been changed. */
+  useEffect(() => {
+    if (baseline !== null || !seeded || !draftRead) return;
+    setBaseline(dealText);
+  }, [baseline, seeded, draftRead, dealText]);
+
+  const keepDeal = async () => {
+    setSaving(true); setSaveSaid(null);
+    const body = dealText;
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/deal`, {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deal }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) {
+        setSaveSaid(out.error ?? "That did not save.");
+        return;
+      }
+      /* Marked as kept only once the server says so, and against the text
+         that was SENT rather than whatever is on screen by the time the
+         answer comes back -- otherwise a keystroke during the round trip
+         is quietly reported as saved. */
+      setBaseline(body);
+      setDrafted(true);
+      setSavedAt(out.savedAt ?? new Date().toISOString());
+    } catch (e) {
+      setSaveSaid(e instanceof Error ? e.message : "That did not save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const set = (change: Partial<Terms>) => setTerms((was) => ({ ...was, ...change }));
   const num = (v: string) => (v === "" ? 0 : Number(v));
 
@@ -245,6 +378,13 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
           <span className="parkkept">{owner.legal_name}</span>
         )}
         <div className="parkacts">
+          {papers && canKeep && (
+            <button type="button" className={unsaved ? "btn pri" : "btn"}
+                    disabled={saving || !unsaved}
+                    onClick={() => void keepDeal()}>
+              {saving ? "Saving…" : unsaved ? "Save" : "Saved"}
+            </button>
+          )}
           {/* Not disabled on an empty investor. The papers for their first
               home are the papers most worth drawing, and the home can be
               typed in below. */}
@@ -435,6 +575,30 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
               )}
             </div>
 
+            {/* WHERE THINGS STAND, said rather than left to be inferred.
+                A screen that only shows a Save button leaves "has this
+                been kept" to memory, and the one time memory is wrong is
+                the afternoon that goes. */}
+            <p className={saveSaid ? "err" : "dim tplsays"}>
+              {saveSaid ? (
+                <>
+                  {saveSaid}{" "}
+                  <button type="button" className="btn"
+                          onClick={() => void keepDeal()}>Try again</button>
+                </>
+              ) : !canKeep ? (
+                "Nothing here is being kept: saving a deal needs migration"
+                + " 046 run on the database. Everything still works; it will"
+                + " be gone when this page reloads."
+              ) : saving ? "Saving…"
+                : unsaved ? "Unsaved changes on this deal."
+                : drafted && savedAt
+                  ? `Saved ${new Date(savedAt).toLocaleString("en-US",
+                      { dateStyle: "medium", timeStyle: "short" })}.`
+                  : "Nothing saved for this investor yet — press Save and it"
+                    + " will be here next time."}
+            </p>
+
             <div className="tplrow">
               <span className="tpllabel">Template</span>
               {TEMPLATES.map((tpl) => (
@@ -545,9 +709,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                 {writing ? "Making it…" : "Download Word (.docx)"}
               </button>
               <button type="button" className="btn"
-                      disabled={!forPapers.length || notReady.length > 0}
-                      onClick={() => window.print()}>
-                Print / save as PDF
+                      disabled={!forPapers.length || notReady.length > 0 || writing}
+                      onClick={() => void savePdf()}>
+                Download PDF
               </button>
               {notReady.length > 0 ? (
                 <span className="err">
@@ -560,10 +724,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                 <span className="err">{wordSaid}</span>
               ) : (
                 <span className="dim">
-                  The Word file carries nothing but the documents. Printing
-                  from the browser adds the date and this page’s address to
-                  every margin unless <strong>Headers and footers</strong> is
-                  cleared in the print dialog.
+                  Both files carry nothing but the documents — no date, no
+                  web address, nothing in the margin. Send either one for
+                  signing.
                 </span>
               )}
             </div>

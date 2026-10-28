@@ -74,6 +74,9 @@ const TABLES = {
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
   work_orders: [], inquiries: [],
+  /* Empty on purpose: the owner screen has to be right for an investor
+     nobody has saved a deal for, which is every investor the first time. */
+  deal_drafts: [],
   /* TWO INVESTORS, NOT ONE, and the second holds nothing.
      The investors list tallies homes and money per owner, and with a
      single owner holding everything, "sum over this owner's sales" and
