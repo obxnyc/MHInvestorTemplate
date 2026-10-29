@@ -36,7 +36,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const BASE = "id, category, source, status, subject, category_confidence,"
     + " closure_prompts, assigned_to, unit_id,"
     + " units(label, properties(name, color)),"
-    + " contacts(id, phone, full_name, party, unit_id, language,"
+    + " contacts(id, phone, email, full_name, party, unit_id, language,"
     + " units(label, properties(name, color))), staff:assigned_to(full_name)";
   const ask = (cols: string) => supabase
     .from("conversations").select(cols).eq("id", id).maybeSingle();

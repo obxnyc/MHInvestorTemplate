@@ -159,7 +159,8 @@ export default function ThreadPane(
     category_confidence: number | null; assigned_to: string | null;
     units: unknown;
     contacts: {
-      id: string; phone: string; full_name: string | null; party: string;
+      id: string; phone: string; email: string | null;
+      full_name: string | null; party: string;
       unit_id: string | null; language: string | null; units: unknown;
     } | null;
     staff: { full_name: string } | null;
@@ -235,8 +236,21 @@ export default function ThreadPane(
           Said loudly, it is a job: match it to a property, or add the
           property. Once either is done the next request from that address
           files itself, so this is a thing somebody does ONCE per address. */}
-      {convo.place_hint && !prop ? (
-        <PlaceNeeded conversationId={convo.id} hint={convo.place_hint} />
+      {/* ON ANY THREAD WITH NO PROPERTY, not only one that came with words
+          to match. It was keyed on the hint, so a Rent Manager request --
+          which carries no place at all, which is exactly the case that
+          needs a human -- showed nothing and could not be filed. The
+          narrower question again, answered confidently. */}
+      {!prop ? (
+        <PlaceNeeded conversationId={convo.id}
+                     hint={convo.place_hint ?? null}
+                     contact={contact ? {
+                       id: String(contact.id),
+                       name: contact.full_name ?? null,
+                       phone: contact.phone ?? null,
+                       email: contact.email ?? null,
+                     } : null}
+                     onChanged={() => void load(String(convo.id))} />
       ) : null}
 
       <OpenJobs jobs={data.jobs ?? []} />

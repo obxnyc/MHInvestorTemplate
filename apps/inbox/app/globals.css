@@ -2140,6 +2140,14 @@ a.metric:hover{border-color:var(--accent)}
   text-transform:uppercase;padding:.14rem .42rem;border-radius:999px;
   background:var(--hair-2);color:var(--ink-2)}
 .jobfiles.done{background:var(--ok-bg,var(--hair-2));color:var(--ok,var(--ink-2))}
+/* Narrowing the list of every property, on a request that named none. */
+.unplaced-find{display:grid;gap:.25rem;margin:.5rem 0 .2rem;
+  font-size:.68rem;font-weight:700;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.06em}
+.unplaced-find input{width:100%;box-sizing:border-box;padding:.45rem .6rem;
+  border:1px solid var(--hair);border-radius:8px;background:var(--card);
+  color:var(--ink);font:inherit;font-size:.9rem;text-transform:none;
+  letter-spacing:0;font-weight:400}
 
 /* ---- the page the investor opens ----
    Its own shell: no header, no nav, nothing to click but the documents and

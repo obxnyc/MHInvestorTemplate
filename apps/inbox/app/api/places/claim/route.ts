@@ -26,8 +26,13 @@ export async function GET(req: Request) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
-  const hint = (new URL(req.url).searchParams.get("hint") ?? "").trim();
-  if (!hint) return NextResponse.json({ suggestions: [], said: null });
+  const url = new URL(req.url);
+  const hint = (url.searchParams.get("hint") ?? "").trim();
+  /* What somebody has typed into the box, when there was no hint to go
+     on. A request from Rent Manager names no place at all, and offering
+     only "add this property" to a house that is already on the books is
+     how a second copy of it gets made. */
+  const typed = (url.searchParams.get("q") ?? "").trim();
 
   const db = await supabaseServer();
   const [{ data: props }, { data: units }] = await Promise.all([
@@ -37,6 +42,22 @@ export async function GET(req: Request) {
 
   const said = readHint(hint);
   const all = places((props ?? []) as never, (units ?? []) as never);
+
+  /* NOTHING TO MATCH ON means every property, in order, so the house can
+     be picked rather than invented. Narrowed as soon as anybody types. */
+  if (!hint) {
+    const shown = typed ? findPlace(typed, all, 12) : all.slice(0, 40);
+    return NextResponse.json({
+      said: null,
+      browsing: true,
+      total: all.length,
+      suggestions: shown.map((p) => ({
+        id: p.id, kind: p.kind, label: p.label, where: p.where,
+        propertyId: p.propertyId, unitId: p.unitId,
+      })),
+    });
+  }
+
   /* Asked with the property name rather than the whole subject: the subject
      repeats itself and carries a lot marking, and every word has to land for
      a place to be offered at all. "1140 Northside #51, 1140 Northside Rd" as
@@ -79,13 +100,13 @@ export async function POST(req: Request) {
     .select("id, place_hint, contact_id").eq("id", conversationId).maybeSingle();
   if (!convo) return NextResponse.json({ error: "no such request" }, { status: 404 });
 
+  /* A HINT IS WHAT MAKES THE NEXT ONE FILE ITSELF, not what makes this
+     one possible. A request from Rent Manager carries no place at all --
+     no subject line, no address, nothing -- and refusing to file it left
+     the office with a thread naming a broken fridge in a house nobody
+     could identify, and no way to say which house it was. So filing
+     always works; remembering is the part that needs words to remember. */
   const hint = String(convo.place_hint ?? "").trim();
-  if (!hint) {
-    return NextResponse.json({
-      error: "This request did not say what the place was called, so there is"
-        + " nothing to remember. Set the property on the job instead.",
-    }, { status: 400 });
-  }
 
   let propertyId = body.propertyId ?? null;
   let unitId = body.unitId ?? null;
