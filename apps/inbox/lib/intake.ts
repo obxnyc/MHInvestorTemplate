@@ -252,8 +252,32 @@ async function openJob(
     ?? (convo?.contacts as unknown as { unit_id?: string | null } | null)?.unit_id
     ?? null;
 
+  /** Whether the address was worked out here rather than already known. */
+  let worked = false;
   if (!unitId && item.unitHint) {
     unitId = await unitFromHint(db, item.unitHint);
+    worked = Boolean(unitId);
+  }
+
+  /* TAG THE THREAD, NOT ONLY THE JOB.
+   *
+   * The work order has had the address since the day this was written and
+   * the conversation never did -- so a request whose subject line we
+   * matched perfectly still opened a thread saying "Not filed against a
+   * property", with the job underneath it knowing exactly where it was.
+   * Two answers to one question, one of them visible.
+   *
+   * The CONTACT is deliberately left alone. A tenant reports a leak at
+   * their neighbour's as readily as their own, and writing an address
+   * onto a person from one request is how somebody's record quietly
+   * becomes wrong. */
+  if (unitId && worked) {
+    const { error } = await db.from("conversations")
+      .update({ unit_id: unitId }).eq("id", conversationId);
+    /* Not fatal: the job still carries the address and the thread simply
+       asks somebody to confirm it, which is the old behaviour. Logged so
+       it is not silent. */
+    if (error) console.warn("could not tag the thread with its unit:", error.message);
   }
 
   const { data, error } = await db.from("work_orders").insert({
