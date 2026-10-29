@@ -2148,6 +2148,15 @@ a.metric:hover{border-color:var(--accent)}
   border:1px solid var(--hair);border-radius:8px;background:var(--card);
   color:var(--ink);font:inherit;font-size:.9rem;text-transform:none;
   letter-spacing:0;font-weight:400}
+/* The same request, listed twice. */
+.rmtwins{margin:0 0 1.6rem}
+.rmtwins h2{font-size:1rem;margin:0 0 .3rem}
+.twinlist{list-style:none;margin:.5rem 0 .8rem;padding:0;display:grid;gap:.3rem}
+.twinlist li{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem;
+  padding:.45rem .6rem;border:1px solid var(--hair);border-radius:9px;
+  background:var(--card);font-size:.85rem}
+.twinlist a{font-size:.78rem;text-decoration:underline;
+  text-underline-offset:2px}
 
 /* ---- the page the investor opens ----
    Its own shell: no header, no nav, nothing to click but the documents and

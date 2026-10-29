@@ -2,6 +2,7 @@ import { requireStaff } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import RentManagerProbe from "@/components/RentManagerProbe";
+import TwinThreads from "@/components/TwinThreads";
 import RmGroups from "@/components/RmGroups";
 import RmWriteProbe from "@/components/RmWriteProbe";
 import RmMakeGroup from "@/components/RmMakeGroup";
@@ -23,6 +24,8 @@ export default async function RentManager() {
     <main className="audit">
       <BackLink fallback="/settings" />
       <h1>Rent Manager</h1>
+
+      <TwinThreads />
       <p className="muted">
         Leases, rent, balances and invoices live over there. This is the
         connection to them.

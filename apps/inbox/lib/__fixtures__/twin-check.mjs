@@ -138,6 +138,43 @@ t("and only against something recent", () => /30 \* 864e5/.test(intake));
 t("matched on what came IN, not on anything we sent",
   () => /\.eq\("direction", "inbound"\)/.test(intake));
 
+// ---- clearing up the ones already here --------------------------------
+
+const twins = bare(read("app/api/rentmanager/twins/route.ts"));
+const screen = bare(read("components/TwinThreads.tsx"));
+
+/* CLOSED, NOT DELETED. A thread somebody might have written on is not a
+   thing to remove because a rule decided it was redundant. */
+t("the empty one is closed rather than deleted",
+  () => /status: "closed"/.test(twins) && !/\.delete\(\)/.test(twins));
+/* AND NOT IF ANYBODY ANSWERED IT. At that point it is a conversation,
+   whatever it started as. */
+t("a thread somebody has replied on is left alone", () => {
+  const at = twins.indexOf('.eq("direction", "outbound")');
+  if (at < 0) throw new Error("it never asks whether anybody replied");
+  const closed = twins.indexOf('status: "closed"');
+  return at < closed;
+});
+/* THE RIGHT HALF IS KEPT. The pulled one says so in its own last line;
+   keeping that and closing the email would throw away the tenant, the
+   number and the address, which is the whole point of the exercise. */
+t("the one with nothing on it is the one identified", () => {
+  const at = twins.indexOf("const isPulled");
+  return at >= 0 && /From Rent Manager Service Manager/.test(twins.slice(at, at + 200));
+});
+t("and a thread is never matched against itself",
+  () => /m\.conversation_id !== one\.conversation_id/.test(twins));
+/* NOTHING HAPPENS UNTIL ASKED, and what is acted on is what was listed.
+   A sweep that decides for itself is a sweep nobody can check first. */
+t("reading the list changes nothing",
+  () => { const at = twins.indexOf("export async function GET");
+          const body = twins.slice(at, twins.indexOf("export async function POST"));
+          return !/\.update\(/.test(body) && !/\.delete\(/.test(body); });
+t("and closing acts only on the ids it was handed",
+  () => /body\?\.ids/.test(twins) && /\.eq\("id", id\)/.test(twins));
+t("the screen says how many were closed AND how many were not",
+  () => /out\.closed/.test(screen) && /out\.kept/.test(screen));
+
 let bad = 0;
 for (const [name, ok, why] of results) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}${why ? ` — ${why}` : ""}`);
