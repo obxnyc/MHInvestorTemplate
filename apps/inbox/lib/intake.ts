@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { placeKey, readHint } from "./alias";
+import { twinFragment } from "./sameissue";
 import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
@@ -55,6 +56,49 @@ export async function ingest(item: Intake) {
   const { data: dupe } = await db
     .from("messages").select("id").eq("external_id", item.externalId).maybeSingle();
   if (dupe) return { ok: true, duplicate: true };
+
+  /* THE SAME REQUEST, ARRIVING THE OTHER WAY.
+   *
+   * A tenant submits one issue in Tenant Web Access and it reaches us
+   * twice: Rent Manager emails it at once, with their name, their number
+   * and the address, and the hourly pull finds the same issue later
+   * carrying none of those. Both paths are worth keeping -- the pull
+   * catches what the office types straight into Rent Manager, which
+   * never emails -- but two threads for one broken fridge, one of them
+   * empty, is what the office has been looking at.
+   *
+   * No id joins them: the email carries none. They are joined on what
+   * the tenant actually wrote, which is identical in both and is the one
+   * thing neither path invents. Short descriptions are refused by
+   * `twinFragment`, because "no heat" is a sentence a dozen households
+   * write in a week and joining those would be far worse than two
+   * threads for one.
+   */
+  const twin = item.category === "maintenance" ? twinFragment(item.raw ?? "") : null;
+  if (twin) {
+    const since = new Date(Date.now() - 30 * 864e5).toISOString();
+    const { data: seen } = await db.from("messages")
+      .select("id, conversation_id, external_id")
+      .eq("direction", "inbound")
+      .gte("created_at", since)
+      .ilike("body", `%${twin}%`)
+      .limit(1).maybeSingle();
+    if (seen?.conversation_id) {
+      /* Recorded against the thread that already exists, so the second
+         arrival is not lost -- and so that asking again does not keep
+         finding it new. The RICHER one is whichever got here first: the
+         email arrives within the minute and the pull is hourly, so in
+         practice the thread keeps the tenant and their number. */
+      await db.from("messages").insert({
+        conversation_id: seen.conversation_id,
+        direction: "inbound",
+        body: item.raw,
+        external_id: item.externalId,
+        channel: "email",
+      });
+      return { ok: true, duplicate: true, joined: seen.conversation_id };
+    }
+  }
 
   // Match on phone first so a Zego request from a tenant who also texts you
   // lands in the same thread rather than starting a parallel one.
