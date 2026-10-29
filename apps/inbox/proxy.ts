@@ -28,6 +28,15 @@ import { NextResponse, type NextRequest } from "next/server";
 // read that comment and walked past it anyway.
 const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
                 /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//, /^\/report/,
+                /* A buyer signing a purchase agreement has no account and is
+                   not going to make one to read what they are buying. The
+                   token in the link is what stands between a stranger and
+                   this, which is why it is 32 random bytes and expires. */
+                /^\/sign\//, /^\/api\/sign\//,
+                /* The faces a typed signature is written in, and the one
+                   the documents are set in. Sent to the sign page as much
+                   as to the office, and neither is private. */
+                /^\/fonts\//,
                 // Says which commit is answering here and nothing else. The
                 // setup check fetches it across domains to find out whether a
                 // custom domain and this one are the same deployment.

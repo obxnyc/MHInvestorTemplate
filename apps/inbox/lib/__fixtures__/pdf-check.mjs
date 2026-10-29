@@ -60,7 +60,10 @@ const def = pdfdoc.buildPdfDef(terms, homes, "both");
 mkdirSync("/tmp/pdf", { recursive: true });
 const file = "/tmp/pdf/pack.pdf";
 const PdfPrinter = require_("pdfmake");
-const printer = new PdfPrinter(pdfdoc.TIMES);
+const printer = new PdfPrinter({
+  [pdfdoc.SERIF]: Object.fromEntries(Object.entries(pdfdoc.FONTS[pdfdoc.SERIF])
+    .map(([k, v]) => [k, join(root, "public/fonts", v)])),
+});
 const doc = printer.createPdfKitDocument(def);
 const bits = [];
 doc.on("data", (b) => bits.push(b));
@@ -103,6 +106,27 @@ t("the file declares no document title", () => !/\/Title\s*\(/.test(raw));
 
 t(`it is more than one page (${pages.length})`, () => pages.length > 1);
 t("the purchase agreement is there", () => text.includes("PURCHASE AGREEMENT"));
+/* THE HEADINGS ARE BOLD, which pdftotext cannot see -- it reads letters,
+   not weights. Counted off the definition instead: every run of a title
+   and of a numbered clause heading must ask for bold, and the line that
+   identifies the home must too. A block that asks for bold while its
+   runs say otherwise is a heading in plain text. */
+const defOf = (t2) => pdfdoc.buildPdfDef(t2, homes, "both").content;
+const def2 = defOf(terms);
+const allBold = (piece) => Array.isArray(piece.text)
+  && piece.text.length > 0 && piece.text.every((r) => r.bold === true);
+t("every document title is set in bold",
+  () => def2.filter((x) => x.fontSize === 14).length === 4
+     && def2.filter((x) => x.fontSize === 14).every(allBold));
+t("and every numbered clause heading",
+  () => def2.filter((x) => x.fontSize === 12).length > 20
+     && def2.filter((x) => x.fontSize === 12).every(allBold));
+t("and the line that says which home is being sold",
+  () => {
+    const at = def2.findIndex((x) => Array.isArray(x.text)
+      && x.text.some((r) => /to wit:/.test(r.text)));
+    return at >= 0 && allBold(def2[at + 1]);
+  });
 t("so is the park land lease",
   () => text.includes("MOBILE HOME PARK LAND LEASE AGREEMENT"));
 t("one of each per home, which is four",
@@ -136,9 +160,30 @@ t("there is somewhere to sign",
 
 // ---- set like a document ---------------------------------------------
 
-t("it is set in Times, with no font file embedded",
-  () => /Times-Roman/.test(raw) && /Times-Bold/.test(raw)
-     && !/FontFile/.test(raw));
+/* The face is EMBEDDED now, which is the point: the fourteen faces every
+   reader already has are WinAnsi-encoded and have no non-breaking hyphen,
+   and a plain one is somewhere pdfmake will stretch a justified line. */
+t("the typeface travels with the document",
+  () => /FontFile2/.test(raw) && /Tinos/.test(raw));
+t("in both weights, or the bold is a lie",
+  () => (raw.match(/Tinos/g) ?? []).length >= 2);
+/* THE THING THE EMBEDDING IS FOR. A compound word may not be split, and
+   a justified line may not be stretched in the middle of one. */
+/* Justifying, pdfmake stretches every place a line MAY break, not only
+   the spaces -- so a slash or a hyphen inside a word became a gap.
+   Asked over the whole pack rather than on one phrase, because the
+   words it happens to are the deal's: "3bd/2ba" is a description
+   somebody typed and "$341.22/yr" is a figure. */
+const pulled = (text.replace(/\n/g, " ")
+  .match(/\S*[\u2010\u2011/-] \S+/g) ?? [])
+  .filter((x) => !/^-|— | - /.test(x));
+t("no word is pulled apart at a slash or a hyphen",
+  () => { if (pulled.length) throw new Error(pulled.slice(0, 4).join(" | "));
+          return true; });
+t("and the fixture contains words that would be",
+  () => /3bd.2ba/.test(text) && /\d\/\s?yr|a year/.test(text));
+t("and the non-breaking hyphen is really in there",
+  () => /purchase\u2011money|purchase-money/.test(text.replace(/\s+/g, " ")));
 t("the page is letter",
   () => /\/MediaBox\s*\[\s*0\s+0\s+612\s+792\s*\]/.test(raw));
 

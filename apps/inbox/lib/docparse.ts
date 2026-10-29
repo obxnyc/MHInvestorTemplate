@@ -18,7 +18,7 @@ export type Run = { text: string; bold?: boolean };
 export type Block =
   | { kind: "h1"; runs: Run[] }
   | { kind: "h2"; runs: Run[] }
-  | { kind: "p"; runs: Run[]; align?: "center" | "left" }
+  | { kind: "p"; runs: Run[]; align?: "center" | "left"; strong?: boolean }
   | { kind: "spaced"; runs: Run[] }          // the W I T N E S S E T H line
   | { kind: "rule" }                          // a signature line
   | { kind: "ink"; src: string }              // our signature, above one
@@ -30,6 +30,23 @@ const ENTITIES: Record<string, string> = {
   ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’",
   mdash: "—", ndash: "–", hellip: "…",
 };
+/**
+ * Characters the printed document cannot draw.
+ *
+ * Almost nothing, now that the PDF embeds a face with Latin-1 and the
+ * punctuation a contract uses in it. What is left is the odd character
+ * that is wrong rather than missing.
+ */
+const PRINTABLE: [RegExp, string][] = [
+  /* U+2011 is deliberately NOT here. It is the non-breaking hyphen in
+     "month‑to‑month" and "purchase‑money", the face the PDF embeds has
+     it, and it is the character that stops a line breaking -- and a
+     justified line stretching -- in the middle of a compound word. */
+  [/\u2212/g, "\u2013"],   // minus sign, which no contract means
+];
+const printable = (s: string) =>
+  PRINTABLE.reduce((out, [re, to]) => out.replace(re, to), s);
+
 const unescape = (s: string) => s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (all, body) => {
   if (body[0] === "#") {
     const n = body[1] === "x" || body[1] === "X"
@@ -79,6 +96,8 @@ export function readPack(html: string): Block[] {
   let bold = 0;
   let where: null | "h1" | "h2" | "p" | "spaced" | "cell" = null;
   let align: "center" | "left" | undefined;
+  /** A paragraph the document sets in bold as a whole, not run by run. */
+  let strong = false;
   let cells: string[] = [];
   let head = false;
 
@@ -90,7 +109,7 @@ export function readPack(html: string): Block[] {
       .map((r) => ({ ...r, text: r.text.replace(/[^\S\n]+/g, " ") }))
       .filter((r) => r.text);
     runs = [];
-    if (!kept.length || !where) { where = null; align = undefined; return; }
+    if (!kept.length || !where) { where = null; align = undefined; strong = false; return; }
     /* Whitespace between tags is markup, not prose -- and a newline in it
        is a line break the document never asked for, which showed up as a
        blank line under every signature. */
@@ -101,14 +120,14 @@ export function readPack(html: string): Block[] {
       if (where === "h1") out.push({ kind: "h1", runs: final });
       else if (where === "h2") out.push({ kind: "h2", runs: final });
       else if (where === "spaced") out.push({ kind: "spaced", runs: final });
-      else out.push({ kind: "p", runs: final, align });
+      else out.push({ kind: "p", runs: final, align, strong: strong || undefined });
     }
-    where = null; align = undefined;
+    where = null; align = undefined; strong = false;
   };
 
   for (const tok of tokens(html)) {
     if ("text" in tok) {
-      const text = unescape(tok.text);
+      const text = printable(unescape(tok.text));
       if (where === "cell") { cells[cells.length - 1] += text; continue; }
       /* Words loose in a div, with no paragraph open: the name under a
          signature line is written that way, and dropping it meant the
@@ -138,7 +157,12 @@ export function readPack(html: string): Block[] {
       case "p":
         flush();
         where = /witness/.test(classOf(attrs)) ? "spaced" : "p";
-        align = /fill/.test(classOf(attrs)) ? "left" : undefined;
+        /* `.fill` on a paragraph is the stylesheet's bold -- the line
+           after "certain personal property, to wit:" is set that way and
+           was coming out of the PDF in plain text while the screen showed
+           it bold. */
+        strong = /\bfill\b/.test(classOf(attrs));
+        align = strong ? "left" : undefined;
         break;
       case "img": {
         /* Our signature. Only ever the one class: an image in one of

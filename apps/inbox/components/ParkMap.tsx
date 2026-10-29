@@ -454,7 +454,7 @@ export default function ParkMap(
           owner: f.owner, empty: f.empty, managed: f.managed,
           // Pale when there is a home and nobody in it, solid when it is
           // lived in, white when there is no home at all.
-          colour: f.owner === "none" ? "#ffffff" : f.empty ? paint.pale : paint.solid,
+          color: f.owner === "none" ? "#ffffff" : f.empty ? paint.pale : paint.solid,
           edge: paint.edge,
           // The number goes dark on a pale pad and light on a solid one,
           // which is the only way it stays readable on both.
@@ -554,7 +554,7 @@ export default function ParkMap(
         }
       }
       m.addLayer({ id: "home-fill", type: "fill", source: "homes",
-        paint: { "fill-color": ["get", "colour"], "fill-opacity": 1 } });
+        paint: { "fill-color": ["get", "color"], "fill-opacity": 1 } });
       // Two layers rather than one with an expression: line-dasharray is
       // a constant-only property in MapLibre, and a data-driven one throws
       // on style load and takes the whole map with it.

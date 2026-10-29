@@ -51,7 +51,7 @@ export type Terms = {
   security: boolean;
   insure: boolean;
   notary: boolean;
-  amortise: boolean;
+  amortize: boolean;
   /** "annual" for one row a year, "monthly" for one a payment. */
   amortDetail: "annual" | "monthly";
 
@@ -68,6 +68,18 @@ export type Terms = {
   signedPng?: string;
   /** The day it was signed, as yyyy-mm-dd. Blank leaves the line. */
   signedOn?: string;
+
+  /**
+   * THEIR SIDE, LEFT OPEN FOR THEM TO SIGN.
+   *
+   * When a pack is being sent out for the investor to sign, their two
+   * blocks carry a marked slot instead of a bare rule. It draws as the
+   * rule it has always drawn as -- the document they read before signing
+   * is the document -- and it gives the one place their mark goes, so
+   * countersigning is a substitution rather than a guess at where in the
+   * markup a signature belongs.
+   */
+  counterSign?: boolean;
 };
 
 /** One home in the deal. Dollars, not cents: these go on paper. */
@@ -117,7 +129,7 @@ export const DEFAULTS: Terms = {
   security: true,
   insure: true,
   notary: false,
-  amortise: true,
+  amortize: true,
   amortDetail: "annual",
 };
 
@@ -149,7 +161,7 @@ export const TEMPLATES: Template[] = [
       escalate: true, escalatePct: 3,
       escalateApplies: "lot rent and consulting fee",
       late: true, graceDays: 10,
-      security: true, insure: true, amortise: true,
+      security: true, insure: true, amortize: true,
       noticeDays: 60, rofrDays: 30,
     },
   },
@@ -161,7 +173,7 @@ export const TEMPLATES: Template[] = [
     changes: {
       escalate: false,
       late: false, graceDays: 15,
-      security: false, insure: true, amortise: true,
+      security: false, insure: true, amortize: true,
       noticeDays: 90, rofrDays: 15,
     },
   },
@@ -249,11 +261,11 @@ export function payment(P: number, apr: number, yrs: number, freq: number): numb
 
 // ---- the documents ----------------------------------------------------
 
-export function amortisation(t: Terms, home: Home): string {
+export function amortization(t: Terms, home: Home): string {
   const balance = home.price - home.down;
   const rate = t.ratePct, term = t.termYears || 20, freq = t.perYear || 12;
   const pay = payment(balance, rate, term, freq);
-  if (!(t.financed && t.amortise && balance > 0 && pay > 0)) return "";
+  if (!(t.financed && t.amortize && balance > 0 && pay > 0)) return "";
 
   const r = rate / 100 / freq;
   let bal = balance, rows = "", totI = 0, totP = 0;
@@ -320,6 +332,27 @@ export function signedDate(t: Terms, on = true): string {
   return (on && t.signedOn) ? shortDate(t.signedOn) : "__________________";
 }
 
+/**
+ * The other side's signature line, named so it can be filled in later.
+ *
+ * Identical on the page to the rule it replaces. The name is in the
+ * markup rather than in a position, because "the second rule in the
+ * block" is the sort of thing that silently becomes the wrong rule.
+ */
+export function counterSlot(t: Terms, who: string): string {
+  const line = `<div class="line"></div>`;
+  return t.counterSign
+    ? `<span class="signslot" data-for="${who}">${line}</span>`
+    : line;
+}
+
+export function counterDate(t: Terms, who: string): string {
+  const blank = "__________________";
+  return t.counterSign
+    ? `<span class="dateslot" data-for="${who}">${blank}</span>`
+    : blank;
+}
+
 export function notaryBlock(what: string): string {
   return `<div class="sig" style="margin-top:30px;font-size:11pt">
     <p><b>ACKNOWLEDGMENT</b></p>
@@ -337,7 +370,7 @@ export function purchaseAgreement(t: Terms, home: Home, sign = true): string {
   const pay = payment(balance, rate, term, freq);
 
   const payPara = t.financed
-    ? `<p>That Purchaser has offered to purchase such personal property and has tendered <span class="fill">$${money(down)}</span> by certified funds payable to Seller as a down payment on such purchase, the receipt of which is hereby acknowledged by Seller. The balance of the purchase price or <span class="fill">$${money0(balance)}</span> shall be paid in installments of <span class="fill">$${money(pay)}</span> by ${esc(t.payMethod)}, with interest accruing on the remaining unpaid balance at the rate of <span class="fill">${rate || "____"}</span> per cent per annum. This loan is a <span class="fill">${term}-year</span> note. There is no penalty for prepayment to the Seller of the balance remaining due.</p>`
+    ? `<p>That Purchaser has offered to purchase such personal property and has tendered <span class="fill">$${money(down)}</span> by certified funds payable to Seller as a down payment on such purchase, the receipt of which is hereby acknowledged by Seller. The balance of the purchase price or <span class="fill">$${money0(balance)}</span> shall be paid in installments of <span class="fill">$${money(pay)}</span> by ${esc(t.payMethod)}, with interest accruing on the remaining unpaid balance at the rate of <span class="fill">${rate || "____"}</span> percent per annum. This loan is a <span class="fill">${term}-year</span> note. There is no penalty for prepayment to the Seller of the balance remaining due.</p>`
     : `<p>That Purchaser has offered to purchase such personal property and has tendered the full purchase price of <span class="fill">$${money(price)}</span> by certified funds payable to Seller as payment in full, the receipt of which is hereby acknowledged by Seller. No balance remains owing and no financing is extended by Seller in connection with this purchase.</p>`;
 
   const lateClause = (t.financed && t.late)
@@ -367,9 +400,9 @@ export function purchaseAgreement(t: Terms, home: Home, sign = true): string {
     <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
     <div class="sig">
       <div class="sig-block"><b>SELLER:</b>${signedBy(t, sign)}${signLine(t, sign)}${seller}<br>Date: ${signedDate(t, sign)}</div>
-      <div class="sig-block"><b>BUYER:</b><div class="line"></div>${buyer}<br>Date: __________________</div>
+      <div class="sig-block"><b>BUYER:</b>${counterSlot(t, "buyer")}${buyer}<br>Date: ${counterDate(t, "buyer")}</div>
     </div>
-    ${amortisation(t, home)}
+    ${amortization(t, home)}
     ${t.notary ? notaryBlock("this Purchase Agreement") : ""}
   `;
 }
@@ -448,7 +481,7 @@ export function landLease(t: Terms, home: Home, sign = true): string {
     <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
     <div class="sig">
       <div class="sig-block"><b>Park Owner:</b>${signedBy(t, sign)}${signLine(t, sign)}Name: ${parkOwner}<br>Date: ${signedDate(t, sign)}</div>
-      <div class="sig-block"><b>Homeowner:</b><div class="line"></div>Name: ${buyer}<br>Date: __________________</div>
+      <div class="sig-block"><b>Homeowner:</b>${counterSlot(t, "homeowner")}Name: ${buyer}<br>Date: ${counterDate(t, "homeowner")}</div>
     </div>
     ${t.notary ? notaryBlock("this Lease Agreement") : ""}
   `;

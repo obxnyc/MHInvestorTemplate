@@ -24,6 +24,10 @@ const TEXT_WIDTH = 612 - INCH * 2;
 
 type Piece = Record<string, unknown>;
 
+/** Every run bold, whatever the markup said. */
+const bolden = (rs: { text: string; bold: boolean }[]) =>
+  rs.map((r) => ({ ...r, bold: true }));
+
 /**
  * Runs, with anything that is really one word made one run.
  *
@@ -39,8 +43,23 @@ type Piece = Record<string, unknown>;
  * styling -- which for the case this exists for means a bold comma after
  * a bold date, and that is what it should have been anyway.
  */
+/**
+ * Words pdfmake would pull apart.
+ *
+ * It finds the places a line MAY break -- at a slash, at a hyphen -- and
+ * then, justifying, stretches every one of them whether or not there is a
+ * space there. So "and/or" prints as "and/ or", "3bd/2ba" as "3bd/ 2ba",
+ * and a figure as "$341.22/ yr". Marked `noWrap`, a word is one thing
+ * again and nothing is stretched inside it.
+ *
+ * Only short ones: a long token that cannot break has to go somewhere,
+ * and off the right-hand edge is where.
+ */
+const WHOLE = /[/\u2010\u2011-]/;
+const unbreakable = (word: string) => WHOLE.test(word) && word.length <= 24;
+
 const asText = (rs: Run[]) => {
-  const out: { text: string; bold: boolean }[] = [];
+  const out: { text: string; bold: boolean; noWrap?: boolean }[] = [];
   for (const r of rs) {
     const prev = out[out.length - 1];
     let text = r.text;
@@ -49,7 +68,20 @@ const asText = (rs: Run[]) => {
       prev.text += stuck;
       text = text.slice(stuck.length);
     }
-    if (text) out.push({ text, bold: r.bold === true });
+    if (!text) continue;
+    /* Split on the spaces, keeping them, so the pieces still read as one
+       sentence; only the words that would be pulled apart are lifted out
+       into their own inline. */
+    let run = "";
+    for (const piece of text.split(/(\s+)/)) {
+      if (piece && unbreakable(piece)) {
+        if (run) { out.push({ text: run, bold: r.bold === true }); run = ""; }
+        out.push({ text: piece, bold: r.bold === true, noWrap: true });
+      } else {
+        run += piece;
+      }
+    }
+    if (run) out.push({ text: run, bold: r.bold === true });
   }
   return out;
 };
@@ -74,18 +106,38 @@ export function buildPdfDef(
   let rows: Extract<Block, { kind: "row" }>[] = [];
   const flushRows = () => {
     if (!rows.length) return;
-    const widths = rows[0].cells.map(() => "*");
+    /* A year is two characters and a balance is nine, so equal columns
+       put "1" in the middle of two inches of nothing. The first column
+       is given what it needs and the rest share what is left. */
+    const widths = rows[0].cells.map((_, i) => (i === 0 ? "auto" : "*"));
     push({
       table: {
         headerRows: rows[0].head ? 1 : 0,
         widths,
-        body: rows.map((r) => r.cells.map((c) => ({
-          text: c.replace(/\s+/g, " ").trim(), bold: r.head === true,
+        body: rows.map((r) => r.cells.map((c, i) => ({
+          text: c.replace(/\s+/g, " ").trim(),
+          bold: r.head === true,
+          /* Money reads down a column, so it is set against the right
+             edge; the year it belongs to stays against the left. */
+          alignment: i === 0 ? "left" : "right",
         }))),
       },
-      layout: "lightHorizontalLines",
-      fontSize: 9,
-      margin: [0, 4, 0, 10],
+      /* A hairline under every row and nothing else: the heavy rule the
+         default draws under the header belongs on a web page, not in a
+         schedule attached to a contract. */
+      layout: {
+        hLineWidth: (i: number, node: { table: { body: unknown[];
+          headerRows: number } }) => (i === 0 || i === node.table.body.length
+          ? 0 : (i === node.table.headerRows ? 0.7 : 0.3)),
+        vLineWidth: () => 0,
+        hLineColor: () => "#444444",
+        paddingTop: () => 2.5,
+        paddingBottom: () => 2.5,
+        paddingLeft: (i: number) => (i === 0 ? 0 : 8),
+        paddingRight: () => 0,
+      },
+      fontSize: 9.5,
+      margin: [0, 6, 0, 12],
     });
     rows = [];
   };
@@ -94,13 +146,19 @@ export function buildPdfDef(
     if (b.kind === "row") { rows.push(b); continue; }
     flushRows();
     switch (b.kind) {
+      /* BOLD GOES ON THE RUNS, not on the block. pdfmake lets an inline
+         override what the block says and `asText` writes `bold: false`
+         on every run that was not bold in the markup -- so a heading
+         asking for bold at the block level came out in plain text, while
+         the same heading in the Word file, where it is set per run, came
+         out right. */
       case "h1":
-        push({ text: asText(b.runs), bold: true, fontSize: 14,
+        push({ text: bolden(asText(b.runs)), fontSize: 14,
                alignment: "center", margin: [0, 6, 0, 10] });
         break;
       case "h2":
-        push({ text: asText(b.runs), bold: true, fontSize: 12,
-               margin: [0, 10, 0, 4] });
+        push({ text: bolden(asText(b.runs)), fontSize: 12,
+               margin: [0, 12, 0, 4] });
         break;
       case "spaced":
         push({ text: asText(b.runs), alignment: "center",
@@ -129,7 +187,8 @@ export function buildPdfDef(
            block of short lines -- the name and date under a signature --
            and justifying those spreads three words across six inches. */
         const broken = b.runs.some((r) => r.text.includes("\n"));
-        push({ text: asText(b.runs),
+        const runs = b.strong ? bolden(asText(b.runs)) : asText(b.runs);
+        push({ text: runs,
                alignment: (b.align === "left" || broken) ? "left" : "justify",
                lineHeight: 1.25, margin: [0, 0, 0, 7] });
       }
@@ -149,45 +208,72 @@ export function buildPdfDef(
        page's address anywhere in a file that gets recorded. */
     pageSize: "LETTER",
     pageMargins: [INCH, INCH, INCH, INCH],
-    defaultStyle: { font: "Times", fontSize: 12 },
+    defaultStyle: { font: SERIF, fontSize: 12 },
     content,
   };
 }
 
-/** The four faces of the one standard family: no font file to embed. */
-export const TIMES = {
-  Times: {
-    normal: "Times-Roman", bold: "Times-Bold",
-    italics: "Times-Italic", bolditalics: "Times-BoldItalic",
+/**
+ * The face the documents are set in.
+ *
+ * Tinos, which is metric-compatible with Times New Roman -- so the PDF
+ * and the Word file, which asks for Times New Roman by name, break their
+ * lines in the same places and are the same document rather than two
+ * documents that resemble each other.
+ *
+ * EMBEDDED rather than one of the fourteen faces every reader already
+ * has, which is what this used to use. Those are WinAnsi-encoded, and a
+ * non-breaking hyphen is not in WinAnsi: "month‑to‑month" printed as
+ * "month to montha basis", with the words overlapping where a glyph with
+ * no advance had been. Worse, replacing it with a plain hyphen made
+ * pdfmake treat it as somewhere a line may break, and justification then
+ * stretched the gap -- "a purchase- money security interest".
+ *
+ * Subset to Latin-1 and the punctuation a contract uses, which is
+ * seventeen kilobytes a face rather than five hundred.
+ */
+export const SERIF = "Tinos";
+
+export const FONT_FILES = {
+  normal: "tinos-regular.ttf",
+  bold: "tinos-bold.ttf",
+} as const;
+
+/** What pdfmake is told the family is made of. */
+export const FONTS = {
+  [SERIF]: {
+    normal: FONT_FILES.normal,
+    bold: FONT_FILES.bold,
+    /* The documents have no italics in them. Pointed at the upright
+       faces rather than left out, because pdfmake throws on a style it
+       was not given and a missing italic would be a PDF that fails to
+       build rather than one that looks slightly wrong. */
+    italics: FONT_FILES.normal,
+    bolditalics: FONT_FILES.bold,
   },
 };
 
-export const FACES = ["Times-Roman", "Times-Bold", "Times-Italic",
-  "Times-BoldItalic"] as const;
-
 /**
- * The widths pdfkit needs to lay the text out.
+ * The font files, for a browser.
  *
- * Nothing is embedded in the PDF -- Times is one of the fourteen faces
- * every reader already has -- but something has to know how wide the
- * letters are before it can break a line or justify a paragraph. In Node
- * pdfkit reads that off disk; in a browser it looks in a virtual file
- * system and throws "File 'data/Times-Roman.afm' not found" if it is not
- * there, which is what a silent download that never arrives looks like
- * from the outside.
- *
- * Fetched rather than bundled: a quarter of a megabyte of metrics has no
- * business in a JavaScript bundle, and these never change.
+ * pdfkit reads them off disk in Node and out of a virtual file system in
+ * a tab, and throws inside its own worker when they are not there -- a
+ * button that does nothing, with no error anywhere.
  */
-export async function timesMetrics(): Promise<Record<string, string>> {
+export async function serifFiles(): Promise<Record<string, string>> {
   const vfs: Record<string, string> = {};
-  await Promise.all(FACES.map(async (face) => {
-    const res = await fetch(`/afm/${face}.afm`);
+  await Promise.all(Object.values(FONT_FILES).map(async (file) => {
+    const res = await fetch(`/fonts/${file}`);
     if (!res.ok) {
-      throw new Error(`The metrics for ${face} could not be read`
-        + ` (${res.status}). The PDF cannot be laid out without them.`);
+      throw new Error(`The ${file} typeface could not be read (${res.status}).`
+        + " The PDF cannot be set without it.");
     }
-    vfs[`data/${face}.afm`] = await res.text();
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let raw = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      raw += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    vfs[file] = btoa(raw);
   }));
   return vfs;
 }

@@ -80,6 +80,8 @@ const TABLES = {
   /* Nobody has signed: the papers panel has to be right before anyone
      has, which is every account the first time. */
   signatures: [],
+  /* Nothing sent yet: the first send has to work on an empty table. */
+  signing_requests: [],
   /* TWO INVESTORS, NOT ONE, and the second holds nothing.
      The investors list tallies homes and money per owner, and with a
      single owner holding everything, "sum over this owner's sales" and

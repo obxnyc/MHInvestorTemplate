@@ -307,7 +307,7 @@ export default async function ConversationList(
                         {c.closure_prompts > 0 && (
                           <span className="pill warn">{c.closure_prompts}&times;</span>
                         )}
-                        {unsure && <span className="pill grey">unsure</span>}
+                        {unsure && <span className="pill gray">unsure</span>}
                         <span className="rtime">{timeAgo(c.last_message_at)}</span>
                       </span>
                       <span className="rprev">{c.last_message_preview ?? c.subject}</span>

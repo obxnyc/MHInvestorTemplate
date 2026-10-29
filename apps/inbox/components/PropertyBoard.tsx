@@ -246,7 +246,7 @@ export default function PropertyBoard(
                     && `${p.units.length} ${unitWord(p.kind, p.units.length)}`}
                   {vacant ? <span className="pill warn">{vacant} empty</span> : null}
                   {p.lat !== null && !p.confirmed_at && (
-                    <span className="pill grey" title="Nobody has checked the aerial">
+                    <span className="pill gray" title="Nobody has checked the aerial">
                       unchecked
                     </span>
                   )}

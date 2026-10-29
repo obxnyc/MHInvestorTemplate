@@ -36,10 +36,10 @@ export async function packDocx(
   /* A <br> becomes a break rather than a run of its own, and the empty
      pieces either side of it are dropped -- Word renders them as nothing
      but they make the file unreadable and the breaks hard to assert on. */
-  const runs = (rs: Run[]) => rs.flatMap((r) =>
+  const runs = (rs: Run[], strong = false) => rs.flatMap((r) =>
     r.text.split("\n").flatMap((piece, i) => [
       ...(i ? [new TextRun({ break: 1 })] : []),
-      ...(piece ? [new TextRun({ text: piece, bold: r.bold })] : []),
+      ...(piece ? [new TextRun({ text: piece, bold: strong || r.bold })] : []),
     ]));
 
   const body: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] = [];
@@ -54,10 +54,11 @@ export async function packDocx(
     body.push(new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       rows: rows.map((r) => new TableRow({
-        children: r.cells.map((c) => new TableCell({
+        children: r.cells.map((c, i) => new TableCell({
           children: [new Paragraph({
+            alignment: i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT,
             children: [new TextRun({ text: c.replace(/\s+/g, " ").trim(),
-                                     bold: r.head, size: 20 })],
+                                     bold: r.head, size: 19 })],
           })],
         })),
       })),
@@ -132,7 +133,7 @@ export async function packDocx(
           alignment: (b.align === "left" || broken)
             ? AlignmentType.LEFT : AlignmentType.BOTH,
           spacing: { after: 140, line: 300 },
-          children: runs(b.runs),
+          children: runs(b.runs, b.strong === true),
         }));
         break;
       }

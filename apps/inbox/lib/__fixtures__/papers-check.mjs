@@ -74,7 +74,7 @@ const said = new Set(theirs.map((s) => s.toLowerCase()));
 /** What is inside the backticks, and nothing else.
  *
  *  Run on the file as a whole this read the TypeScript as prose and
- *  reported that `export function amortisation(...)` was missing from a
+ *  reported that `export function amortization(...)` was missing from a
  *  contract -- true, and not what is being asked. The holes come out
  *  first, so no backtick can be hiding inside one. */
 function documents(src) {
@@ -82,7 +82,7 @@ function documents(src) {
   return flat.split("`").filter((_, i) => i % 2 === 1).join("\u0000");
 }
 // Only the document functions, not the comments explaining them.
-const docsOnly = documents(ours.slice(ours.indexOf("export function amortisation")));
+const docsOnly = documents(ours.slice(ours.indexOf("export function amortization")));
 const mine = prose(docsOnly);
 
 const drifted = mine.filter((s) => !said.has(s.toLowerCase()));
@@ -183,7 +183,7 @@ t("and an empty date leaves a line", P.longDate("") === "________________");
   t("a cash sale is paid in full", html.includes("payment in full"));
   t("and says no financing is extended",
     html.includes("no financing is extended by Seller"));
-  t("and carries no amortisation schedule", !html.includes("Schedule A"));
+  t("and carries no amortization schedule", !html.includes("Schedule A"));
   t("and no late-payment clause, which is about a loan",
     !html.includes("Late Payment"));
   t("and no security interest, which is also about a loan",

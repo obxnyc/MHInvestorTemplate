@@ -368,7 +368,7 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .pill{font-size:.62rem;font-weight:700;padding:.1em .38em;border-radius:5px;flex:none;
   font-family:ui-monospace,monospace}
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
-.pill.grey{background:var(--sunk);color:var(--faint)}
+.pill.gray{background:var(--sunk);color:var(--faint)}
 /* A photo that cannot be shown is information, not a broken image icon. */
 .mms-gone{display:inline-block;margin-top:.4rem;padding:.4rem .6rem;border-radius:8px;
   border:1px dashed var(--hair);background:var(--sunk);color:var(--muted);
@@ -2119,6 +2119,28 @@ a.metric:hover{border-color:var(--accent)}
 .signwhere .dim{margin:0}
 .signpick{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(17rem,100%),1fr));
   gap:.25rem}
+.sendbox{border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:1rem 1.1rem;margin:0 0 1.2rem}
+.sendbox h2{font-size:.95rem;margin:0 0 .3rem}
+.sendbox .dim{margin:0 0 .7rem}
+
+/* ---- the page the investor opens ----
+   Its own shell: no header, no nav, nothing to click but the documents and
+   the signature. Somebody who has been sent a contract is not a visitor to
+   be given a tour. */
+.signpage{max-width:9.2in;margin:0 auto;padding:1.4rem 1rem 3rem}
+.signpage h1{font-size:1.3rem;margin:0 0 .4rem}
+.signpage>header{margin-bottom:1rem}
+.signdone{font-size:.9rem;color:var(--ink-2);margin:0;
+  padding:.7rem .85rem;border:1px solid var(--hair);border-radius:10px;
+  background:var(--card)}
+.signbox{border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:1rem 1.1rem;margin:1.2rem 0 0;display:grid;gap:.7rem;
+  justify-items:start}
+.signbox h2{font-size:1rem;margin:0}
+.signbox .papertickone{align-items:flex-start;line-height:1.5}
+.signbox .papertickone input{margin-top:.2rem}
+.signbox>*{max-width:100%}
 .findrow{display:grid;gap:.2rem;font-size:.68rem;font-weight:700;
   color:var(--faint);text-transform:uppercase;letter-spacing:.06em;
   max-width:22rem}

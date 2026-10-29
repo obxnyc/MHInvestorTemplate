@@ -109,6 +109,15 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
      somebody having said otherwise -- an agreement going out for the
      buyer to counter, a lease held while a lot is surveyed. */
   const [signOnly, setSignOnly] = useState<Set<string> | null>(null);
+
+  /* SENDING IT FOR THEM TO SIGN. The pack is frozen at the moment it goes
+     and the link is what they open; nothing here is regenerated after. */
+  const [sending, setSending] = useState(false);
+  const [sendTo, setSendTo] = useState({ name: "", email: "", phone: "" });
+  const [sendBusy, setSendBusy] = useState(false);
+  const [sendSaid, setSendSaid] = useState<string | null>(null);
+  const [sentLink, setSentLink] = useState<string | null>(null);
+  const [sentHow, setSentHow] = useState<string[]>([]);
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -325,6 +334,53 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   }, [forPapers, onPaper, which, signs]);
 
   /**
+   * The same pack, with the investor's lines marked so they can be filled.
+   *
+   * Built separately rather than by signing what is on screen: what gets
+   * sent has to carry the slots, and what is printed here must not --
+   * a printed contract with an empty marked span in it is a contract
+   * waiting for a web page.
+   */
+  const toSend = useMemo(() => {
+    if (!forPapers.length) return "";
+    return pack({ ...onPaper, counterSign: true }, forPapers, which, signs);
+  }, [forPapers, onPaper, which, signs]);
+
+  const sendIt = async () => {
+    setSendBusy(true); setSendSaid(null); setSentLink(null);
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/send`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pack: toSend,
+          title: which === "purchase" ? "Purchase Agreement"
+            : which === "lease" ? "Park Land Lease"
+            : "Purchase Agreement and Park Land Lease",
+          docCount: inPack.length,
+          toName: sendTo.name.trim() || terms.buyer,
+          toEmail: sendTo.email.trim(),
+          toPhone: sendTo.phone.trim(),
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) {
+        setSendSaid(out.error ?? "That did not send."); return;
+      }
+      setSentLink(out.link ?? null);
+      setSentHow(Array.isArray(out.went) ? out.went : []);
+      /* WHAT WENT AND WHAT DID NOT, both. A link that exists and was not
+         delivered is one copy-and-paste from fixed; a link reported as
+         sent and never delivered is a deal sitting still for a week. */
+      if (Array.isArray(out.failed) && out.failed.length) {
+        setSendSaid(`The link was made but not delivered — ${out.failed.join("; ")}.`
+          + " Send them the link below yourself.");
+      }
+    } catch (e) {
+      setSendSaid(e instanceof Error ? e.message : "That did not send.");
+    } finally { setSendBusy(false); }
+  };
+
+  /**
    * What the browser calls this page while the papers are up.
    *
    * Chrome and Safari print the page's title and its URL into the page
@@ -385,17 +441,17 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const savePdf = async () => {
     setWriting(true); setWordSaid(null);
     try {
-      const [{ buildPdfDef, TIMES, pdfName, timesMetrics }, mod] = await Promise.all([
+      const [{ buildPdfDef, FONTS, pdfName, serifFiles }, mod] = await Promise.all([
         import("@/lib/pdfdoc"),
         import("pdfmake/build/pdfmake"),
       ]);
       const pdfMake = (mod as unknown as { default?: PdfMake } & PdfMake).default
         ?? (mod as unknown as PdfMake);
-      pdfMake.fonts = TIMES;
+      pdfMake.fonts = FONTS;
       /* Without these the file never appears and nothing on screen says
          why: pdfkit throws inside its own worker looking for metrics
          that are not in the browser's virtual file system. */
-      pdfMake.vfs = await timesMetrics();
+      pdfMake.vfs = await serifFiles();
       const def = buildPdfDef(onPaper, forPapers, which, signs);
       await new Promise<void>((done, fail) => {
         try {
@@ -869,7 +925,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <div className="papertick">
               {([
                 ["financed", "Seller-financed"],
-                ["amortise", "Attach amortisation schedule"],
+                ["amortize", "Attach amortization schedule"],
                 ["escalate", "Annual rent escalation"],
                 ["late", "Late fee and default"],
                 ["security", "Seller keeps a lien until paid"],
@@ -901,6 +957,16 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                       onClick={() => void savePdf()}>
                 Download PDF
               </button>
+              <button type="button" className="btn"
+                      disabled={!forPapers.length || notReady.length > 0}
+                      onClick={() => {
+                        setSending((v) => !v);
+                        setSendSaid(null);
+                        setSendTo((was) => ({ ...was,
+                          name: was.name || terms.buyer }));
+                      }}>
+                {sending ? "Never mind" : "Send to the investor to sign"}
+              </button>
               {notReady.length > 0 ? (
                 <span className="err">
                   {notReady.length} typed-in home
@@ -919,6 +985,48 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
               )}
             </div>
           </div>
+
+          {sending && (
+            <div className="sendbox noprint">
+              <h2>Send to the investor to sign</h2>
+              <p className="dim">
+                They get a link, read these {inPack.length} document
+                {inPack.length === 1 ? "" : "s"}, and sign the same way you
+                do — no account and no DocuSign. The documents are frozen as
+                they are now: changing anything here afterwards does not
+                change what they were sent.
+              </p>
+              <div className="papergrid">
+                <label>Who is signing
+                  <input value={sendTo.name}
+                         onChange={(e) => setSendTo((w) => ({ ...w, name: e.target.value }))} /></label>
+                <label>Email
+                  <input type="email" inputMode="email" value={sendTo.email}
+                         onChange={(e) => setSendTo((w) => ({ ...w, email: e.target.value }))} /></label>
+                <label>Mobile
+                  <input type="tel" inputMode="tel" value={sendTo.phone}
+                         onChange={(e) => setSendTo((w) => ({ ...w, phone: e.target.value }))} /></label>
+              </div>
+              <div className="paperacts">
+                <button type="button" className="btn pri"
+                        disabled={sendBusy
+                          || (!sendTo.email.trim() && !sendTo.phone.trim())}
+                        onClick={() => void sendIt()}>
+                  {sendBusy ? "Sending…" : "Send it"}
+                </button>
+                {sendSaid && <span className="err">{sendSaid}</span>}
+                {!sendSaid && sentHow.length > 0 && (
+                  <span className="dim">Sent to {sentHow.join(" and ")}.</span>
+                )}
+              </div>
+              {sentLink && (
+                <label className="signname">The link, if you would rather send it yourself
+                  <input readOnly value={sentLink}
+                         onFocus={(e) => e.currentTarget.select()} />
+                </label>
+              )}
+            </div>
+          )}
 
           {forPapers.length > 0 && (
             <div className="paper" dangerouslySetInnerHTML={{ __html: built }} />

@@ -198,7 +198,10 @@ t("and an unsigned Word file carries none",
   () => !/<w:drawing>/.test(unsignedXml));
 
 const PdfPrinter = require_("pdfmake");
-const printer = new PdfPrinter(pdfdoc.TIMES);
+const printer = new PdfPrinter({
+  [pdfdoc.SERIF]: Object.fromEntries(Object.entries(pdfdoc.FONTS[pdfdoc.SERIF])
+    .map(([k, v]) => [k, join(root, "public/fonts", v)])),
+});
 const doc = printer.createPdfKitDocument(pdfdoc.buildPdfDef(signed, homes, "both"));
 const bits = [];
 doc.on("data", (b) => bits.push(b));
