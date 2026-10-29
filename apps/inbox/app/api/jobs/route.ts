@@ -16,13 +16,22 @@ export async function GET() {
   if (!staff) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const supabase = await supabaseServer();
-  const [{ data: jobs }, { data: trades }] = await Promise.all([
-    supabase.from("work_orders")
-      .select("id, summary, detail, status, due_at, completed_at, cost_cents, invoice_ref, trade_id, conversation_id, units(label, properties(name, market_id)), vendor:assigned_vendor(full_name, company), tech:assigned_tech(full_name)")
-      .order("completed_at", { ascending: false, nullsFirst: true })
-      .limit(500),
+  /* The photo columns arrive later than the rest, and a column that is not
+     there takes the WHOLE select with it -- which on this screen is every
+     job in the business. Asked for with them and then without. */
+  const BASE = "id, summary, detail, status, due_at, completed_at, cost_cents,"
+    + " invoice_ref, trade_id, conversation_id,"
+    + " units(label, properties(name, market_id)),"
+    + " vendor:assigned_vendor(full_name, company), tech:assigned_tech(full_name)";
+  const askJobs = (cols: string) => supabase.from("work_orders").select(cols)
+    .order("completed_at", { ascending: false, nullsFirst: true }).limit(500);
+
+  let got = await askJobs(`${BASE}, reported_photos, completion_photos`);
+  if (got.error) got = await askJobs(BASE);
+  const [{ data: trades }] = await Promise.all([
     supabase.from("trades").select("id, label, sort").order("sort"),
   ]);
+  const jobs = got.data as unknown as Record<string, unknown>[] | null;
 
   return NextResponse.json({
     jobs: (jobs ?? []).map((j) => {
@@ -30,8 +39,15 @@ export async function GET() {
         { label: string | null; properties: { name: string; market_id: string | null } | null } | null;
       const vendor = j.vendor as unknown as { full_name: string | null; company: string | null } | null;
       const tech = j.tech as unknown as { full_name: string } | null;
+      /* HOW MUCH EVIDENCE IS ON IT, not the files themselves: the board
+         lists five hundred jobs and signing every picture on it would be
+         five hundred round trips for something nobody has clicked. */
+      const before = (j.reported_photos as string[] | null) ?? [];
+      const after = (j.completion_photos as string[] | null) ?? [];
       return {
         id: j.id,
+        evidence: before.length,
+        proof: after.length,
         summary: j.summary,
         status: j.status,
         dueAt: j.due_at,

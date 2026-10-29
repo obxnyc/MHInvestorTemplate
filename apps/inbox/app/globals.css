@@ -2133,6 +2133,13 @@ a.metric:hover{border-color:var(--accent)}
    the contact yet. */
 .reachnone{margin:.35rem .6rem 0;font-size:.78rem;line-height:1.5;
   color:var(--ink-2)}
+/* How many files a job carries: what went out with it, and what came
+   back as proof. Its own ink against its own ground, so the pair stays
+   legible when the stylesheet flips at night. */
+.jobfiles{font-size:.66rem;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;padding:.14rem .42rem;border-radius:999px;
+  background:var(--hair-2);color:var(--ink-2)}
+.jobfiles.done{background:var(--ok-bg,var(--hair-2));color:var(--ok,var(--ink-2))}
 
 /* ---- the page the investor opens ----
    Its own shell: no header, no nav, nothing to click but the documents and

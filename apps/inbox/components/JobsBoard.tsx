@@ -10,6 +10,10 @@ type Job = {
   completedAt: string | null; costCents: number | null; invoiceRef: string | null;
   tradeId: string | null; conversationId: string | null;
   where: string | null; marketId: string | null; who: string | null;
+  /** How many files were sent WITH the job, for whoever goes. */
+  evidence?: number;
+  /** And how many came back as proof it was done. */
+  proof?: number;
 };
 type Trade = { id: string; label: string };
 
@@ -137,6 +141,19 @@ function JobRow(
         )}
         {job.status === "done" && job.completedAt && (
           <span className="duepill">Done {job.completedAt.slice(0, 10)}</span>
+        )}
+        {/* WHAT IS ATTACHED, counted rather than drawn: this list holds
+            five hundred jobs and signing every picture on it would be
+            five hundred round trips for something nobody has clicked. */}
+        {!!job.evidence && (
+          <span className="jobfiles" title="Sent with the job">
+            {job.evidence} sent
+          </span>
+        )}
+        {!!job.proof && (
+          <span className="jobfiles done" title="Sent back as proof">
+            {job.proof} back
+          </span>
         )}
       </div>
       <p className="jobsum">{job.summary}</p>

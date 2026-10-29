@@ -54,9 +54,15 @@ export default function NewJob(
       .catch(() => setPeople({ staff: [], vendors: [] }));
   }, []);
 
+  /** Photos and videos to send along with the job. */
+  const [files, setFiles] = useState<File[]>([]);
+  /** Said when the job opened but the files did not all follow. */
+  const [said, setSaid] = useState<string | null>(null);
+
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setError(null);
+    setSaid(null);
 
     // "staff:uuid" / "contact:uuid", so one select can offer both without two
     // pieces of state that can disagree with each other.
@@ -68,8 +74,46 @@ export default function NewJob(
                              toKind, toId, conversationId: from?.conversationId }),
     });
     const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setBusy(false);
+      setError(out.error ?? "That didn't work.");
+      return;
+    }
+
+    /* THE EVIDENCE, AFTER THE JOB EXISTS. It has to be this way round --
+       the files are stored under the job's id -- and it is why they are
+       uploaded here rather than carried in the request above: a video is
+       slow and a job is fast, and joining them would leave the button
+       doing nothing visible for half a minute. */
+    if (files.length && out.id) {
+      const body = new FormData();
+      for (const f of files) body.append("files", f);
+      try {
+        const up = await fetch(`/api/jobs/${out.id}/attach`,
+          { method: "POST", body });
+        const said = await up.json().catch(() => ({}));
+        const refused = Array.isArray(said.refused) ? said.refused : [];
+        if (refused.length) {
+          /* THE JOB IS OPEN EITHER WAY. Closing the form on a half-done
+             upload is how somebody finds out next week that the vendor
+             never saw the video. */
+          setBusy(false);
+          setSaid(`The job is open${said.added ? ` with ${said.added} file`
+            + `${said.added === 1 ? "" : "s"}` : ""}, but ${refused.length} did`
+            + ` not go: ${refused.join("; ")}.`);
+          onMade();
+          return;
+        }
+      } catch {
+        setBusy(false);
+        setSaid("The job is open, but the files did not upload. Add them"
+          + " from the job itself.");
+        onMade();
+        return;
+      }
+    }
+
     setBusy(false);
-    if (!res.ok) { setError(out.error ?? "That didn't work."); return; }
     onMade();
     onClose();
   }
@@ -85,6 +129,7 @@ export default function NewJob(
         </p>
 
         {error && <p className="err">{error}</p>}
+        {said && <p className="err">{said}</p>}
 
         <label className="fieldlab" htmlFor="js">What needs doing</label>
         <input id="js" value={summary} required autoFocus
@@ -160,6 +205,31 @@ export default function NewJob(
           Assigning it here does not text anybody. A trade is sent their link
           when the job is dispatched from the board, so you can write it down
           now and decide who goes later.
+        </p>
+
+        <label className="fieldlab" htmlFor="jfiles">
+          Photos or video <span className="opt">— what whoever goes will see</span>
+        </label>
+        <input id="jfiles" type="file" multiple
+               accept="image/*,video/*,application/pdf"
+               onChange={(e) => {
+                 setFiles(Array.from(e.target.files ?? []));
+                 setSaid(null);
+               }} />
+        {files.length > 0 && (
+          <p className="hint">
+            {files.length} file{files.length === 1 ? "" : "s"}:{" "}
+            {files.map((f) => `${f.name} (${Math.round(f.size / 1e6) || "<1"}MB)`)
+              .join(", ")}.
+            {files.some((f) => f.size > 25e6) && (
+              <> A file over 25MB will not go — on a phone, trim the video or
+                send it at a lower quality.</>
+            )}
+          </p>
+        )}
+        <p className="hint">
+          Whoever the job goes to sees these on their own page, before they
+          turn up. They stay on the job afterwards.
         </p>
 
         <div className="acts">
