@@ -98,7 +98,7 @@ try {
   writeFileSync(join(dir, "server.mjs"), `
 import { createServer } from "node:http";
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 const [TOKEN, REF, PORT, dir, projectsFile, portFile] = process.argv.slice(2);
 const psql = (args) => execFileSync("psql", args, { encoding: "utf8", stdio: "pipe" });
 const base = ["-h", "/tmp", "-p", PORT, "-U", "postgres", "-d", "t", "-X", "-q",
@@ -113,7 +113,13 @@ createServer((req, res) => {
       res.writeHead(code, { "Content-Type": "application/json" });
       res.end(typeof obj === "string" ? obj : JSON.stringify(obj));
     };
-    if (req.headers.authorization !== "Bearer " + TOKEN) {
+    // A network secret is added by the proxy AFTER the request leaves the
+    // container, so from the API's side it simply arrives authorized while
+    // the caller sent nothing. The flag file stands in for that.
+    writeFileSync(dir + "/lastauth", req.headers.authorization ?? "(none)");
+    const proxied = existsSync(dir + "/proxy");
+    if (!(req.headers.authorization === "Bearer " + TOKEN
+          || (proxied && !req.headers.authorization))) {
       return say(401, { message: "Unauthorized: bad or expired token" });
     }
     if (req.url === "/v1/projects") {
@@ -240,9 +246,23 @@ createServer((req, res) => {
   t("a 401 is reported with its status and what it said",
     () => wrong.code !== 0 && /401/.test(wrong.out) && /Unauthorized/.test(wrong.out));
 
+  /* THE NETWORK-SECRET CASE: nothing in the environment, and the proxy adds
+     the header on the way out. This is the way the token never enters the
+     container at all, so it is the way it will actually be run. */
+  writeFileSync(join(dir, "proxy"), "");
+  const proxied = apply(["--check"], { SUPABASE_ACCESS_TOKEN: "" });
+  t("it runs with no token here, for the proxy to add the header",
+    () => proxied.code === 0);
+  t("and sends no Authorization of its own for that one to collide with",
+    () => readFileSync(join(dir, "lastauth"), "utf8") === "(none)");
+  rmSync(join(dir, "proxy"));
+  const unauthed = apply(["--check"], { SUPABASE_ACCESS_TOKEN: "" });
+  t("and with no token and no secret either, the 401 says which is missing",
+    () => unauthed.code !== 0 && /network secret/.test(unauthed.out));
+
   /* The output of every one of those comes back to whoever ran it. */
   const everything = [first, again, nothing, dangerous, assumed, rest, done,
-    ambiguous, single, wrong].map((r) => r.out).join("\n");
+    ambiguous, single, wrong, proxied, unauthed].map((r) => r.out).join("\n");
   t("the service echoed the token back, so there was something to scrub",
     () => /authorized as/.test(nothing.out));
   t("the token is never printed", () => !everything.includes(TOKEN));

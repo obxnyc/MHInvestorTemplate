@@ -18,10 +18,21 @@
  * the same rows -- so the two can be used against the same database on
  * different days without disagreeing about what has been applied.
  *
- * Needs SUPABASE_ACCESS_TOKEN: a personal access token from
+ * THE TOKEN CAN ARRIVE TWO WAYS, and the better one never reaches this
+ * process. A Bearer *network secret* on the cloud environment, listing
+ * `api.supabase.com`, has Anthropic's proxy add the Authorization header
+ * after the request has left the container -- so the token is not in the
+ * environment, not in a file, and not in anything printed here. It also
+ * makes that host reachable without touching the allowed-domains list.
+ * Nothing is set here in that case and no header is sent, so the one
+ * added on the way out is the only one.
+ *
+ * Otherwise SUPABASE_ACCESS_TOKEN is read from the environment, which
+ * works the same and puts the token inside the container. Either way it
+ * is a personal access token from
  * https://supabase.com/dashboard/account/tokens -- NOT the anon key, NOT
- * the service role key, and not the database password. It belongs in the
- * environment, never in a commit or a chat window.
+ * the service role key, and not the database password, and never a thing
+ * to paste into a commit or a chat window.
  *
  * SUPABASE_PROJECT_REF is optional. Without it the token is asked which
  * projects it can see, and a single project is taken as the answer. Two
@@ -47,16 +58,14 @@ const has = (f) => args.includes(f);
    should ever set it. */
 const API = (process.env.SUPABASE_API ?? "https://api.supabase.com").replace(/\/$/, "");
 
+/* Absent is not an error: it is the network-secret case, where the proxy
+   adds the header on the way out. What settles which of the two is
+   happening is a 401, and that is reported in full when it comes. */
 const token = process.env.SUPABASE_ACCESS_TOKEN;
-if (!token) {
-  console.error(
-    "SUPABASE_ACCESS_TOKEN is not set.\n\n"
-    + "  Supabase → account → Access Tokens → Generate new token:\n"
-    + "  https://supabase.com/dashboard/account/tokens\n\n"
-    + "  It starts sbp_. It is not the anon key and not the database\n"
-    + "  password. Store it in the environment, not in a file in the repo.");
-  process.exit(1);
-}
+console.log(token
+  ? "Authenticating with SUPABASE_ACCESS_TOKEN from the environment."
+  : "No SUPABASE_ACCESS_TOKEN here; expecting a network secret to add the"
+    + " header on the way out.");
 
 /** Every migration in order. The number at the front is the order. */
 const PATTERN = /^\d{3}-[A-Za-z0-9-]+\.sql$/;
@@ -71,8 +80,11 @@ const literal = (file) => {
   return `'${file.replace(/'/g, "''")}'`;
 };
 
-/** Never print the token, including inside something that echoes a header. */
-const scrub = (s) => String(s).split(token).join("sbp_…");
+/** Never print the token, including inside something that echoes a header.
+    With no token here there is nothing to scrub, and `split(undefined)`
+    would quietly scrub nothing -- so that case is said rather than left to
+    fall out of the arithmetic. */
+const scrub = (s) => (token ? String(s).split(token).join("sbp_…") : String(s));
 
 const api = async (path, init = {}) => {
   let res;
@@ -80,7 +92,10 @@ const api = async (path, init = {}) => {
     res = await fetch(`${API}${path}`, {
       ...init,
       headers: {
-        Authorization: `Bearer ${token}`,
+        /* No token here means the proxy is adding it on the way out.
+           Sending `Bearer undefined` would be a header for it to collide
+           with. */
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         "Content-Type": "application/json",
         ...(init.headers ?? {}),
       },
@@ -90,8 +105,12 @@ const api = async (path, init = {}) => {
   }
   const body = await res.text();
   if (!res.ok) {
+    const hint = res.status === 401 && !token
+      ? "\n  Nothing authenticated that. Either there is no network secret on"
+        + " this\n  environment, or it does not list api.supabase.com."
+      : "";
     throw new Error(
-      `${API}${path} answered ${res.status}: ${scrub(body).slice(0, 400)}`);
+      `${API}${path} answered ${res.status}: ${scrub(body).slice(0, 400)}${hint}`);
   }
   try { return body ? JSON.parse(body) : null; } catch { return body; }
 };

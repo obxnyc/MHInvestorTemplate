@@ -119,23 +119,49 @@ It keeps the same `schema_migrations` ledger as `run.mjs`, so the two cannot
 disagree about what has been applied, and it makes the same refusal on the
 dangerous first run.
 
-Two things have to exist before it can do anything, and only the owner can
-put them there:
+**One thing has to exist before it can do anything, and it is one dialog.**
+The first draft of this asked for two -- a token in an environment variable
+AND `api.supabase.com` added to the allowed domains -- and that was reading
+half the page. A **network secret** does both at once, and does the first one
+better.
 
-- `SUPABASE_ACCESS_TOKEN`, a personal access token from
-  https://supabase.com/dashboard/account/tokens, stored as an environment
-  secret. Not the anon key, not the service role key, not the database
-  password, and never pasted into a chat.
-- `api.supabase.com` allowed by the environment's network policy -- the
-  cloud environment menu in the session's title bar, then Edit.
+A network secret is a key stored on the cloud environment that Anthropic's
+proxy adds to outbound requests for the hosts it lists, AFTER the request has
+left the container. So the token is never in the environment, never in a
+file, and never in anything printed here -- and the hosts on a network secret
+are reachable whatever the network access level says, which is why the
+allowed-domains edit is not needed at all.
+
+The clicks, because the owner has to be able to follow them without
+assembling anything:
+
+1. Generate the token at https://supabase.com/dashboard/account/tokens --
+   **Generate new token**. It starts `sbp_`. Not the anon key, not the
+   service role key, not the database password.
+2. In the running session, the caret after the session title at the top,
+   then **Edit cloud environment**.
+3. The **Network secrets** row, then **Add secret**.
+4. Leave **Secret type** on **Bearer**. **Allowed websites** is
+   `api.supabase.com`. The **Custom headers** row already reads
+   `Authorization` with the prefix `Bearer`; the token goes in **Value**.
+5. **Add**. It saves there and then -- it does not wait for **Save changes**,
+   which is the sort of thing that costs a round.
+
+The right answer is the secret appearing in the list with `api.supabase.com`
+beside it. If it is marked **Not sent**, the note underneath says why.
+
+Network secrets are Pro, Max, Team and Enterprise. `apply.mjs` takes the
+token from `SUPABASE_ACCESS_TOKEN` too if it is set, which is the laptop
+case; with a network secret nothing is set and it sends no Authorization
+header at all, so the one the proxy adds is the only one.
 
 **Not one line of it has met the real service.** This machine's egress
-refuses api.supabase.com, so the endpoints are the ones Supabase's own
+refuses api.supabase.com without that secret, so the endpoints are the ones Supabase's own
 tooling uses and the shape of the replies is a hypothesis. Every failure
 prints the status and the body it actually got, so one run corrects it
 rather than leaving somebody guessing. `apply.mjs --check` asks nothing of
 the database and reports whether it got through; it is the first thing to
-run once those two settings exist.
+run once that secret exists.
 
 And the thing the harness taught, which is the oldest shape in this file
 wearing new clothes:
@@ -878,10 +904,11 @@ tested.
 ### What is not reachable from here
 
 arcgis.com, services.nconemap.gov, the Census geocoder, Nominatim and
-Overpass are all refused by egress policy -- and so are supabase.com,
-api.supabase.com and vercel.com, which is why a migration cannot simply be
-applied from here without the two settings above -- through curl and through the
-fetch tool alike. Web search is not. So county data cannot be tested
+Overpass are all refused by egress policy, through curl and through the
+fetch tool alike. So are supabase.com, api.supabase.com and vercel.com --
+which is why a migration cannot be applied from here at all until the
+network secret above exists, and why "I merged it" says nothing about whether the
+site built. Web search is not. So county data cannot be tested
 against the real service from this machine, and guessing coordinates
 from a screenshot produced a park four kilometres from where it stands
 -- do not do that again. Test the logic against a stand-in server, say
