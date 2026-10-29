@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { reachFor } from "@/lib/reachable";
+import { sendEmail } from "@/lib/notify";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { twilioClient, publicBase, toMsgStatus } from "@/lib/twilio";
@@ -53,11 +55,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Reading through the user's client means RLS decides whether they may see
   // this thread at all -- authorization we get for free rather than re-check.
   const { data: convo } = await supabase
-    .from("conversations").select("id, contact_id, contacts(phone, language)").eq("id", id).single();
+    .from("conversations")
+    .select("id, contact_id, subject, contacts(phone, email, language, full_name)")
+    .eq("id", id).single();
   if (!convo) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const person = convo.contacts as unknown as { phone: string; language: string | null };
-  const to = person.phone;
+  const person = convo.contacts as unknown as {
+    phone: string; email: string | null;
+    language: string | null; full_name: string | null;
+  };
+
+  /* HOW THIS WOULD GO OUT, decided before anything is sent. A request
+     from Rent Manager has no number -- `contacts.phone` holds a key like
+     `email:rm:issue:251` -- and that key used to go straight to Twilio,
+     which refused it. The first anybody knew was a failed message under
+     something they had already typed. */
+  const reach = reachFor(person);
+  if (reach.by === "none") {
+    return NextResponse.json({ error: reach.why }, { status: 400 });
+  }
+  const to = reach.to;
 
   // Sent in the language they read. The English stays as what was typed, and
   // the wire body is what they actually received -- so the thread shows both
@@ -90,9 +107,37 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
+  /* A PICTURE CANNOT GO BY EMAIL FROM HERE. Postmark takes attachments
+     and this does not send them yet, so it is refused rather than sent
+     without them -- a reply that quietly drops the photograph somebody
+     attached is worse than one that did not go. */
+  if (reach.by === "email" && paths.length) {
+    return NextResponse.json({
+      error: "This one is replied to by email, and pictures cannot be"
+        + " attached to an email reply yet. Send the words, or add a mobile"
+        + " number to the contact.",
+    }, { status: 400 });
+  }
+
   let sid: string | null = null;
   let status = "queued";
-  try {
+  let channel = "sms";
+
+  if (reach.by === "email") {
+    channel = "email";
+    try {
+      await sendEmail(to,
+        /* What it is about, so it threads in their mail client rather
+           than arriving as a bare message from nobody about nothing. */
+        String((convo as { subject?: string | null }).subject || "")
+          || "Your maintenance request",
+        wire);
+      status = "sent";
+    } catch (e) {
+      status = "failed";
+      console.error("email reply failed", e);
+    }
+  } else try {
     const sent = await twilioClient().messages.create({
       to,
       body: wire,
@@ -123,6 +168,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     lang: translated ? person.language : null,
     twilio_sid: sid,
     status,
+    channel,
     sent_by: staff.id,
   });
   // Checked, and loudly. This insert failed silently for a day: the text went

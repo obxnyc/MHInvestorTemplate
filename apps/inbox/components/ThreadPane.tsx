@@ -31,6 +31,8 @@ type Thread = {
   media: Record<string, string>;
   reads: Read[];
   jobs: Job[];
+  /** How a reply reaches this person, or why none can. */
+  reach?: { by: "sms" | "email" | "none"; to?: string; why?: string } | null;
   /** Jobs this person is carrying out for us, where they are a vendor. */
   doing: VendorJob[];
   me: string;
@@ -386,6 +388,7 @@ export default function ThreadPane(
                 onInsert={(text) => setInsert((i) => ({ text, n: i.n + 1 }))} />
 
       <Composer conversationId={convo.id} myName={data.meName} insert={insert}
+                reach={data.reach}
                 onSent={() => load(String(convo.id))}
                 sendsIn={contact?.language && contact.language !== "en"
                   ? languageName(contact.language) : null} />

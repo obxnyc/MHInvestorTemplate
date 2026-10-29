@@ -8,8 +8,13 @@ import { AttachStrip, AttachButton } from "./Attach";
 import { useAttachments } from "./useAttachments";
 
 export default function Composer(
-  { conversationId, myName, sendsIn, insert, onSent }:
+  { conversationId, myName, sendsIn, reach, insert, onSent }:
   { conversationId: string; myName?: string; sendsIn?: string | null;
+    /** How a reply reaches this person, and whether one can at all.
+     *  Said BEFORE anybody types: a request from Rent Manager has no
+     *  number, and finding that out from a failed send is finding it out
+     *  under a message you have already written. */
+    reach?: { by: "sms" | "email" | "none"; to?: string; why?: string } | null;
     /** Awaited after a send, so the thread reloads because this asked it to
      *  rather than because an event happened to be heard. */
     onSent?: () => void | Promise<void>;
@@ -156,18 +161,29 @@ export default function Composer(
             if (picked.length) { e.preventDefault(); void files.take(picked); }
           }}
           rows={1}
-          placeholder={mode === "reply"
-            ? (sendsIn ? `Message — sends in ${sendsIn}` : "Message")
-            : "Note for your team — not sent"}
+          placeholder={mode === "note"
+            ? "Note for your team — not sent"
+            : reach?.by === "none"
+            ? "Nowhere to send a reply — leave a note instead"
+            : reach?.by === "email"
+            ? `Message — goes by email to ${reach.to}`
+            : (sendsIn ? `Message — sends in ${sendsIn}` : "Message")}
           onKeyDown={(e) => {
             // Enter sends, Shift+Enter breaks the line — phone-app behaviour.
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(e); }
           }}
         />
         <button type="submit" className="sendbtn"
-                disabled={busy || !hasSomething || unsendable || files.busy > 0}
+                disabled={busy || !hasSomething || unsendable || files.busy > 0
+                  || (mode === "reply" && reach?.by === "none")}
                 aria-label={mode === "reply" ? "Send message" : "Save note"}>↑</button>
       </div>
+      {/* WHY THERE IS NOWHERE TO SEND IT, above the box rather than after
+          a failed send. Only on a reply: a note goes to the team and does
+          not need anybody's number. */}
+      {mode === "reply" && reach?.by === "none" && (
+        <p className="reachnone">{reach.why}</p>
+      )}
       {error && <p className="error">{error}</p>}
     </form>
   );

@@ -2128,6 +2128,11 @@ a.metric:hover{border-color:var(--accent)}
 .sentlist h3{font-size:.82rem;margin:0 0 .2rem}
 .sentlist .ownertbl{min-width:34rem}
 .sentlist>.dim{margin:.2rem 0 0;font-size:.78rem}
+/* Why a reply has nowhere to go. Its own name: `.error` is a failure and
+   this is not one -- nothing has gone wrong, there is simply no number on
+   the contact yet. */
+.reachnone{margin:.35rem .6rem 0;font-size:.78rem;line-height:1.5;
+  color:var(--ink-2)}
 
 /* ---- the page the investor opens ----
    Its own shell: no header, no nav, nothing to click but the documents and

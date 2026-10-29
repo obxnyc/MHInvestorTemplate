@@ -137,7 +137,13 @@ const TABLES = {
      both are the same age cannot tell the merged order from the stacked one. */
   contacts: [
     { id: "ct1", phone: "+12526422995", full_name: null, party: "unknown",
-      language: null, unit_id: null, units: null },
+      language: null, unit_id: null, units: null, email: null },
+    /* A REQUEST FROM RENT MANAGER: no number, no email, and a stand-in in
+       the phone column. There is nowhere for a reply to go, and the whole
+       question is whether the screen says so before somebody types. */
+    { id: "ct3", phone: "email:rm:issue:251", full_name: "Marie Dossantos",
+      party: "current_tenant", language: null, unit_id: null, units: null,
+      email: null },
     { id: "ct2", phone: "+19105550114", full_name: "Michelle Griffin",
       party: "tenant", language: null, unit_id: null, units: null },
   ],
@@ -165,7 +171,17 @@ const TABLES = {
          way back answers 404 for every conversation, and that is the thing
          this stub now exists to notice. */
       contacts: { id: "ct2", phone: "+19105550114", full_name: "Michelle Griffin",
-        party: "tenant", language: null, unit_id: null, units: null } },
+        party: "tenant", language: null, unit_id: null, units: null,
+        email: null } },
+    { id: "cv3", category: "maintenance", source: "email", status: "open",
+      assigned_to: null, closure_prompts: 0, category_confidence: 0.9,
+      last_message_at: iso(now - 3 * 3600e3),
+      last_message_preview: "Fridge is going out",
+      subject: "Fridge is going out", units: null, staff: null, team_id: null,
+      unit_id: null,
+      contacts: { id: "ct3", phone: "email:rm:issue:251",
+        full_name: "Marie Dossantos", party: "current_tenant", language: null,
+        unit_id: null, units: null, email: null } },
   ],
   messages: [
     // cv1's newest is INBOUND: it is unread.

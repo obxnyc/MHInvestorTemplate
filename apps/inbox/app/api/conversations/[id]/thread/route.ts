@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { signMedia } from "@/lib/media";
+import { reachFor } from "@/lib/reachable";
 import { settleConversation } from "@/lib/receipts";
 
 export const runtime = "nodejs";
@@ -119,12 +120,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // One signing call for the whole thread rather than one per picture: each is
   // a round trip, and a thread with a dozen photos would otherwise spend a
   // second doing nothing else.
+  /* HOW A REPLY WOULD GO OUT, worked out here so the screen can say it
+     before somebody types. A request from Rent Manager has no number and
+     used to fail only after the send. */
+  const reach = reachFor(convo.contacts as unknown as
+    { phone?: string | null; email?: string | null } | null);
+
   const signed = await signMedia(supabase, [
     ...(messages ?? []).flatMap((m) => (m.media_paths ?? []) as string[]),
     ...(notes ?? []).flatMap((n) => ((n as { media_paths?: string[] }).media_paths ?? [])),
   ]);
 
   return NextResponse.json({
+    reach,
     convo: { ...convo, asked },
     messages: messages ?? [],
     notes: notes ?? [],
