@@ -19,10 +19,32 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const supabase = await supabaseServer();
 
-  const { data: convo } = await supabase
-    .from("conversations")
-    .select("id, category, source, status, subject, place_hint, category_confidence, closure_prompts, assigned_to, unit_id, units(label, properties(name, color)), contacts(id, phone, full_name, party, unit_id, language, units(label, properties(name, color))), staff:assigned_to(full_name)")
-    .eq("id", id).single();
+  /* ASKED FOR TOLERANTLY, and the reason is written out below for the
+     column that taught it the first time.
+   *
+   * `place_hint` arrives with migration 045. PostgREST refuses the WHOLE
+   * select when one column in it is not there, so naming it here without
+   * a way back meant every conversation in the application answered 404
+   * and the screen said "Couldn't open that conversation" -- the same
+   * fault as migration 015, in the same query, with the warning about it
+   * twenty lines further down.
+   *
+   * One string literal each, not a base plus concatenation: the client
+   * infers the row type from the text of the select, and a joined string
+   * turns every field on the result into an error instead of a column. */
+  const BASE = "id, category, source, status, subject, category_confidence,"
+    + " closure_prompts, assigned_to, unit_id,"
+    + " units(label, properties(name, color)),"
+    + " contacts(id, phone, full_name, party, unit_id, language,"
+    + " units(label, properties(name, color))), staff:assigned_to(full_name)";
+  const ask = (cols: string) => supabase
+    .from("conversations").select(cols).eq("id", id).maybeSingle();
+
+  let got = await ask(`${BASE}, place_hint`);
+  if (got.error) got = await ask(BASE);
+  const convo = got.data as (Record<string, unknown> & {
+    unit_id?: string | null; place_hint?: string | null;
+  }) | null;
   if (!convo) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   // Before reading the messages, settle anything still claiming to be

@@ -131,6 +131,35 @@ t("not one word of the contract is changed", () => {
 t("signing a pack with nowhere to sign changes nothing",
   () => cs.countersign(printed, { png: THEIRS, on: "2026-10-20" }) === printed);
 
+// ---- a deal written up after the fact ---------------------------------
+//
+// "I need to be able to set the investor's signature date sometimes as
+// some of these are retroactive."
+
+const back = papers.pack(
+  { ...base, counterSign: true, counterOn: "2026-08-01" }, homes, "both");
+
+t("a buyer's date that was set is printed on their line",
+  () => (words(back).match(/Date: 08\/01\/2026/g) ?? []).length === 4);
+t("and the slot for it is gone, so signing cannot write over it", () => {
+  const after = cs.countersign(back, { png: THEIRS, on: "2026-10-20" });
+  return (words(after).match(/Date: 08\/01\/2026/g) ?? []).length === 4
+    && !/10\/20\/2026/.test(words(after));
+});
+/* THE MARK STILL GOES ON. A date set in advance must not stop them
+   signing -- it is the date that is fixed, not the signature. */
+t("but their signature still lands",
+  () => cs.slotsIn(back) === 4
+    && cs.slotsIn(cs.countersign(back, { png: THEIRS, on: "2026-10-20" })) === 0);
+/* AND OURS IS UNTOUCHED: the two dates are different numbers on purpose,
+   so a change that wrote the buyer's date over the seller's would show. */
+t("and our own date is still ours",
+  () => (words(back).match(/Date: 10\/14\/2026/g) ?? []).length === 4);
+t("left blank, their line is still dated the day they sign", () => {
+  const after = cs.countersign(sent, { png: THEIRS, on: "2026-10-20" });
+  return (words(after).match(/Date: 10\/20\/2026/g) ?? []).length === 4;
+});
+
 let bad = 0;
 for (const [name, ok, why] of results) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}${why ? ` — ${why}` : ""}`);

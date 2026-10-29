@@ -74,14 +74,14 @@ const TABLES = {
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
   work_orders: [], inquiries: [],
-  /* Empty on purpose: the owner screen has to be right for an investor
-     nobody has saved a deal for, which is every investor the first time. */
-  deal_drafts: [],
+
   /* Nobody has signed: the papers panel has to be right before anyone
      has, which is every account the first time. */
-  signatures: [],
-  /* Nothing sent yet: the first send has to work on an empty table. */
-  signing_requests: [],
+  /* DELIBERATELY ABSENT, all three: signatures (047), deal_drafts (046)
+     and signing_requests (048). This fixture is the live database, where
+     the migrations have not been run -- and the question it exists to
+     answer is whether somebody can still sign and still get their files. */
+
   /* TWO INVESTORS, NOT ONE, and the second holds nothing.
      The investors list tallies homes and money per owner, and with a
      single owner holding everything, "sum over this owner's sales" and
@@ -146,14 +146,24 @@ const TABLES = {
       assigned_to: null, closure_prompts: 0, category_confidence: 0.4,
       last_message_at: iso(now - 30e3),
       last_message_preview: "Hello my pipes are overflowing with water",
-      subject: null, units: null, staff: null, team_id: null,
+      subject: null, units: null, staff: null, team_id: null, unit_id: null,
+      /* `place_hint` is DELIBERATELY ABSENT: it arrives with migration 045
+         and this fixture is a database where 045 has not been run, which
+         is the state the live site is in. A route that names it without a
+         way back answers 404 for every conversation, and that is the thing
+         this stub now exists to notice. */
       contacts: { id: "ct1", phone: "+12526422995", full_name: null,
         party: "unknown", language: null, unit_id: null, units: null } },
     { id: "cv2", category: "maintenance", source: "sms", status: "open",
       assigned_to: null, closure_prompts: 0, category_confidence: 0.95,
       last_message_at: iso(now - 20 * 24 * 3600e3),
       last_message_preview: "Hey Michelle, received your maintenance request.",
-      subject: null, units: null, staff: null, team_id: null,
+      subject: null, units: null, staff: null, team_id: null, unit_id: null,
+      /* `place_hint` is DELIBERATELY ABSENT: it arrives with migration 045
+         and this fixture is a database where 045 has not been run, which
+         is the state the live site is in. A route that names it without a
+         way back answers 404 for every conversation, and that is the thing
+         this stub now exists to notice. */
       contacts: { id: "ct2", phone: "+19105550114", full_name: "Michelle Griffin",
         party: "tenant", language: null, unit_id: null, units: null } },
   ],
@@ -319,7 +329,12 @@ createServer((req, res) => {
         created_at: new Date().toISOString(),
         ...row,
       }));
-      TABLES[table] = (TABLES[table] ?? []).concat(made);
+      if (!(table in TABLES)) {
+        return send(404, { code: "42P01",
+          message: `relation "public.${table}" does not exist`,
+          hint: null, details: null });
+      }
+      TABLES[table] = TABLES[table].concat(made);
       const accept = req.headers.accept ?? "";
       return send(201, accept.includes("vnd.pgrst.object") ? made[0] : made);
     });
@@ -359,6 +374,17 @@ createServer((req, res) => {
 
   if (url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
+    /* A TABLE THAT IS NOT THERE IS AN ERROR, not an empty list. That is
+       what Postgres says (42P01) and what every route here keys on to
+       tell "nothing saved yet" apart from "the migration has not been
+       run" -- which it cannot do if a missing table answers `[]`. */
+    if (!(table in TABLES)) {
+      return send(404, {
+        code: "42P01",
+        message: `relation "public.${table}" does not exist`,
+        hint: null, details: null,
+      });
+    }
     let rows = TABLES[table] ?? [];
     /* HONOUR eq FILTERS. Returning every row whatever was asked made
        `staff?id=eq.<office uuid>` answer with the crew member -- so the office
@@ -408,6 +434,42 @@ createServer((req, res) => {
       shifts: { properties: ["property_id", "properties"] },
     };
     const want = url.searchParams.get("select") ?? "";
+
+    /* A COLUMN THAT IS NOT THERE FAILS THE WHOLE SELECT, which is what
+       PostgREST does and what this stub used to wave through -- so a
+       route naming a column from a migration nobody had run looked
+       perfectly healthy here and answered 404 for every conversation on
+       the live site. A stand-in that ignores the question answers the
+       wrong one confidently.
+
+       Only the top-level names, and only when there is a row to learn
+       the shape from: an embed carries its own columns and an empty
+       table cannot say what it has. */
+    const known = new Set(rows.flatMap((r) => Object.keys(r)));
+    if (rows.length && want && want !== "*") {
+      const named = [];
+      let depth = 0, piece = "";
+      for (const ch of want) {
+        if (ch === "(") { depth++; piece += ch; }
+        else if (ch === ")") { depth--; piece += ch; }
+        else if (ch === "," && depth === 0) { named.push(piece); piece = ""; }
+        else piece += ch;
+      }
+      named.push(piece);
+      const missing = named
+        .map((x) => x.trim())
+        .filter((x) => x && !x.includes("("))
+        .map((x) => (x.includes(":") ? x.split(":")[1] : x).trim())
+        .filter((x) => x && x !== "*" && !known.has(x)
+          && !(EMBEDS[table] ?? {})[x]);
+      if (missing.length) {
+        return send(400, {
+          code: "42703",
+          message: `column ${table}.${missing[0]} does not exist`,
+          hint: null, details: null,
+        });
+      }
+    }
     for (const [alias, [fk, target]] of Object.entries(EMBEDS[table] ?? {})) {
       if (!new RegExp(`(^|,)\\s*${alias}\\s*[:(]`).test(want)) continue;
       rows = rows.map((r) => (alias in r ? r : {

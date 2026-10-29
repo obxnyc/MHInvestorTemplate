@@ -2123,6 +2123,11 @@ a.metric:hover{border-color:var(--accent)}
   padding:1rem 1.1rem;margin:0 0 1.2rem}
 .sendbox h2{font-size:.95rem;margin:0 0 .3rem}
 .sendbox .dim{margin:0 0 .7rem}
+.sentlist{margin:1rem 0 0;padding-top:.8rem;
+  border-top:1px solid var(--hair);overflow-x:auto}
+.sentlist h3{font-size:.82rem;margin:0 0 .2rem}
+.sentlist .ownertbl{min-width:34rem}
+.sentlist>.dim{margin:.2rem 0 0;font-size:.78rem}
 
 /* ---- the page the investor opens ----
    Its own shell: no header, no nav, nothing to click but the documents and

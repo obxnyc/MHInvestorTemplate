@@ -72,11 +72,16 @@ export async function PUT(req: Request) {
     updated_at: new Date().toISOString(),
   }, { onConflict: "staff_id" });
 
+  /* A SCHEMA THAT IS BEHIND IS NOT A BAD REQUEST. The signature was
+     perfectly good and the browser is already using it; all that failed
+     is keeping it for next time, on another machine. Answered 200 with
+     `kept: false` so the screen can say so quietly, rather than 400 --
+     which is a red line in the console for something nobody did wrong. */
   if (error) {
-    return NextResponse.json(
-      { error: noTable(error) ? NEEDS : error.message }, { status: 400 });
+    if (noTable(error)) return NextResponse.json({ ok: true, kept: false, why: NEEDS });
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, kept: true });
 }
 
 /** Taking it off again, which somebody will want the day they resign. */
@@ -88,9 +93,10 @@ export async function DELETE() {
   }
   const { error } = await supabaseAdmin()
     .from("signatures").delete().eq("staff_id", staff.id);
-  if (error) {
-    return NextResponse.json(
-      { error: noTable(error) ? NEEDS : error.message }, { status: 400 });
+  /* Nothing to delete from a table that is not there, and nothing wrong
+     with having asked. */
+  if (error && !noTable(error)) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
   return NextResponse.json({ ok: true });
 }

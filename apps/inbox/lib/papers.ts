@@ -80,6 +80,17 @@ export type Terms = {
    * markup a signature belongs.
    */
   counterSign?: boolean;
+
+  /**
+   * The day the OTHER side signed, where that is not the day they press
+   * the button.
+   *
+   * Some of these deals are written up after the fact. Set, it is printed
+   * on their line and the slot is not left for signing to fill, so
+   * countersigning cannot overwrite it. Blank, their line is dated the day
+   * they actually sign, which is the ordinary case.
+   */
+  counterOn?: string;
 };
 
 /** One home in the deal. Dollars, not cents: these go on paper. */
@@ -347,6 +358,10 @@ export function counterSlot(t: Terms, who: string): string {
 }
 
 export function counterDate(t: Terms, who: string): string {
+  /* A date somebody set wins, and carries no slot -- so signing fills
+     nothing in over it. That is the whole of what "retroactive" means
+     here. */
+  if (t.counterOn) return shortDate(t.counterOn);
   const blank = "__________________";
   return t.counterSign
     ? `<span class="dateslot" data-for="${who}">${blank}</span>`

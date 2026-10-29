@@ -109,6 +109,8 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
      somebody having said otherwise -- an agreement going out for the
      buyer to counter, a lease held while a lot is surveyed. */
   const [signOnly, setSignOnly] = useState<Set<string> | null>(null);
+  /** The buyer's date, where the deal was done before today. */
+  const [counterOn, setCounterOn] = useState("");
 
   /* SENDING IT FOR THEM TO SIGN. The pack is frozen at the moment it goes
      and the link is what they open; nothing here is regenerated after. */
@@ -118,6 +120,17 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [sendSaid, setSendSaid] = useState<string | null>(null);
   const [sentLink, setSentLink] = useState<string | null>(null);
   const [sentHow, setSentHow] = useState<string[]>([]);
+  /** What has already gone out to this investor. */
+  type Sent = {
+    id: string; title: string; doc_count: number; to_name: string;
+    to_email: string | null; to_phone: string | null;
+    sent_at: string; expires_at: string; opened_at: string | null;
+    signed_at: string | null; signed_name: string | null;
+    voided_at: string | null;
+  };
+  const [sent, setSent] = useState<Sent[]>([]);
+  const [canList, setCanList] = useState(true);
+  const [pulling, setPulling] = useState<string | null>(null);
   /** Set once from the first sale, so re-rendering does not overwrite
    *  what somebody has typed. */
   const [seeded, setSeeded] = useState(false);
@@ -133,45 +146,79 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   }, [ownerId]);
   useEffect(() => { void load(); }, [load]);
 
+  /* WHERE A SIGNATURE IS KEPT WHEN THE DATABASE CANNOT KEEP IT.
+   *
+   * Migrations are run by hand and the schema can be behind the code for
+   * days. Signing is not a database feature -- it is a picture drawn onto
+   * a document -- so it must not wait on one. The signature lives in this
+   * browser until the table exists, and the screen says which of the two
+   * it is rather than letting somebody find out when they change machine.
+   *
+   * try/catch around both: a private window, or site data blocked, makes
+   * every one of these throw. */
+  const REMEMBERED = "larabee.signature";
+  const rememberHere = (png: string | null) => {
+    try {
+      if (png) localStorage.setItem(REMEMBERED, png);
+      else localStorage.removeItem(REMEMBERED);
+    } catch { /* it simply is not remembered */ }
+  };
   const readInk = useCallback(async () => {
+    let here: string | null = null;
+    try { here = localStorage.getItem("larabee.signature"); } catch { /* fine */ }
     try {
       const res = await fetch("/api/me/signature", { cache: "no-store" });
       const out = await res.json().catch(() => ({}));
       if (out.keeping === false) setCanSign(false);
-      setInk(typeof out.png === "string" ? out.png : null);
-    } catch { /* the papers still work; they are simply not signed */ }
+      /* The server's copy wins when there is one: it is the one that
+         follows this person to another machine. */
+      setInk(typeof out.png === "string" && out.png ? out.png : here);
+    } catch {
+      setCanSign(false);
+      setInk(here);
+    }
   }, []);
   useEffect(() => { void readInk(); }, [readInk]);
 
   const keepInk = async (png: string) => {
     setInkBusy(true); setInkSaid(null);
+    /* THE SIGNATURE IS USABLE IMMEDIATELY, whatever the server says. It
+       is a picture on a document, not a row -- refusing to let somebody
+       sign because a table is missing is the feature waiting on the
+       plumbing. Kept here first, offered to the server second. */
+    rememberHere(png);
+    setInk(png);
+    setShowPad(false);
+    setSigning(true);
     try {
       const res = await fetch("/api/me/signature", {
         method: "PUT", headers: { "content-type": "application/json" },
         body: JSON.stringify({ png }),
       });
       const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.ok) { setInkSaid(out.error ?? "That did not save."); return; }
-      /* Only once the server has it: a signature shown on screen that was
-         refused is a document somebody thinks is signed. */
-      setInk(png);
-      setShowPad(false);
-      setSigning(true);
-    } catch (e) {
-      setInkSaid(e instanceof Error ? e.message : "That did not save.");
+      if (!res.ok || !out.ok) {
+        /* A real refusal -- too large, not a PNG, not allowed. The
+           signature is already on screen and already usable, so this
+           says what happened rather than taking it away. */
+        setInkSaid(out.error ?? "That could not be kept for next time.");
+        setCanSign(false);
+        return;
+      }
+      /* `kept: false` is the schema being behind, which is not a failure
+         and does not get an error line. */
+      setCanSign(out.kept !== false);
+    } catch {
+      setCanSign(false);
     } finally { setInkBusy(false); }
   };
 
   const dropInk = async () => {
     setInkBusy(true); setInkSaid(null);
-    try {
-      const res = await fetch("/api/me/signature", { method: "DELETE" });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.ok) { setInkSaid(out.error ?? "That did not work."); return; }
-      setInk(null); setSigning(false); setShowPad(true);
-    } catch (e) {
-      setInkSaid(e instanceof Error ? e.message : "That did not work.");
-    } finally { setInkBusy(false); }
+    rememberHere(null);
+    setInk(null); setSigning(false); setShowPad(true);
+    try { await fetch("/api/me/signature", { method: "DELETE" }); }
+    catch { /* it is gone from here either way */ }
+    finally { setInkBusy(false); }
   };
 
   /* THE DRAFT COMES FIRST. Seeding from the recorded sales and then
@@ -305,8 +352,12 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
    * screen. Nothing is signed unless somebody has asked for it to be.
    */
   const onPaper = useMemo<Terms>(() => (
-    signing && ink ? { ...terms, signedPng: ink, signedOn } : terms
-  ), [terms, signing, ink, signedOn]);
+    {
+      ...terms,
+      ...(signing && ink ? { signedPng: ink, signedOn } : {}),
+      ...(counterOn ? { counterOn } : {}),
+    }
+  ), [terms, signing, ink, signedOn, counterOn]);
 
   /** Which documents in the pack carry the mark. */
   const signs = useMemo(
@@ -346,6 +397,34 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     return pack({ ...onPaper, counterSign: true }, forPapers, which, signs);
   }, [forPapers, onPaper, which, signs]);
 
+  const readSent = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/sent`, { cache: "no-store" });
+      const out = await res.json().catch(() => ({}));
+      if (out.listing === false) setCanList(false);
+      setSent(Array.isArray(out.sent) ? out.sent : []);
+    } catch { /* the rest of the screen still works */ }
+  }, [ownerId]);
+  useEffect(() => { void readSent(); }, [readSent]);
+
+  /** Stop a link working. Only while nobody has signed it. */
+  const pullBack = async (id: string) => {
+    setPulling(id); setSendSaid(null);
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/sent`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) {
+        setSendSaid(out.error ?? "That could not be withdrawn."); return;
+      }
+      await readSent();
+    } catch (e) {
+      setSendSaid(e instanceof Error ? e.message : "That could not be withdrawn.");
+    } finally { setPulling(null); }
+  };
+
   const sendIt = async () => {
     setSendBusy(true); setSendSaid(null); setSentLink(null);
     try {
@@ -368,6 +447,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       }
       setSentLink(out.link ?? null);
       setSentHow(Array.isArray(out.went) ? out.went : []);
+      await readSent();
       /* WHAT WENT AND WHAT DID NOT, both. A link that exists and was not
          delivered is one copy-and-paste from fixed; a link reported as
          sent and never delivered is a deal sitting still for a week. */
@@ -750,8 +830,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                 in the pack -- Seller on the agreement, Park Owner on the
                 lease. The buyer's line is never touched: they sign
                 wherever they sign. */}
-            {canSign && (
-              <div className="signrow">
+            <div className="signrow">
                 {ink && !showPad ? (
                   <>
                     <label className="papertickone">
@@ -766,6 +845,14 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                         <label className="signdate">Signed on
                           <input type="date" value={signedOn}
                                  onChange={(e) => setSignedOn(e.target.value)} />
+                        </label>
+                        {/* SOME OF THESE ARE RETROACTIVE. Left blank, the
+                            buyer's line is dated the day they actually
+                            sign; set, it is the date the deal was done
+                            and signing does not overwrite it. */}
+                        <label className="signdate">Buyer&rsquo;s date, if not the day they sign
+                          <input type="date" value={counterOn}
+                                 onChange={(e) => setCounterOn(e.target.value)} />
                         </label>
                       </>
                     )}
@@ -834,12 +921,12 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                                 onSave={(v) => void keepInk(v)}
                                 onClear={() => void dropInk()} />
                 )}
-              </div>
-            )}
-            {!canSign && (
+            </div>
+            {ink && !canSign && (
               <p className="dim tplsays">
-                Signing here needs migration 047 run on the database. The
-                documents still come out with a blank line to sign on.
+                This signature is remembered on this computer. It will
+                follow you to another one once migration 047 is run —
+                everything else about signing works now.
               </p>
             )}
 
@@ -1019,6 +1106,69 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                   <span className="dim">Sent to {sentHow.join(" and ")}.</span>
                 )}
               </div>
+              {/* WHAT HAS ALREADY GONE OUT, and a way to stop it. Without
+                  this a link lives for a fortnight with nothing on screen
+                  saying it exists -- which makes sending one to try it
+                  out a thing nobody dares do twice. */}
+              {sent.length > 0 && (
+                <div className="sentlist">
+                  <h3>Already sent</h3>
+                  <table className="ownertbl">
+                    <thead>
+                      <tr><th>To</th><th>Sent</th><th>Where it stands</th><th /></tr>
+                    </thead>
+                    <tbody>
+                      {sent.map((r) => {
+                        const expired = Date.parse(r.expires_at) < Date.now();
+                        const where = r.signed_at
+                          ? `Signed by ${r.signed_name ?? r.to_name}`
+                          : r.voided_at ? "Withdrawn — the link no longer works"
+                          : expired ? "Expired"
+                          : r.opened_at ? "Opened, not signed yet"
+                          : "Sent, not opened yet";
+                        const open = !r.signed_at && !r.voided_at && !expired;
+                        return (
+                          <tr key={r.id}>
+                            <td>
+                              <strong>{r.to_name}</strong><br />
+                              <span className="dim">
+                                {r.to_email || r.to_phone}
+                                {" · "}{r.doc_count} document
+                                {r.doc_count === 1 ? "" : "s"}
+                              </span>
+                            </td>
+                            <td>{new Date(r.sent_at).toLocaleDateString("en-US",
+                              { dateStyle: "medium" })}</td>
+                            <td className={r.signed_at ? "parkok"
+                              : r.voided_at || expired ? "dim" : ""}>{where}</td>
+                            <td>
+                              {open && (
+                                <button type="button" className="btn"
+                                        disabled={pulling === r.id}
+                                        onClick={() => void pullBack(r.id)}>
+                                  {pulling === r.id ? "Withdrawing…" : "Withdraw"}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="dim">
+                    Withdrawing stops the link working. A set somebody has
+                    already signed cannot be withdrawn here — they are
+                    holding a copy of it.
+                  </p>
+                </div>
+              )}
+              {!canList && (
+                <p className="dim">
+                  What has been sent cannot be listed until migration 048 is
+                  run on the database.
+                </p>
+              )}
+
               {sentLink && (
                 <label className="signname">The link, if you would rather send it yourself
                   <input readOnly value={sentLink}
