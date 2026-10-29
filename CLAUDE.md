@@ -100,6 +100,69 @@ with the repo open. Nobody reading these messages has the repo open.
 Give the top-level link plus the clicks, say why it cannot be exact, and ask
 the owner to paste the address bar when they land. Then write it down here.
 
+### Nobody should be pasting SQL
+
+The owner asked not to be in this loop at all, and he is right: a migration
+is not a decision, it is a chore, and it had been costing a round trip every
+time -- a link, a copy icon, a warning to ignore, and somebody reading
+`Success. No rows returned` back to me.
+
+`docs/shared-line/apply.mjs` applies them from here. `run.mjs` already does
+that from a laptop and cannot do it from this container: outbound traffic
+goes through an HTTP proxy, a proxy carries HTTPS and not the Postgres wire
+protocol, so port 5432 is refused however the policy is set. `apply.mjs`
+speaks Supabase's Management API over 443, which the proxy does carry, and
+needs nothing installed -- `fetch` and no more, because a container with no
+`node_modules` is the ordinary case here.
+
+It keeps the same `schema_migrations` ledger as `run.mjs`, so the two cannot
+disagree about what has been applied, and it makes the same refusal on the
+dangerous first run.
+
+Two things have to exist before it can do anything, and only the owner can
+put them there:
+
+- `SUPABASE_ACCESS_TOKEN`, a personal access token from
+  https://supabase.com/dashboard/account/tokens, stored as an environment
+  secret. Not the anon key, not the service role key, not the database
+  password, and never pasted into a chat.
+- `api.supabase.com` allowed by the environment's network policy -- the
+  cloud environment menu in the session's title bar, then Edit.
+
+**Not one line of it has met the real service.** This machine's egress
+refuses api.supabase.com, so the endpoints are the ones Supabase's own
+tooling uses and the shape of the replies is a hypothesis. Every failure
+prints the status and the body it actually got, so one run corrects it
+rather than leaving somebody guessing. `apply.mjs --check` asks nothing of
+the database and reports whether it got through; it is the first thing to
+run once those two settings exist.
+
+And the thing the harness taught, which is the oldest shape in this file
+wearing new clothes:
+
+**A stand-in that serves and spawns in the same process deadlocks itself.**
+`apply-check.mjs` served the Management API from the harness process and
+started the runner with `execFileSync`, which blocks the event loop -- so
+the runner's fetch could not be answered until the runner returned, and the
+runner could not return until its fetch was answered. It hung with no output
+whatsoever, which reads exactly like a harness that is broken rather than one
+that is waiting. The stand-in runs in a process of its own now.
+
+Each of its guards was then broken in turn to confirm it fails, and one of
+them did not. **The check that the token is never printed passed with the
+scrubbing deleted**, because nothing in the fixture ever put the token
+anywhere it could leak: the only reply carrying a credential was the 401,
+and that run used a deliberately wrong one. The stand-in now echoes the
+request's own `Authorization` header back inside a failure, which is a thing
+real gateways do and is the entire reason the scrubbing exists -- and there
+is a second check beside it asserting that the echo happened, so the day the
+stand-in stops echoing, the guard does not go quietly back to proving
+nothing.
+
+Same family as the assistance-animal rule and the rate rule: **a fault that
+is a no-op proves nothing**, and the fix is never to weaken the code but to
+build the case where only that rule can answer.
+
 ## Shipping
 
 The site deploys from `main`. Pushing the feature branch alone changes nothing
@@ -815,7 +878,9 @@ tested.
 ### What is not reachable from here
 
 arcgis.com, services.nconemap.gov, the Census geocoder, Nominatim and
-Overpass are all refused by egress policy, through curl and through the
+Overpass are all refused by egress policy -- and so are supabase.com,
+api.supabase.com and vercel.com, which is why a migration cannot simply be
+applied from here without the two settings above -- through curl and through the
 fetch tool alike. Web search is not. So county data cannot be tested
 against the real service from this machine, and guessing coordinates
 from a screenshot produced a park four kilometres from where it stands
