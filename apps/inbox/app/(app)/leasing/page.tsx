@@ -26,12 +26,23 @@ export default async function Leasing() {
   const HEAD = "id, inquired_at, source, bedrooms_min, price_ceiling, area, has_pets,"
     + " move_in_from, outcome, contact_id, conversation_id,"
     + " contacts(full_name, phone, email)";
+  //
+  // A third tier for 049, which adds the stage and the refusals. Each tier is
+  // one string literal and not a concatenation: the client infers the row type
+  // from the select text, and a joined string turns every field on the result
+  // into an error rather than a column.
   let rows: unknown[] | null = null;
   let full = false;
-  for (const [i, sel] of [`${HEAD}, read, unit_id, owner_id`, HEAD].entries()) {
+  let tracks = false;
+  const TIERS = [
+    `${HEAD}, read, unit_id, owner_id, stage, stage_at, declined`,
+    `${HEAD}, read, unit_id, owner_id`,
+    HEAD,
+  ];
+  for (const [i, sel] of TIERS.entries()) {
     const got = await db.from("inquiries").select(sel)
       .eq("outcome", "open").order("inquired_at", { ascending: false }).limit(200);
-    if (!got.error) { rows = got.data as unknown[]; full = i === 0; break; }
+    if (!got.error) { rows = got.data as unknown[]; tracks = i === 0; full = i <= 1; break; }
   }
 
   // The lots to match against, with the clock, if there is one.
@@ -67,6 +78,12 @@ export default async function Leasing() {
         moveInFrom: (r.move_in_from as string | null) ?? undefined,
       },
       read: (r.read ?? {}) as Looking["read"],
+      /* Null is its own answer here and is passed through as one: an inquiry
+         taken before 049 has no stage, and calling it "not answered yet"
+         would be a claim about work somebody may well have done. */
+      stage: (r.stage as Looking["stage"]) ?? null,
+      stageAt: (r.stage_at as string | null) ?? null,
+      declined: (r.declined ?? []) as Looking["declined"],
     };
   });
 
@@ -88,5 +105,6 @@ export default async function Leasing() {
   });
 
   return <LeasingBoard looking={looking} lots={lots} full={full} clock={clock}
+                       tracks={tracks}
                        canEdit={me.role === "admin" || me.role === "office"} />;
 }

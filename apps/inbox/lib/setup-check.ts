@@ -47,6 +47,7 @@ export async function runSetupChecks(
     ...(await guardAsync("Migrations", migrationChecks)),
     ...(await guardAsync("Email intake", intakeChecks)),
     ...guard("Bookkeeper", bookkeeperCheck),
+    ...guard("Replying by email", outboundEmailCheck),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
 }
@@ -684,6 +685,73 @@ function bookkeeperCheck(): Check[] {
       + " should receive them — several, separated by commas, if more than one"
       + " person should — then redeploy. POSTMARK_SERVER_TOKEN has to be set as"
       + " well, since it is what actually sends.",
+  }];
+}
+
+/**
+ * Whether a reply can go out by email at all.
+ *
+ * This is on the setup page because of what it costs when it is wrong, and
+ * because it is invisible everywhere else. A Zillow lead is reachable by
+ * email and by nothing else -- Zillow anonymises the renter behind a relay
+ * address, so there is no phone number to fall back to -- and with no
+ * Postmark token the reply does not go. `sendEmail` used to return nothing
+ * and swallow that, so the message was written into the thread and marked
+ * sent. The office saw their own answer sitting there and the renter never
+ * got it.
+ *
+ * It is a warn and not a bad: texting still works, which is most of the
+ * traffic. It is the leads it stops dead.
+ */
+function outboundEmailCheck(): Check[] {
+  const token = (process.env.POSTMARK_SERVER_TOKEN ?? "").trim();
+  const from = (process.env.POSTMARK_FROM ?? "").trim();
+
+  if (!token) {
+    return [{
+      name: "Replies cannot go out by email",
+      level: "warn",
+      detail: "POSTMARK_SERVER_TOKEN is not set. Texts are unaffected, but"
+        + " anyone reachable only by email gets nothing — which is every"
+        + " Zillow lead, because Zillow hides the renter behind a relay"
+        + " address and sends no phone number. The reply is now refused on"
+        + " screen rather than recorded as sent, so nothing is silently lost;"
+        + " it still cannot be answered from here.",
+      fix: "Add POSTMARK_SERVER_TOKEN to the hosting dashboard — the Server"
+        + " API token from the Postmark server you already receive mail on —"
+        + " then redeploy.",
+    }];
+  }
+
+  if (!from) {
+    return [{
+      name: "Replies go out from a guessed address",
+      level: "warn",
+      detail: "POSTMARK_FROM is not set, so replies are sent from"
+        + " leasing@larabeehomesllc.com. If that is not a confirmed sender"
+        + " signature in Postmark, every one is rejected. It also has to be"
+        + " the address the Zillow account was opened with"
+        + " (larabeehomesllc@gmail.com): Zillow only accepts a reply to a"
+        + " lead from the landlord's own address and drops the rest without"
+        + " telling anybody.",
+      fix: "Add POSTMARK_FROM to the hosting dashboard, set to the address"
+        + " the Zillow account uses, and confirm it as a sender signature in"
+        + " Postmark. Then redeploy.",
+    }];
+  }
+
+  /* Both set. The one thing still worth saying is the Zillow rule, because it
+     cannot be checked from here -- we do not know which address the Zillow
+     account was opened with, and guessing would be the same lie in a new
+     place. So it is reported as the thing to verify rather than as a pass. */
+  return [{
+    name: "Replies go out by email",
+    level: "good",
+    detail: `Email replies are sent from ${from}. For Zillow leads that`
+      + " address has to be the one the Zillow account was opened with"
+      + " (larabeehomesllc@gmail.com) — Zillow accepts a reply to a lead only"
+      + " from the landlord's own address and drops the rest silently. If"
+      + " those two differ, a reply here will look sent and never arrive.",
   }];
 }
 

@@ -7,17 +7,17 @@
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import ts from "typescript";
+import { loadTs } from "./tsload.mjs";
 import { RENT_MANAGER, VOICEMAIL, VOICEMAIL_BLANK, ZILLOW_FIRST, ZILLOW_REPLY, SQUARESPACE,
          SQUARESPACE_NO_CONSENT, SQUARESPACE_DECLINED, SQUARESPACE_MAINTENANCE,
          COURT_FILING } from "./samples.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(here, "..", "parse-email.ts"), "utf8").replace(/import type .*\n/, "");
-const js = ts.transpileModule(src, {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-const { routeEmail, parseCourtFiling, isCourtFilingEmail } = await import("data:text/javascript," + encodeURIComponent(js));
+// parse-email.ts imports lib/zillow.ts, so the loader resolves siblings --
+// see tsload.mjs. Stripping the import would leave the parser calling a
+// function that was not there.
+const { routeEmail, parseCourtFiling, isCourtFilingEmail } =
+  await loadTs(join(here, "..", "parse-email.ts"));
 
 const rm = routeEmail(RENT_MANAGER);
 const vm = routeEmail(VOICEMAIL);

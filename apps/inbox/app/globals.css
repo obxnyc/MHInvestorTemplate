@@ -2637,7 +2637,14 @@ a.metric:hover{border-color:var(--accent)}
   padding:.85rem .95rem}
 .leadhead{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
 .leadwho{font-weight:700}
-.leadtel{color:var(--ink-2);font-size:.85rem}
+.leadtel{color:var(--ink-2);font-size:.85rem;
+  /* A phone number on a lead card is a thing somebody taps, and at 20px high
+     it was under the 30px a control is held to -- on a 320px phone, which is
+     where it is tapped. It had been that way since the card was written and
+     nothing saw it, because the harness had no leads to draw: `inquiries` was
+     an empty list in the stand-in database, so /leasing rendered its "Nobody
+     on file yet" branch and the board itself was never measured. */
+  display:inline-flex;align-items:center;min-height:30px}
 .leadwait{margin-left:auto;color:var(--muted);font-size:.78rem}
 
 .leadsaid{display:flex;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 0}
@@ -2650,6 +2657,38 @@ a.metric:hover{border-color:var(--accent)}
   letter-spacing:.04em}
 .leadbit dd{margin:.1rem 0 0;font-size:.88rem;font-weight:600}
 .leadfrom{display:block;color:var(--muted);font-size:.72rem;font-weight:400}
+
+/* Where we got to with this person.
+   Every colour here is a token, so it moves with the theme: the rule this
+   stylesheet has now been taught six times is that if the ground moves
+   between themes the ink must move with it, and a literal is simply an ink
+   that does not move.
+   `.late` is a new name on purpose -- `.check`, `.empty` and `.danger` were
+   each borrowed from an existing state and each cost a round. */
+.leadstage{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;
+  margin:.6rem 0 0;padding:.45rem .6rem;border-radius:8px;
+  background:var(--sunk);font-size:.85rem}
+.leadstage.late{background:var(--warn-soft)}
+.leadstagenow{font-weight:700}
+.leadstagesay{color:var(--muted);font-size:.8rem}
+.leadstage.late .leadstagenow,.leadstage.late .leadstagesay{color:var(--crit)}
+/* A flex child of .leadstage, which is what makes the auto margin push
+   anything at all -- an auto margin on something that is not a flex child
+   pushed nothing, and opened the account menu off the side of a phone. */
+.leadstageset{margin-left:auto}
+/* The background AND the ink are both stated. A control that states neither
+   is painted in the browser's default black, which is almost exactly --ink
+   by day and invisible on a near-black card at night; that is how the name of
+   every property came to be unreadable after dark. */
+.leadstageset select{font:inherit;font-size:.8rem;padding:.2rem .35rem;
+  max-width:100%;background:var(--card);color:var(--ink);
+  border:1px solid var(--hair);border-radius:6px}
+
+/* Why a box is empty, where the empty box is. */
+.leadwont{list-style:none;margin:.55rem 0 0;padding:0;display:grid;gap:.3rem}
+.leadwont li{color:var(--muted);background:var(--sunk);border-radius:6px;
+  border-left:3px solid var(--hair);padding:.4rem .55rem;
+  font-size:.8rem;line-height:1.45}
 
 .leadfits{margin:.8rem 0 0}
 .leadfits h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;

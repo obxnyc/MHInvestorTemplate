@@ -4,6 +4,7 @@ import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
 import { openInquiry, knownPlaces } from "./inquiry";
+import type { Reading } from "./wanted";
 
 export type IntakeSource = "zego" | "zillow" | "website" | "voicemail";
 
@@ -22,6 +23,16 @@ export type Intake = {
   /** Provider-side id, so a redelivered webhook cannot duplicate the message. */
   externalId: string;
   unitHint?: string | null;
+  /** Preferences the SOURCE stated as form answers, rather than ones read out
+   *  of prose.
+   *
+   *  Zillow asks the renter when they want to move, how many bedrooms and
+   *  whether they have pets, and sends the answers. Those are stated answers
+   *  with a provenance, and they beat any reading of the message body -- the
+   *  body is usually "I would like to schedule a tour", which states nothing,
+   *  and reading the notification as prose recorded the OPPOSITE of the pets
+   *  answer. See lib/zillow.ts. */
+  stated?: Reading | null;
   /** Verbatim consent captured on the form, if the submission carried one. */
   consent?: {
     channel: "sms" | "email";
@@ -219,6 +230,7 @@ export async function ingest(item: Intake) {
         source: `${item.source} form`,
         text: item.raw,
         places: await knownPlaces(db),
+        stated: item.stated ?? null,
       });
       inquiryId = got?.id ?? null;
     } catch (e) {

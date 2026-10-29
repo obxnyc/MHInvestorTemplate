@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { closeInquiry, type Outcome } from "@/lib/inquiry";
+import { isStage, STAGES } from "@/lib/stage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,31 @@ export async function PATCH(req: Request) {
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 500 });
     }
+  }
+
+  /* Where this one got to. Set by a person, because the application cannot
+     know that a showing happened -- the single exception is 'replied', which
+     the reply route sets because a reply is a row it just wrote. */
+  if ("stage" in body) {
+    if (!isStage(body.stage)) {
+      return NextResponse.json({
+        error: `not a stage: ${String(body.stage)}. One of ${STAGES.join(", ")}.`,
+      }, { status: 400 });
+    }
+    /* `stage_at` moves with it and is never taken from the client. It is what
+       "applied, and it has been nine days" is measured from, so a caller that
+       could set it could make anything look fresh. */
+    const { error } = await db.from("inquiries")
+      .update({ stage: body.stage, stage_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      return NextResponse.json({
+        error: error.message.includes("stage")
+          ? "The board cannot track stages until migration 049 has been run."
+          : error.message,
+      }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, stage: body.stage });
   }
 
   const patch: Record<string, unknown> = {};

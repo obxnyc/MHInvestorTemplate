@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { reachFor } from "@/lib/reachable";
 import { sendEmail } from "@/lib/notify";
+import { markReplied } from "@/lib/inquiry";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { twilioClient, publicBase, toMsgStatus } from "@/lib/twilio";
@@ -125,18 +126,40 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   if (reach.by === "email") {
     channel = "email";
-    try {
-      await sendEmail(to,
-        /* What it is about, so it threads in their mail client rather
-           than arriving as a bare message from nobody about nothing. */
-        String((convo as { subject?: string | null }).subject || "")
-          || "Your maintenance request",
-        wire);
-      status = "sent";
-    } catch (e) {
-      status = "failed";
-      console.error("email reply failed", e);
+    /* THE ANSWER IS READ. This was `try { await sendEmail(...); status =
+       "sent" } catch`, and sendEmail never threw -- it returned undefined on
+       a missing token, on a 422, and on a network error alike. So every
+       email reply recorded as sent, including on a deployment where email
+       was not configured and nothing had ever gone out.
+
+       It matters most on a Zillow lead, which is reachable by email and
+       nothing else: the renter is anonymised behind a relay address, so a
+       reply that was dropped is the whole conversation, and the office had
+       no way to know it had not happened. */
+    const sentEmail = await sendEmail(to,
+      /* What it is about, so it threads in their mail client rather
+         than arriving as a bare message from nobody about nothing. */
+      String((convo as { subject?: string | null }).subject || "")
+        || "Your maintenance request",
+      wire);
+    if (!sentEmail.ok) {
+      /* NOTHING IS WRITTEN, and this is deliberately not what the Twilio
+         branch below does. A carrier rejecting one message is a fact about
+         that message and belongs in the thread, which is why that branch
+         records the attempt. A failure here is almost always that email is
+         not configured at all -- no token, or a sender signature Postmark
+         has not confirmed -- so nothing was ever handed over, and writing
+         "failed" into a tenant's thread on every attempt would be noise
+         rather than a record.
+
+         Postmark's own sentence goes to the person who typed the message,
+         because it names the cause, and the words stay in the composer where
+         they are still useful. */
+      return NextResponse.json({
+        error: `That did not go out, so nothing was sent. ${sentEmail.why}`,
+      }, { status: 502 });
     }
+    status = "sent";
   } else try {
     const sent = await twilioClient().messages.create({
       to,
@@ -193,6 +216,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .update({ last_message_at: new Date().toISOString(),
               last_message_preview: preview })
     .eq("id", id);
+
+  /* If this thread is somebody who is looking, they have now been answered.
+     Only a message that actually went out moves the stage -- a rejected text
+     is recorded as the attempt it was and leaves them on the board as
+     unanswered, which is what they are. */
+  if (status !== "failed") await markReplied(db, id);
 
   return NextResponse.json({
     ok: status !== "failed", status,

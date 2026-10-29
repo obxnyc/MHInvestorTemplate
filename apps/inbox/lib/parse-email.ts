@@ -1,4 +1,5 @@
 import type { Intake } from "./intake";
+import { readZillowForm, saysOnOneLine } from "./zillow";
 
 export type RawEmail = {
   from: string; to: string; subject: string; text: string; messageId: string;
@@ -79,9 +80,36 @@ const ZILLOW_NOISE = [
   /^Manage this listing$/i, /^Report spam$/i,
 ];
 
+/** `&#160;` and `&#x27;` are not `&nbsp;` and not `&amp;`, and the HTML
+ *  stripper upstream only decodes the named handful. Zillow's layout is built
+ *  out of spacer cells holding `&#160;`, so undecoded they survive as visible
+ *  text and rode out onto the summary line the office reads first:
+ *  "... Number of Occupants 2 &#160; &#160;". Decoded, they are whitespace and
+ *  the blank-line filter below takes them. */
+function decodeEntities(text: string) {
+  /* `String.fromCodePoint` THROWS on anything outside Unicode, so a mangled
+     entity -- `&#xFFFFFFFF;`, or a decimal run long enough to overflow --
+     would take a RangeError all the way out of parseZillow and drop the
+     lead. The rule in this file is that a field we cannot read degrades to
+     an unparsed thread and never to a dropped request, so an entity that is
+     not a character is left exactly as it was found. */
+  const char = (n: number, whole: string) =>
+    Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : whole;
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (whole, h) => char(parseInt(h, 16), whole))
+    .replace(/&#(\d+);/g, (whole, d) => char(Number(d), whole))
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+}
+
 function stripZillowChrome(text: string) {
-  return text.split(/\r?\n/)
-    .map((l) => l.trim())
+  return decodeEntities(text).split(/\r?\n/)
+    // \u00a0 is what a decoded &#160; is, and it is not matched by \s in
+    // every engine's idea of trim -- taken off explicitly so a spacer line
+    // becomes empty and is filtered rather than becoming a blank-looking
+    // line that still ends a value block.
+    .map((l) => l.replace(/[\u00a0\u200b]/g, " ").trim())
     .filter((l) => l && !ZILLOW_NOISE.some((re) => re.test(l)))
     .join("\n");
 }
@@ -230,7 +258,11 @@ export function parseZillow(mail: RawEmail): Intake {
     ?? /^([\d]+\s+[^\n]*,\s*[A-Z]{2},?\s*\d{5})\.?$/im.exec(clean)?.[1]?.trim()
     ?? null;
 
-  const pets = blockAfter(clean, "Pets");
+  /* The answers Zillow already asked for -- bedrooms, move-in, pets -- rather
+     than a second guess at them from the prose. See lib/zillow.ts: read as
+     prose, "Income $75000" sitting above "Pets No" recorded a renter who had
+     answered No as having pets. */
+  const form = readZillowForm(clean);
 
   // The relay address is stable per lead, so it threads their messages.
   const relay = /<([^>]+@convo\.zillow\.com)>/i.exec(mail.from)?.[1]
@@ -239,7 +271,7 @@ export function parseZillow(mail: RawEmail): Intake {
   const summary = [
     property && `Zillow — ${property}`,
     message,
-    pets && pets.toLowerCase() !== "not answered" && `pets: ${pets}`,
+    ...saysOnOneLine(form),
   ].filter(Boolean).join(" · ") || mail.subject || "Zillow inquiry";
 
   return {
@@ -251,8 +283,21 @@ export function parseZillow(mail: RawEmail): Intake {
     email: relay,
     unitHint: property,
     summary,
+    /* The form answers, as stated answers with their provenance. These beat
+       anything read out of the prose, and the refusals travel with them so
+       the screen can say why a field is empty rather than inviting somebody
+       to fill it in. */
+    stated: form.found ? form.reading : null,
     raw: `${clean}\n\n— Zillow relay: replying to ${relay ?? "this thread"} reaches them.`
-       + `\n— No phone number: Zillow anonymises renters. Ask for one before texting.`,
+       + `\n— No phone number: Zillow anonymises renters. Ask for one before texting.`
+       /* Worth saying on the thread rather than only in the setup page: the
+          relay accepts mail from the address the Zillow account was opened
+          with. A reply sent from any other address is dropped by Zillow,
+          which tells nobody -- and a dropped reply looks exactly like one
+          that was read and ignored. */
+       + `\n— Replies go out from POSTMARK_FROM. Zillow only accepts a reply from`
+       + ` the address on the Zillow account (larabeehomesllc@gmail.com), so if`
+       + ` those two differ the renter never sees it.`,
     category: "prospect",
     externalId: mail.messageId,
   };

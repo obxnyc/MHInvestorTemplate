@@ -29,7 +29,9 @@ const bare = (s) => s.replace(/\/\*[\s\S]*?\*\//g, " ")
 const tmp = join(here, ".tmp-tag");
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
-for (const name of ["parse-email", "phone", "format", "zone"]) {
+// zillow is here because parse-email imports it: the rewrite below points a
+// relative specifier at a sibling .mjs, so the sibling has to be written too.
+for (const name of ["parse-email", "phone", "format", "zone", "zillow"]) {
   let src;
   try { src = read(`lib/${name}.ts`); } catch { continue; }
   writeFileSync(join(tmp, `${name}.mjs`),

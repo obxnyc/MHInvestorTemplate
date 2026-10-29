@@ -8,6 +8,8 @@ import { money } from "@/lib/prices";
 import { spell, howLong, worrying, longestFirst } from "@/lib/empty";
 import { matches, saidNothing, type Lot } from "@/lib/match";
 import type { Wanted } from "@/lib/wanted";
+import { STAGES, STAGE_INFO, stageLabel, waiting as howWaiting, chaseOrder,
+         type Stage } from "@/lib/stage";
 
 export type Looking = {
   id: string;
@@ -21,6 +23,16 @@ export type Looking = {
   /** The words each field was read out of. Empty for a field somebody typed
    *  themselves, which is how a correction stops looking like a guess. */
   read: Partial<Record<keyof Wanted, { from: string; at: number }>>;
+  /** Where we got to with them. NULL is not 'new': it means this one was
+   *  taken before the board kept track and nobody has said. */
+  stage: Stage | null;
+  /** When the stage last moved, which is what the waiting is measured from.
+   *  Not `inquiredAt` -- a lead that moved this morning is not waiting. */
+  stageAt: string | null;
+  /** What we would not record off this enquiry, and why. Shown where the
+   *  empty box is, because the blank is what invites somebody to fill it in
+   *  with the occupant count sitting in the thread above it. */
+  declined: { field: string; because: string }[];
 };
 
 export type EmptyLot = Lot & {
@@ -58,8 +70,9 @@ function said(w: Wanted): { label: string; value: string; key: keyof Wanted }[] 
 }
 
 export default function LeasingBoard(
-  { looking, lots, full, clock, canEdit }:
-  { looking: Looking[]; lots: EmptyLot[]; full: boolean; clock: boolean; canEdit: boolean },
+  { looking, lots, full, clock, tracks, canEdit }:
+  { looking: Looking[]; lots: EmptyLot[]; full: boolean; clock: boolean;
+    tracks: boolean; canEdit: boolean },
 ) {
   const router = useRouter();
   const [busy, start] = useTransition();
@@ -100,6 +113,16 @@ export default function LeasingBoard(
 
       {problem ? <p className="leadbad">{problem}</p> : null}
 
+      {/* Without 049 there is no stage column, so the board cannot say where
+          anybody got to. It says THAT, rather than drawing every lead with no
+          stage and reading as a pipeline where nothing has ever moved. */}
+      {looking.length && !tracks ? (
+        <p className="leadnone">
+          This board cannot yet say where each person got to. Run migration
+          049 and it will track them from “not answered” through to approved.
+        </p>
+      ) : null}
+
       {!looking.length ? (
         /* Empty because nothing has arrived since this started recording, not
            because the screen is broken -- and the difference is worth saying,
@@ -114,8 +137,12 @@ export default function LeasingBoard(
         </p>
       ) : null}
 
+      {/* The ones somebody has to do something about first, then the ones
+          nobody has said anything about, then by how long they have sat.
+          NOT by date received: a lead from this morning that nobody has
+          answered outranks one from last week waiting on a signature. */}
       <ul className="leadlist">
-        {looking.map((p) => {
+        {(tracks ? chaseOrder(looking, new Date()) : looking).map((p) => {
           const fits = saidNothing(p.wanted) ? [] : matches(lots, p.wanted);
           const days = waiting(p.inquiredAt);
           return (
@@ -131,6 +158,45 @@ export default function LeasingBoard(
                   {p.source ? ` · ${p.source}` : ""}
                 </span>
               </div>
+
+              {tracks ? (() => {
+                const w = howWaiting(p, new Date());
+                return (
+                  <div className={`leadstage${w.late ? " late" : ""}`}>
+                    <span className="leadstagenow">{stageLabel(p.stage)}</span>
+                    {/* Three answers and not two. Late, fine, or nobody has
+                        said -- and the third is not reported as either of the
+                        others, because "not answered yet" is a claim about
+                        work somebody may have done. */}
+                    <span className="leadstagesay">
+                      {w.late ? w.why
+                        : "unknown" in w ? w.why
+                        : p.stage
+                          ? `${STAGE_INFO[p.stage].next}${
+                              w.days === 0 ? "" : ` (${w.days} day${w.days === 1 ? "" : "s"})`}`
+                          : ""}
+                    </span>
+                    {canEdit ? (
+                      <label className="leadstageset">
+                        <select
+                          aria-label="Where this one got to"
+                          value={p.stage ?? ""}
+                          disabled={busy}
+                          onChange={(e) => call({ id: p.id, stage: e.target.value })}
+                        >
+                          {/* Only present when nothing has been recorded, and
+                              it cannot be chosen: "nobody has said" is a
+                              state to leave, not one to put a lead into. */}
+                          {p.stage ? null : <option value="" disabled>Nobody has said</option>}
+                          {STAGES.map((st) => (
+                            <option key={st} value={st}>{STAGE_INFO[st].label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                );
+              })() : null}
 
               <dl className="leadsaid">
                 {said(p.wanted).length ? said(p.wanted).map((s) => (
@@ -153,6 +219,22 @@ export default function LeasingBoard(
                   </p>
                 )}
               </dl>
+
+              {/* WHY A BOX IS EMPTY, where the empty box is.
+                  A Zillow enquiry carries the occupant count and the income
+                  in the message body, so both are on screen in the thread. An
+                  empty Beds box beside "Number of Occupants 5" is what
+                  invites somebody to type 5 into it -- and that puts a
+                  familial-status fact in a column this business matches on.
+                  Saying we do not record it is the whole point of saying
+                  anything. */}
+              {p.declined.length ? (
+                <ul className="leadwont">
+                  {p.declined.map((d, i) => (
+                    <li key={`${d.field}-${i}`}>{d.because}</li>
+                  ))}
+                </ul>
+              ) : null}
 
               {fits.length ? (
                 <div className="leadfits">

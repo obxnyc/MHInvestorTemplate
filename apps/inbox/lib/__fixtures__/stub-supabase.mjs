@@ -18,6 +18,12 @@
  */
 import { createServer } from "node:http";
 
+/* Relative to now, so "waiting twenty days" stays twenty days whenever this
+   is run. A fixed date would quietly become "waiting four hundred days" and
+   then stop meaning what the check named. */
+const AGES_AGO = new Date(Date.now() - 20 * 864e5).toISOString();
+const RECENTLY = new Date(Date.now() - 36e5).toISOString();
+
 const WHO = "11111111-1111-1111-1111-111111111111";
 const USER = { id: WHO, aud: "authenticated", role: "authenticated",
                email: "cade@larabeehomesllc.com", app_metadata: {},
@@ -73,7 +79,66 @@ const TABLES = {
   clock_rules: [{ id: true, daily_cap: 10, break_after: 6, break_minutes: 30,
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
-  work_orders: [], inquiries: [],
+  work_orders: [],
+
+  /* FOUR LEADS, AND THEY ARE DIFFERENT ON PURPOSE.
+     `inquiries` was [] here, which meant /leasing rendered its "Nobody on
+     file yet" branch and the whole leasing board -- the stage line, the
+     refusals, the late colouring -- was never drawn. The harness looked at
+     the page and reported success having seen none of it, which is the third
+     time that has happened in this file.
+     One of each state the board has to draw, because a fixture that gives one
+     of everything cannot tell two answers apart:
+       late      an overdue stage, which is the one that gets the warn ground
+                 and is therefore the one whose contrast can break
+       fresh     a stage that moved this morning and is nobody's job yet
+       unsaid    stage null: taken before 049, so nobody has said
+       refused   carries the declines, which is the .leadwont block */
+  inquiries: [
+    { id: "i1", inquired_at: AGES_AGO, source: "zillow form", outcome: "open",
+      contact_id: "c-lead-1", conversation_id: null, unit_id: null, owner_id: null,
+      bedrooms_min: 3, price_ceiling: null, area: "Elizabeth City",
+      has_pets: false, move_in_from: "2026-11-02",
+      read: { bedrooms_min: { from: "Number of Bedrooms: 3 (Zillow enquiry form)", at: 120 } },
+      stage: "applied", stage_at: AGES_AGO, declined: [],
+      contacts: { full_name: "Marguerite Alderton", phone: null,
+                  email: "s8z0axqvc84kidqvrbrqerwfj@convo.zillow.com" } },
+
+    { id: "i2", inquired_at: RECENTLY, source: "zillow form", outcome: "open",
+      contact_id: "c-lead-2", conversation_id: null, unit_id: null, owner_id: null,
+      bedrooms_min: null, price_ceiling: null, area: null,
+      has_pets: null, move_in_from: null, read: {},
+      stage: "new", stage_at: RECENTLY,
+      /* The refusals a Zillow enquiry produces. Long sentences on purpose:
+         this is the block most likely to run off the side of a phone. */
+      declined: [
+        { field: "bedroomsMin",
+          because: "Zillow says 5 occupants. That is the size of the household,"
+            + " not a number of bedrooms, and it is not something we record or"
+            + " match on." },
+        { field: "priceCeiling",
+          because: "Zillow passed on income $1450 and credit score 580 to 619."
+            + " Neither is a rent they said they would pay, so neither is"
+            + " recorded as one." },
+      ],
+      contacts: { full_name: "Ronan Whitbeck", phone: "+19105550147", email: null } },
+
+    { id: "i3", inquired_at: RECENTLY, source: "sign call", outcome: "open",
+      contact_id: "c-lead-3", conversation_id: null, unit_id: null, owner_id: null,
+      bedrooms_min: 2, price_ceiling: 875, area: "Fayetteville",
+      has_pets: true, move_in_from: null, read: {},
+      stage: "tour_booked", stage_at: RECENTLY, declined: [],
+      contacts: { full_name: "Delphine Oyelaran", phone: "+19105550182", email: null } },
+
+    /* Null, not 'new'. The board must say nobody has said rather than
+       reporting it as unanswered. */
+    { id: "i4", inquired_at: AGES_AGO, source: "web form", outcome: "open",
+      contact_id: "c-lead-4", conversation_id: null, unit_id: null, owner_id: null,
+      bedrooms_min: null, price_ceiling: null, area: null,
+      has_pets: null, move_in_from: null, read: {},
+      stage: null, stage_at: null, declined: [],
+      contacts: { full_name: "Augustin Pereira-Nkemelu", phone: null, email: null } },
+  ],
 
   /* Nobody has signed: the papers panel has to be right before anyone
      has, which is every account the first time. */
