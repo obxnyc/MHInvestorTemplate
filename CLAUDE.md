@@ -53,10 +53,15 @@ fix having failed.
 ### Supabase
 
 Organisation **Larabee-inbox**, project **Larabee-inbox**, on the Free plan.
-The branch is `main`, marked PRODUCTION. Still no project ref, because the
-screenshot that gave the names was of the app and not of the address bar --
-so https://supabase.com/dashboard/projects plus the clicks, and ask for the
-address bar when they land.
+The branch is `main`, marked PRODUCTION.
+
+**The project ref is `tubrcwtfuqvgdkklbtyl`.** Postgres 17.6, us-east-1, host
+`db.tubrcwtfuqvgdkklbtyl.supabase.co`. It went missing for months because
+every screenshot of it was of the app rather than the address bar -- and in
+the end nobody had to read it off anything: the Supabase connector's
+`list_projects` simply said it. The dashboard for it is
+https://supabase.com/dashboard/project/tubrcwtfuqvgdkklbtyl and the SQL
+editor is https://supabase.com/dashboard/project/tubrcwtfuqvgdkklbtyl/sql/new
 
 The SQL editor is the second-to-top icon in the far-left rail. The Run button
 is top right; the right answer to a migration is `Success. No rows returned`.
@@ -99,6 +104,134 @@ with the repo open. Nobody reading these messages has the repo open.
 
 Give the top-level link plus the clicks, say why it cannot be exact, and ask
 the owner to paste the address bar when they land. Then write it down here.
+
+### Nobody should be pasting SQL
+
+The owner asked not to be in this loop at all, and he is right: a migration
+is not a decision, it is a chore, and it had been costing a round trip every
+time -- a link, a copy icon, a warning to ignore, and somebody reading
+`Success. No rows returned` back to me.
+
+`docs/shared-line/apply.mjs` applies them from here. `run.mjs` already does
+that from a laptop and cannot do it from this container: outbound traffic
+goes through an HTTP proxy, a proxy carries HTTPS and not the Postgres wire
+protocol, so port 5432 is refused however the policy is set. `apply.mjs`
+speaks Supabase's Management API over 443, which the proxy does carry, and
+needs nothing installed -- `fetch` and no more, because a container with no
+`node_modules` is the ordinary case here.
+
+It keeps the same `schema_migrations` ledger as `run.mjs`, so the two cannot
+disagree about what has been applied, and it makes the same refusal on the
+dangerous first run.
+
+**THE ANSWER WAS THE SUPABASE CONNECTOR, and it took four rounds to find.**
+Connector traffic goes through Anthropic's servers rather than the session's
+network, so there is no domain to allow, no token to generate and no header
+to configure -- the owner presses Connect at
+https://claude.ai/settings/connectors, signs in to Supabase the ordinary way,
+and `mcp__Supabase__apply_migration` applies migrations from here. That is
+the route. Use it.
+
+Everything below about tokens and network secrets is the long way round, kept
+because `apply.mjs` still works from a laptop and because the reasoning about
+the proxy is worth having. **Read the connector registry before asking the
+owner to configure networking.** Three rounds went on asking him to paste a
+token into a settings dialog -- twice with instructions that were wrong about
+which dialog -- when one search for "supabase" would have found a connector
+that needed one click and no credential handling at all. He had every right
+to be short about it.
+
+**One thing has to exist before `apply.mjs` can do anything, and it is one
+dialog.** The first draft of this asked for two -- a token in an environment
+variable AND `api.supabase.com` added to the allowed domains -- and that was
+reading half the page. A **network secret** does both at once, and does the
+first one better.
+
+A network secret is a key stored on the cloud environment that Anthropic's
+proxy adds to outbound requests for the hosts it lists, AFTER the request has
+left the container. So the token is never in the environment, never in a
+file, and never in anything printed here -- and the hosts on a network secret
+are reachable whatever the network access level says, which is why the
+allowed-domains edit is not needed at all.
+
+The clicks, because the owner has to be able to follow them without
+assembling anything:
+
+1. Generate the token at https://supabase.com/dashboard/account/tokens --
+   **Generate new token**. It starts `sbp_`. Not the anon key, not the
+   service role key, not the database password.
+2. In the running session, the caret after the session title at the top,
+   then **Edit cloud environment**.
+3. The **Network secrets** row, then **Add secret**.
+4. Leave **Secret type** on **Bearer**. **Allowed websites** is
+   `api.supabase.com`. The **Custom headers** row already reads
+   `Authorization` with the prefix `Bearer`; the token goes in **Value**.
+5. **Add**. It saves there and then -- it does not wait for **Save changes**,
+   which is the sort of thing that costs a round.
+
+The right answer is the secret appearing in the list with `api.supabase.com`
+beside it. If it is marked **Not sent**, the note underneath says why.
+
+Network secrets are Pro, Max, Team and Enterprise. `apply.mjs` takes the
+token from `SUPABASE_ACCESS_TOKEN` too if it is set, which is the laptop
+case; with a network secret nothing is set and it sends no Authorization
+header at all, so the one the proxy adds is the only one.
+
+**Not one line of it has met the real service.** This machine's egress
+refuses api.supabase.com without that secret, so the endpoints are the ones Supabase's own
+tooling uses and the shape of the replies is a hypothesis. Every failure
+prints the status and the body it actually got, so one run corrects it
+rather than leaving somebody guessing. `apply.mjs --check` asks nothing of
+the database and reports whether it got through; it is the first thing to
+run once that secret exists.
+
+And the thing the harness taught, which is the oldest shape in this file
+wearing new clothes:
+
+**A stand-in that serves and spawns in the same process deadlocks itself.**
+`apply-check.mjs` served the Management API from the harness process and
+started the runner with `execFileSync`, which blocks the event loop -- so
+the runner's fetch could not be answered until the runner returned, and the
+runner could not return until its fetch was answered. It hung with no output
+whatsoever, which reads exactly like a harness that is broken rather than one
+that is waiting. The stand-in runs in a process of its own now.
+
+Each of its guards was then broken in turn to confirm it fails, and one of
+them did not. **The check that the token is never printed passed with the
+scrubbing deleted**, because nothing in the fixture ever put the token
+anywhere it could leak: the only reply carrying a credential was the 401,
+and that run used a deliberately wrong one. The stand-in now echoes the
+request's own `Authorization` header back inside a failure, which is a thing
+real gateways do and is the entire reason the scrubbing exists -- and there
+is a second check beside it asserting that the echo happened, so the day the
+stand-in stops echoing, the guard does not go quietly back to proving
+nothing.
+
+Same family as the assistance-animal rule and the rate rule: **a fault that
+is a no-op proves nothing**, and the fix is never to weaken the code but to
+build the case where only that rule can answer.
+
+### Node's fetch does not use the proxy, and says nothing about it
+
+The first real run of `apply.mjs` failed with `fetch failed`, and the proxy's
+own log showed no attempt at all. **`fetch` ignores `HTTPS_PROXY`** unless
+`NODE_USE_ENV_PROXY` is set, and it has to be set before the first request --
+so the request never left the container, and the error named Supabase for
+something Supabase was never asked. `curl` does respect the proxy, which is
+why `curl` and `node` disagreed about whether the host was reachable; when
+the two disagree, the one that went through the proxy is the one telling the
+truth. The runner now hands itself that variable and starts again. `NO_PROXY`
+still applies, so a stand-in on localhost is unaffected.
+
+**A rejected top-level await is an `uncaughtException`, not an
+`unhandledRejection`.** Registering only the latter left node printing its
+own crash report over the top of a perfectly good error message -- the tool
+reading as broken at the exact moment it was working correctly and saying so.
+Both are registered.
+
+And the failure now says what it means: `fetch failed` on its own reads as
+"Supabase is down", when in a cloud session it nearly always means the egress
+policy refused the host and nothing was ever sent.
 
 ## Shipping
 
@@ -816,7 +949,10 @@ tested.
 
 arcgis.com, services.nconemap.gov, the Census geocoder, Nominatim and
 Overpass are all refused by egress policy, through curl and through the
-fetch tool alike. Web search is not. So county data cannot be tested
+fetch tool alike. So are supabase.com, api.supabase.com and vercel.com --
+which is why a migration cannot be applied from here at all until the
+network secret above exists, and why "I merged it" says nothing about whether the
+site built. Web search is not. So county data cannot be tested
 against the real service from this machine, and guessing coordinates
 from a screenshot produced a park four kilometres from where it stands
 -- do not do that again. Test the logic against a stand-in server, say
@@ -1104,6 +1240,86 @@ all of them the tab strip, which scrolls sideways on purpose -- the at-rest
 check had a rule for that and the new one did not, and the real finding was
 buried under false ones. And a full-width fixed backdrop is meant to cover the
 screen, so it is not "off" it.
+
+### Sixteen signatures, one at a time
+
+"It only allows you to sign at the bottom and one blanket signature. It
+should be at the first point needed to be signed, you click sign, then it
+takes you to choose your type of signature or draw, and then it goes to
+each individual signature."
+
+Almost all of it already existed. `SignaturePad` has done typed-or-drawn
+with a choice of hands since the seller's side was built, and `papers.ts`
+has always marked every slot individually -- `signslot` and `dateslot`,
+each with a `data-for`. What was missing was only the order of events: one
+pad at the bottom, and `countersign` filling all sixteen from it.
+
+So `SignHere` takes the signature once and then walks to each place. The
+slots are wired as buttons on the DOM inside the frozen pack rather than
+rebuilt as JSX, because **this page may not rewrite the document** -- what
+is on screen is a preview of where the mark lands, and the signed copy
+comes back from the server.
+
+**Finishing requires every place placed.** The server still fills them all
+from the one signature, as it must, so a screen that let somebody stop at
+two of three would be describing a document that cannot exist.
+
+**And the date is the signer's.** It was `new Date()` on the server, so a
+deal agreed on the 12th and signed on the 1st was dated by a clock in
+Virginia. It is a field now, defaulting to today rather than being today,
+refused if it is not a real date and refused if it is in the future --
+a signature dated tomorrow says the thing was signed before it was signed.
+
+`sign-walk-check.mjs` drives the real page in a real browser against the
+stand-in: it adopts a signature the way a thumb would, puts it in each
+place, and asks whether it can be finished early. Three faults were put
+back in turn -- fill-everything-on-adopt, finish-without-all, drop the date
+-- and each is caught.
+
+**A SERVER LEFT RUNNING SERVES THE BUILD IT STARTED WITH.** Those three
+faults first came back "not caught", all three with the identical three
+failures including "the investor's page is what loaded" -- which the date
+fault cannot possibly affect. An old `next start` still held port 3100, the
+rebuild had overwritten the chunks it was handing out, so the page 500'd on
+its own javascript and the new server never bound at all. **Identical
+failures from different faults is the shape of an environment that is
+broken, not of guards that are weak** -- and the thing that settled it was
+opening one page with the console attached rather than reading the summary
+a fourth time.
+
+Also: `pkill -f "next start"` matches the command line of the shell running
+it, so the driver kills itself. Kill by pid.
+
+And the stand-in now carries `signing_requests` with THREE slots, not one.
+With one slot, "walks you to each place" and "fills them all at once" are
+the same run.
+
+### A harness that skips is a harness that passed
+
+The stylesheet was fixed for the phone and the rule in this file says run
+`card-picture.mjs` before any push that touches `globals.css`. It said
+`skipped: no playwright here` -- in a container where playwright is
+installed and working.
+
+**Node resolves a bare ESM specifier against `node_modules` up the tree and
+never against the global prefix or `NODE_PATH`.** Playwright is installed
+globally in a cloud session, so `await import("playwright")` throws,
+`chromium` stays undefined, and the harness says it is not there. `require`
+does search those places -- `createRequire(import.meta.url)` finds it -- and
+that is the same trick `run.mjs` already uses to reach `pg`.
+
+Four harnesses had the identical loop: `card-picture`, `grab-check`,
+`phone-check`, `print-check`. **Every one of them has been skipping in every
+cloud session since they were written**, which means every stylesheet and
+map change pushed from here went out with the harness that guards it never
+having looked. All four take the fallback now.
+
+And the shape, which is the one this file keeps a list of: **a skip prints
+`exit 0` and reads like a pass.** It is the same family as the server that
+was up and erroring reading as no server. A harness that cannot run should
+be as loud as one that failed, or nobody will notice the difference -- the
+only reason this was caught is that the skip was read instead of the exit
+code.
 
 ### A check that cries wolf is worse than no check
 
