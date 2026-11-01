@@ -53,10 +53,15 @@ fix having failed.
 ### Supabase
 
 Organisation **Larabee-inbox**, project **Larabee-inbox**, on the Free plan.
-The branch is `main`, marked PRODUCTION. Still no project ref, because the
-screenshot that gave the names was of the app and not of the address bar --
-so https://supabase.com/dashboard/projects plus the clicks, and ask for the
-address bar when they land.
+The branch is `main`, marked PRODUCTION.
+
+**The project ref is `tubrcwtfuqvgdkklbtyl`.** Postgres 17.6, us-east-1, host
+`db.tubrcwtfuqvgdkklbtyl.supabase.co`. It went missing for months because
+every screenshot of it was of the app rather than the address bar -- and in
+the end nobody had to read it off anything: the Supabase connector's
+`list_projects` simply said it. The dashboard for it is
+https://supabase.com/dashboard/project/tubrcwtfuqvgdkklbtyl and the SQL
+editor is https://supabase.com/dashboard/project/tubrcwtfuqvgdkklbtyl/sql/new
 
 The SQL editor is the second-to-top icon in the far-left rail. The Run button
 is top right; the right answer to a migration is `Success. No rows returned`.
@@ -119,11 +124,28 @@ It keeps the same `schema_migrations` ledger as `run.mjs`, so the two cannot
 disagree about what has been applied, and it makes the same refusal on the
 dangerous first run.
 
-**One thing has to exist before it can do anything, and it is one dialog.**
-The first draft of this asked for two -- a token in an environment variable
-AND `api.supabase.com` added to the allowed domains -- and that was reading
-half the page. A **network secret** does both at once, and does the first one
-better.
+**THE ANSWER WAS THE SUPABASE CONNECTOR, and it took four rounds to find.**
+Connector traffic goes through Anthropic's servers rather than the session's
+network, so there is no domain to allow, no token to generate and no header
+to configure -- the owner presses Connect at
+https://claude.ai/settings/connectors, signs in to Supabase the ordinary way,
+and `mcp__Supabase__apply_migration` applies migrations from here. That is
+the route. Use it.
+
+Everything below about tokens and network secrets is the long way round, kept
+because `apply.mjs` still works from a laptop and because the reasoning about
+the proxy is worth having. **Read the connector registry before asking the
+owner to configure networking.** Three rounds went on asking him to paste a
+token into a settings dialog -- twice with instructions that were wrong about
+which dialog -- when one search for "supabase" would have found a connector
+that needed one click and no credential handling at all. He had every right
+to be short about it.
+
+**One thing has to exist before `apply.mjs` can do anything, and it is one
+dialog.** The first draft of this asked for two -- a token in an environment
+variable AND `api.supabase.com` added to the allowed domains -- and that was
+reading half the page. A **network secret** does both at once, and does the
+first one better.
 
 A network secret is a key stored on the cloud environment that Anthropic's
 proxy adds to outbound requests for the hosts it lists, AFTER the request has
