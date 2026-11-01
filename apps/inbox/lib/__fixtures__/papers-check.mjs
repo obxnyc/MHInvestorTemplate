@@ -191,6 +191,67 @@ t("no clause was dropped on the way across", missing.length === 0,
   t("and a cent more a month would not", Math.abs(off) > 0.5);
   t("an interest-free balance divides evenly",
     Math.abs(P.payment(12000, 0, 10, 12) - 100) < 1e-9);
+
+  /* EVERY TERM, NOT ONE TERM.
+     These deals are written at whatever rate and length the parties agree,
+     and the one case above -- 20 years at 4.9% -- cannot tell a formula
+     that generalises from one that happens to land on that pair. A dozen
+     of them, including 0%, a short term and a long one, and each has to
+     pay the balance off to the cent.
+
+     This is the arithmetic the CONTRACT prints: the installment figure in
+     clause (b) and every row of Schedule A come from it, so a rounding
+     that drifts here is a contract that never quite clears. */
+  const money0Left = [];
+  for (const yrs of [3, 5, 10, 15, 20, 30]) {
+    for (const apr of [0, 3.75, 4.9, 5.2, 7.25]) {
+      for (const bal of [8500, 62140, 150000]) {
+        const pm = P.payment(bal, apr, yrs, 12);
+        const r = apr / 100 / 12, n = yrs * 12;
+        let b = bal;
+        for (let k = 0; k < n; k++) b = b + b * r - pm;
+        /* Tolerance scales with the balance, not an absolute cent: the
+           payment is rounded to the cent when printed but carried at full
+           precision here, and 360 of those add up on a six-figure loan. */
+        if (Math.abs(b) > Math.max(0.01, bal * 1e-9)) {
+          money0Left.push(`${yrs}yr ${apr}% $${bal} ends at ${b.toFixed(2)}`);
+        }
+      }
+    }
+  }
+  t(`every term and rate pays the balance off (${6 * 5 * 3} combinations)`,
+    money0Left.length === 0, money0Left.slice(0, 3).join("; "));
+
+  /* THE SENTENCE AND THE SCHEDULE HAVE TO AGREE. Clause (b) states a
+     number of installments in words and figures; Schedule A prints the
+     rows. A term change that moved one and not the other would be a
+     contract disagreeing with its own attachment. */
+  const sentenceWrong = [];
+  for (const yrs of [5, 15, 30]) {
+    const terms = { ...P.DEFAULTS, financed: true, amortize: true,
+      ratePct: 5.2, termYears: yrs, perYear: 12, agreedOn: "2026-07-27",
+      amortDetail: "monthly" };
+    const html = P.purchaseAgreement(terms,
+      { lot: "1", describedAs: "A home", price: 95600, down: 33460 });
+    const flat = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const n = yrs * 12;
+    if (!flat.includes(`(${n}) consecutive monthly installments`)) {
+      sentenceWrong.push(`${yrs}yr: sentence does not say ${n}`);
+    }
+    if (!flat.includes(`(${yrs}) year term`)) {
+      sentenceWrong.push(`${yrs}yr: sentence does not say a ${yrs} year term`);
+    }
+    // One row per payment, plus the totals row.
+    const rows = (html.match(/<tr>/g) ?? []).length - 2;
+    if (rows !== n) sentenceWrong.push(`${yrs}yr: ${rows} rows for ${n} payments`);
+    // And the last payment lands on the Maturity Date the clause names.
+    const sch = P.schedule(terms);
+    if (!flat.includes(P.plainDate(sch.maturity))) {
+      sentenceWrong.push(`${yrs}yr: maturity ${sch.maturity} not printed`);
+    }
+  }
+  t("the installment count, the term, Schedule A and the Maturity Date agree",
+    sentenceWrong.length === 0, sentenceWrong.slice(0, 3).join("; "));
 }
 t("five hundred is Five Hundred", P.words(500) === "Five Hundred");
 t("and reads as dollars", P.dollarsWords(500) === "Five Hundred Dollars");
