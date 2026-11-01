@@ -377,41 +377,117 @@ export function notaryBlock(what: string): string {
   </div>`;
 }
 
+/** "August 27, 2026". The `longDate` form reads "the 27th day of August"
+    and belongs after "made this the"; a payment that commences on one
+    reads "commencing on 27th day of August", which is not English. The
+    blanks in the agreement expect a plain date, so this fills them. */
+export function plainDate(v: string): string {
+  if (!v) return "________________";
+  const [y, m, d] = v.split("-").map(Number);
+  const months = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  return `${months[m - 1]} ${d}, ${y}`;
+}
+
+/** A count in words, lower case, the way a contract says a number twice:
+    "three hundred sixty (360) consecutive monthly installments". `words`
+    is Title Case because it writes dollars at the start of a clause. */
+export const countWords = (n: number) => words(n).toLowerCase();
+
+/** The same day of a later month, clamped where that month is shorter --
+    the 31st plus one month is the 28th of February and not the 3rd of
+    March, which is what a payment schedule means by "the same day". */
+export function plusMonths(iso: string, n: number): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(),
+    first.getUTCMonth() + 1, 0)).getUTCDate();
+  const day = Math.min(d, last);
+  return `${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1)
+    .padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** "27th", for the day of each succeeding month. */
+export function ordinalDay(iso: string): string {
+  if (!iso) return "______";
+  const d = Number(iso.split("-")[2]);
+  const ord = d % 10 === 1 && d !== 11 ? "st"
+    : d % 10 === 2 && d !== 12 ? "nd"
+    : d % 10 === 3 && d !== 13 ? "rd" : "th";
+  return `${d}${ord}`;
+}
+
+/**
+ * THE DATES THE AGREEMENT LEAVES BLANK, worked out rather than left for
+ * somebody to write in.
+ *
+ * The clean document has `commencing on _________, 2026`, `the _____ day
+ * of each succeeding month` and a Maturity Date of `_________, 20____`.
+ * Every one of them follows from the figures already on the deal: the
+ * first payment is a month after the agreement, it recurs on that day,
+ * and the last of n payments lands n-1 months after the first. A blank on
+ * a contract is a thing somebody fills in wrong at the kitchen table.
+ */
+export function schedule(t: Terms) {
+  const n = Math.max(1, Math.round((t.termYears || 20) * (t.perYear || 12)));
+  const first = plusMonths(t.agreedOn, 12 / (t.perYear || 12));
+  return { count: n, first, day: ordinalDay(first),
+           maturity: plusMonths(first, n - 1) };
+}
+
 export function purchaseAgreement(t: Terms, home: Home, sign = true): string {
   const seller = esc(t.seller) || "____________";
   const buyer = esc(t.buyer) || "____________________";
   const price = home.price, down = home.down, balance = price - down;
   const rate = t.ratePct, term = t.termYears || 20, freq = t.perYear || 12;
   const pay = payment(balance, rate, term, freq);
+  const s = schedule(t);
 
+  /* The money, lettered (a) and (b) as the agreement has it. The cash
+     case keeps its own sentence: a payment schedule with no balance to
+     schedule reads as an oversight rather than as a cash sale. */
   const payPara = t.financed
-    ? `<p>That Purchaser has offered to purchase such personal property and has tendered <span class="fill">$${money(down)}</span> by certified funds payable to Seller as a down payment on such purchase, the receipt of which is hereby acknowledged by Seller. The balance of the purchase price or <span class="fill">$${money0(balance)}</span> shall be paid in installments of <span class="fill">$${money(pay)}</span> by ${esc(t.payMethod)}, with interest accruing on the remaining unpaid balance at the rate of <span class="fill">${rate || "____"}</span> percent per annum. This loan is a <span class="fill">${term}-year</span> note. There is no penalty for prepayment to the Seller of the balance remaining due.</p>`
-    : `<p>That Purchaser has offered to purchase such personal property and has tendered the full purchase price of <span class="fill">$${money(price)}</span> by certified funds payable to Seller as payment in full, the receipt of which is hereby acknowledged by Seller. No balance remains owing and no financing is extended by Seller in connection with this purchase.</p>`;
+    ? `<p>The total purchase price for the mobile home is <span class="fill">$${money(price)}</span> (the &ldquo;Purchase Price&rdquo;), payable as follows:</p>
+    <p>(a) <span class="fill">$${money(down)}</span> upon execution of this Agreement as a down payment, receipt of which is acknowledged by Seller; and</p>
+    <p>(b) the balance of <span class="fill">$${money(balance)}</span>, together with interest at the rate of <span class="fill">${rate ? rate.toFixed(2) : "____"}%</span> per annum, shall be paid in ${countWords(s.count)} (${s.count}) consecutive monthly installments of <span class="fill">$${money(pay)}</span> each, commencing on <span class="fill">${plainDate(s.first)}</span> and continuing on the <span class="fill">${s.day}</span> day of each succeeding month until paid in full. The entire unpaid principal balance, together with all accrued and unpaid interest and other sums due hereunder, shall in all events be due and payable on <span class="fill">${plainDate(s.maturity)}</span> (the &ldquo;Maturity Date&rdquo;). This loan is amortized over a ${countWords(term)} (${term}) year term in accordance with the amortization schedule attached hereto as Schedule A. All payments shall first be applied to accrued interest, then to principal, and thereafter to any other amounts properly due hereunder. Seller shall provide Purchaser, upon reasonable request, with a written statement showing the outstanding principal balance and the application of payments previously made. Payments shall be made to Seller at the address set forth above, or at such other place as Seller may designate in writing. Purchaser shall have the absolute right to prepay all or any portion of the outstanding balance at any time without premium, penalty or other charge. Any partial prepayment shall be applied to reduce principal.</p>`
+    : `<p>The total purchase price for the mobile home is <span class="fill">$${money(price)}</span> (the &ldquo;Purchase Price&rdquo;), payable in full upon execution of this Agreement by certified funds payable to Seller, the receipt of which is acknowledged by Seller. No balance remains owing and no financing is extended by Seller in connection with this purchase.</p>`;
 
   const lateClause = (t.financed && t.late)
-    ? `<p><span class="fill">Late Payment &amp; Default.</span> Any installment not received within ${t.graceDays || 10} days of its due date is subject to a late charge of $${money0(t.lateFee)}. If any installment remains unpaid for thirty (30) days, Seller may, after written notice, declare the entire unpaid balance immediately due and payable, and Seller shall be entitled to pursue all remedies available at law, including repossession of the personal property described above.</p>`
+    ? `<p><span class="fill">Late Payment &amp; Default.</span> Any installment not received within ${t.graceDays || 10} days of its due date is subject to a late charge of $${money0(t.lateFee)}. If Purchaser shall default in the payment of any installment and such default shall continue for a period of thirty (30) days after delivery of written notice from Seller, then Seller may, declare the entire unpaid balance immediately due and payable, and Seller shall be entitled to pursue all remedies available at law, including repossession of the mobile home described above.</p>`
     : "";
 
   const securityClause = (t.financed && t.security)
-    ? `<p><span class="fill">Security Interest.</span> Until the purchase price is paid in full, Seller retains a purchase‑money security interest in and lien upon the personal property described above. Title and/or the certificate of title shall remain with Seller and shall not pass to Purchaser until all sums due hereunder are paid in full. Purchaser shall not sell, transfer, remove, or further encumber the property without Seller's prior written consent.</p>`
+    ? `<p><span class="fill">Security Interest.</span> Until the purchase price is paid in full, Seller retains a purchase-money security interest in and lien upon the mobile home described above. Title and/or the certificate of title shall remain with Seller and shall not pass to Purchaser until all sums due hereunder are paid in full. Purchaser shall not sell, transfer, remove, or further encumber the mobile home without Seller's prior written consent, which consent shall not be unreasonably withheld, conditioned or delayed.</p>`
     : "";
 
   const insureClause = t.insure
-    ? `<p><span class="fill">Insurance &amp; Taxes.</span> Purchaser shall keep the property insured against fire and casualty for its full value, naming Seller as loss payee, and shall provide proof upon request. Purchaser shall be responsible for all personal‑property taxes assessed on the home during the term of this Agreement.</p>`
+    ? `<p><span class="fill">Insurance &amp; Taxes.</span> Purchaser shall keep the mobile home insured against fire and casualty in an amount equal to the unpaid balance due Seller or the full insurable value of the mobile home, whichever is less, naming Seller as loss payee, and shall provide proof upon request. Purchaser shall be responsible for all personal-property taxes assessed on the Mobile home commencing on delivery of the mobile home and thereafter during the term of this Agreement.</p>`
     : "";
+
+  /* Only where Seller is holding a lien in the first place: a clause
+     promising to release one that was never taken reads as though there
+     is something outstanding. */
+  const releaseClause = (t.financed && t.security)
+    ? `<p>Upon payment in full of all amounts due hereunder, Seller shall execute and deliver such documents as are reasonably necessary to release Seller's lien and transfer or confirm clear title to Purchaser, including a fully executed and notarized bill of sale completely detailing the mobile home being purchased, free and clear of all encumbrances, debts, liens, claims.</p>`
+    : `<p>Seller shall deliver to Purchaser a fully executed and notarized bill of sale completely detailing the mobile home being purchased, free and clear of all encumbrances, debts, liens, claims.</p>`;
 
   return `
     <h2>PURCHASE AGREEMENT</h2>
-    <p>THIS PURCHASE AGREEMENT, made this <span class="fill">${longDate(t.agreedOn)}</span>, by <span class="fill">${buyer}</span>, Purchaser, and <span class="fill">${seller}</span>, Seller.</p>
+    <p>THIS PURCHASE AGREEMENT (&ldquo;Agreement&rdquo;), made this the <span class="fill">${longDate(t.agreedOn)}</span>, by and between <span class="fill">${buyer}</span>, as Purchaser, and <span class="fill">${seller}</span>, as Seller.</p>
     <p class="witness">W I T N E S S E T H</p>
-    <p>That Seller has offered to sell certain personal property, to wit:</p>
+    <p>That Seller has offered to sell that certain mobile home to wit:</p>
     <p class="fill" style="text-align:left">${esc(home.describedAs) || "________________________________________________________________"}</p>
     ${payPara}
     ${lateClause}
     ${securityClause}
     ${insureClause}
     <p>That the parties agree that if this purchase shall not be completed as contracted due to breach by the Seller, then all funds previously paid hereunder by Purchaser shall be refunded to Purchaser. The parties further agree that if this purchase shall not be completed as contracted due to breach by Purchaser, then all funds previously paid hereunder by Purchaser shall be forfeited to Seller as liquidated damages resulting from such breach.</p>
-    <p>Seller shall provide to Purchaser a fully executed and notarized bill of sale completely detailing the personal property being purchased which shall be delivered upon final payment to Seller, free and clear of all encumbrances, debts, liens, claims, and Seller has no knowledge of any legal impediment to sale of the personal property described above. If ownership of the personal property is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
+    ${releaseClause}
+    <p>Seller represents that Seller is the lawful owner of the mobile home and has authority to sell it. At the time required for transfer of title, Seller shall convey title free of liens created by Seller, other than Seller's lien securing Purchaser's obligations under this Agreement. Seller further represents to Purchaser that Seller has no knowledge of any legal impediment to the sale of the mobile home described above. If ownership of the mobile home is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
+    <p><span class="fill">Notices.</span> Any notice required under this Agreement shall be in writing and delivered personally, by nationally recognized overnight courier, or by certified mail, return receipt requested, to the addresses stated above, or to such other address as a party may designate by written notice. Any additional method or period of notice required by applicable law shall control.</p>
+    <h3>Counterparts; Electronic Signatures</h3>
+    <p>This Agreement may be executed in counterparts, each of which shall constitute an original and all of which together shall constitute one agreement. Electronic and PDF signatures shall be deemed originals and shall be binding upon the parties to the fullest extent permitted by law.</p>
     <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
     <div class="sig">
       <div class="sig-block"><b>SELLER:</b>${signedBy(t, sign)}${signLine(t, sign)}${seller}<br>Date: ${signedDate(t, sign)}</div>
