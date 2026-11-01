@@ -77,10 +77,49 @@ const TABLES = {
 
   /* Nobody has signed: the papers panel has to be right before anyone
      has, which is every account the first time. */
-  /* DELIBERATELY ABSENT, all three: signatures (047), deal_drafts (046)
-     and signing_requests (048). This fixture is the live database, where
-     the migrations have not been run -- and the question it exists to
-     answer is whether somebody can still sign and still get their files. */
+  /* DELIBERATELY ABSENT, both: signatures (047) and deal_drafts (046).
+     This fixture is the live database before those were run, and the
+     question it exists to answer is whether somebody can still sign and
+     still get their files.
+
+     signing_requests IS here now, because 048 has been run on the live
+     database and because the investor's own signing page cannot be looked
+     at without it -- and that page is the one nobody could see. The pack
+     below carries THREE signature slots and three date slots, written the
+     way papers.ts writes them. Three and not one: with a single slot,
+     "walks you to each place" and "fills them all from the bottom" are
+     the same run, and the fixture could not tell the two apart. */
+  signing_requests: [{
+    id: "sr1",
+    token: "walkcheck",
+    owner_id: "ow1",
+    title: "Purchase Agreement and Park Land Lease",
+    doc_count: 2,
+    pack: '<h2>PURCHASE AGREEMENT</h2>'
+      + '<p>That Seller has offered to sell certain personal property.</p>'
+      + '<div class="sig"><div class="line"></div>'
+      + '<span class="signslot" data-for="buyer"></span>'
+      + ' Dated <span class="dateslot" data-for="buyer">__________</span></div>'
+      + '<div class="sig"><div class="line"></div>'
+      + '<span class="signslot" data-for="buyer"></span>'
+      + ' Dated <span class="dateslot" data-for="buyer">__________</span></div>'
+      + '<h2>PARK LAND LEASE</h2>'
+      + '<p>The Park Owner leases the lot described above.</p>'
+      + '<div class="sig"><div class="line"></div>'
+      + '<span class="signslot" data-for="tenant"></span>'
+      + ' Dated <span class="dateslot" data-for="tenant">__________</span></div>',
+    to_name: "Oak Ridge Holdings LLC",
+    to_email: "oak@example.com",
+    to_phone: null,
+    sent_by: DESK,
+    sent_at: iso(now - 3600e3),
+    expires_at: iso(now + 14 * 24 * 3600e3),
+    opened_at: null,
+    agreed: false,
+    signed_at: null, signed_name: null, signed_png: null, signed_pack: null,
+    signed_ip: null, signed_agent: null,
+    voided_at: null, voided_by: null,
+  }],
 
   /* TWO INVESTORS, NOT ONE, and the second holds nothing.
      The investors list tallies homes and money per owner, and with a

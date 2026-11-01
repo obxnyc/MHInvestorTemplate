@@ -1241,6 +1241,59 @@ check had a rule for that and the new one did not, and the real finding was
 buried under false ones. And a full-width fixed backdrop is meant to cover the
 screen, so it is not "off" it.
 
+### Sixteen signatures, one at a time
+
+"It only allows you to sign at the bottom and one blanket signature. It
+should be at the first point needed to be signed, you click sign, then it
+takes you to choose your type of signature or draw, and then it goes to
+each individual signature."
+
+Almost all of it already existed. `SignaturePad` has done typed-or-drawn
+with a choice of hands since the seller's side was built, and `papers.ts`
+has always marked every slot individually -- `signslot` and `dateslot`,
+each with a `data-for`. What was missing was only the order of events: one
+pad at the bottom, and `countersign` filling all sixteen from it.
+
+So `SignHere` takes the signature once and then walks to each place. The
+slots are wired as buttons on the DOM inside the frozen pack rather than
+rebuilt as JSX, because **this page may not rewrite the document** -- what
+is on screen is a preview of where the mark lands, and the signed copy
+comes back from the server.
+
+**Finishing requires every place placed.** The server still fills them all
+from the one signature, as it must, so a screen that let somebody stop at
+two of three would be describing a document that cannot exist.
+
+**And the date is the signer's.** It was `new Date()` on the server, so a
+deal agreed on the 12th and signed on the 1st was dated by a clock in
+Virginia. It is a field now, defaulting to today rather than being today,
+refused if it is not a real date and refused if it is in the future --
+a signature dated tomorrow says the thing was signed before it was signed.
+
+`sign-walk-check.mjs` drives the real page in a real browser against the
+stand-in: it adopts a signature the way a thumb would, puts it in each
+place, and asks whether it can be finished early. Three faults were put
+back in turn -- fill-everything-on-adopt, finish-without-all, drop the date
+-- and each is caught.
+
+**A SERVER LEFT RUNNING SERVES THE BUILD IT STARTED WITH.** Those three
+faults first came back "not caught", all three with the identical three
+failures including "the investor's page is what loaded" -- which the date
+fault cannot possibly affect. An old `next start` still held port 3100, the
+rebuild had overwritten the chunks it was handing out, so the page 500'd on
+its own javascript and the new server never bound at all. **Identical
+failures from different faults is the shape of an environment that is
+broken, not of guards that are weak** -- and the thing that settled it was
+opening one page with the console attached rather than reading the summary
+a fourth time.
+
+Also: `pkill -f "next start"` matches the command line of the shell running
+it, so the driver kills itself. Kill by pid.
+
+And the stand-in now carries `signing_requests` with THREE slots, not one.
+With one slot, "walks you to each place" and "fills them all at once" are
+the same run.
+
 ### A harness that skips is a harness that passed
 
 The stylesheet was fixed for the phone and the rule in this file says run

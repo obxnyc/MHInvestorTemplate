@@ -2189,6 +2189,48 @@ a.metric:hover{border-color:var(--accent)}
 .paper .pagebreak{break-before:page}
 .paper .witness{letter-spacing:6px;font-weight:700;text-align:center;margin:14px 0}
 
+/* WALKING SOMEBODY THROUGH SIXTEEN SIGNATURES.
+
+   The bar sticks to the top because what it counts is further down the
+   page than the place it is counted from -- a progress line you have to
+   scroll back up to read is a progress line nobody reads.
+
+   A slot is a target before it is a signature, so it has to look like one
+   and be big enough to hit. 44px is the usual floor for a thumb, and a
+   signature line on a contract is nowhere near that tall, so the padding
+   does the work instead. `.here` is the one being asked for next; `.inked`
+   is one already put down, and it goes back to looking like the document
+   rather than like a form. */
+.signwalk{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:.6rem;
+  align-items:center;margin:0 0 1rem;padding:.6rem .8rem;border-radius:12px;
+  border:1px solid var(--hair);background:var(--card);
+  box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.walksays{font-size:.9rem;color:var(--ink-2);flex:1 1 auto;min-width:0}
+.walkink{max-height:2.1rem;max-width:7rem;background:#FFFFFF;border-radius:4px;
+  padding:.1rem .2rem;flex:none}
+.signask{display:grid;gap:.7rem;justify-items:start;margin:0 0 1rem;
+  padding:1rem 1.1rem;border:1px solid var(--hair);border-radius:12px;
+  background:var(--card)}
+
+/* THESE COLOURS ARE LITERALS ON PURPOSE, which is the opposite of the rule
+   everywhere else in this file. `.paper` is pinned to background:#fff and
+   color:#000 and does NOT invert -- a contract is white paper at midnight
+   too. So a slot painted in var(--accent) would be #8AA4CE on white after
+   dark: pale blue on white, which is the invisible-button fault again,
+   arrived at by obeying the theme rule in the one place it does not hold.
+   Fixed dark blue on a fixed pale ground, legible in both. */
+.paper .signslot[role="button"]{display:inline-block;min-width:11rem;
+  min-height:2.2rem;padding:.35rem .5rem;margin:.1rem 0;cursor:pointer;
+  border-bottom:2px solid #405981;border-radius:6px 6px 0 0;
+  background:#E7EDF7;color:#24344F;font-size:10pt;text-align:center;
+  vertical-align:bottom}
+.paper .signslot[role="button"]::before{content:"Sign here"}
+.paper .signslot.here{outline:2px solid #405981;outline-offset:2px;
+  background:#CFDCF0}
+.paper .signslot.inked{min-width:0;min-height:0;padding:0;cursor:default;
+  border-bottom:0;background:none;outline:none}
+.paper .signslot.inked::before{content:none}
+
 /* THE SAME DOCUMENT ON A PHONE.
    Three rules written for 8.5in of paper, each of which fails on 390px.
 

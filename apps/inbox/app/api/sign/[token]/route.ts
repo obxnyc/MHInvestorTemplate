@@ -69,10 +69,33 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
   const body = await req.json().catch(() => null) as
-    { png?: unknown; name?: unknown; agreed?: unknown } | null;
+    { png?: unknown; name?: unknown; agreed?: unknown; on?: unknown } | null;
 
   const png = typeof body?.png === "string" ? body.png : "";
   const name = String(body?.name ?? "").trim();
+
+  /* THE DATE THE SIGNER PUTS ON IT, which is not always the day the
+     server happens to be having. A deal agreed on the 12th and signed on
+     the 1st is dated by the people in it, not by a clock in Virginia.
+     Absent means today, so an older client keeps working.
+
+     Two things it may not be. Not nonsense -- `new Date("")` is Invalid
+     Date and would print "NaN/NaN/NaN" into a contract. And not the
+     future: a signature dated tomorrow says the thing was signed before
+     it was signed, which is the one direction that cannot be honest. */
+  const today = new Date().toISOString().slice(0, 10);
+  const asked = typeof body?.on === "string" && body.on ? body.on : today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asked)
+      || Number.isNaN(Date.parse(`${asked}T00:00:00Z`))
+      || asked.slice(0, 10) !== new Date(`${asked}T00:00:00Z`)
+           .toISOString().slice(0, 10)) {
+    return NextResponse.json(
+      { error: "That is not a date. Use the date box." }, { status: 400 });
+  }
+  if (asked > today) {
+    return NextResponse.json(
+      { error: "A signature cannot be dated in the future." }, { status: 400 });
+  }
 
   /* INTENT IS ITS OWN FACT, asked for and recorded separately. A mark
      without it is a picture of a signature. */
@@ -107,7 +130,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       { error: "These were already signed." }, { status: 409 });
   }
 
-  const on = new Date().toISOString().slice(0, 10);
+  const on = asked;
   const signed = countersign(row.pack, { png, on });
 
   /* The claim the whole thing rests on, checked rather than assumed: if
