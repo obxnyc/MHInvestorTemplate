@@ -189,6 +189,28 @@ Same family as the assistance-animal rule and the rate rule: **a fault that
 is a no-op proves nothing**, and the fix is never to weaken the code but to
 build the case where only that rule can answer.
 
+### Node's fetch does not use the proxy, and says nothing about it
+
+The first real run of `apply.mjs` failed with `fetch failed`, and the proxy's
+own log showed no attempt at all. **`fetch` ignores `HTTPS_PROXY`** unless
+`NODE_USE_ENV_PROXY` is set, and it has to be set before the first request --
+so the request never left the container, and the error named Supabase for
+something Supabase was never asked. `curl` does respect the proxy, which is
+why `curl` and `node` disagreed about whether the host was reachable; when
+the two disagree, the one that went through the proxy is the one telling the
+truth. The runner now hands itself that variable and starts again. `NO_PROXY`
+still applies, so a stand-in on localhost is unaffected.
+
+**A rejected top-level await is an `uncaughtException`, not an
+`unhandledRejection`.** Registering only the latter left node printing its
+own crash report over the top of a perfectly good error message -- the tool
+reading as broken at the exact moment it was working correctly and saying so.
+Both are registered.
+
+And the failure now says what it means: `fetch failed` on its own reads as
+"Supabase is down", when in a cloud session it nearly always means the egress
+policy refused the host and nothing was ever sent.
+
 ## Shipping
 
 The site deploys from `main`. Pushing the feature branch alone changes nothing

@@ -260,9 +260,31 @@ createServer((req, res) => {
   t("and with no token and no secret either, the 401 says which is missing",
     () => unauthed.code !== 0 && /network secret/.test(unauthed.out));
 
+  /* A REFUSAL IS A SENTENCE. Node prints its own crash report for a rejected
+     top-level await, which reads as "this tool is broken" rather than "the
+     host would not answer" -- and that is the single most likely thing to
+     happen on a first run against a real network. */
+  const nowhere = apply(["--check"], { SUPABASE_API: "http://127.0.0.1:1" });
+  t("a host that will not answer is reported, not crashed into",
+    () => nowhere.code === 1 && /could not reach/.test(nowhere.out));
+  t("and node's own stack trace is not what the owner sees",
+    () => !/\bat async\b|Node\.js v\d/.test(nowhere.out));
+
+  /* Node's fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY is set before
+     the first request, so the runner re-execs itself to set it. The risk in
+     doing that is breaking the ordinary local case, which is this one: a
+     proxy in the environment must not stop it reaching a host NO_PROXY
+     covers. */
+  const viaProxyEnv = apply(["--check"], {
+    HTTPS_PROXY: "http://127.0.0.1:9", NO_PROXY: "127.0.0.1,localhost",
+  });
+  t("a proxy in the environment does not break a host NO_PROXY covers",
+    () => viaProxyEnv.code === 0);
+
   /* The output of every one of those comes back to whoever ran it. */
   const everything = [first, again, nothing, dangerous, assumed, rest, done,
-    ambiguous, single, wrong, proxied, unauthed].map((r) => r.out).join("\n");
+    ambiguous, single, wrong, proxied, unauthed, nowhere,
+    viaProxyEnv].map((r) => r.out).join("\n");
   t("the service echoed the token back, so there was something to scrub",
     () => /authorized as/.test(nothing.out));
   t("the token is never printed", () => !everything.includes(TOKEN));

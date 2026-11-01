@@ -54,6 +54,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
 
+/* NODE'S FETCH IGNORES HTTPS_PROXY, and in a container where the only way
+   out is that proxy, every request dies as a bare "fetch failed" that the
+   proxy never even sees -- which reads as "Supabase is down" rather than
+   "this never left the building". `NODE_USE_ENV_PROXY` is what turns it on,
+   and it has to be set before the first request, so the script hands itself
+   the variable and starts again. NO_PROXY still applies, so a stand-in on
+   localhost is reached directly as before. */
+if (!process.env.NODE_USE_ENV_PROXY
+    && (process.env.HTTPS_PROXY || process.env.https_proxy)) {
+  const { spawnSync } = await import("node:child_process");
+  const again = spawnSync(process.execPath,
+    [fileURLToPath(import.meta.url), ...args],
+    { stdio: "inherit", env: { ...process.env, NODE_USE_ENV_PROXY: "1" } });
+  process.exit(again.status ?? 1);
+}
+
 /* Overridable so the harness can point this at a stand-in. Nothing else
    should ever set it. */
 const API = (process.env.SUPABASE_API ?? "https://api.supabase.com").replace(/\/$/, "");
@@ -86,6 +102,21 @@ const literal = (file) => {
     fall out of the arithmetic. */
 const scrub = (s) => (token ? String(s).split(token).join("sbp_…") : String(s));
 
+/* A FAILURE IS A SENTENCE, NOT A STACK TRACE. Everything here runs at the
+   top level, so a throw surfaces as an unhandled rejection and node prints
+   its own crash report -- which reads like the tool is broken rather than
+   like the request was refused. */
+const died = (e) => {
+  console.error(`\n  ${scrub(e?.message ?? String(e))}\n`);
+  process.exit(1);
+};
+/* A rejected top-level await arrives as an uncaughtException, NOT as an
+   unhandledRejection -- registering only the latter leaves node printing its
+   own crash report, which is what this is here to prevent. Both are
+   registered because only one of them was ever the right guess. */
+process.on("uncaughtException", died);
+process.on("unhandledRejection", died);
+
 const api = async (path, init = {}) => {
   let res;
   try {
@@ -101,7 +132,14 @@ const api = async (path, init = {}) => {
       },
     });
   } catch (e) {
-    throw new Error(`could not reach ${API}${path}: ${scrub(e.message)}`);
+    /* `fetch failed` on its own reads as "Supabase is down". In a cloud
+       session it almost always means the egress policy refused the host, and
+       the request never left the building. */
+    const why = e?.cause?.message ? ` (${e.cause.message})` : "";
+    throw new Error(`could not reach ${API}${path}: ${scrub(e.message)}${why}`
+      + `\n  Nothing answered, so this most likely never left the container:`
+      + `\n  the host has to be on a network secret's Allowed websites, or in`
+      + `\n  the environment's allowed domains.`);
   }
   const body = await res.text();
   if (!res.ok) {
