@@ -92,6 +92,27 @@ for (const where of ["playwright", "/tmp/node_modules/playwright/index.js", "pla
     if (chromium) break;
   } catch { /* next */ }
 }
+/* A GLOBAL INSTALL IS INVISIBLE TO `import`. Node resolves a bare ESM
+   specifier against node_modules up the tree and never against the global
+   prefix or NODE_PATH -- so a container with playwright installed globally,
+   which is every cloud session here, reported "no playwright here" and
+   skipped. A skip reads exactly like a pass at the bottom of a run, so
+   every stylesheet change made from a cloud session went out with this
+   harness never once having looked at it. `createRequire` does search
+   those places, which is the same trick run.mjs uses to find `pg`. */
+if (!chromium) {
+  try {
+    const { createRequire } = await import("node:module");
+    const req = createRequire(import.meta.url);
+    for (const where of ["playwright", "playwright-core"]) {
+      try {
+        const m = req(where);
+        chromium = m.chromium ?? m.default?.chromium;
+        if (chromium) break;
+      } catch { /* next */ }
+    }
+  } catch { /* neither */ }
+}
 if (!chromium) {
   console.log("skipped: no playwright here. npm i -g playwright, then run this again.");
   process.exit(0);

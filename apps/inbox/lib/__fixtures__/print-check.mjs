@@ -66,6 +66,24 @@ for (const where of ["playwright", "playwright-core"]) {
     if (chromium) break;
   } catch { /* next */ }
 }
+/* A global install is invisible to `import`: node resolves a bare ESM
+   specifier against node_modules up the tree, never against the global
+   prefix or NODE_PATH. In a cloud session, where playwright is installed
+   globally, this skipped -- and a skip reads like a pass. `createRequire`
+   does look there. */
+if (!chromium) {
+  try {
+    const { createRequire } = await import("node:module");
+    const req = createRequire(import.meta.url);
+    for (const where of ["playwright", "playwright-core"]) {
+      try {
+        const m = req(where);
+        chromium = m.chromium ?? m.default?.chromium;
+        if (chromium) break;
+      } catch { /* next */ }
+    }
+  } catch { /* neither */ }
+}
 if (!chromium) { console.log("skipped: no playwright here."); process.exit(0); }
 
 const browsers = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers";

@@ -1241,6 +1241,33 @@ check had a rule for that and the new one did not, and the real finding was
 buried under false ones. And a full-width fixed backdrop is meant to cover the
 screen, so it is not "off" it.
 
+### A harness that skips is a harness that passed
+
+The stylesheet was fixed for the phone and the rule in this file says run
+`card-picture.mjs` before any push that touches `globals.css`. It said
+`skipped: no playwright here` -- in a container where playwright is
+installed and working.
+
+**Node resolves a bare ESM specifier against `node_modules` up the tree and
+never against the global prefix or `NODE_PATH`.** Playwright is installed
+globally in a cloud session, so `await import("playwright")` throws,
+`chromium` stays undefined, and the harness says it is not there. `require`
+does search those places -- `createRequire(import.meta.url)` finds it -- and
+that is the same trick `run.mjs` already uses to reach `pg`.
+
+Four harnesses had the identical loop: `card-picture`, `grab-check`,
+`phone-check`, `print-check`. **Every one of them has been skipping in every
+cloud session since they were written**, which means every stylesheet and
+map change pushed from here went out with the harness that guards it never
+having looked. All four take the fallback now.
+
+And the shape, which is the one this file keeps a list of: **a skip prints
+`exit 0` and reads like a pass.** It is the same family as the server that
+was up and erroring reading as no server. A harness that cannot run should
+be as loud as one that failed, or nobody will notice the difference -- the
+only reason this was caught is that the skip was read instead of the exit
+code.
+
 ### A check that cries wolf is worse than no check
 
 The contrast check took the first background with any colour in it and treated
