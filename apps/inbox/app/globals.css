@@ -2238,6 +2238,23 @@ a.metric:hover{border-color:var(--accent)}
 .ownerpaperadd{display:flex;flex-wrap:wrap;gap:.4rem}
 .ownerpaperadd .btn{font-size:.82rem;padding:.3rem .6rem;cursor:pointer}
 
+/* SOMETHING IS MISSING AND SOMEBODY HAS TO GO AND TYPE IT.
+   A name of its own: `.err` is a thing that went wrong, and this is a
+   thing nobody has done yet -- and borrowing a state's class name has
+   put invisible controls on this app three times (.check, .empty,
+   .danger). Built on the warn tokens, so the ink moves with the ground
+   between themes rather than going pale at night.
+
+   Loud, and not animated. A flashing line is read once and then becomes
+   furniture, it is miserable to sit beside while typing, and it tells
+   nobody WHICH field is missing -- the words do that, which is the part
+   that saves the trip. */
+.needsyou{display:block;margin:.1rem 0;padding:.4rem .6rem;
+  border-left:4px solid var(--warn);border-radius:0 8px 8px 0;
+  background:var(--warn-soft);color:var(--warn);
+  font-size:.86rem;font-weight:700}
+.ownerpapers>.needsyou{margin:.3rem 0 .7rem}
+
 /* WALKING SOMEBODY THROUGH SIXTEEN SIGNATURES.
 
    The bar sticks to the top because what it counts is further down the
