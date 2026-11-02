@@ -213,6 +213,59 @@ function flagsFor(
   return flags;
 }
 
+/* ------------------------------------------- two decisions, asked apart
+ *
+ * Both of these decide what is written into a live portfolio of 166
+ * properties, and neither is visible in a type. They are functions
+ * rather than conditions inside a six-hundred-line loop so that the
+ * awkward cases can be put to them directly.
+ */
+
+/**
+ * Whether a Rent Manager property is really a book-keeping record.
+ *
+ * "Larabee Homes", "Dutch Doors", "Musgrove Holdings LLC" exist over
+ * there because the book is organised that way, not because anybody
+ * lives there. Imported, they become houses with no units and no
+ * address that count towards every total for ever.
+ *
+ * BOTH conditions are required. A company name on its own is not
+ * enough: a real house named after the company that owns it still has
+ * a unit, somebody in it, and rent on it, and dropping that because of
+ * its name would lose a building.
+ */
+export function isBookkeepingRecord(
+  name: string, companies: Set<string>, unitCount: number,
+): boolean {
+  return unitCount === 0 && companies.has(name.trim().toLowerCase());
+}
+
+/**
+ * What to call the unit a single home becomes, or null to invent none.
+ *
+ * Sixty-seven properties arrive with nothing under them. For a single
+ * home that is Rent Manager's modelling, not a fact: somebody lives
+ * there. And everything that can be DONE to a place hangs off its unit
+ * -- a maintenance request is filed against one, and
+ * `unitOfSingleHome` wants exactly one and gives up on none -- so a
+ * house with no unit can never be matched to the request its tenant
+ * submitted, however perfectly the address reads.
+ *
+ * Only for a single home. Inventing a unit for a park or a block would
+ * be inventing a dwelling; there the honest answer is that the units
+ * have not been set up yet.
+ */
+export function houseUnitLabel(
+  kind: string, unitCount: number, address: string | null, name: string,
+): string | null {
+  if (unitCount > 0) return null;
+  if (kind !== "sfh" && kind !== "mh") return null;
+  // The street line, so the unit is called what somebody would say,
+  // and never the empty string.
+  const street = (address ?? "").split(",")[0]?.trim();
+  return street || name.trim() || null;
+}
+
 /**
  * What kind of place this is, guessed from its shape.
  *
@@ -531,6 +584,25 @@ export async function importFromRentManager(
     }
     tally.properties.seen++;
 
+    /* A COMPANY IS NOT A BUILDING.
+     *
+     * "Larabee Homes", "Dutch Doors", "Musgrove Holdings LLC" are records
+     * in Rent Manager because the book is organised that way, not because
+     * anybody lives there. Imported as properties they become houses with
+     * no units, no address and no owner, sitting in the portfolio for
+     * ever and counting towards every total.
+     *
+     * The flag for this already existed and nothing acted on it. Both
+     * conditions are required: a company name is only evidence when
+     * there is also nothing to let. A real house that happens to share a
+     * name with the company that owns it still has its unit, and is
+     * kept. */
+    if (isBookkeepingRecord(name, companies, (p.Units ?? []).length)) {
+      notes.push(`"${name}" is the name of a company and has no units, so it`
+        + " is a book-keeping record rather than a building. Not imported.");
+      continue;
+    }
+
     const existing = propByRm.get(p.PropertyID) ?? propByCode.get(code);
     const kind = existing ? (existing.kind as Kind) : guessKind(p, unitTypeNames);
     const spec = KINDS[kind] ?? KINDS.sfh;
@@ -569,8 +641,16 @@ export async function importFromRentManager(
     if (dryRun) {
       preview.push({
         code, name, kind,
-        units: (p.Units ?? []).length,
-        unitNames: (p.Units ?? []).slice(0, 4).map((u) => (u.Name ?? "").trim()),
+        /* The invented one counts. A preview showing 0 units beside a
+           house the import is about to give a unit to is a preview of a
+           different run than the one that happens. */
+        units: (p.Units ?? []).length || (kind === "sfh" || kind === "mh" ? 1 : 0),
+        unitNames: (p.Units ?? []).length
+          ? (p.Units ?? []).slice(0, 4).map((u) => (u.Name ?? "").trim())
+          : (kind === "sfh" || kind === "mh"
+              ? [((addressOf(p.Addresses) ?? name).split(",")[0] ?? name).trim()
+                 + " (the house itself)"]
+              : []),
         vacant: (p.Units ?? []).filter((u) => vacantSet(p.VacantUnitIDs).has(u.UnitID)).length,
         owner: p.PrimaryOwnerID ? ownerNameByRm.get(p.PrimaryOwnerID) ?? null : null,
         address: addressOf(p.Addresses),
@@ -608,6 +688,63 @@ export async function importFromRentManager(
         const { error } = await db.from("units").insert(unitRow);
         if (error) notes.push(`Could not add unit ${label}: ${error.message}`);
         else tally.units.written++;
+      }
+    }
+
+    /* A HOUSE WITH NO UNIT CANNOT BE REACHED.
+     *
+     * Sixty-seven properties come across with nothing under them, and
+     * for a single-family home that is Rent Manager's modelling rather
+     * than a fact about the world: somebody lives there, and the rent is
+     * on the property record.
+     *
+     * It matters because everything that can be DONE to a place hangs
+     * off its unit. A maintenance request is filed against a unit --
+     * `unitOfSingleHome` looks for exactly one and gives up on none --
+     * so a house with no unit can never be matched to the request a
+     * tenant submitted about it, however perfectly the address reads.
+     * The same shape as the park whose features were keyed on what the
+     * tiles carried: the screen looks complete and nothing works.
+     *
+     * So the house becomes its own unit, which is what it is. Only for
+     * a single home: inventing one for a park or a block would be
+     * inventing a dwelling, and the right answer there is that the
+     * units have not been set up yet.
+     *
+     * It is NOT marked vacant. Vacancy comes from Rent Manager's own
+     * list and a unit we created is not on it -- a phantom vacancy
+     * would go straight into the money dashboard as a letting
+     * opportunity that does not exist.
+     */
+    const houseLabel = houseUnitLabel(
+      kind, (p.Units ?? []).length, addressOf(p.Addresses), name);
+    if (houseLabel) {
+      const label = houseLabel;
+      tally.units.seen++;
+      if (dryRun) {
+        tally.units.written++;
+      } else if (propertyId) {
+        /* ASKED OF THE DATABASE, not of Rent Manager's answer.
+           A unit invented here has no `rm_unit_id`, so there is nothing
+           for the next run to recognise it by -- and `p.Units` is still
+           empty, so without this the second import gives the house a
+           second unit, the third a third, and `unitOfSingleHome` stops
+           matching it at all because it no longer holds exactly one.
+           The import is pressed more than once by design. */
+        const { count } = await db.from("units")
+          .select("id", { count: "exact", head: true })
+          .eq("property_id", propertyId);
+        if (!count) {
+          const { error } = await db.from("units").insert({
+            property_id: propertyId,
+            label,
+            is_vacant: false,
+            rm_property_id: p.PropertyID,
+            rm_synced_at: new Date().toISOString(),
+          });
+          if (error) notes.push(`Could not give "${name}" a unit: ${error.message}`);
+          else tally.units.written++;
+        }
       }
     }
   }
