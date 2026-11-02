@@ -682,6 +682,20 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       {homes.length > 0 && (
         <div className="ownerpapers noprint">
           <h2>Executed documents</h2>
+          {(() => {
+            /* Said once at the top as well as on the home itself: with
+               twenty homes on a deal the one that needs something is
+               below the fold, and a warning nobody scrolls to is a
+               warning nobody gets. */
+            const short = homes.filter((h) => (loanOf(h)?.missing.length ?? 0) > 0);
+            return short.length > 0 && (
+              <p className="needsyou">
+                {short.length} home{short.length === 1 ? "" : "s"} below{" "}
+                {short.length === 1 ? "is" : "are"} missing something the
+                amortization schedule needs: {short.map((h) => h.lot).join(", ")}.
+              </p>
+            );
+          })()}
           <p className="dim">
             What has already been signed, filed against the sale it belongs
             to. PDFs and photographs; a picture of a signed page is a signed
@@ -1241,14 +1255,26 @@ function loanOf(h: Held) {
   const balance = (h.priceCents - h.downCents) / 100;
   const rate = (h.rateBps ?? 0) / 100;
   const months = h.termMonths ?? 0;
-  if (!(balance > 0 && months > 0)) return null;
-  const due = payment(balance, rate, months / 12, 12);
   const stored = h.monthlyCents === null ? null : h.monthlyCents / 100;
+
+  /* WHAT IS STILL MISSING, named rather than hinted at.
+     A schedule needs a balance, a term and a date to count from; a rate
+     of zero is a real answer and not an absence. Each is said by name,
+     because "incomplete" sends somebody hunting through six fields and
+     the whole point is that they should not have to. */
+  const missing: string[] = [];
+  if (!(balance > 0)) missing.push("a price above the deposit");
+  if (!months) missing.push("a term");
+  if (h.rateBps === null) missing.push("an interest rate");
+  if (!h.firstDueOn) missing.push("a first payment date");
+
+  const can = balance > 0 && months > 0;
+  const due = can ? payment(balance, rate, months / 12, 12) : null;
   return {
-    balance, rate, months, due, stored,
+    balance, rate, months, due, stored, missing,
     /* A dollar of slack: the stored figure was rounded to the cent when
        it was typed, and the schedule is carried at full precision. */
-    agrees: stored === null || Math.abs(stored - due) < 1,
+    agrees: due === null || stored === null || Math.abs(stored - due) < 1,
   };
 }
 
@@ -1302,19 +1328,27 @@ function Executed(
       <div className="ownerpaperhead">
         <strong>Lot {home.lot}</strong>
         <span className="dim">{home.parkName}</span>
-        {loan ? (
-          <span className={loan.agrees ? "dim" : "err"}>
-            {loan.months} payments of {asMoney(Math.round(loan.due * 100))} at{" "}
-            {loan.rate.toFixed(2)}%
-            {!loan.agrees && loan.stored !== null && (
-              <> — the sale records {asMoney(Math.round(loan.stored * 100))},
-                 which these figures do not come to</>
-            )}
-          </span>
+        {!loan ? (
+          <span className="dim">Paid outright</span>
         ) : (
-          <span className="dim">
-            {home.financed ? "Financed, but no rate or term recorded" : "Paid outright"}
-          </span>
+          <>
+            {loan.due !== null && (
+              <span className={loan.agrees ? "dim" : "err"}>
+                {loan.months} payments of {asMoney(Math.round(loan.due * 100))}{" "}
+                at {loan.rate.toFixed(2)}%
+                {!loan.agrees && loan.stored !== null && (
+                  <> — the sale records {asMoney(Math.round(loan.stored * 100))},
+                     which these figures do not come to</>
+                )}
+              </span>
+            )}
+            {loan.missing.length > 0 && (
+              <span className="needsyou">
+                Needs {loan.missing.join(", ")} — the schedule cannot be
+                worked out without {loan.missing.length === 1 ? "it" : "them"}
+              </span>
+            )}
+          </>
         )}
       </div>
 
