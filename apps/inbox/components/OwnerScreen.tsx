@@ -992,6 +992,14 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
               <label>Reserve $
                 <input inputMode="numeric" value={terms.reserve}
                        onChange={(e) => set({ reserve: num(e.target.value) })} /></label>
+              {/* Only the investor lease speaks of a cap, so it is only
+                  asked for there -- a box that changes nothing on the
+                  document in front of you is a box you learn to ignore. */}
+              {terms.leaseForm === "investor" && (
+                <label>Reserve cap $
+                  <input inputMode="numeric" value={terms.reserveCap}
+                         onChange={(e) => set({ reserveCap: num(e.target.value) })} /></label>
+              )}
               <label>Notice (days)
                 <input inputMode="numeric" value={terms.noticeDays}
                        onChange={(e) => set({ noticeDays: num(e.target.value) })} /></label>

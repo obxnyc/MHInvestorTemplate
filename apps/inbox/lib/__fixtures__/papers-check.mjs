@@ -253,6 +253,63 @@ t("no clause was dropped on the way across", missing.length === 0,
   t("the installment count, the term, Schedule A and the Maturity Date agree",
     sentenceWrong.length === 0, sentenceWrong.slice(0, 3).join("; "));
 }
+/* WHICH LEASE GETS DRAWN.
+   Matching prose proves the words are his; it says nothing about which
+   document a deal actually gets. These two leases differ on terms, not
+   drafting -- a rent ceiling, 180 days if the park sells, the right to
+   sublet -- so handing an investor the wrong one is handing them
+   different rights, and the pages look alike enough that nobody would
+   notice. Both are asked, because a check that only looks at one cannot
+   tell "picks the investor lease" from "always draws the investor lease". */
+{
+  const home = { lot: "3100", describedAs: "A home", price: 95600, down: 33460,
+                 parkName: "The Retreat at Cross Creek" };
+  const byKey = Object.fromEntries(P.TEMPLATES.map((x) => [x.key, x]));
+  const under = (key) => P.landLease(
+    { ...P.DEFAULTS, ...byKey[key].changes, buyer: "Oak Ridge Holdings LLC",
+      parkOwner: "Benjamin Cade Larabee", state: "North Carolina" }, home);
+
+  const investor = under("investor");
+  const house = under("house");
+
+  const only = [
+    ["a ceiling on rent at what a third of the park pays",
+     "thirty-three percent (33%)"],
+    ["180 days and a penalty-free payoff if the park is sold",
+     "one hundred eighty (180) days"],
+    ["the right to sublet without assigning the lease",
+     "shall not constitute an assignment or transfer of this Agreement"],
+    ["indemnity running both ways",
+     "Park Owner shall indemnify and hold harmless Homeowner"],
+    ["a cap on the reserve across every lot", "in the aggregate"],
+  ];
+  for (const [what, needle] of only) {
+    t(`the investor lease gives ${what}`, investor.includes(needle));
+    t(`and the Larabee lease does not`, !house.includes(needle));
+  }
+
+  /* The owner asked for the existing lease to stay exactly as it was. */
+  t("the Larabee lease still has its annual escalation",
+    P.landLease({ ...P.DEFAULTS, ...byKey["house"].changes, escalate: true },
+      home).includes("Annual Rent Escalation"));
+  t("and the investor lease is month-to-month with no escalation",
+    !investor.includes("Annual Rent Escalation"));
+
+  /* Custom inherits whatever is set rather than forcing either. */
+  t("custom keeps the lease it was given",
+    P.landLease({ ...P.DEFAULTS, leaseForm: "investor" }, home)
+      .includes("thirty-three percent (33%)")
+    && !P.landLease({ ...P.DEFAULTS, leaseForm: "house" }, home)
+      .includes("thirty-three percent (33%)"));
+
+  /* The figures are the deal's, not the document's. */
+  const priced = P.landLease({ ...P.DEFAULTS, leaseForm: "investor",
+    lotRent: 412, consulting: 60, reserve: 500, reserveCap: 2500 }, home);
+  t("the investor lease prints the deal's own rent and reserve",
+    priced.includes("$412.00") && priced.includes("$60.00")
+    && priced.includes("$500.00") && priced.includes("$2,500.00"));
+}
+
 t("five hundred is Five Hundred", P.words(500) === "Five Hundred");
 t("and reads as dollars", P.dollarsWords(500) === "Five Hundred Dollars");
 t("one is a Dollar, not Dollars", P.dollarsWords(1) === "One Dollar");

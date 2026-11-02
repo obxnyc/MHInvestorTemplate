@@ -114,7 +114,7 @@ t("each lease names its own park",
   () => said.includes("The Retreat at Cross Creek") && said.includes("Northside"));
 t("the last clause of the lease is there",
   () => said.includes("Reserve Fund"));
-t("and the amortisation schedule came across as a table",
+t("and the amortization schedule came across as a table",
   () => /<w:tbl>/.test(xml) && said.includes("Schedule A"));
 
 // ---- shaped like a document ------------------------------------------

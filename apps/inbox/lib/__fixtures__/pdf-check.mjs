@@ -152,7 +152,7 @@ t("there is no space before a comma that ends a bold run",
   () => !/\s,/.test(text.replace(/\n/g, " ")));
 t("each lease names its own park",
   () => text.includes("The Retreat at Cross Creek") && text.includes("Northside"));
-t("the amortisation schedule came across",
+t("the amortization schedule came across",
   () => text.includes("Schedule A") && /Principal paid/.test(text));
 t("the last clause of the lease is there", () => text.includes("Reserve Fund"));
 t("there is somewhere to sign",
