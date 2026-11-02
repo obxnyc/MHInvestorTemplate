@@ -39,6 +39,18 @@ export type Terms = {
   lotRent: number;
   consulting: number;
   reserve: number;
+  /** The most the reserve can total across every lot, which only the
+      investor lease speaks of. */
+  reserveCap: number;
+  /**
+   * WHICH LEASE. The purchase agreement is one body of prose for
+   * everybody, differing only by the switches; the lease is not. The
+   * owner's clean lease gives away things his own does not -- a ceiling
+   * on rent, 180 days if the park is sold, the right to sublet -- and
+   * those are terms, not drafting. So it is a choice, and the default is
+   * the one he has always used.
+   */
+  leaseForm: "house" | "investor";
   noticeDays: number;
   rofrDays: number;
   escalate: boolean;
@@ -129,6 +141,8 @@ export const DEFAULTS: Terms = {
   lotRent: 500,
   consulting: 50,
   reserve: 750,
+  reserveCap: 2500,
+  leaseForm: "house",
   noticeDays: 60,
   rofrDays: 30,
   escalate: true,
@@ -173,7 +187,7 @@ export const TEMPLATES: Template[] = [
       escalateApplies: "lot rent and consulting fee",
       late: true, graceDays: 10,
       security: true, insure: true, amortize: true,
-      noticeDays: 60, rofrDays: 30,
+      noticeDays: 60, rofrDays: 30, leaseForm: "house",
     },
   },
   {
@@ -185,7 +199,7 @@ export const TEMPLATES: Template[] = [
       escalate: false,
       late: false, graceDays: 15,
       security: false, insure: true, amortize: true,
-      noticeDays: 90, rofrDays: 15,
+      noticeDays: 90, rofrDays: 15, leaseForm: "investor",
     },
   },
   {
@@ -377,41 +391,117 @@ export function notaryBlock(what: string): string {
   </div>`;
 }
 
+/** "August 27, 2026". The `longDate` form reads "the 27th day of August"
+    and belongs after "made this the"; a payment that commences on one
+    reads "commencing on 27th day of August", which is not English. The
+    blanks in the agreement expect a plain date, so this fills them. */
+export function plainDate(v: string): string {
+  if (!v) return "________________";
+  const [y, m, d] = v.split("-").map(Number);
+  const months = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  return `${months[m - 1]} ${d}, ${y}`;
+}
+
+/** A count in words, lower case, the way a contract says a number twice:
+    "three hundred sixty (360) consecutive monthly installments". `words`
+    is Title Case because it writes dollars at the start of a clause. */
+export const countWords = (n: number) => words(n).toLowerCase();
+
+/** The same day of a later month, clamped where that month is shorter --
+    the 31st plus one month is the 28th of February and not the 3rd of
+    March, which is what a payment schedule means by "the same day". */
+export function plusMonths(iso: string, n: number): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(),
+    first.getUTCMonth() + 1, 0)).getUTCDate();
+  const day = Math.min(d, last);
+  return `${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1)
+    .padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** "27th", for the day of each succeeding month. */
+export function ordinalDay(iso: string): string {
+  if (!iso) return "______";
+  const d = Number(iso.split("-")[2]);
+  const ord = d % 10 === 1 && d !== 11 ? "st"
+    : d % 10 === 2 && d !== 12 ? "nd"
+    : d % 10 === 3 && d !== 13 ? "rd" : "th";
+  return `${d}${ord}`;
+}
+
+/**
+ * THE DATES THE AGREEMENT LEAVES BLANK, worked out rather than left for
+ * somebody to write in.
+ *
+ * The clean document has `commencing on _________, 2026`, `the _____ day
+ * of each succeeding month` and a Maturity Date of `_________, 20____`.
+ * Every one of them follows from the figures already on the deal: the
+ * first payment is a month after the agreement, it recurs on that day,
+ * and the last of n payments lands n-1 months after the first. A blank on
+ * a contract is a thing somebody fills in wrong at the kitchen table.
+ */
+export function schedule(t: Terms) {
+  const n = Math.max(1, Math.round((t.termYears || 20) * (t.perYear || 12)));
+  const first = plusMonths(t.agreedOn, 12 / (t.perYear || 12));
+  return { count: n, first, day: ordinalDay(first),
+           maturity: plusMonths(first, n - 1) };
+}
+
 export function purchaseAgreement(t: Terms, home: Home, sign = true): string {
   const seller = esc(t.seller) || "____________";
   const buyer = esc(t.buyer) || "____________________";
   const price = home.price, down = home.down, balance = price - down;
   const rate = t.ratePct, term = t.termYears || 20, freq = t.perYear || 12;
   const pay = payment(balance, rate, term, freq);
+  const s = schedule(t);
 
+  /* The money, lettered (a) and (b) as the agreement has it. The cash
+     case keeps its own sentence: a payment schedule with no balance to
+     schedule reads as an oversight rather than as a cash sale. */
   const payPara = t.financed
-    ? `<p>That Purchaser has offered to purchase such personal property and has tendered <span class="fill">$${money(down)}</span> by certified funds payable to Seller as a down payment on such purchase, the receipt of which is hereby acknowledged by Seller. The balance of the purchase price or <span class="fill">$${money0(balance)}</span> shall be paid in installments of <span class="fill">$${money(pay)}</span> by ${esc(t.payMethod)}, with interest accruing on the remaining unpaid balance at the rate of <span class="fill">${rate || "____"}</span> percent per annum. This loan is a <span class="fill">${term}-year</span> note. There is no penalty for prepayment to the Seller of the balance remaining due.</p>`
-    : `<p>That Purchaser has offered to purchase such personal property and has tendered the full purchase price of <span class="fill">$${money(price)}</span> by certified funds payable to Seller as payment in full, the receipt of which is hereby acknowledged by Seller. No balance remains owing and no financing is extended by Seller in connection with this purchase.</p>`;
+    ? `<p>The total purchase price for the mobile home is <span class="fill">$${money(price)}</span> (the &ldquo;Purchase Price&rdquo;), payable as follows:</p>
+    <p>(a) <span class="fill">$${money(down)}</span> upon execution of this Agreement as a down payment, receipt of which is acknowledged by Seller; and</p>
+    <p>(b) the balance of <span class="fill">$${money(balance)}</span>, together with interest at the rate of <span class="fill">${rate ? rate.toFixed(2) : "____"}%</span> per annum, shall be paid in ${countWords(s.count)} (${s.count}) consecutive monthly installments of <span class="fill">$${money(pay)}</span> each, commencing on <span class="fill">${plainDate(s.first)}</span> and continuing on the <span class="fill">${s.day}</span> day of each succeeding month until paid in full. The entire unpaid principal balance, together with all accrued and unpaid interest and other sums due hereunder, shall in all events be due and payable on <span class="fill">${plainDate(s.maturity)}</span> (the &ldquo;Maturity Date&rdquo;). This loan is amortized over a ${countWords(term)} (${term}) year term in accordance with the amortization schedule attached hereto as Schedule A. All payments shall first be applied to accrued interest, then to principal, and thereafter to any other amounts properly due hereunder. Seller shall provide Purchaser, upon reasonable request, with a written statement showing the outstanding principal balance and the application of payments previously made. Payments shall be made to Seller at the address set forth above, or at such other place as Seller may designate in writing. Purchaser shall have the absolute right to prepay all or any portion of the outstanding balance at any time without premium, penalty or other charge. Any partial prepayment shall be applied to reduce principal.</p>`
+    : `<p>The total purchase price for the mobile home is <span class="fill">$${money(price)}</span> (the &ldquo;Purchase Price&rdquo;), payable in full upon execution of this Agreement by certified funds payable to Seller, the receipt of which is acknowledged by Seller. No balance remains owing and no financing is extended by Seller in connection with this purchase.</p>`;
 
   const lateClause = (t.financed && t.late)
-    ? `<p><span class="fill">Late Payment &amp; Default.</span> Any installment not received within ${t.graceDays || 10} days of its due date is subject to a late charge of $${money0(t.lateFee)}. If any installment remains unpaid for thirty (30) days, Seller may, after written notice, declare the entire unpaid balance immediately due and payable, and Seller shall be entitled to pursue all remedies available at law, including repossession of the personal property described above.</p>`
+    ? `<p><span class="fill">Late Payment &amp; Default.</span> Any installment not received within ${t.graceDays || 10} days of its due date is subject to a late charge of $${money0(t.lateFee)}. If Purchaser shall default in the payment of any installment and such default shall continue for a period of thirty (30) days after delivery of written notice from Seller, then Seller may, declare the entire unpaid balance immediately due and payable, and Seller shall be entitled to pursue all remedies available at law, including repossession of the mobile home described above.</p>`
     : "";
 
   const securityClause = (t.financed && t.security)
-    ? `<p><span class="fill">Security Interest.</span> Until the purchase price is paid in full, Seller retains a purchase‑money security interest in and lien upon the personal property described above. Title and/or the certificate of title shall remain with Seller and shall not pass to Purchaser until all sums due hereunder are paid in full. Purchaser shall not sell, transfer, remove, or further encumber the property without Seller's prior written consent.</p>`
+    ? `<p><span class="fill">Security Interest.</span> Until the purchase price is paid in full, Seller retains a purchase-money security interest in and lien upon the mobile home described above. Title and/or the certificate of title shall remain with Seller and shall not pass to Purchaser until all sums due hereunder are paid in full. Purchaser shall not sell, transfer, remove, or further encumber the mobile home without Seller's prior written consent, which consent shall not be unreasonably withheld, conditioned or delayed.</p>`
     : "";
 
   const insureClause = t.insure
-    ? `<p><span class="fill">Insurance &amp; Taxes.</span> Purchaser shall keep the property insured against fire and casualty for its full value, naming Seller as loss payee, and shall provide proof upon request. Purchaser shall be responsible for all personal‑property taxes assessed on the home during the term of this Agreement.</p>`
+    ? `<p><span class="fill">Insurance &amp; Taxes.</span> Purchaser shall keep the mobile home insured against fire and casualty in an amount equal to the unpaid balance due Seller or the full insurable value of the mobile home, whichever is less, naming Seller as loss payee, and shall provide proof upon request. Purchaser shall be responsible for all personal-property taxes assessed on the Mobile home commencing on delivery of the mobile home and thereafter during the term of this Agreement.</p>`
     : "";
+
+  /* Only where Seller is holding a lien in the first place: a clause
+     promising to release one that was never taken reads as though there
+     is something outstanding. */
+  const releaseClause = (t.financed && t.security)
+    ? `<p>Upon payment in full of all amounts due hereunder, Seller shall execute and deliver such documents as are reasonably necessary to release Seller's lien and transfer or confirm clear title to Purchaser, including a fully executed and notarized bill of sale completely detailing the mobile home being purchased, free and clear of all encumbrances, debts, liens, claims.</p>`
+    : `<p>Seller shall deliver to Purchaser a fully executed and notarized bill of sale completely detailing the mobile home being purchased, free and clear of all encumbrances, debts, liens, claims.</p>`;
 
   return `
     <h2>PURCHASE AGREEMENT</h2>
-    <p>THIS PURCHASE AGREEMENT, made this <span class="fill">${longDate(t.agreedOn)}</span>, by <span class="fill">${buyer}</span>, Purchaser, and <span class="fill">${seller}</span>, Seller.</p>
+    <p>THIS PURCHASE AGREEMENT (&ldquo;Agreement&rdquo;), made this the <span class="fill">${longDate(t.agreedOn)}</span>, by and between <span class="fill">${buyer}</span>, as Purchaser, and <span class="fill">${seller}</span>, as Seller.</p>
     <p class="witness">W I T N E S S E T H</p>
-    <p>That Seller has offered to sell certain personal property, to wit:</p>
+    <p>That Seller has offered to sell that certain mobile home to wit:</p>
     <p class="fill" style="text-align:left">${esc(home.describedAs) || "________________________________________________________________"}</p>
     ${payPara}
     ${lateClause}
     ${securityClause}
     ${insureClause}
     <p>That the parties agree that if this purchase shall not be completed as contracted due to breach by the Seller, then all funds previously paid hereunder by Purchaser shall be refunded to Purchaser. The parties further agree that if this purchase shall not be completed as contracted due to breach by Purchaser, then all funds previously paid hereunder by Purchaser shall be forfeited to Seller as liquidated damages resulting from such breach.</p>
-    <p>Seller shall provide to Purchaser a fully executed and notarized bill of sale completely detailing the personal property being purchased which shall be delivered upon final payment to Seller, free and clear of all encumbrances, debts, liens, claims, and Seller has no knowledge of any legal impediment to sale of the personal property described above. If ownership of the personal property is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
+    ${releaseClause}
+    <p>Seller represents that Seller is the lawful owner of the mobile home and has authority to sell it. At the time required for transfer of title, Seller shall convey title free of liens created by Seller, other than Seller's lien securing Purchaser's obligations under this Agreement. Seller further represents to Purchaser that Seller has no knowledge of any legal impediment to the sale of the mobile home described above. If ownership of the mobile home is transferred by Certificate of Title, then the transfer of the same to Purchaser, or as directed by Purchaser, shall serve the same purpose as the Bill of Sale and shall be accepted by Purchaser in lieu thereof.</p>
+    <p><span class="fill">Notices.</span> Any notice required under this Agreement shall be in writing and delivered personally, by nationally recognized overnight courier, or by certified mail, return receipt requested, to the addresses stated above, or to such other address as a party may designate by written notice. Any additional method or period of notice required by applicable law shall control.</p>
+    <h3>Counterparts; Electronic Signatures</h3>
+    <p>This Agreement may be executed in counterparts, each of which shall constitute an original and all of which together shall constitute one agreement. Electronic and PDF signatures shall be deemed originals and shall be binding upon the parties to the fullest extent permitted by law.</p>
     <p>IN WITNESS WHEREOF, the parties hereto have executed this instrument effective the day and year first above written.</p>
     <div class="sig">
       <div class="sig-block"><b>SELLER:</b>${signedBy(t, sign)}${signLine(t, sign)}${seller}<br>Date: ${signedDate(t, sign)}</div>
@@ -422,7 +512,110 @@ export function purchaseAgreement(t: Terms, home: Home, sign = true): string {
   `;
 }
 
+/**
+ * THE INVESTOR LEASE, from the owner's clean document.
+ *
+ * Not a reworded version of the one below: it gives away things that one
+ * does not, and every one of them is a term somebody negotiated rather
+ * than a sentence somebody tidied.
+ *
+ *   - lot rent and the consulting fee cannot rise above what a third of
+ *     the park already pays
+ *   - the park may not be terminated while the homeowner is current on
+ *     what they owe, except for cause
+ *   - 180 days and a penalty-free payoff if the park is sold or closed
+ *   - the home may be sublet, on uniform screening, without it being an
+ *     assignment of the lease
+ *   - indemnity runs both ways, each side paying its own defence
+ *
+ * That is why it is a choice and not a replacement. Larabee Homes draws
+ * the lease below, as it always has.
+ */
+export function investorLease(t: Terms, home: Home, sign = true): string {
+  const parkOwner = esc(t.parkOwner) || "____________";
+  const buyer = esc(t.buyer) || "____________________";
+  const parkName = esc(home.parkName ?? "") || esc(t.parkName) || "the Park";
+  const state = esc(t.state) || "[State]";
+  const notice = t.noticeDays || 60;
+  const rofr = t.rofrDays || 15;
+  const lot = esc(home.lot);
+
+  return `
+    <h2>MOBILE HOME PARK LAND LEASE AGREEMENT</h2>
+    <p>This Mobile Home Park Land Lease Agreement (&ldquo;Agreement&rdquo;) is made and entered into as of the <span class="fill">${longDate(t.leaseFrom)}</span>, by and between: Park Owner: <span class="fill">${parkOwner}</span> (&ldquo;Park Owner&rdquo;); Mobile Home Owner: <span class="fill">${buyer}</span> (&ldquo;Homeowner&rdquo;); Lot Number: <span class="fill">${lot || "____________"}</span> (&ldquo;Lot&rdquo;).</p>
+
+    <h3>1. Premises</h3>
+    <p>Park Owner agrees to lease to Homeowner, and Homeowner agrees to lease from Park Owner, the parcel of land identified as Lot <span class="fill">${lot || "________"}</span> in ${parkName} (the &ldquo;Park&rdquo;). This lease entitles the Homeowner to place and maintain a mobile home on the designated Lot within the Park. The Lot consists solely of the land comprising the designated home site, together with Homeowner&rsquo;s right to use such common areas, roads and facilities of the Park as Park Owner may from time to time designate for the common use of Park residents, subject to this Lease and the rules and regulations of the Park.</p>
+
+    <h3>2. Term</h3>
+    <p>This Agreement shall be effective as of the date above and shall continue in effect on a month-to-month basis, unless terminated by either party in accordance with the terms herein. Notwithstanding the month-to-month nature of this Agreement, Park Owner shall not voluntarily terminate this Agreement while Homeowner is current on any existing debt owed on the mobile home, except for cause and upon not less than sixty (60) days&rsquo; prior written notice to Homeowner, or such longer period as may be required by applicable law. Notwithstanding the foregoing, in the event Park Owner sells, transfers, or otherwise disposes of the Park, or ceases to operate the Park as a mobile home community, Park Owner or its successor may terminate this Agreement upon not less than one hundred eighty (180) days&rsquo; prior written notice to Homeowner, whether or not Homeowner is then current on any debt owed on the mobile home. If such termination occurs while Homeowner still owes a balance to Park Owner or its affiliates, Homeowner may, at its option, prepay the remaining balance without penalty or relocate the mobile home, and Park Owner shall cooperate reasonably in any such relocation or payoff.</p>
+
+    <h3>3. Lot Rent</h3>
+    <p>Homeowner agrees to pay to Park Owner monthly rent in the amount of <span class="fill">$${money(t.lotRent)}</span> (${dollarsWords(t.lotRent)}) for the use of the Lot. This amount is subject to change as specified below.</p>
+
+    <h3>4. Rent Adjustment</h3>
+    <p>The monthly lot rent is <span class="fill">$${money(t.lotRent)}</span>. Any increase in rent shall be effective ${notice} days following written notice from Park Owner to Homeowner; provided, however, in no event shall the lot rent increase to an amount greater than the lot rent then being paid by at least thirty-three percent (33%) of the homeowners in the Park.</p>
+
+    <h3>5. Monthly Consulting Fee</h3>
+    <p>In addition to the Lot Rent specified in Section 3, the Homeowner agrees to pay a monthly consulting fee of <span class="fill">$${money(t.consulting)}</span> (${dollarsWords(t.consulting)}) to Park Owner (or an affiliate thereof) for ongoing consulting services. This fee will remain in effect for the duration of this Agreement, provided that the Homeowner or its affiliates maintains an interest in the mobile home park land owned by ${parkOwner} or any of its affiliates. The Park Owner may adjust or terminate the consulting fee upon ${notice} days&rsquo; written notice to the Homeowner; provided, however, in no event shall the consulting fee increase to an amount greater than the consulting fee then being paid by at least thirty-three percent (33%) of the homeowners in the Park.</p>
+
+    <h3>6. Park Rules and Regulations</h3>
+    <p>Both the Homeowner and the Park Owner agree to comply with all rules and regulations of the Park, as they may be amended from time to time. These rules and regulations will be provided to the Homeowner upon execution of this Agreement and may be updated with reasonable notice. Homeowner is responsible for ensuring that their guests, tenants, and any other occupants of the mobile home also comply with these rules.</p>
+
+    <h3>7. Use of Premises</h3>
+    <p>The Homeowner agrees to use the leased Lot exclusively for the placement and maintenance of a mobile home and related uses consistent with the Park&rsquo;s rules and regulations. The Homeowner shall not use the Lot for any unlawful or hazardous activities.</p>
+
+    <h3>8. Maintenance and Repairs</h3>
+    <p>The Homeowner is responsible for maintaining the mobile home in a safe and sanitary condition, including all plumbing, electrical, and mechanical systems within the mobile home. The Park Owner shall maintain the common areas of the Park, including roads, utilities, and any shared amenities, unless otherwise agreed.</p>
+
+    <h3>9. Termination</h3>
+    <p>Subject to the terms set forth in Section 2 hereof, either party may terminate this Agreement by providing ${notice} days&rsquo; written notice to the other party. If the Homeowner wishes to vacate the premises or terminate the lease, the Homeowner must give written notice to the Park Owner at least ${notice} days prior to vacating. The Park Owner may terminate this Agreement for cause in accordance with applicable laws. Homeowner shall not remove the mobile home from the Lot while any amount is owed to Park Owner or its affiliates without Park Owner&rsquo;s consent, which consent shall not be unreasonably withheld.</p>
+
+    <h3>10. Indemnification</h3>
+    <p>Homeowner agrees to indemnify and hold harmless the Park Owner from any loss, damage, or liability arising out of Homeowner&rsquo;s use of the Lot or any violation of this Agreement or Park rules and regulations. Park Owner shall indemnify and hold harmless Homeowner and Homeowner&rsquo;s subtenants from any loss, damage, or liability arising out of the negligence or willful misconduct of Park Owner or Park Owner&rsquo;s agents, employees, contractors or representatives. Each party shall bear its own costs of defense.</p>
+
+    <h3>11. Governing Law</h3>
+    <p>This Agreement shall be governed by and construed in accordance with the laws of the state of <span class="fill">${state}</span>, without regard to its conflict of laws principles.</p>
+
+    <h3>12. Entire Agreement</h3>
+    <p>This Agreement constitutes the entire understanding between the parties and supersedes any prior negotiations, understandings, or agreements, whether written or oral, between the parties regarding the subject matter hereof.</p>
+
+    <h3>13. Right of First Refusal, Sale of Mobile Home, and Renter Approval</h3>
+    <p>(a) <b>Right of First Refusal:</b> In the event the Homeowner wishes to sell the mobile home, the Park Owner shall have the first right of refusal to purchase the mobile home. The Homeowner must provide written notice to the Park Owner of the intent to sell, including the terms of the sale, and the Park Owner shall have ${countWords(rofr)} (${rofr}) days to respond with an offer to purchase the mobile home on the same terms, and must close within thirty (30) days of such notice by Homeowner. If the Park Owner does not exercise the right of first refusal, or fails to close within said thirty (30) days, then the Homeowner may proceed with the sale to a third party.</p>
+    <p>(b) <b>Park Owner&rsquo;s Consent to Sale:</b> Where the mobile home will remain on the Lot, the Park Owner&rsquo;s consent is required for the sale of the mobile home, which consent shall not be unreasonably withheld provided the proposed purchaser meets the qualifications for residency in the Park, including but not limited to the buyer&rsquo;s ability to comply with the Park&rsquo;s rules and regulations.</p>
+    <p>(c) <b>Outstanding Debt on Home:</b> Any sale of the mobile home by the Homeowner is contingent upon the payment in full of any existing debt or financial obligations owed on the mobile home. The Homeowner must ensure that all such debts are satisfied prior to completing the sale.</p>
+    <p>(d) <b>Renter and Subtenant Approval:</b> Homeowner shall have the right to lease, sublease, license or otherwise permit the occupancy of Homeowner&rsquo;s mobile home to or by any third party (a &ldquo;Subtenant&rdquo;), with Park Owner&rsquo;s consent, which consent shall not be unreasonably withheld, provided that (i) the proposed Subtenant first satisfies the Park Owner&rsquo;s standard screening criteria, including background, credit and income verification applied on a uniform and non-discriminatory basis, (ii) the Subtenant uses the home for lawful residential purposes, and (iii) the Subtenant agrees in writing to comply with the reasonable and uniformly enforced rules and regulations of the Park. Any sublease of the home shall not constitute an assignment or transfer of this Agreement, and Homeowner shall retain all rights under this Lease, including Homeowner&rsquo;s rights with respect to the Lot and Homeowner&rsquo;s ownership of the home.</p>
+    <p>(e) <b>Reserve Fund:</b> The Homeowner agrees to maintain a reserve fund in the amount of <span class="fill">$${money(t.reserve)}</span> (${dollarsWords(t.reserve)}) for each Lot leased by Homeowner in the Park (up to a maximum of <span class="fill">$${money(t.reserveCap)}</span> in the aggregate) to cover any potential expenses that may arise during the term of this Agreement. This reserve must be kept in an accessible account, and the Park Owner may require proof of the reserve fund&rsquo;s availability upon request.</p>
+
+    <h3>14. Notices</h3>
+    <p>Any notices required to be given under this Agreement shall be delivered in writing. Notices to the Park Owner must be delivered in writing at least ${notice} days prior to any proposed action, such as termination, rent adjustment, or other significant changes. Notices to the Homeowner may be delivered by mail, in person, overnight courier, or by electronic means if agreed upon by both parties.</p>
+
+    <h3>15. Counterparts and Electronic Signatures</h3>
+    <p>This Agreement may be executed in counterparts, each of which shall constitute an original and all of which together shall constitute one agreement. Electronic and PDF signatures shall be deemed originals and shall be binding upon the parties to the fullest extent permitted by law.</p>
+
+    <p>IN WITNESS WHEREOF, the parties hereto have executed this Mobile Home Park Land Lease Agreement as of the day and year first above written.</p>
+    <div class="sig">
+      <div class="sig-block"><b>Park Owner:</b>${signedBy(t, sign)}${signLine(t, sign)}Name: ${parkOwner}<br>Date: ${signedDate(t, sign)}</div>
+      <div class="sig-block"><b>Home Owner:</b>${counterSlot(t, "homeowner")}Name: ${buyer}<br>Date: ${counterDate(t, "homeowner")}</div>
+    </div>
+    ${t.notary ? notaryBlock("this Lease Agreement") : ""}
+  `;
+}
+
+/**
+ * The lease, whichever one this deal is on.
+ *
+ * Everything that draws a pack calls this and never asks which: the pack,
+ * the Word and PDF files, the signing slots and the countersigning all
+ * work on the html that comes back. One place decides, so a screen cannot
+ * show one lease and a download hand over the other.
+ */
 export function landLease(t: Terms, home: Home, sign = true): string {
+  if (t.leaseForm === "investor") return investorLease(t, home, sign);
+  return houseLease(t, home, sign);
+}
+
+function houseLease(t: Terms, home: Home, sign = true): string {
   const parkOwner = esc(t.parkOwner) || "____________";
   const buyer = esc(t.buyer) || "____________________";
   const parkName = esc(home.parkName ?? "") || esc(t.parkName) || "the Park";

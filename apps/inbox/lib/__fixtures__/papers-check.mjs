@@ -25,8 +25,17 @@ writeFileSync(join(here, "papers.gen.mjs"), ts.transpileModule(
   { compilerOptions: { target: 99, module: 99 } }).outputText);
 const P = await import(join(here, "papers.gen.mjs"));
 
-const source = readFileSync(
+/* THE WORDING IS THE OWNER'S DOCUMENTS NOW, not the generator at the repo
+   root. He asked for this to live in the app rather than in an html thing,
+   so `mobilehomedocumentgenerator.html` is no longer maintained and no
+   longer the authority -- these two are, and they are what review reads.
+   docs/papers/extract.mjs rewrites the .txt from the .docx he sent. */
+const generator = readFileSync(
   join(here, "..", "..", "..", "mobilehomedocumentgenerator.html"), "utf8");
+
+const PAPERS = join(here, "..", "..", "..", "docs", "papers");
+const source = ["purchase-agreement-clean.txt", "land-lease-investor-clean.txt"]
+  .map((f) => readFileSync(join(PAPERS, f), "utf8")).join("\n\n");
 
 const checks = [];
 const t = (name, ok, why) => checks.push([name, ok, why]);
@@ -61,15 +70,28 @@ function fixedRuns(src) {
 }
 
 /** Prose only: anything that is a sentence rather than markup. */
+const entities = (s) => s
+  .replace(/&ldquo;/g, "\u201c").replace(/&rdquo;/g, "\u201d")
+  .replace(/&lsquo;/g, "\u2018").replace(/&rsquo;/g, "\u2019")
+  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+
 function prose(src) {
   return fixedRuns(src)
     .flatMap((run) => run.split(/<[^>]*>/))
-    .map((s) => s.replace(/\s+/g, " ").trim())
+    .map((s) => entities(s).replace(/\s+/g, " ").trim())
     .filter((s) => s.length >= 40 && /[a-z]{3}/.test(s) && / /.test(s));
 }
 
-const theirs = prose(source);
-const said = new Set(theirs.map((s) => s.toLowerCase()));
+/* SUBSTRING, NOT SET MEMBERSHIP, and the reason matters. Against the
+   generator both sides were template literals with the same holes, so a
+   fixed run equalled a fixed run. The owner's documents are finished
+   prose with the figures already filled in, so our run between two holes
+   sits INSIDE one of their sentences rather than equalling it. Asking for
+   equality there would fail on every interpolated clause and prove
+   nothing about the rest. It still catches the thing it exists to catch:
+   a sentence quietly reworded on the way into the app. */
+const said = entities(source).replace(/\s+/g, " ").toLowerCase();
 
 /** What is inside the backticks, and nothing else.
  *
@@ -81,14 +103,51 @@ function documents(src) {
   const flat = src.replace(/\$\{(?:[^{}]|\{[^{}]*\})*\}/g, "\u0000");
   return flat.split("`").filter((_, i) => i % 2 === 1).join("\u0000");
 }
-// Only the document functions, not the comments explaining them.
-const docsOnly = documents(ours.slice(ours.indexOf("export function amortization")));
+/* THE TWO CONTRACTS, and nothing else in the file.
+   It used to start at `amortization`, which swept in the schedule table,
+   its "Illustrative; assumes no prepayment" note and the notary block --
+   none of which are in the owner's documents, because none of them are
+   contract language. They are the app's own furniture and checking them
+   against his wording reports three failures that mean nothing, which is
+   how a real one gets missed. */
+const between = (from, to) => ours.slice(ours.indexOf(from), ours.indexOf(to));
+const docsOnly = documents(
+  between("export function purchaseAgreement", "export const docKey"));
 const mine = prose(docsOnly);
 
-const drifted = mine.filter((s) => !said.has(s.toLowerCase()));
-t(`every sentence is the generator's own (${mine.length} checked)`,
+/* THE CASES HIS DOCUMENTS DO NOT COVER.
+   Two sources, because the owner's clean documents describe one deal: a
+   financed sale with a lien. The app still has to print a cash sale and a
+   lease with annual escalation, and that wording is the generator's,
+   which is reviewed prose even though it is no longer the authority.
+
+   What is in neither is the app's own, and there are exactly two of them.
+   They are listed rather than waved through, because a guard that accepts
+   anything it cannot place is not a guard -- and each is checked to still
+   be in use below, so the list cannot quietly rot into an excuse. */
+const OURS = [
+  // A cash sale: his agreement is financed throughout and has no such clause.
+  "payable in full upon execution of this Agreement by certified funds",
+  // The bill of sale where no lien was ever taken, so there is none to release.
+  "Seller shall deliver to Purchaser a fully executed and notarized bill of sale",
+];
+const everywhere = (entities(source) + "\n" + entities(generator))
+  .replace(/\s+/g, " ").toLowerCase();
+const appsOwn = OURS.map((o) => o.replace(/\s+/g, " ").toLowerCase());
+
+const drifted = mine.filter((s) => {
+  const low = s.toLowerCase();
+  return !everywhere.includes(low) && !appsOwn.some((o) => low.includes(o));
+});
+/* A listed exception that nothing uses any more is a hole left open. */
+const unused = OURS.filter((o) => !mine.some(
+  (m) => m.toLowerCase().includes(o.replace(/\s+/g, " ").toLowerCase())));
+t(`every app-authored sentence listed is still used (${OURS.length})`,
+  unused.length === 0, unused.map((u) => `  no longer printed: ${u}`).join("\n"));
+
+t(`every sentence is the owner's own or the generator's (${mine.length} checked)`,
   drifted.length === 0,
-  drifted.slice(0, 3).map((s) => `  not in the generator: ${s.slice(0, 110)}…`)
+  drifted.slice(0, 3).map((s) => `  not in the documents: ${s.slice(0, 110)}…`)
     .join("\n"));
 
 // And the other way, so a clause cannot be dropped on the way across.
@@ -132,7 +191,125 @@ t("no clause was dropped on the way across", missing.length === 0,
   t("and a cent more a month would not", Math.abs(off) > 0.5);
   t("an interest-free balance divides evenly",
     Math.abs(P.payment(12000, 0, 10, 12) - 100) < 1e-9);
+
+  /* EVERY TERM, NOT ONE TERM.
+     These deals are written at whatever rate and length the parties agree,
+     and the one case above -- 20 years at 4.9% -- cannot tell a formula
+     that generalises from one that happens to land on that pair. A dozen
+     of them, including 0%, a short term and a long one, and each has to
+     pay the balance off to the cent.
+
+     This is the arithmetic the CONTRACT prints: the installment figure in
+     clause (b) and every row of Schedule A come from it, so a rounding
+     that drifts here is a contract that never quite clears. */
+  const money0Left = [];
+  for (const yrs of [3, 5, 10, 15, 20, 30]) {
+    for (const apr of [0, 3.75, 4.9, 5.2, 7.25]) {
+      for (const bal of [8500, 62140, 150000]) {
+        const pm = P.payment(bal, apr, yrs, 12);
+        const r = apr / 100 / 12, n = yrs * 12;
+        let b = bal;
+        for (let k = 0; k < n; k++) b = b + b * r - pm;
+        /* Tolerance scales with the balance, not an absolute cent: the
+           payment is rounded to the cent when printed but carried at full
+           precision here, and 360 of those add up on a six-figure loan. */
+        if (Math.abs(b) > Math.max(0.01, bal * 1e-9)) {
+          money0Left.push(`${yrs}yr ${apr}% $${bal} ends at ${b.toFixed(2)}`);
+        }
+      }
+    }
+  }
+  t(`every term and rate pays the balance off (${6 * 5 * 3} combinations)`,
+    money0Left.length === 0, money0Left.slice(0, 3).join("; "));
+
+  /* THE SENTENCE AND THE SCHEDULE HAVE TO AGREE. Clause (b) states a
+     number of installments in words and figures; Schedule A prints the
+     rows. A term change that moved one and not the other would be a
+     contract disagreeing with its own attachment. */
+  const sentenceWrong = [];
+  for (const yrs of [5, 15, 30]) {
+    const terms = { ...P.DEFAULTS, financed: true, amortize: true,
+      ratePct: 5.2, termYears: yrs, perYear: 12, agreedOn: "2026-07-27",
+      amortDetail: "monthly" };
+    const html = P.purchaseAgreement(terms,
+      { lot: "1", describedAs: "A home", price: 95600, down: 33460 });
+    const flat = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const n = yrs * 12;
+    if (!flat.includes(`(${n}) consecutive monthly installments`)) {
+      sentenceWrong.push(`${yrs}yr: sentence does not say ${n}`);
+    }
+    if (!flat.includes(`(${yrs}) year term`)) {
+      sentenceWrong.push(`${yrs}yr: sentence does not say a ${yrs} year term`);
+    }
+    // One row per payment, plus the totals row.
+    const rows = (html.match(/<tr>/g) ?? []).length - 2;
+    if (rows !== n) sentenceWrong.push(`${yrs}yr: ${rows} rows for ${n} payments`);
+    // And the last payment lands on the Maturity Date the clause names.
+    const sch = P.schedule(terms);
+    if (!flat.includes(P.plainDate(sch.maturity))) {
+      sentenceWrong.push(`${yrs}yr: maturity ${sch.maturity} not printed`);
+    }
+  }
+  t("the installment count, the term, Schedule A and the Maturity Date agree",
+    sentenceWrong.length === 0, sentenceWrong.slice(0, 3).join("; "));
 }
+/* WHICH LEASE GETS DRAWN.
+   Matching prose proves the words are his; it says nothing about which
+   document a deal actually gets. These two leases differ on terms, not
+   drafting -- a rent ceiling, 180 days if the park sells, the right to
+   sublet -- so handing an investor the wrong one is handing them
+   different rights, and the pages look alike enough that nobody would
+   notice. Both are asked, because a check that only looks at one cannot
+   tell "picks the investor lease" from "always draws the investor lease". */
+{
+  const home = { lot: "3100", describedAs: "A home", price: 95600, down: 33460,
+                 parkName: "The Retreat at Cross Creek" };
+  const byKey = Object.fromEntries(P.TEMPLATES.map((x) => [x.key, x]));
+  const under = (key) => P.landLease(
+    { ...P.DEFAULTS, ...byKey[key].changes, buyer: "Oak Ridge Holdings LLC",
+      parkOwner: "Benjamin Cade Larabee", state: "North Carolina" }, home);
+
+  const investor = under("investor");
+  const house = under("house");
+
+  const only = [
+    ["a ceiling on rent at what a third of the park pays",
+     "thirty-three percent (33%)"],
+    ["180 days and a penalty-free payoff if the park is sold",
+     "one hundred eighty (180) days"],
+    ["the right to sublet without assigning the lease",
+     "shall not constitute an assignment or transfer of this Agreement"],
+    ["indemnity running both ways",
+     "Park Owner shall indemnify and hold harmless Homeowner"],
+    ["a cap on the reserve across every lot", "in the aggregate"],
+  ];
+  for (const [what, needle] of only) {
+    t(`the investor lease gives ${what}`, investor.includes(needle));
+    t(`and the Larabee lease does not`, !house.includes(needle));
+  }
+
+  /* The owner asked for the existing lease to stay exactly as it was. */
+  t("the Larabee lease still has its annual escalation",
+    P.landLease({ ...P.DEFAULTS, ...byKey["house"].changes, escalate: true },
+      home).includes("Annual Rent Escalation"));
+  t("and the investor lease is month-to-month with no escalation",
+    !investor.includes("Annual Rent Escalation"));
+
+  /* Custom inherits whatever is set rather than forcing either. */
+  t("custom keeps the lease it was given",
+    P.landLease({ ...P.DEFAULTS, leaseForm: "investor" }, home)
+      .includes("thirty-three percent (33%)")
+    && !P.landLease({ ...P.DEFAULTS, leaseForm: "house" }, home)
+      .includes("thirty-three percent (33%)"));
+
+  /* The figures are the deal's, not the document's. */
+  const priced = P.landLease({ ...P.DEFAULTS, leaseForm: "investor",
+    lotRent: 412, consulting: 60, reserve: 500, reserveCap: 2500 }, home);
+  t("the investor lease prints the deal's own rent and reserve",
+    priced.includes("$412.00") && priced.includes("$60.00")
+    && priced.includes("$500.00") && priced.includes("$2,500.00"));
+}
+
 t("five hundred is Five Hundred", P.words(500) === "Five Hundred");
 t("and reads as dollars", P.dollarsWords(500) === "Five Hundred Dollars");
 t("one is a Dollar, not Dollars", P.dollarsWords(1) === "One Dollar");
@@ -180,7 +357,11 @@ t("and an empty date leaves a line", P.longDate("") === "________________");
   // A cash sale says so, and says nothing about installments.
   const terms = { ...P.DEFAULTS, buyer: "Colgate Trust", financed: false };
   const html = P.purchaseAgreement(terms, { lot: "1", describedAs: "A home", price: 40000, down: 0 });
-  t("a cash sale is paid in full", html.includes("payment in full"));
+  /* His documents only describe a financed sale, so the cash sentence is
+     the app's own. The rule is the same -- it has to say the thing is paid
+     for -- but the words are the ones actually written. */
+  t("a cash sale is paid in full",
+    html.includes("payable in full upon execution"));
   t("and says no financing is extended",
     html.includes("no financing is extended by Seller"));
   t("and carries no amortization schedule", !html.includes("Schedule A"));
@@ -219,13 +400,19 @@ t("the app names the document it is printing",
 t("and puts the old title back when the papers close",
   /return \(\) => \{ document\.title = was; \};/.test(screen));
 
+/* The generator is no longer where the wording comes from -- the owner
+   asked for this to live in the app rather than an html thing -- but the
+   file is still there and still printed from, so what it does with the
+   print header is still worth holding. It gets its own read: pointing
+   these at `source` made them assertions about his contracts, which say
+   nothing about a print dialog, and they failed for that reason alone. */
 t("the generator names it too",
-  /document\.title = \(docMode==='purchase' \? 'Purchase Agreement'/.test(source),
+  /document\.title = \(docMode==='purchase' \? 'Purchase Agreement'/.test(generator),
   "It is still the thing being printed from.");
 
 t("and says where the header comes from",
-  /Headers and footers/.test(source)
-  && /your browser, not the\s*\n?\s*document/.test(source),
+  /Headers and footers/.test(generator)
+  && /your browser, not the\s*\n?\s*document/.test(generator),
   "Somebody looking at a file path on a contract needs to be told it is "
   + "the print dialog, not something wrong with the document.");
 

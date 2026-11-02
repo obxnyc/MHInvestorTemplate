@@ -480,7 +480,7 @@ also checks that no clause was dropped on the way across.
 Two things that harness taught:
 
 The first version of its prose extractor read the TypeScript as prose
-and reported that `export function amortisation(...)` was missing from
+and reported that `export function amortization(...)` was missing from
 a contract. True, and not the question. **Compare what is inside the
 backticks**, with the `${...}` holes cut out first so no backtick hides
 inside one.
