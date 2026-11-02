@@ -723,65 +723,83 @@ async function intakeChecks(): Promise<Check[]> {
   // answer to "is this working now".
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
   try {
-    /* `source`, NOT `channel`. `conversations` has no channel column -- that
-       one is on `messages` -- so this asked PostgREST for a filter on a
-       column that is not there, got a 400, and the `return []` below turned
-       that into no check at all.
-       Which means this check, the one that answers "is the maintenance email
-       arriving", HAS NEVER APPEARED ON THE PAGE since it was written. The
-       owner opened the setup page looking for exactly this and found a gap
-       where it should have been. */
-    const res = await fetch(
-      `${url}/rest/v1/conversations`
-      + `?select=source&source=neq.sms&created_at=gte.${since}&limit=200`,
-      { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" },
-    );
-    /* A QUESTION THAT COULD NOT BE ASKED IS NOT AN ANSWER OF "FINE".
-       Returning [] here reports "nothing to say" when the truth is "I could
-       not look", and those are the two states this whole page exists to tell
-       apart. Same shape as the harness that read a server being up and
-       erroring as no server at all. */
-    if (!res.ok) {
-      const why = await res.text().catch(() => "");
+    /* ASK WHAT ARRIVED, NOT WHAT IT IS ABOUT.
+     *
+     * This used to count conversations whose `source` was anything but
+     * `sms`, and report the number as "email intake is arriving". The
+     * hourly pull from the Rent Manager API writes its requests with the
+     * SAME source -- it is the maintenance-intake key, not a statement
+     * about how the thing got here -- so the pull was being counted as
+     * email.
+     *
+     * It reported "Arriving. In the last 30 days: 200 zego" on a database
+     * where not one email has ever landed. A green line is worse than a
+     * missing one: it sent the owner, and me, looking everywhere else.
+     *
+     * The two paths are told apart by what they stamp on the message.
+     * The pull writes `rm:issue:<n>`; mail arrives with its own
+     * Message-ID. So both are counted, and both are said.
+     */
+    const ask = async (filter: string) => {
+      const res = await fetch(
+        `${url}/rest/v1/messages?select=id&direction=eq.inbound`
+        + `&created_at=gte.${since}&${filter}`,
+        { headers: { apikey: key, Authorization: `Bearer ${key}`,
+                     Prefer: "count=exact" },
+          cache: "no-store" },
+      );
+      if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => "")}`);
+      /* The count comes back in the header; the body is capped and would
+         undercount anything past the first page. */
+      const range = res.headers.get("content-range") ?? "";
+      return Number(range.split("/")[1] ?? 0) || 0;
+    };
+
+    let byEmail = 0, byPull = 0;
+    try {
+      byPull = await ask("external_id=like.rm:issue:*");
+      byEmail = await ask("external_id=like.*@*&external_id=not.like.rm:issue:*");
+    } catch (e) {
       return [{
         name: "Could not check whether email is arriving",
         level: "bad",
-        detail: `Asking the database for recent non-text conversations failed`
-          + ` with ${res.status}. This check has no opinion either way, which`
-          + ` is not the same as everything being fine.`
-          + (why ? ` The database said: ${why.slice(0, 180)}` : ""),
-        fix: "This is a fault in this page rather than in your settings."
-          + " Nothing about your email setup can be concluded from it.",
+        detail: "Asking the database what has arrived failed: "
+          + String((e as Error).message ?? e).slice(0, 180)
+          + ". This check has no opinion either way, which is not the same"
+          + " as everything being fine.",
+        fix: "This is a fault in this page rather than in your settings.",
       }];
     }
-    const rows = (await res.json()) as { source: string | null }[];
 
-    if (!rows.length) {
+    if (!byEmail) {
       return [{
         name: "Nothing has arrived by email in 30 days",
-        level: "warn",
-        detail: "INTAKE_SECRET is set, so this end is ready. But no"
-          + " conversation has come in from anything other than a text message"
-          + " in the last month. If you are receiving these notifications in"
-          + " your own mailbox, the forward is what is missing — the mail is"
-          + " reaching you and not reaching here.",
-        fix: "Check two things, in this order. Postmark → your inbound server →"
-          + " Activity: does it show the forwarded mail arriving, and did the"
-          + " webhook return 200? If Postmark shows nothing, the Gmail filter"
-          + " is not forwarding. If it shows a 401, the secret in the webhook"
-          + " URL does not match INTAKE_SECRET. If it shows a 404, the URL is"
-          + " pointing at a domain or path that is not this deployment.",
+        level: "bad",
+        detail: "INTAKE_SECRET is set, so this end is ready, and not one"
+          + " email has reached it in a month."
+          + (byPull
+            ? ` ${byPull} maintenance requests did arrive in that time, but`
+              + " every one of them came from the hourly Rent Manager API"
+              + " pull — which carries no tenant, no phone number and no"
+              + " address, because that endpoint does not hand them over."
+              + " The Tenant Web Access email carries all three and is the"
+              + " one that is not getting here."
+            : ""),
+        fix: "Postmark → your inbound server → Activity. If it shows nothing,"
+          + " the Gmail filter is not forwarding — that is the likeliest"
+          + " answer. A 401 there means the secret in the webhook URL does"
+          + " not match INTAKE_SECRET; a 404 means the URL points at a"
+          + " domain or path that is not this deployment.",
       }];
     }
 
-    const counts = new Map<string, number>();
-    for (const r of rows) counts.set(r.source ?? "unknown", (counts.get(r.source ?? "unknown") ?? 0) + 1);
-    const said = [...counts].map(([k, n]) => `${n} ${k}`).join(", ");
     return [{
       name: "Email intake", level: "good",
-      detail: `Arriving. In the last 30 days: ${said}. Each one opens a thread`
-        + " in Messages; turning one into a job is still a person pressing"
-        + " Hand off, which is deliberate.",
+      detail: `Arriving: ${byEmail} in the last 30 days`
+        + (byPull ? `, alongside ${byPull} pulled from the Rent Manager API`
+          + " (those carry no tenant or address; the emails do)" : "")
+        + ". Each one opens a thread in Messages; turning one into a job is"
+        + " still a person pressing Hand off, which is deliberate.",
     }];
   } catch (e) {
     // Same rule: say that it could not look, rather than nothing.
