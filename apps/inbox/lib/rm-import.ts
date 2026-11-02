@@ -198,9 +198,21 @@ function strays(lots: RmProperty[]): Map<number, string> {
 function flagsFor(
   p: RmProperty, code: string, name: string,
   companies: Set<string>, inPark: boolean,
+  /* The count AFTER a single home has been given its own unit, which is
+     the number the row actually imports with.
+
+     Asked of Rent Manager's raw answer instead, the summary at the top
+     of the preview said "0 with no units at all" and the list directly
+     beneath it said "22 no units" -- the same question answered twice,
+     differently, on one screen. The headline was reading the preview
+     rows and the list was reading the API, and whichever somebody
+     believed, the other was there to be found later and disbelieved.
+
+     One number, from one place. */
+  unitCount: number,
 ): string[] {
   const flags: string[] = [];
-  const units = (p.Units ?? []).length;
+  const units = unitCount;
 
   if (!inPark && /\blot\b\s*#?\s*\w/i.test(name)) {
     flags.push("looks like a lot of a park, but is not in a park group");
@@ -606,6 +618,12 @@ export async function importFromRentManager(
     const existing = propByRm.get(p.PropertyID) ?? propByCode.get(code);
     const kind = existing ? (existing.kind as Kind) : guessKind(p, unitTypeNames);
     const spec = KINDS[kind] ?? KINDS.sfh;
+    /* Worked out here, above both the preview row and the write, because
+       the preview must describe the run that actually happens -- a row
+       reporting 0 units beside a house the import is about to give one
+       to is a preview of something else. */
+    const houseLabel = houseUnitLabel(
+      kind, (p.Units ?? []).length, addressOf(p.Addresses), name);
     // Somebody else's building on somebody else's land. Marked, so it stays
     // out of occupancy and rent roll instead of inflating both.
     const managed = Boolean(groupWith(p, "managed"));
@@ -656,7 +674,8 @@ export async function importFromRentManager(
         address: addressOf(p.Addresses),
         existing: Boolean(existing),
         groups: named(p),
-        flags: flagsFor(p, code, name, companies, false),
+        flags: flagsFor(p, code, name, companies, false,
+          (p.Units ?? []).length || (houseLabel ? 1 : 0)),
       });
     }
 
@@ -716,8 +735,6 @@ export async function importFromRentManager(
      * would go straight into the money dashboard as a letting
      * opportunity that does not exist.
      */
-    const houseLabel = houseUnitLabel(
-      kind, (p.Units ?? []).length, addressOf(p.Addresses), name);
     if (houseLabel) {
       const label = houseLabel;
       tally.units.seen++;

@@ -120,10 +120,30 @@ t("a house with no address at all still gets a usable name",
 
 /* --------------------------------------------------------- source rules */
 
+/* The branch that writes the invented unit, cut out before matching.
+ *
+ * Anchored on the branch itself -- `if (houseLabel)` -- and not on the
+ * line that computes the label, which moved above the preview row the
+ * moment the preview had to agree with it, and took both of these
+ * guards down with it. A guard that fails on a move is the same noise
+ * as one that passes on a fault.
+ *
+ * Cut at the end of the branch, too: an anchor that runs on past its
+ * own block matches whatever comes next, which has cost a round twice
+ * in this codebase. */
 const block = (() => {
-  const i = raw.indexOf("const houseLabel = houseUnitLabel(");
-  return i < 0 ? "" : raw.slice(i, i + 1800);
+  const i = raw.indexOf("if (houseLabel) {");
+  if (i < 0) return "";
+  const rest = raw.slice(i);
+  // To the close of the branch: the first line at that indentation.
+  const end = rest.indexOf("\n    }\n");
+  return end < 0 ? rest : rest.slice(0, end);
 })();
+
+t("the branch that creates it can still be found",
+  () => block.length > 0 && /\.from\("units"\)/.test(block),
+  "every rule below reads this block, so an anchor that misses makes "
+  + "all of them pass without checking anything");
 
 t("the invented unit is never marked vacant",
   () => block.length > 0 && /is_vacant:\s*false/.test(block),
