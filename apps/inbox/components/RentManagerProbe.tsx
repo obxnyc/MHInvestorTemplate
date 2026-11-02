@@ -35,6 +35,36 @@ type Issues = {
   error: string | null;
 };
 
+/** What a repair of the requests already filed came back with. */
+type Repair = {
+  ok: boolean;
+  dryRun: boolean;
+  /** Threads from Rent Manager that cannot say who or where. The size of
+   *  the problem, whether or not this run got through them. */
+  unidentified: number;
+  looked: number;
+  found: number;
+  mended: number;
+  placed: number;
+  merged: number;
+  failed: number;
+  more: boolean;
+  /** Every path tried for the first web-user lookup. This is the whole
+   *  point of the preview: whether Rent Manager will turn a web user id
+   *  into a person is not knowable from here, and a run that mends
+   *  nothing has to say which names it asked for. */
+  whoTried?: { path: string; status: number; ok: boolean; detail: string | null }[];
+  whoShape?: string[] | null;
+  samples: {
+    conversationId: string; issueId: string;
+    missing: ("who" | "reach" | "where")[];
+    from: "issue" | "webuser" | null;
+    mend: { name?: string; phone?: string; email?: string; placeHint?: string };
+    placed: boolean; mergedInto: string | null; note: string | null;
+  }[];
+  error: string | null;
+};
+
 type Undone = {
   ok: boolean; dryRun: boolean; error?: string;
   units: { removed: number };
@@ -73,6 +103,8 @@ export default function RentManagerProbe() {
   const [undoing, setUndoing] = useState<"" | "dry" | "real">("");
   const [issues, setIssues] = useState<Issues | null>(null);
   const [getting, setGetting] = useState<"" | "dry" | "real">("");
+  const [repair, setRepair] = useState<Repair | null>(null);
+  const [mending, setMending] = useState<"" | "dry" | "real">("");
 
   async function run() {
     setBusy(true); setFailed(null); setOut(null); setCopied(false);
@@ -156,6 +188,42 @@ export default function RentManagerProbe() {
     } finally {
       setGetting("");
     }
+  }
+
+  /**
+   * Going back for the ones that arrived naming nobody.
+   *
+   * Not the same button as the pull and it cannot be. `ingest` returns
+   * the moment it recognises a request it has already filed -- which is
+   * what makes the pull safe to press twice, and what makes it walk
+   * straight past every request that is already in and anonymous.
+   */
+  async function mend(go: boolean) {
+    setMending(go ? "real" : "dry"); setRepair(null); setFailed(null);
+    try {
+      const res = await fetch("/api/rentmanager/repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ go }),
+      });
+      // Read, then parse. A function killed at the plan's sixty-second
+      // ceiling does not return JSON at all, and `res.json()` reports
+      // that as the parser's fault.
+      const body = await res.text();
+      try {
+        setRepair(JSON.parse(body));
+      } catch {
+        setFailed(
+          res.status === 504 || res.status === 502 || !body.trim()
+            ? `Rent Manager took too long and the request was cut off after`
+              + ` ${res.status || "no"} — press it again and it will carry on`
+              + " from where it stopped."
+            : `The server answered ${res.status} with something that is not`
+              + ` JSON: ${body.slice(0, 160)}`);
+      }
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally { setMending(""); }
   }
 
   /** Taking it back out, with the same rehearse-then-commit rule. */
@@ -330,6 +398,122 @@ export default function RentManagerProbe() {
               <p className="hint">
                 …and {issues.found - issues.samples.length} more.
               </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* The requests that are already in and name nobody.
+          Its own block, below the pull, because the pull cannot do this
+          and pressing it harder will never start. */}
+      <div className="rmpull">
+        <h3>Requests already here that name nobody</h3>
+        <div className="acts" style={{ justifyContent: "flex-start" }}>
+          <button className="btn" disabled={mending !== ""}
+                  onClick={() => void mend(false)}>
+            {mending === "dry" ? "Looking…" : "See what can be mended — changes nothing"}
+          </button>
+          {repair?.dryRun && repair.ok && repair.found > 0 && (
+            <button className="btn pri" disabled={mending !== ""}
+                    onClick={() => void mend(true)}>
+              {mending === "real" ? "Mending…" : `Mend ${repair.found}`}
+            </button>
+          )}
+        </div>
+        <p className="hint">
+          A request pulled from Rent Manager arrives with no tenant, no number
+          and no lot — the issue record carries none of them, only the id of
+          the Tenant Web Access account that submitted it. Bringing the same
+          request in again does not fix that: it is recognised and skipped,
+          which is what makes the button above safe to press twice. This goes
+          the other way, from the threads we hold back to Rent Manager, and
+          asks who was behind each id. It only ever fills a blank.
+        </p>
+
+        {repair && !repair.ok && (
+          <p className="err">{repair.error ?? "Rent Manager would not answer."}</p>
+        )}
+        {repair?.ok && repair.unidentified === 0 && (
+          <p className="hint">
+            Every request from Rent Manager has a name or a lot on it. Nothing
+            to mend.
+          </p>
+        )}
+        {repair?.ok && repair.unidentified > 0 && (
+          <>
+            <p className="hint">
+              <strong>{repair.unidentified} requests here cannot say who sent
+              them or which lot they are for.</strong>{" "}
+              {repair.dryRun
+                ? `Looked at ${repair.looked}, and ${repair.found} can be`
+                  + " mended. Nothing written yet."
+                : `${repair.mended} mended`
+                  + `${repair.placed ? `, ${repair.placed} matched to a lot` : ""}`
+                  + `${repair.merged ? `, ${repair.merged} joined to a person we `
+                      + "already had" : ""}`
+                  + `${repair.failed ? `, ${repair.failed} could not be` : ""}.`}
+              {repair.more && (
+                <>
+                  {" "}More than one run can do inside the time a request is
+                  allowed — press again and it carries on from where it
+                  stopped.
+                </>
+              )}
+            </p>
+
+            {/* THE ANSWER TO "WHY DID IT MEND NOTHING".
+                Which endpoint turns a web user id into a person is a guess:
+                this account is on Rent Manager Express and the docs are not
+                reachable from where this was written. So a run that finds
+                nobody prints every name it asked for and what came back,
+                which is a thing somebody can correct in one round. */}
+            {repair.found === 0 && repair.looked > 0 && (
+              <>
+                <p className="hint">
+                  Rent Manager answered, but nothing it returned names a
+                  tenant. The lookup has to guess which endpoint turns a
+                  Tenant Web Access user id into a person — this account is
+                  on Express and the documentation is not public. Here is
+                  every name it tried:
+                </p>
+                <ul className="rmlist">
+                  {(repair.whoTried ?? []).map((a) => (
+                    <li key={a.path}>
+                      <strong>{a.path}</strong>
+                      {" — "}{a.status || "no reply"}
+                      {a.detail && <span className="dim"> · {a.detail}</span>}
+                    </li>
+                  ))}
+                </ul>
+                {repair.whoShape?.length && (
+                  <p className="hint">
+                    One of them answered with a record whose fields are{" "}
+                    <strong>{repair.whoShape.join(", ")}</strong> — if the
+                    tenant&rsquo;s name is in there under a spelling the
+                    lookup does not try, that is the fix.
+                  </p>
+                )}
+              </>
+            )}
+
+            {repair.samples.length > 0 && (
+              <ul className="rmlist">
+                {repair.samples.map((s) => (
+                  <li key={s.conversationId}>
+                    <strong>Issue {s.issueId}</strong>
+                    {s.mend.name && <> — {s.mend.name}</>}
+                    {s.mend.placeHint && <> · {s.mend.placeHint}</>}
+                    {s.mend.phone && <> · {s.mend.phone}</>}
+                    {s.placed && <span className="dim"> · matched to a lot</span>}
+                    {s.mergedInto && (
+                      <span className="dim"> · joined to a person already here</span>
+                    )}
+                    {s.from && <span className="dim"> · from the {
+                      s.from === "issue" ? "issue record" : "web user"}</span>}
+                    {s.note && <span className="dim"> · {s.note}</span>}
+                  </li>
+                ))}
+              </ul>
             )}
           </>
         )}

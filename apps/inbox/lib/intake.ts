@@ -341,7 +341,10 @@ async function openJob(
  *  Both halves have to agree -- the lot number AND the property -- because lot
  *  51 exists in more than one park, and filing a leak against the wrong park
  *  is worse than filing it against none. */
-async function unitFromHint(
+/** Which lot a place name means, where we can tell.
+ *  Exported for the repair pass, which asks the same question of a
+ *  thread that was already filed without an answer. */
+export async function unitFromHint(
   db: ReturnType<typeof supabaseAdmin>, hint: string,
 ): Promise<string | null> {
   /* A REMEMBERED ANSWER BEATS ANY PARSING.
