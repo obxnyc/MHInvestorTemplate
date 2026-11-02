@@ -69,6 +69,21 @@ type Repair = {
   error: string | null;
 };
 
+/** What a pull of the tenant roster came back with. */
+type Tenants = {
+  ok: boolean; dryRun: boolean;
+  tenants: number; leases: number; placed: number;
+  added: number; updated: number; merged: number; failed: number;
+  more: boolean;
+  usingTenants: string | null; usingLeases: string | null;
+  readAs: Record<string, string>;
+  tenantShape: string[] | null; leaseShape: string[] | null;
+  samples: { rmTenantId: number; name: string | null; phone: string | null;
+             email: string | null; status: string | null;
+             rmUnitId: number | null }[];
+  error: string | null;
+};
+
 type Undone = {
   ok: boolean; dryRun: boolean; error?: string;
   units: { removed: number };
@@ -108,6 +123,8 @@ export default function RentManagerProbe() {
   const [issues, setIssues] = useState<Issues | null>(null);
   const [getting, setGetting] = useState<"" | "dry" | "real">("");
   const [repair, setRepair] = useState<Repair | null>(null);
+  const [roster, setRoster] = useState<Tenants | null>(null);
+  const [rostering, setRostering] = useState<"" | "dry" | "real">("");
   const [mending, setMending] = useState<"" | "dry" | "real">("");
 
   async function run() {
@@ -228,6 +245,27 @@ export default function RentManagerProbe() {
     } catch (e) {
       setFailed((e as Error).message);
     } finally { setMending(""); }
+  }
+
+  /** Who lives in each unit, from the lease. */
+  async function pullRoster(go: boolean) {
+    setRostering(go ? "real" : "dry"); setRoster(null); setFailed(null);
+    try {
+      const res = await fetch("/api/rentmanager/tenants", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ go }),
+      });
+      const body = await res.text();
+      try { setRoster(JSON.parse(body)); } catch {
+        setFailed(res.status === 504 || res.status === 502 || !body.trim()
+          ? `Rent Manager took too long and the request was cut off after`
+            + ` ${res.status || "no"} — press it again and it carries on.`
+          : `The server answered ${res.status} with something that is not`
+            + ` JSON: ${body.slice(0, 160)}`);
+      }
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally { setRostering(""); }
   }
 
   /** Taking it back out, with the same rehearse-then-commit rule. */
@@ -403,6 +441,102 @@ export default function RentManagerProbe() {
                 …and {issues.found - issues.samples.length} more.
               </p>
             )}
+          </>
+        )}
+      </div>
+
+      {/* WHO LIVES IN THE UNIT.
+          One unit out of 417 knew. /Tenants and /Leases both answer on
+          this account and nothing had ever fetched either. */}
+      <div className="rmpull">
+        <h3>Who lives in each unit</h3>
+        <div className="acts" style={{ justifyContent: "flex-start" }}>
+          <button className="btn" disabled={rostering !== ""}
+                  onClick={() => void pullRoster(false)}>
+            {rostering === "dry" ? "Looking…" : "Show me — changes nothing"}
+          </button>
+          {roster?.dryRun && roster.ok && roster.tenants > 0 && (
+            <button className="btn pri" disabled={rostering !== ""}
+                    onClick={() => void pullRoster(true)}>
+              {rostering === "real" ? "Bringing them in…"
+                                    : `Bring in all ${roster.tenants}`}
+            </button>
+          )}
+        </div>
+        <p className="hint">
+          The portfolio brought your properties, units and owners across and
+          stopped there, so the app knows every address and not one of the
+          people in them. That is why a maintenance request makes you type
+          the tenant&rsquo;s name from memory. The lease is what joins a
+          person to a unit — with it, picking the property fills the person
+          in. Safe to run again: it updates the people it already has.
+        </p>
+
+        {roster && !roster.ok && (
+          <p className="err">{roster.error ?? "Rent Manager would not answer."}</p>
+        )}
+        {roster?.ok && roster.tenants === 0 && (
+          <p className="hint">
+            Rent Manager answered and returned no tenants at all. If that is
+            wrong, the endpoint it asked is below.
+          </p>
+        )}
+        {roster?.ok && roster.tenants > 0 && (
+          <>
+            <p className="hint">
+              <strong>{roster.tenants} tenants and {roster.leases} leases.</strong>{" "}
+              {roster.placed} of them can be put in one of your units.
+              {" "}
+              {roster.dryRun
+                ? "Nothing written yet."
+                : `${roster.added} added, ${roster.updated} already here and`
+                  + ` updated`
+                  + `${roster.merged ? `, ${roster.merged} joined to somebody `
+                      + "you already had" : ""}`
+                  + `${roster.failed ? `, ${roster.failed} could not be` : ""}.`}
+              {roster.more && " That is as many as fit in one go — press again."}
+            </p>
+            {roster.placed < roster.tenants && (
+              <p className="hint">
+                {roster.tenants - roster.placed} have no lease pointing at a
+                unit we hold, so they come in as people without an address.
+                That is a lease in Rent Manager with no unit on it, or a unit
+                that has not been imported.
+              </p>
+            )}
+            <ul className="rmlist">
+              {roster.samples.map((t) => (
+                <li key={t.rmTenantId}>
+                  <strong>{t.name ?? `Tenant ${t.rmTenantId}`}</strong>
+                  {t.phone && <> · {t.phone}</>}
+                  {t.email && <span className="dim"> · {t.email}</span>}
+                  {t.status && <span className="dim"> · {t.status}</span>}
+                  {t.rmUnitId === null && (
+                    <span className="dim"> · no unit on the lease</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <details className="rmwhy">
+              <summary>What it asked for, and which field answered</summary>
+              <p className="hint">
+                Tenants from <strong>{roster.usingTenants ?? "nothing"}</strong>,
+                leases from <strong>{roster.usingLeases ?? "nothing"}</strong>.
+                The field names on this account are a guess until a run says
+                otherwise, so here is what answered for each thing:
+              </p>
+              <ul className="rmlist">
+                {Object.entries(roster.readAs).map(([want, got]) => (
+                  <li key={want}><strong>{want}</strong> — {got}</li>
+                ))}
+              </ul>
+              {roster.tenantShape?.length ? (
+                <p className="hint">
+                  A tenant record here carries:{" "}
+                  <strong>{roster.tenantShape.join(", ")}</strong>
+                </p>
+              ) : null}
+            </details>
           </>
         )}
       </div>

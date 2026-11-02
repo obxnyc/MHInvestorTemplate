@@ -6,6 +6,7 @@ import Composer from "./Composer";
 import AskThese from "./AskThese";
 import ClaimPill from "./ClaimPill";
 import CloseButton from "./CloseButton";
+import SendTo from "./SendTo";
 import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
 import CategoryPicker from "./CategoryPicker";
@@ -178,10 +179,10 @@ export default function ThreadPane(
   // The last thing THEY said, which is what a work order is about. The last
   // thing in the thread is as often our own reply, and a job summarised from
   // "I'll get someone out Tuesday" tells the tech nothing.
-  const lastFromThem = [...data.messages]
+  const lastInbound = [...data.messages]
     .reverse()
-    .find((m) => m.direction === "inbound")
-    ?.body as string | undefined ?? "";
+    .find((m) => m.direction === "inbound");
+  const lastFromThem = (lastInbound?.body as string | undefined) ?? "";
 
   const timeline = [
     ...data.messages.map((m) => ({ kind: "message" as const, at: m.created_at as string, m })),
@@ -222,6 +223,21 @@ export default function ThreadPane(
             a scroll, and the line that matters is four hundred messages up by
             the time it does. */}
         <NotesPanel notes={(data.notes ?? []) as unknown as Note[]} media={data.media} />
+        {/* SENDING IT TO SOMEBODY WHO CAN FIX IT.
+            This existed and was unreachable: it lived behind a three-dot
+            menu on an individual message bubble, which is not where
+            anybody looks. "I dont see a way to right click it and send
+            to someone in a maintenance ticket" -- there wasn't one, on
+            the only screen the question gets asked from.
+
+            It acts on the last message FROM THEM, because that is what a
+            work order is about. The last thing in a thread is as often
+            our own reply, and a job summarised from "I'll get someone
+            out Tuesday" tells the vendor nothing. */}
+        {lastInbound && (
+          <SendTo messageId={String(lastInbound.id)}
+                  preview={lastFromThem.slice(0, 180)} />
+        )}
         <ClaimPill conversationId={convo.id}
                    holderName={convo.staff?.full_name ?? null}
                    isMine={convo.assigned_to === data.me} />
