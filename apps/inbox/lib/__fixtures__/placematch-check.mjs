@@ -235,6 +235,55 @@ t("but each of them is found when it is named in full",
 t("the house number is not read as part of the street's name",
   () => streetName("1002 Bartlett Ave") === "bartlett");
 
+/* ------------------------------- two found only by running it for real
+ *
+ * Both of these came out of pointing this at the 118 properties that
+ * actually imported, with the subject lines Rent Manager actually
+ * sends. Neither case existed in anything written above, which is the
+ * lesson: a fixture is a guess about the world until the world has
+ * been through it.
+ */
+
+t("a lot number written with a hash is not left on the street",
+  () => addressKey("1140 Northside #51") === addressKey("1140 Northside"),
+  "THE `#` NEVER FIRED. It sat inside the same \\b(?:...) group as the "
+  + "words apt/unit/lot, and \\b before # needs a word character right "
+  + "before it -- which 'Northside #51' has not got, there is a space. "
+  + "So the park at 1140 Northside Rd did not match its own lot");
+
+t("the same lot written the other ways is stripped too",
+  () => addressKey("1140 Northside Lot 51") === addressKey("1140 Northside")
+     && addressKey("1140 Northside Unit 51") === addressKey("1140 Northside")
+     && addressKey("1140 Northside Apt 51") === addressKey("1140 Northside"),
+  "the hash needed its own alternative outside the word boundary, and "
+  + "the words must still work after moving it");
+
+/* A STORED ADDRESS WITH NO COMMA BEFORE THE TOWN.
+ *
+ * The park addresses were typed by hand into the group boxes as
+ * "1140 Northside Rd Elizabeth City, NC 27909" -- no comma after Rd.
+ * Cut at the first comma, the street reads "1140 Northside Rd
+ * Elizabeth City", which matches nothing.
+ *
+ * It is recorded here rather than worked around. Loosening the match to
+ * cope would mean accepting a street that merely STARTS with the right
+ * words, and that is the safety property this whole file exists for.
+ * The fix was the three addresses. This is the check that says so if
+ * anybody types one that way again. */
+t("an address missing its comma before the town will not match, and that is known",
+  () => matchPlace("1140 Northside Rd", [
+          { id: "nocomma", name: "The Retreat",
+            address: "1140 Northside Rd Elizabeth City, NC 27909" },
+        ]).found === false,
+  "documented, not fixed: the answer is a comma in the data, because "
+  + "the looser rule that would catch it also matches the wrong street");
+
+t("and with the comma it matches",
+  () => matchPlace("1140 Northside Rd", [
+          { id: "ok", name: "The Retreat",
+            address: "1140 Northside Rd, Elizabeth City, NC 27909" },
+        ]).id === "ok");
+
 let failed = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);

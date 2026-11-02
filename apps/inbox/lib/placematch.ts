@@ -82,7 +82,17 @@ export function addressKey(raw: string | null | undefined): string {
        the commonest form there is -- and a pattern that insists on a
        digit leaves it on the end of the street, where it stops the
        address matching itself. */
-    .replace(/\b(?:apt|apartment|unit|ste|suite|lot|#)\s*(?:[a-z]?\d+[a-z]?|[a-z])\b/g, " ")
+    /* THE `#` NEVER FIRED. It sat inside the same `\b(?:...)` group as the
+       words, and `\b` before `#` requires a word character immediately
+       before it -- which "Northside #51" does not have, because there is
+       a space. So every lot written the way Rent Manager actually writes
+       it kept its number, "1140 Northside #51" reduced to
+       "1140 northside 51", and the park at 1140 Northside Rd did not
+       match. Found by running this against the real portfolio rather
+       than against the fixture, where the case did not exist.
+
+       The `#` needs its own alternative, outside the word boundary. */
+    .replace(/(?:\b(?:apt|apartment|unit|ste|suite|lot)|#)\s*(?:[a-z]?\d+[a-z]?|[a-z])\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
   if (!flat) return "";
