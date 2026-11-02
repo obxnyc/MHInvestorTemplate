@@ -673,7 +673,34 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <tbody>
               {homes.map((h) => (
                 <tr key={h.saleId}>
-                  {/* WHAT HAS ALREADY BEEN SIGNED, filed per home.
+                  {papers && (
+                    <td>
+                      <input type="checkbox" checked={Boolean(picked[h.saleId])}
+                             onChange={(e) => setPicked((was) => (
+                               { ...was, [h.saleId]: e.target.checked }))} />
+                    </td>
+                  )}
+                  <td>
+                    {h.parkId
+                      ? <a href={`/properties/${h.parkId}/plan`}>{h.parkName}</a>
+                      : h.parkName}
+                  </td>
+                  <td><strong>{h.lot}</strong></td>
+                  <td>{describe(h) || <span className="dim">not recorded</span>}</td>
+                  <td>{h.soldOn ?? "—"}</td>
+                  <td>{asMoney(h.priceCents)}</td>
+                  <td>{h.financed ? asMoney(h.monthlyCents) : <span className="dim">paid</span>}</td>
+                  <td>{asMoney(h.lotRentCents)}</td>
+                  <td>{asMoney(h.consultingCents)}</td>
+                  <td>{asMoney(h.tenantRentCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* WHAT HAS ALREADY BEEN SIGNED, filed per home.
           The upload has existed on the lot card since the sale paperwork
           was built, and nobody could find it: it is one lot at a time,
           behind Properties, and the office thinks in investors. Same
@@ -706,33 +733,6 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <Executed key={h.saleId} home={h} papers={filed[h.saleId] ?? []}
                       onChanged={() => { void load(); }} />
           ))}
-        </div>
-      )}
-
-      {papers && (
-                    <td>
-                      <input type="checkbox" checked={Boolean(picked[h.saleId])}
-                             onChange={(e) => setPicked((was) => (
-                               { ...was, [h.saleId]: e.target.checked }))} />
-                    </td>
-                  )}
-                  <td>
-                    {h.parkId
-                      ? <a href={`/properties/${h.parkId}/plan`}>{h.parkName}</a>
-                      : h.parkName}
-                  </td>
-                  <td><strong>{h.lot}</strong></td>
-                  <td>{describe(h) || <span className="dim">not recorded</span>}</td>
-                  <td>{h.soldOn ?? "—"}</td>
-                  <td>{asMoney(h.priceCents)}</td>
-                  <td>{h.financed ? asMoney(h.monthlyCents) : <span className="dim">paid</span>}</td>
-                  <td>{asMoney(h.lotRentCents)}</td>
-                  <td>{asMoney(h.consultingCents)}</td>
-                  <td>{asMoney(h.tenantRentCents)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
 

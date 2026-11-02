@@ -142,8 +142,26 @@ const TABLES = {
                     address: "1140 Northside Rd, Elizabeth City NC" } },
   ],
   /* Two homes, in two parks, to ow1 -- so "across N parks" has a number
-     to get wrong, and ow2 has nothing. */
+     to get wrong, and ow2 has nothing.
+
+     A THIRD with no first payment date, because the screen's job is to
+     tell a complete sale from an incomplete one and a fixture where
+     every sale is complete cannot tell those two answers apart. It is
+     the real case: one of the live sales is exactly this -- terms, a
+     payment, and no date to count them from. */
   home_sales: [
+    { id: "hs3", owner_id: "ow1", unit_id: "u3", sold_on: "2026-08-10",
+      price_cents: 9560000, down_cents: 3346000, financed: true,
+      monthly_cents: 34122, rate_bps: 520, term_months: 360,
+      first_due_on: null, home_year: 2026, home_make: "Champion",
+      home_serial: "CHM3122NC", ended_on: null, ended_why: null, note: null,
+      lot_rent_cents: 37500, management_cents: 4500, warranty_cents: 0,
+      tenant_rent_cents: 0, pet_fee_cents: 0, late_fee_cents: 5000,
+      owner_insures: true,
+      units: { id: "u3", label: "3122", property_id: "p1",
+               properties: { id: "p1", name: "The Retreat",
+                             address: "3100 Lady Viola Dr, Fayetteville NC" } },
+      owners: { id: "ow1", name: "Oak Ridge Holdings" } },
     { id: "hs1", owner_id: "ow1", unit_id: "u1", sold_on: "2025-06-14",
       price_cents: 4850000, down_cents: 970000, financed: true,
       monthly_cents: 42500, rate_bps: 750, term_months: 180,
