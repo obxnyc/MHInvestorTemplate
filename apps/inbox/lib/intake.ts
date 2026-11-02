@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { placeKey, readHint } from "./alias";
 import { twinFragment } from "./sameissue";
 import { mendFor, type Held } from "./fillblanks";
+import { matchPlace } from "./placematch";
 import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
@@ -559,19 +560,25 @@ async function unitOfSingleHome(
   if (!want) return null;
 
   const { data: props } = await db.from("properties").select("id, name, address");
-  const hit = (props ?? []).filter((p) => {
-    const byName = placeKey(String(p.name ?? "")) === want;
-    const byAddress = placeKey(String(p.address ?? "")) === want;
-    const byPart = said.property
-      && placeKey(String(p.name ?? "")) === placeKey(said.property);
-    return byName || byAddress || byPart;
-  });
-  /* Two properties answering to one name is not a match, it is a question.
-     Picking either would be a coin toss with a work order on it. */
-  if (hit.length !== 1) return null;
+
+  /* THE COMPARISON USED TO BE `===` ON THE WHOLE STRING, and it could not
+     have matched a house.
+
+     The import stores an address the way Rent Manager holds it, with the
+     town on the end -- "1002 Bartlett Ave, Elizabeth City, NC 27909" --
+     and the notification names the place the way the tenant's record is
+     titled, which is the street alone. Normalising case and punctuation
+     does not make those equal, so every single-family house failed, every
+     time, while the address sat in plain sight on both sides of the
+     comparison.
+
+     It only ever appeared to work because a PARK's name happens to be
+     what the subject says. Houses were the case nobody had. */
+  const match = matchPlace(said.address ?? said.property ?? hint, props ?? []);
+  if (!match.found) return null;
 
   const { data: units } = await db.from("units")
-    .select("id").eq("property_id", hit[0]!.id).limit(2);
+    .select("id").eq("property_id", match.id).limit(2);
   // One unit is the house itself. More than one is a building, and which
   // flat it is was never in the subject line.
   return units?.length === 1 ? (units[0]!.id as string) : null;
