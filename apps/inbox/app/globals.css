@@ -2218,6 +2218,26 @@ a.metric:hover{border-color:var(--accent)}
 .paper .pagebreak{break-before:page}
 .paper .witness{letter-spacing:6px;font-weight:700;text-align:center;margin:14px 0}
 
+/* EXECUTED DOCUMENTS, on the investor's own page.
+   Tokens throughout: this sits on the app's card, not on the always-white
+   `.paper`, so it has to invert with the theme like everything else here.
+   The upload controls are labels wearing `.btn` because a file input
+   cannot be styled and a label can; `min-width:0` on the rows because a
+   park name and a long filename will otherwise push the card sideways on
+   a phone, which is the fault this stylesheet keeps relearning. */
+.ownerpapers{margin:1.2rem 0}
+.ownerpapers h2{font-size:1.05rem;margin:0 0 .3rem}
+.ownerpaper{border:1px solid var(--hair);border-radius:12px;background:var(--card);
+  padding:.8rem .9rem;margin:.6rem 0;display:grid;gap:.5rem;min-width:0}
+.ownerpaperhead{display:flex;flex-wrap:wrap;gap:.3rem .7rem;align-items:baseline;
+  min-width:0}
+.ownerpaperhead>*{min-width:0}
+.ownerpaperlist{list-style:none;margin:0;padding:0;display:grid;gap:.2rem;
+  font-size:.86rem}
+.ownerpaperlist li{min-width:0;overflow-wrap:anywhere}
+.ownerpaperadd{display:flex;flex-wrap:wrap;gap:.4rem}
+.ownerpaperadd .btn{font-size:.82rem;padding:.3rem .6rem;cursor:pointer}
+
 /* WALKING SOMEBODY THROUGH SIXTEEN SIGNATURES.
 
    The bar sticks to the top because what it counts is further down the

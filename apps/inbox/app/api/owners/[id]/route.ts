@@ -103,5 +103,35 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   homes.sort((a, b) => a.parkName.localeCompare(b.parkName)
     || String(a.lot).localeCompare(String(b.lot), undefined, { numeric: true }));
 
-  return NextResponse.json({ owner: who.data, homes, money });
+  /* THE EXECUTED PAPERS, read in one go rather than per home.
+     A `sale_papers` row cannot exist without a sale -- `sale_id` is not
+     nullable -- which is the rule the screen leans on: a document is
+     filed against a sale that was recorded, never floating beside one.
+
+     Read separately rather than embedded, and tolerated when missing,
+     for the same reason as the columns above: a database where 032 was
+     never run still has to open this page. */
+  const saleIds = homes.map((h) => h.saleId);
+  const papers: Record<string, unknown[]> = {};
+  if (saleIds.length) {
+    const filed = await supabase
+      .from("sale_papers")
+      .select("id, sale_id, kind, path, name, signed_on, note, added_at")
+      .in("sale_id", saleIds)
+      .order("added_at", { ascending: false });
+    if (!filed.error) {
+      for (const r of (filed.data ?? []) as Record<string, unknown>[]) {
+        const key = String(r.sale_id);
+        (papers[key] ??= []).push({
+          id: String(r.id), kind: String(r.kind),
+          path: String(r.path), name: (r.name as string) ?? null,
+          signedOn: (r.signed_on as string) ?? null,
+          note: (r.note as string) ?? null,
+          addedAt: String(r.added_at),
+        });
+      }
+    }
+  }
+
+  return NextResponse.json({ owner: who.data, homes, money, papers });
 }

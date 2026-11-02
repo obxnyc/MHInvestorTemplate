@@ -2,8 +2,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import SignaturePad from "@/components/SignaturePad";
 import { describe, homeSentence } from "@/lib/describe";
-import { DEFAULTS, TEMPLATES, templateOf, pack, docKey, money0,
+import { DEFAULTS, TEMPLATES, templateOf, pack, docKey, money0, payment,
          type Terms, type Home } from "@/lib/papers";
+
+/** One executed document on file against a recorded sale. */
+type Paper = {
+  id: string; kind: string; path: string; name: string | null;
+  signedOn: string | null; note: string | null; addedAt: string;
+};
 
 type Held = {
   saleId: string; unitId: string | null; lot: string;
@@ -63,6 +69,8 @@ const asMoney = (cents: number | null | undefined) =>
 export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [owner, setOwner] = useState<{ name: string; legal_name: string | null } | null>(null);
   const [homes, setHomes] = useState<Held[]>([]);
+  /** The executed papers already on file, by sale. */
+  const [filed, setFiled] = useState<Record<string, Paper[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(true);
 
@@ -143,6 +151,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     if (!res.ok) { setError(out.error ?? "Could not load this owner."); return; }
     setOwner(out.owner ?? null);
     setHomes(out.homes ?? []);
+    setFiled(out.papers ?? {});
   }, [ownerId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -664,7 +673,29 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <tbody>
               {homes.map((h) => (
                 <tr key={h.saleId}>
-                  {papers && (
+                  {/* WHAT HAS ALREADY BEEN SIGNED, filed per home.
+          The upload has existed on the lot card since the sale paperwork
+          was built, and nobody could find it: it is one lot at a time,
+          behind Properties, and the office thinks in investors. Same
+          screen, same bucket, same rows -- reached from where somebody
+          is already standing. */}
+      {homes.length > 0 && (
+        <div className="ownerpapers noprint">
+          <h2>Executed documents</h2>
+          <p className="dim">
+            What has already been signed, filed against the sale it belongs
+            to. PDFs and photographs; a picture of a signed page is a signed
+            page. These are kept beside the home for good, and they are the
+            same files the lot card shows.
+          </p>
+          {homes.map((h) => (
+            <Executed key={h.saleId} home={h} papers={filed[h.saleId] ?? []}
+                      onChanged={() => { void load(); }} />
+          ))}
+        </div>
+      )}
+
+      {papers && (
                     <td>
                       <input type="checkbox" checked={Boolean(picked[h.saleId])}
                              onChange={(e) => setPicked((was) => (
@@ -1190,6 +1221,133 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <div className="paper" dangerouslySetInnerHTML={{ __html: built }} />
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/** What the sale says the loan is, worked out rather than taken on trust.
+ *
+ *  The owner asked that uploading an executed document make him record the
+ *  sale and set the amortization up from it. The first half the database
+ *  already enforces -- `sale_papers.sale_id` is not nullable, so a document
+ *  cannot be filed against a sale that was never recorded. This is the
+ *  second half: the schedule is not a number somebody typed, it is what the
+ *  price, the deposit, the rate and the term come to, and where the stored
+ *  monthly disagrees with them the screen says so rather than printing both.
+ */
+function loanOf(h: Held) {
+  if (!h.financed) return null;
+  const balance = (h.priceCents - h.downCents) / 100;
+  const rate = (h.rateBps ?? 0) / 100;
+  const months = h.termMonths ?? 0;
+  if (!(balance > 0 && months > 0)) return null;
+  const due = payment(balance, rate, months / 12, 12);
+  const stored = h.monthlyCents === null ? null : h.monthlyCents / 100;
+  return {
+    balance, rate, months, due, stored,
+    /* A dollar of slack: the stored figure was rounded to the cent when
+       it was typed, and the schedule is carried at full precision. */
+    agrees: stored === null || Math.abs(stored - due) < 1,
+  };
+}
+
+const PAPER_KINDS: [string, string][] = [
+  ["bill_of_sale", "Bill of sale"], ["lease", "Lease"],
+  ["note", "Promissory note"], ["title", "Title"],
+  ["warranty", "Warranty"], ["other", "Other"],
+];
+
+/** One home: what the sale says, what is on file, and a way to add to it. */
+function Executed(
+  { home, papers, onChanged }:
+  { home: Held; papers: Paper[]; onChanged: () => void },
+) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const loan = loanOf(home);
+
+  async function take(files: FileList | null, kind: string) {
+    if (!files?.length || !home.unitId) return;
+    setBusy(true); setProblem(null);
+    try {
+      const form = new FormData();
+      for (const f of Array.from(files)) form.append("file", f);
+      const up = await fetch(`/api/units/${home.unitId}/attach`,
+        { method: "POST", body: form });
+      const got = await up.json().catch(() => ({}));
+      if (!up.ok) { setProblem(got.error ?? "That did not upload."); return; }
+
+      /* Uploaded first, filed second: the file has to exist before a row
+         can point at it. Nothing is called filed until the server says so. */
+      for (const f of got.files ?? []) {
+        const res = await fetch(`/api/units/${home.unitId}/sale`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "paper", kind, path: f.path, name: f.name }),
+        });
+        if (!res.ok) {
+          const out = await res.json().catch(() => ({}));
+          setProblem(out.error ?? "Uploaded, but filed nowhere.");
+          return;
+        }
+      }
+      onChanged();
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "That did not upload.");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="ownerpaper">
+      <div className="ownerpaperhead">
+        <strong>Lot {home.lot}</strong>
+        <span className="dim">{home.parkName}</span>
+        {loan ? (
+          <span className={loan.agrees ? "dim" : "err"}>
+            {loan.months} payments of {asMoney(Math.round(loan.due * 100))} at{" "}
+            {loan.rate.toFixed(2)}%
+            {!loan.agrees && loan.stored !== null && (
+              <> — the sale records {asMoney(Math.round(loan.stored * 100))},
+                 which these figures do not come to</>
+            )}
+          </span>
+        ) : (
+          <span className="dim">
+            {home.financed ? "Financed, but no rate or term recorded" : "Paid outright"}
+          </span>
+        )}
+      </div>
+
+      {papers.length > 0 && (
+        <ul className="ownerpaperlist">
+          {papers.map((p) => (
+            <li key={p.id}>
+              <strong>
+                {PAPER_KINDS.find(([k]) => k === p.kind)?.[1] ?? p.kind}
+              </strong>{" "}
+              <span className="dim">{p.name ?? "file"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="ownerpaperadd">
+        {PAPER_KINDS.map(([kind, label]) => (
+          <label key={kind} className="btn">
+            {label}
+            <input type="file" multiple hidden disabled={busy || !home.unitId}
+                   accept="application/pdf,image/*"
+                   onChange={(e) => { void take(e.target.files, kind); e.target.value = ""; }} />
+          </label>
+        ))}
+      </div>
+      {busy && <p className="dim">Uploading…</p>}
+      {problem && <p className="err">{problem}</p>}
+      {!home.unitId && (
+        <p className="err">
+          This home has no lot on file, so there is nowhere to keep a
+          document against it.
+        </p>
       )}
     </div>
   );
