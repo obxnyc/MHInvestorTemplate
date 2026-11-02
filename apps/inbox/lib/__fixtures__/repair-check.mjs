@@ -36,14 +36,22 @@ const tsc = (s) => ts.transpileModule(s,
 // back as E.164 is half of what `mendFor` is doing.
 writeFileSync(join(here, "phone.gen.mjs"), tsc(readFileSync(join(lib, "phone.ts"), "utf8")));
 
-const raw = readFileSync(join(lib, "rm-repair.ts"), "utf8");
-const src = 'import { toE164, isValidPhone } from "./phone.gen.mjs";\n'
-  + raw.replace(/^import\b[\s\S]*?from\s*"[^"]*";/gm, "");
-writeFileSync(join(here, "rm-repair.gen.mjs"), tsc(src));
+/* The rule itself lives in `fillblanks`, shared with `intake`, because
+   the email arriving and the repair going back for it are the same
+   question asked from two ends -- and a rule written twice is a rule
+   that drifts. */
+const pure = 'import { toE164, isValidPhone } from "./phone.gen.mjs";\n'
+  + readFileSync(join(lib, "fillblanks.ts"), "utf8")
+      .replace(/^import\b[\s\S]*?from\s*"[^"]*";/gm, "");
+writeFileSync(join(here, "fillblanks.gen.mjs"), tsc(pure));
 const {
   isPlaceholderPhone, whatIsMissing, needsMending, placeOf, mendFor,
   keepGoing, GIVE_UP_AFTER,
-} = await import(join(here, "rm-repair.gen.mjs"));
+} = await import(join(here, "fillblanks.gen.mjs"));
+
+// The source rules below read the two callers, which are not pure.
+const raw = readFileSync(join(lib, "rm-repair.ts"), "utf8");
+const intake = readFileSync(join(lib, "intake.ts"), "utf8");
 
 /* Every assertion is a thunk, so one that reaches into a field a fault has
    just removed is reported as a named failure rather than taking the run
@@ -281,6 +289,62 @@ t("the number is checked against the contacts we hold before it is written",
   "`contacts.phone` is unique: a tenant who also texts us already holds "
   + "their number, so writing it onto the placeholder is refused and the "
   + "thread stays anonymous. The thread is pointed at the person instead");
+
+/* ------------------------------- the email, arriving after the pull did
+ *
+ * "I showed you the email this came in on and it had all the information
+ * you should need to associate this one."
+ *
+ * It does. Rent Manager's notification carries the tenant, their number
+ * and the lot in its subject line, and `parseRentManager` reads all
+ * three. `ingest` joins it to the thread the pull already filed, on what
+ * the tenant actually wrote -- and then kept whichever arrival got here
+ * FIRST, on the reasoning that the email lands within the minute and the
+ * pull is hourly.
+ *
+ * Sound reasoning, false premise. No notification email has ever reached
+ * this application, so the pull got here first for all three hundred and
+ * six, and the one arrival that knows who sent it was being written in
+ * as a line of text and otherwise dropped.
+ *
+ * These are source rules because the join is a database write, and they
+ * are anchored by cutting the branch out first -- an anchor that runs on
+ * past its own block matches the next one along, which has cost a round
+ * twice in this codebase.
+ */
+const twinBranch = (() => {
+  const i = intake.indexOf("if (seen?.conversation_id) {");
+  if (i < 0) return "";
+  // To the end of that branch and no further.
+  const j = intake.indexOf("return { ok: true, duplicate: true, joined:", i);
+  return j < 0 ? "" : intake.slice(i, j);
+})();
+
+t("an email joining a thread the pull already filed is not just filed as text",
+  () => twinBranch.length > 0 && /fillBlanks\(/.test(twinBranch),
+  "this is the whole complaint: the email had the tenant, the number and "
+  + "the lot on it, and the thread it joined still said it knew nobody");
+
+t("the message itself is still recorded, not replaced by the tidying",
+  () => /\.from\("messages"\)\s*\.insert\(/.test(twinBranch),
+  "the second arrival must not be lost either");
+
+t("what it fills in is decided by the one shared rule, not a second copy",
+  () => /from "\.\/fillblanks"/.test(intake)
+     && /from "\.\/fillblanks"/.test(raw),
+  "two copies of 'only fill a blank' is one copy that will drift");
+
+t("the thread is read before anything is written to it",
+  () => {
+    const i = intake.indexOf("async function fillBlanks");
+    if (i < 0) return false;
+    const body = intake.slice(i, i + 3200);
+    const read = body.search(/\.select\(/);
+    const write = body.search(/\.update\(/);
+    return read > 0 && write > 0 && read < write;
+  },
+  "by position: filling a blank means knowing it was blank, and a write "
+  + "sent before the read overwrites the answer it was meant to protect");
 
 /* ------------------------------------------- the half that runs by itself
  *

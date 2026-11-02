@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { placeKey, readHint } from "./alias";
 import { twinFragment } from "./sameissue";
+import { mendFor, type Held } from "./fillblanks";
 import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
@@ -86,9 +87,7 @@ export async function ingest(item: Intake) {
     if (seen?.conversation_id) {
       /* Recorded against the thread that already exists, so the second
          arrival is not lost -- and so that asking again does not keep
-         finding it new. The RICHER one is whichever got here first: the
-         email arrives within the minute and the pull is hourly, so in
-         practice the thread keeps the tenant and their number. */
+         finding it new. */
       await db.from("messages").insert({
         conversation_id: seen.conversation_id,
         direction: "inbound",
@@ -96,6 +95,28 @@ export async function ingest(item: Intake) {
         external_id: item.externalId,
         channel: "email",
       });
+
+      /* AND WHAT IT KNOWS THAT THE THREAD DOES NOT.
+       *
+       * This used to stop at the line above, on the reasoning that the
+       * richer arrival is whichever got here first -- the email lands
+       * within the minute, the pull is hourly, so the thread already has
+       * the tenant and their number.
+       *
+       * The reasoning is sound and the premise is false. No notification
+       * email has ever reached this application: all three hundred and
+       * six requests on file came from the pull, which carries no tenant,
+       * no number and no lot. So for every one of them the pull got here
+       * first, and the email -- the only arrival that knows who sent it
+       * and which house it is -- was being inserted as a line of text and
+       * otherwise discarded.
+       *
+       * "I showed you the email this came in on and it had all the
+       * information you should need to associate this one." It did.
+       *
+       * Blanks only, so the first-is-richer rule still holds wherever it
+       * was actually true. */
+      await fillBlanks(db, seen.conversation_id, item);
       return { ok: true, duplicate: true, joined: seen.conversation_id };
     }
   }
@@ -341,6 +362,92 @@ async function openJob(
  *  Both halves have to agree -- the lot number AND the property -- because lot
  *  51 exists in more than one park, and filing a leak against the wrong park
  *  is worse than filing it against none. */
+/**
+ * Put what this arrival knows onto a thread that does not know it.
+ *
+ * Only ever fills a blank, so the arrival that got here first keeps
+ * whatever it brought. The placeholder `email:…` that `ingest` writes
+ * into `contacts.phone` when it has no number counts as a blank, because
+ * it is a present value meaning absent -- `isPlaceholderPhone` is the
+ * only thing that can tell those apart.
+ *
+ * Shared with the repair pass, which asks the identical question of
+ * threads already filed. One rule, in `fillblanks`, so the two cannot
+ * drift.
+ */
+async function fillBlanks(
+  db: ReturnType<typeof supabaseAdmin>, conversationId: string, item: Intake,
+): Promise<void> {
+  const { data: convo } = await db.from("conversations")
+    .select("id, unit_id, place_hint, contact_id, contacts(id, full_name, phone, email)")
+    .eq("id", conversationId).maybeSingle();
+  if (!convo) return;
+
+  const person = convo.contacts as unknown as
+    { id: string; full_name: string | null;
+      phone: string | null; email: string | null } | null;
+
+  const held: Held = {
+    conversationId,
+    issueId: "",
+    unitId: convo.unit_id,
+    placeHint: convo.place_hint,
+    contactId: person?.id ?? convo.contact_id,
+    name: person?.full_name ?? null,
+    phone: person?.phone ?? null,
+    email: person?.email ?? null,
+  };
+
+  const mend = mendFor(held, {
+    tenant: item.name ?? null,
+    phone: item.phone ?? null,
+    email: item.email ?? null,
+    place: item.unitHint ?? null,
+  });
+
+  if (held.contactId && (mend.name || mend.phone || mend.email)) {
+    const patch: Record<string, string> = {};
+    if (mend.name) patch.full_name = mend.name;
+    if (mend.email) patch.email = mend.email;
+    /* The number may already be somebody's. `contacts.phone` is unique,
+       and a tenant who texts the mainline already holds theirs -- so
+       writing it onto the placeholder is refused and the thread would
+       stay anonymous. Point the thread at the person instead, which is
+       the right answer anyway: one person, one record. */
+    if (mend.phone) {
+      const { data: already } = await db.from("contacts")
+        .select("id, full_name").eq("phone", mend.phone).maybeSingle();
+      if (already && already.id !== held.contactId) {
+        await db.from("conversations")
+          .update({ contact_id: already.id }).eq("id", conversationId);
+        if (!already.full_name && mend.name) {
+          await db.from("contacts")
+            .update({ full_name: mend.name }).eq("id", already.id);
+        }
+      } else {
+        patch.phone = mend.phone;
+      }
+    }
+    if (Object.keys(patch).length) {
+      await db.from("contacts").update(patch).eq("id", held.contactId);
+    }
+  }
+
+  /* The words go on the thread whether or not they match a lot we hold.
+     A place name nobody has mapped is still the answer to "which house
+     is this", and the screen shows it and offers the box to map it. */
+  const hint = mend.placeHint ?? held.placeHint;
+  const convoPatch: Record<string, string> = {};
+  if (mend.placeHint) convoPatch.place_hint = mend.placeHint.slice(0, 200);
+  if (!held.unitId && hint) {
+    const unitId = await unitFromHint(db, hint);
+    if (unitId) convoPatch.unit_id = unitId;
+  }
+  if (Object.keys(convoPatch).length) {
+    await db.from("conversations").update(convoPatch).eq("id", conversationId);
+  }
+}
+
 /** Which lot a place name means, where we can tell.
  *  Exported for the repair pass, which asks the same question of a
  *  thread that was already filed without an answer. */
