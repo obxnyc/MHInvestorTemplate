@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { pullServiceIssues } from "@/lib/rm-issues";
+import { repairIssues } from "@/lib/rm-repair";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,13 +65,48 @@ export async function POST() {
   let filed = 0;
   let ok = false;
   let error: string | null = null;
+  /* How many requests already here had a tenant, a number or an address
+     put back on them this time round. */
+  let mended = 0;
+  let stillBlank = 0;
+
+  // Sixty is the hard ceiling and a function killed at it returns no JSON
+  // at all. The pull gets most of what is left; the repair gets the rest,
+  // and both stop themselves rather than being stopped.
+  const started = Date.now();
+  const left = () => 50 - Math.round((Date.now() - started) / 1000);
+
   try {
-    const out = await pullServiceIssues({ dryRun: false });
+    const out = await pullServiceIssues({ dryRun: false, seconds: 30 });
     filed = out.filed ?? 0;
     ok = out.ok === true;
     if (!ok) error = (out as { error?: string }).error ?? "the pull did not finish";
   } catch (e) {
     error = (e as Error).message;
+  }
+
+  /* AND THEN MEND THE ONES THAT ARE ALREADY IN.
+   *
+   * Not a separate button on a page nobody opens. Every request pulled
+   * before the tenant lookup worked is filed naming nobody, and the pull
+   * cannot touch them -- `ingest` refuses an id it has seen and returns,
+   * which is exactly what makes it safe to run this often.
+   *
+   * So the same minute that fetches what is new also goes back for a few
+   * of the ones that arrived blank. Three hundred of them do not mend in
+   * one go and are not meant to: a dozen each time somebody opens the
+   * inbox clears the backlog over a morning, with nobody pressing
+   * anything and nothing to wait for.
+   */
+  if (ok && left() > 8) {
+    try {
+      const fixed = await repairIssues({ dryRun: false, seconds: left() - 3 });
+      mended = fixed.mended ?? 0;
+      stillBlank = Math.max(0, (fixed.unidentified ?? 0) - mended);
+    } catch {
+      // Never fails the pull. What came in is what the office is waiting
+      // for; tidying what is already here is not worth losing it over.
+    }
   }
 
   /* Recorded whatever happened. A failure that is not written leaves the row
@@ -81,5 +117,5 @@ export async function POST() {
     p_ok: ok, p_filed: filed, p_error: error,
   });
 
-  return NextResponse.json({ ok, filed, error });
+  return NextResponse.json({ ok, filed, mended, stillBlank, error });
 }

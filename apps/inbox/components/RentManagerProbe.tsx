@@ -49,6 +49,10 @@ type Repair = {
   merged: number;
   failed: number;
   more: boolean;
+  /** Why it stopped where it did. "nothing-coming-back" means Rent
+   *  Manager is answering and telling us nothing, which no amount of
+   *  pressing the button again will change. */
+  stopped: "time" | "nothing-coming-back" | null;
   /** Every path tried for the first web-user lookup. This is the whole
    *  point of the preview: whether Rent Manager will turn a web user id
    *  into a person is not knowable from here, and a run that mends
@@ -407,27 +411,34 @@ export default function RentManagerProbe() {
           Its own block, below the pull, because the pull cannot do this
           and pressing it harder will never start. */}
       <div className="rmpull">
-        <h3>Requests already here that name nobody</h3>
+        <h3>Requests that do not say who sent them</h3>
+        <p className="hint">
+          This happens on its own — a few every time anybody opens the
+          inbox, until there are none left. Nothing here needs pressing.
+          The buttons are for when you want to watch it work or find out
+          why it is not.
+        </p>
         <div className="acts" style={{ justifyContent: "flex-start" }}>
           <button className="btn" disabled={mending !== ""}
                   onClick={() => void mend(false)}>
-            {mending === "dry" ? "Looking…" : "See what can be mended — changes nothing"}
+            {mending === "dry" ? "Looking…" : "Show me — changes nothing"}
           </button>
           {repair?.dryRun && repair.ok && repair.found > 0 && (
             <button className="btn pri" disabled={mending !== ""}
                     onClick={() => void mend(true)}>
-              {mending === "real" ? "Mending…" : `Mend ${repair.found}`}
+              {mending === "real"
+                ? "Filling them in…"
+                : `Fill in ${repair.found} now`}
             </button>
           )}
         </div>
         <p className="hint">
-          A request pulled from Rent Manager arrives with no tenant, no number
-          and no lot — the issue record carries none of them, only the id of
-          the Tenant Web Access account that submitted it. Bringing the same
-          request in again does not fix that: it is recognised and skipped,
-          which is what makes the button above safe to press twice. This goes
-          the other way, from the threads we hold back to Rent Manager, and
-          asks who was behind each id. It only ever fills a blank.
+          When Rent Manager hands over a maintenance request it does not
+          include the tenant, their number or the lot — only an id for the
+          account that submitted it. Fetching the same request again will
+          not help: it is recognised and skipped. So this goes the other
+          way, and asks Rent Manager who was behind each id. It only ever
+          fills a blank, and never changes anything already there.
         </p>
 
         {repair && !repair.ok && (
@@ -442,21 +453,20 @@ export default function RentManagerProbe() {
         {repair?.ok && repair.unidentified > 0 && (
           <>
             <p className="hint">
-              <strong>{repair.unidentified} requests here cannot say who sent
-              them or which lot they are for.</strong>{" "}
+              <strong>{repair.unidentified} requests do not say who sent them
+              or which lot they are for.</strong>{" "}
               {repair.dryRun
-                ? `Looked at ${repair.looked}, and ${repair.found} can be`
-                  + " mended. Nothing written yet."
-                : `${repair.mended} mended`
+                ? `Checked ${repair.looked} of them, and ${repair.found} can be`
+                  + " filled in. Nothing changed yet."
+                : `${repair.mended} filled in`
                   + `${repair.placed ? `, ${repair.placed} matched to a lot` : ""}`
-                  + `${repair.merged ? `, ${repair.merged} joined to a person we `
-                      + "already had" : ""}`
+                  + `${repair.merged ? `, ${repair.merged} joined to someone `
+                      + "already in your contacts" : ""}`
                   + `${repair.failed ? `, ${repair.failed} could not be` : ""}.`}
-              {repair.more && (
+              {repair.more && repair.stopped !== "nothing-coming-back" && (
                 <>
-                  {" "}More than one run can do inside the time a request is
-                  allowed — press again and it carries on from where it
-                  stopped.
+                  {" "}That is as many as fit in one go. The rest carry on by
+                  themselves as the inbox is used, or press the button again.
                 </>
               )}
             </p>
@@ -470,29 +480,41 @@ export default function RentManagerProbe() {
             {repair.found === 0 && repair.looked > 0 && (
               <>
                 <p className="hint">
-                  Rent Manager answered, but nothing it returned names a
-                  tenant. The lookup has to guess which endpoint turns a
-                  Tenant Web Access user id into a person — this account is
-                  on Express and the documentation is not public. Here is
-                  every name it tried:
+                  Rent Manager is answering, but it will not tell us who the
+                  tenant is. That is a setting on the Rent Manager side, not
+                  something that can be fixed from here — so nothing will
+                  come of pressing this again until it changes.
                 </p>
-                <ul className="rmlist">
-                  {(repair.whoTried ?? []).map((a) => (
-                    <li key={a.path}>
-                      <strong>{a.path}</strong>
-                      {" — "}{a.status || "no reply"}
-                      {a.detail && <span className="dim"> · {a.detail}</span>}
-                    </li>
-                  ))}
-                </ul>
-                {repair.whoShape?.length && (
+                {/* The engineering detail is the answer to "why", and it is
+                    also forty lines of endpoint paths. Folded away: the
+                    sentence above is what the owner needs, and this is what
+                    somebody needs to act on it. */}
+                <details className="rmwhy">
+                  <summary>What it asked Rent Manager for</summary>
                   <p className="hint">
-                    One of them answered with a record whose fields are{" "}
-                    <strong>{repair.whoShape.join(", ")}</strong> — if the
-                    tenant&rsquo;s name is in there under a spelling the
-                    lookup does not try, that is the fix.
+                    Which address turns a Tenant Web Access login into a
+                    person is a guess — this account is on Rent Manager
+                    Express and the documentation is not public. Every one
+                    of these was tried:
                   </p>
-                )}
+                  <ul className="rmlist">
+                    {(repair.whoTried ?? []).map((a) => (
+                      <li key={a.path}>
+                        <strong>{a.path}</strong>
+                        {" — "}{a.status || "no reply"}
+                        {a.detail && <span className="dim"> · {a.detail}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                  {repair.whoShape?.length ? (
+                    <p className="hint">
+                      One answered, with a record containing{" "}
+                      <strong>{repair.whoShape.join(", ")}</strong>. If the
+                      tenant&rsquo;s name is in there under a spelling we do
+                      not try, that is the fix — send this list on.
+                    </p>
+                  ) : null}
+                </details>
               </>
             )}
 
@@ -506,10 +528,14 @@ export default function RentManagerProbe() {
                     {s.mend.phone && <> · {s.mend.phone}</>}
                     {s.placed && <span className="dim"> · matched to a lot</span>}
                     {s.mergedInto && (
-                      <span className="dim"> · joined to a person already here</span>
+                      <span className="dim">
+                        {" "}· joined to someone already in your contacts
+                      </span>
                     )}
-                    {s.from && <span className="dim"> · from the {
-                      s.from === "issue" ? "issue record" : "web user"}</span>}
+                    {s.from && <span className="dim"> · from {
+                      s.from === "issue"
+                        ? "the request itself"
+                        : "their Tenant Web Access login"}</span>}
                     {s.note && <span className="dim"> · {s.note}</span>}
                   </li>
                 ))}

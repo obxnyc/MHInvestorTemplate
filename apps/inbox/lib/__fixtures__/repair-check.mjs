@@ -40,8 +40,10 @@ const raw = readFileSync(join(lib, "rm-repair.ts"), "utf8");
 const src = 'import { toE164, isValidPhone } from "./phone.gen.mjs";\n'
   + raw.replace(/^import\b[\s\S]*?from\s*"[^"]*";/gm, "");
 writeFileSync(join(here, "rm-repair.gen.mjs"), tsc(src));
-const { isPlaceholderPhone, whatIsMissing, needsMending, placeOf, mendFor } =
-  await import(join(here, "rm-repair.gen.mjs"));
+const {
+  isPlaceholderPhone, whatIsMissing, needsMending, placeOf, mendFor,
+  keepGoing, GIVE_UP_AFTER,
+} = await import(join(here, "rm-repair.gen.mjs"));
 
 /* Every assertion is a thunk, so one that reaches into a field a fault has
    just removed is reported as a named failure rather than taking the run
@@ -186,6 +188,58 @@ t("a number that is not a number is not stored",
   "a junk phone written onto a contact is worse than none: it reads as a "
   + "way to reach somebody");
 
+/* ------------------------------------------------- when to stop asking
+ *
+ * This runs by itself every few minutes now, against somebody's live
+ * property-management system. If Rent Manager will not say who a tenant
+ * is on this account, three hundred threads is three hundred round trips
+ * spent learning the same thing, forever.
+ *
+ * The two answers are deliberately different. Out of time means press
+ * again. Nothing coming back means pressing again does exactly this, and
+ * saying so is the difference between one more press and twenty.
+ */
+const SOON = { now: 1000, until: 9000 };
+
+t("it keeps going while there is time and answers are coming back",
+  () => keepGoing({ blanksInARow: 0, ...SOON }) === "go");
+
+t("out of time is out of time, and says press again",
+  () => keepGoing({ blanksInARow: 0, now: 9001, until: 9000 }) === "time");
+
+t("enough empty answers in a row and it stops",
+  () => keepGoing({ blanksInARow: GIVE_UP_AFTER, ...SOON })
+          === "nothing-coming-back");
+
+t("one short of enough is still going",
+  () => keepGoing({ blanksInARow: GIVE_UP_AFTER - 1, ...SOON }) === "go",
+  "an off-by-one here gives up a request earlier than intended every run");
+
+t("running out of time is reported as time, not as a dead endpoint",
+  () => keepGoing({ blanksInARow: GIVE_UP_AFTER, now: 9001, until: 9000 })
+          === "time",
+  "told 'nothing is coming back' when it simply ran out, nobody presses "
+  + "again and the backlog stops dead with 290 still blank");
+
+/* THE RESET, which is the whole trap in this rule.
+ *
+ * The count is of blanks IN A ROW. A run that increments but never resets
+ * is counting blanks in the whole run -- and on a backlog of three
+ * hundred, where plenty of requests legitimately have nothing to add,
+ * that gives up almost immediately and reports itself as finished.
+ *
+ * A source rule for this would be fragile and a type cannot see it, so
+ * it is asked of the loop's own words: the counter must be set back to
+ * zero somewhere that is not its declaration. */
+t("the count is of empty answers in a row, and is reset by a good one",
+  () => {
+    const loop = raw.slice(raw.indexOf("for (const h of todo"));
+    return /blanksInARow\s*=\s*0\s*;/.test(loop)
+        && /blanksInARow\s*\+=\s*1/.test(loop);
+  },
+  "counting blanks for the whole run instead of consecutively means a "
+  + "backlog with scattered misses gives up at once and calls it done");
+
 /* --------------------------------------------------------- source rules
  *
  * Two things a pure test cannot see, asked of the source. Both are
@@ -227,6 +281,52 @@ t("the number is checked against the contacts we hold before it is written",
   "`contacts.phone` is unique: a tenant who also texts us already holds "
   + "their number, so writing it onto the placeholder is refused and the "
   + "thread stays anonymous. The thread is pointed at the person instead");
+
+/* ------------------------------------------- the half that runs by itself
+ *
+ * None of this is a button any more. It rides the pull that fires when
+ * somebody opens the inbox, which is the only schedule this plan really
+ * has -- a Hobby cron fires once a day whatever the expression says.
+ *
+ * Two things about that are worth holding, and neither is visible in a
+ * type: tidying what is already here must never cost the office what has
+ * just come in, and the whole thing has sixty seconds before Vercel kills
+ * it and returns something that is not JSON.
+ */
+const auto = readFileSync(
+  join(lib, "..", "app/api/rentmanager/issues/auto/route.ts"), "utf8");
+
+t("the repair runs by itself, off the back of the pull",
+  () => /repairIssues\(/.test(auto),
+  "a button on a diagnostics page is not a feature the office has");
+
+t("a repair that goes wrong cannot cost the office the new requests",
+  () => {
+    const i = auto.indexOf("repairIssues(");
+    if (i < 0) return false;
+    const around = auto.slice(Math.max(0, i - 400), i + 400);
+    return /try\s*\{/.test(around) && /catch/.test(around);
+  },
+  "what came in is what the office is waiting for; tidying what is "
+  + "already here is not worth losing it over");
+
+t("the pull is asked for first, and the repair gets what is left",
+  () => {
+    const pull = auto.indexOf("pullServiceIssues(");
+    const fix = auto.indexOf("repairIssues(");
+    return pull > 0 && fix > pull;
+  },
+  "checked by position: new requests matter more than old blanks");
+
+t("neither of them is allowed to reach the sixty-second ceiling",
+  () => {
+    const budgets = [...auto.matchAll(/seconds:\s*(\d+)/g)].map((m) => +m[1]);
+    const ceiling = /maxDuration\s*=\s*(\d+)/.exec(auto);
+    return budgets.length > 0 && ceiling !== null
+        && budgets.every((b) => b < +ceiling[1] - 5);
+  },
+  "a function killed at the ceiling does not return JSON -- it returns "
+  + "whatever Vercel serves, which the browser blames on the parser");
 
 let failed = 0;
 for (const [name, ok, why] of checks) {

@@ -47,6 +47,12 @@ const SIGNED_IN = [
   // drawn on both -- the empty one is the screen somebody reaches when
   // they are selling a first home, and it was the screen with no way in.
   ["desk", "/owners/ow1"], ["desk", "/owners/ow2"],
+  /* The two screens the owner is actually sent to when something is
+     wrong, and the two that have never been looked at on a phone. The
+     Rent Manager page grew a folded-away block of endpoint diagnostics
+     and the setup page is read on a phone more often than at a desk,
+     because it is read when somebody rings up. */
+  ["desk", "/rentmanager"], ["desk", "/setup"],
 ];
 // A phone, a small phone, and a phone held sideways.
 const SIZES = [[390, 844], [320, 568], [844, 390]];

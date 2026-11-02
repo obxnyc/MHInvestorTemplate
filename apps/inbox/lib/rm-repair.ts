@@ -97,6 +97,35 @@ export function needsMending(h: Held): boolean {
   return whatIsMissing(h).length > 0;
 }
 
+/** How many requests in a row may come back empty before it is not worth
+ *  asking again this run. */
+export const GIVE_UP_AFTER = 8;
+
+/**
+ * Whether to ask Rent Manager about one more request.
+ *
+ * A function rather than two conditions in the loop, because the rule has
+ * a trap in it that a type cannot see and a source rule reports badly:
+ * the count is of blanks IN A ROW, and a run that forgets to reset it
+ * stops after eight scattered misses instead of eight consecutive ones.
+ * On a backlog of three hundred, where plenty of requests legitimately
+ * have nothing to add, that is a repair that gives up almost at once and
+ * reports itself as having finished.
+ *
+ * `"nothing-coming-back"` is a different answer from `"time"` on purpose.
+ * Out of time means press again. Nothing coming back means Rent Manager
+ * is answering and will not say who the tenant is, and pressing again
+ * will do exactly the same thing -- which is worth saying rather than
+ * leaving somebody to press it twenty times.
+ */
+export function keepGoing(
+  state: { blanksInARow: number; now: number; until: number },
+): "go" | "time" | "nothing-coming-back" {
+  if (state.now > state.until) return "time";
+  if (state.blanksInARow >= GIVE_UP_AFTER) return "nothing-coming-back";
+  return "go";
+}
+
 /** The place name to look a lot up by.
  *
  *  `unitFromHint` wants a string it can read both a property and a lot
@@ -194,6 +223,11 @@ export type RepairResult = {
    *  a thread that has been mended no longer counts as unidentified, so
    *  the next run starts where this one stopped. */
   more: boolean;
+  /** Why it stopped early, where it did. `"nothing-coming-back"` means
+   *  Rent Manager is answering and telling us nothing, which is a
+   *  different problem from running out of time and is not worth
+   *  spending three hundred round trips to confirm. */
+  stopped: "time" | "nothing-coming-back" | null;
   /** Every path tried for the first web-user lookup, so a run that mends
    *  nothing names the guesses rather than just not working. */
   whoTried?: WhoAttempt[];
@@ -288,7 +322,7 @@ export async function repairIssues(
   const blank: RepairResult = {
     ok: false, signedIn: false, dryRun,
     unidentified: 0, looked: 0, found: 0, mended: 0, placed: 0, merged: 0,
-    failed: 0, more: false, samples: [], error: null,
+    failed: 0, more: false, stopped: null, samples: [], error: null,
   };
 
   const db = supabaseAdmin();
@@ -318,8 +352,19 @@ export async function repairIssues(
   const readAs: Record<string, string> = {};
   const people = new Map<string, Who>();
 
+  /* This runs by itself now, every few minutes, whenever somebody opens
+     the inbox. If Rent Manager will not turn a web user id into a person
+     on this account, then every one of three hundred threads is a round
+     trip spent learning the same thing -- forever, and against somebody's
+     live property-management system. So a run getting nothing stops and
+     says so. Not a permanent decision: the next run starts from the top
+     and picks straight back up the moment the lookup answers, at a cost
+     of eight requests rather than three hundred. */
+  let blanksInARow = 0;
+
   for (const h of todo.slice(0, opts.limit ?? 500)) {
-    if (Date.now() > until) { out.more = true; break; }
+    const verdict = keepGoing({ blanksInARow, now: Date.now(), until });
+    if (verdict !== "go") { out.more = true; out.stopped = verdict; break; }
     out.looked += 1;
 
     let issue: Issue | null;
@@ -328,6 +373,10 @@ export async function repairIssues(
     } catch { issue = null; }
     if (!issue) {
       out.failed += 1;
+      // A request Rent Manager will not hand back counts towards giving
+      // up too. Otherwise a run that can reach nothing at all walks the
+      // whole list to find that out.
+      blanksInARow += 1;
       continue;
     }
 
@@ -360,7 +409,10 @@ export async function repairIssues(
     const place = placeOf({ property, unit });
     const mend = mendFor(h, { tenant, phone, email, place });
     const wantsLot = !h.unitId && Boolean(place ?? h.placeHint);
-    if (!Object.keys(mend).length && !wantsLot) continue;
+    if (!Object.keys(mend).length && !wantsLot) { blanksInARow += 1; continue; }
+    /* THE RESET. Without it the count is of blanks in the whole run, not
+       in a row, and a backlog with scattered misses gives up at once. */
+    blanksInARow = 0;
     out.found += 1;
 
     const rec: Mended = {

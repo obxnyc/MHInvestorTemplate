@@ -17,6 +17,8 @@ import { useRouter } from "next/navigation";
 export default function PullNew() {
   const router = useRouter();
   const [filed, setFiled] = useState(0);
+  const [mended, setMended] = useState(0);
+  const [stillBlank, setStillBlank] = useState(0);
   const [needs, setNeeds] = useState<string | null>(null);
   /* React runs effects twice in development. Without this the second run is
      refused by the lock and looks like working code, which is the worst way
@@ -34,8 +36,12 @@ export default function PullNew() {
       const out = await res.json().catch(() => null);
       if (!out || !alive) return;
       if (out.needs) { setNeeds(out.needs); return; }
-      if (out.filed > 0) {
-        setFiled(out.filed);
+      if (out.mended > 0) {
+        setMended(out.mended);
+        setStillBlank(out.stillBlank ?? 0);
+      }
+      if (out.filed > 0) setFiled(out.filed);
+      if (out.filed > 0 || out.mended > 0) {
         // The new rows are on the server; the list on screen is older than it.
         router.refresh();
       }
@@ -44,7 +50,31 @@ export default function PullNew() {
   }, [router]);
 
   if (needs) return <p className="pullnote warn">{needs}</p>;
-  if (!filed) return null;
+
+  /* THE TIDYING IS WORTH SAYING, AND ONLY WHILE IT IS HAPPENING.
+   *
+   * Requests pulled from Rent Manager arrive with no tenant, no number
+   * and no lot -- the issue record carries none of them. They are being
+   * filled in a dozen at a time, by itself, whenever somebody opens this
+   * page. Nobody presses anything.
+   *
+   * Said while there is progress to report and silent otherwise. A line
+   * that appears every single time is a line that stops being read, and
+   * this one is only interesting while the backlog is going down. */
+  if (!filed && !mended) return null;
+
+  if (!filed && mended) {
+    return (
+      <p className="pullnote">
+        {mended === 1
+          ? "Filled in the tenant and address on 1 older maintenance request."
+          : `Filled in the tenant and address on ${mended} older maintenance`
+            + " requests."}
+        {stillBlank > 0 && ` ${stillBlank} still to go — they fill in`
+          + " as you work, a few each time you open this page."}
+      </p>
+    );
+  }
 
   /* ANYTHING THIS FINDS IS SOMETHING THE EMAIL MISSED.
    *
@@ -63,6 +93,9 @@ export default function PullNew() {
       {filed === 1
         ? "1 maintenance request came in from Tenant Web Access."
         : `${filed} maintenance requests came in from Tenant Web Access.`}
+      {mended > 0 && ` Filled in the tenant and address on ${mended} older`
+        + ` one${mended === 1 ? "" : "s"}${stillBlank > 0
+            ? `, ${stillBlank} still to go` : ""}.`}
       {" "}
       <a href="/setup">
         These were found by checking Rent Manager directly. If the email
