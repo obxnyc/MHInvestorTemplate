@@ -8,7 +8,7 @@ type Opt = { id: string; label?: string; name?: string };
  *
  * Public, and deliberately short: a plumber fills this in on a phone between
  * jobs, and every field that is not needed to ring them back is a field that
- * loses somebody halfway. Insurance and licence are recorded as what they say,
+ * loses somebody halfway. Insurance and license are recorded as what they say,
  * because that is what they are until the office checks.
  */
 export default function TradeApply() {
@@ -124,7 +124,7 @@ export default function TradeApply() {
         </fieldset>
 
         <fieldset>
-          <legend>Insurance and licence</legend>
+          <legend>Insurance and license</legend>
           <label className="check">
             <input type="checkbox" checked={insured}
                    onChange={(e) => setInsured(e.target.checked)} />
@@ -133,7 +133,7 @@ export default function TradeApply() {
           <label className="check">
             <input type="checkbox" checked={licensed}
                    onChange={(e) => setLicensed(e.target.checked)} />
-            <span>I hold a licence for the work I do</span>
+            <span>I hold a license for the work I do</span>
           </label>
           <label htmlFor="lr">Licence number <span className="hint">if you have one</span></label>
           <input id="lr" value={licenseRef} onChange={(e) => setLicenseRef(e.target.value)} />

@@ -134,7 +134,7 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
                of. Saying that is more use than a button that quietly does
                nothing. */
             <p className="authnote">
-              We do not recognise this link. Ask the office to text you a new
+              We do not recognize this link. Ask the office to text you a new
               one.
             </p>
           )}
