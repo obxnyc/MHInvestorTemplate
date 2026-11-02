@@ -516,6 +516,47 @@ export async function importFromRentManager(
     tally.properties.seen++;
 
     let parkId = g.propertyId;
+
+    /* IS IT LINKED, OR DOES IT EXIST? Two different questions.
+     *
+     * This only ever asked the first. A group with no `property_id` got
+     * a brand new park -- so an import run against a database that
+     * already held The Retreat made a SECOND The Retreat, with the
+     * Rent Manager lots on it and none of the map. Four parks became
+     * eight in one press, and the duplicate carrying the real lots was
+     * the one WITHOUT the sixty homes somebody had placed by hand.
+     *
+     * Nothing failed. Both records look like parks.
+     *
+     * The link is how a park is recognised and it is not the only way:
+     * a park already here under the same name is the same park. Found,
+     * it is adopted and the link written, so the question is only ever
+     * asked once.
+     *
+     * Matched on the name alone, not the address -- a park's gate
+     * address is typed by hand and was wrong on Cross Creek the first
+     * time, and matching on a field somebody can mistype would make a
+     * typo silently mint a second park, which is the bug this is for. */
+    if (!parkId) {
+      const { data: already } = await db.from("properties")
+        .select("id").eq("kind", "mhp").eq("name", name).limit(2);
+      // Two parks of one name is a question, not a match -- the same
+      // refusal `matchPlace` makes about two houses at one address.
+      if (already?.length === 1) {
+        parkId = String(already[0]!.id);
+        if (!dryRun) {
+          await db.from("rm_groups")
+            .update({ property_id: parkId }).eq("name", groupName);
+        }
+        notes.push(`"${name}" was already here, so it was used rather than`
+          + " a second one being made.");
+      } else if ((already?.length ?? 0) > 1) {
+        notes.push(`There is more than one park called "${name}" here, so`
+          + " this group was left alone rather than guessing which.");
+        continue;
+      }
+    }
+
     if (!parkId) {
       const known = [...propByCode.keys()];
       const code = nextCode("MHP", [...takenCodes, ...known]);

@@ -159,6 +159,71 @@ t("it is only created when the property truly has none, asked of the database",
   + "nothing and gives the house a second one, then a third -- and the "
   + "import is pressed more than once by design");
 
+/* ---------------------------------- a park that is already here
+ *
+ * The import made four parks into eight in one press. It asked "is
+ * this group linked to a park?" and, finding no link, created one --
+ * never asking whether that park was already in the database under
+ * the same name. The duplicate carried the Rent Manager lots and the
+ * original carried sixty homes placed by hand, so the one that looked
+ * freshly correct was the one with no map on it.
+ *
+ * Nothing failed. Both records look like parks. Source rules, because
+ * the lookup is a database read.
+ */
+const parks = (() => {
+  const i = raw.indexOf("let parkId = g.propertyId;");
+  if (i < 0) return "";
+  const rest = raw.slice(i);
+  const end = rest.indexOf("const vacant = vacantSet");
+  return end < 0 ? rest.slice(0, 4000) : rest.slice(0, end);
+})();
+
+t("the park block can still be found",
+  () => parks.length > 0 && /nextCode\("MHP"/.test(parks),
+  "every rule below reads this block");
+
+t("an unlinked group looks for the park before making one",
+  () => /\.eq\("kind", "mhp"\)[\s\S]{0,120}\.eq\("name", name\)/.test(parks),
+  "asking only whether the group is LINKED is the narrower question, "
+  + "and it answers it by minting a second park");
+
+/* THE ADOPTION BRANCH ALONE.
+ *
+ * Asked of the whole park block, this passed with the write deleted --
+ * because there is a SECOND `rm_groups` update further down, the one
+ * that runs after a park is created, and the pattern found that
+ * instead. The anchor ran past the branch it was about, which is the
+ * third time that exact mistake has been made in this codebase.
+ *
+ * Cut to the branch, then match inside it. */
+const adopt = (() => {
+  const i = parks.indexOf("if (already?.length === 1)");
+  if (i < 0) return "";
+  const rest = parks.slice(i);
+  const end = rest.indexOf("} else if");
+  return end < 0 ? rest : rest.slice(0, end);
+})();
+
+t("the branch that adopts an existing park can be found",
+  () => adopt.length > 0 && /parkId = /.test(adopt),
+  "without this the rule below passes by matching the wrong block");
+
+t("adopting it writes the link, so it is only looked up once",
+  () => /from\("rm_groups"\)[\s\S]{0,160}property_id: parkId/.test(adopt),
+  "unwritten, every later import repeats the lookup -- and the moment "
+  + "the name is edited it stops matching and mints a duplicate again");
+
+t("two parks of one name is refused, not guessed between",
+  () => /length\s*\?\?\s*0\)\s*>\s*1|length\s*>\s*1/.test(parks)
+     && /continue;/.test(parks),
+  "the same refusal matchPlace makes about two houses at one address");
+
+t("the match is on the name, not on the hand-typed gate address",
+  () => !/\.eq\("address"/.test(parks),
+  "Cross Creek's gate address was wrong on the first attempt; matching "
+  + "on a field somebody mistypes makes a typo mint a second park");
+
 let failed = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);
