@@ -40,9 +40,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = await req.json().catch(() => null) as {
     pack?: unknown; title?: unknown; docCount?: unknown;
     toName?: unknown; toEmail?: unknown; toPhone?: unknown;
+    deal?: unknown;
   } | null;
 
   const pack = typeof body?.pack === "string" ? body.pack : "";
+  const deal = body?.deal;
+  /* Why the deal was not kept, where it was not. Reported rather than
+     thrown: see below. */
+  let draftSaid: string | null = null;
   const title = String(body?.title ?? "").trim() || "Your documents";
   const toName = String(body?.toName ?? "").trim();
   const toEmail = String(body?.toEmail ?? "").trim() || null;
@@ -83,6 +88,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       { error: noTable(error) ? NEEDS : error.message }, { status: 400 });
   }
 
+  /* SENDING IT KEEPS IT. The pack frozen above is the document and says
+     nothing about the terms behind it -- the switches, the reserve, the
+     descriptions, which template. Saving the draft was a separate button
+     somebody had to remember, so a pack went out for seven homes and the
+     setup that produced it was never written down: the screen read back
+     from the code's defaults the next morning and the one term that had
+     been changed by hand was gone. Sending is the moment the terms are
+     final, so it is the moment they are kept.
+
+     Deliberately after the pack is stored and deliberately not fatal: a
+     pack that went out and a draft that did not save is a bad morning,
+     and refusing the send over it would be a worse one. */
+  if (deal && typeof deal === "object" && !Array.isArray(deal)) {
+    const kept = await supabaseAdmin().from("deal_drafts").upsert({
+      owner_id: id, deal, updated_at: new Date().toISOString(),
+      by_staff: staff.id,
+    }, { onConflict: "owner_id" });
+    if (kept.error) draftSaid = kept.error.message;
+  }
+
   const link = `${publicBase(req)}/sign/${tok}`;
   const from = staff.full_name || "Larabee Homes";
 
@@ -113,5 +138,5 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
-  return NextResponse.json({ ok: true, link, went, failed, slots });
+  return NextResponse.json({ ok: true, link, went, failed, slots, draftSaid });
 }

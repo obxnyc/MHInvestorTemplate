@@ -5,6 +5,7 @@ import { describe, homeSentence } from "@/lib/describe";
 import { DEFAULTS, TEMPLATES, templateOf, pack, docKey, money0, payment,
          firstOfMonthAfter,
          type Terms, type Home } from "@/lib/papers";
+import { applyHouse, houseStandard } from "@/lib/house-terms";
 
 /** One executed document on file against a recorded sale. */
 type Paper = {
@@ -102,6 +103,22 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   /** False when migration 046 has not been run. Not the same as no draft. */
   const [canKeep, setCanKeep] = useState(true);
 
+  /* THE TERMS WE ALWAYS USE. Six investors in a row want the same late
+     fee, the same grace period, the same notice period and the same
+     lease, and re-choosing each of them on each screen is how two
+     investors end up with terms that differ because somebody retyped
+     one. The standard is laid UNDER the figures read off the homes and
+     UNDER a draft left on the screen, so it decides what nobody retypes
+     and decides nothing belonging to one sale. */
+  const [house, setHouse] = useState<Partial<Terms> | null>(null);
+  /** Whether the standard has answered. Null is "not yet", not "none". */
+  const [houseRead, setHouseRead] = useState(false);
+  const [houseAt, setHouseAt] = useState<string | null>(null);
+  /** False when migration 049 has not been run. Not the same as no standard. */
+  const [canHouse, setCanHouse] = useState(true);
+  const [houseBusy, setHouseBusy] = useState(false);
+  const [houseSaid, setHouseSaid] = useState<string | null>(null);
+
   /* OUR SIDE, SIGNED BEFORE IT GOES OUT. Kept once and read back here, so
      it never travels in the deal draft: it is the same mark on every
      document and there is no reason for a copy of it per investor. */
@@ -138,6 +155,8 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     voided_at: string | null;
   };
   const [sent, setSent] = useState<Sent[]>([]);
+  /** Which already-sent pack is being fetched to read. */
+  const [reading, setReading] = useState<string | null>(null);
   const [canList, setCanList] = useState(true);
   const [pulling, setPulling] = useState<string | null>(null);
   /** Set once from the first sale, so re-rendering does not overwrite
@@ -231,6 +250,27 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     finally { setInkBusy(false); }
   };
 
+  /* THE STANDARD IS READ BEFORE ANYTHING IS SEEDED, for the same reason
+     the draft is: laying it over figures already on screen would flash
+     the wrong ones and race the seed. It is read on every owner screen
+     and not only on an empty one, because the Save button below writes
+     it and the line beside that button says when it was last set. */
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/house-terms", { cache: "no-store" });
+        const out = await res.json().catch(() => ({}));
+        if (gone) return;
+        if (out.keeping === false) setCanHouse(false);
+        if (out.terms) { setHouse(out.terms as Partial<Terms>); }
+        setHouseAt(out.savedAt ?? null);
+      } catch { /* the screen still works; it simply has no standard */ }
+      if (!gone) setHouseRead(true);
+    })();
+    return () => { gone = true; };
+  }, []);
+
   /* THE DRAFT COMES FIRST. Seeding from the recorded sales and then
      laying the draft over it would flash the wrong figures and, worse,
      race it. So nothing is seeded until this has answered. */
@@ -271,11 +311,14 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     // investor with nothing recorded yet is the one buying their first
     // home, and the buyer's name and today's date are the two things the
     // papers need most.
-    if (seeded || !owner || asking || !draftRead) return;
+    if (seeded || !owner || asking || !draftRead || !houseRead) return;
     const first: Held | undefined = homes[0];
     const today = new Date().toISOString().slice(0, 10);
     setTerms((was) => ({
-      ...was,
+      /* The standard first, the sale's own figures over the top. A rate
+         or a lot rent recorded against the home is this deal's answer and
+         outranks the one every deal starts from. */
+      ...applyHouse(was, house),
       buyer: owner.legal_name?.trim() || owner.name,
       parkName: first?.parkName || was.parkName,
       agreedOn: first?.soldOn ?? today,
@@ -292,7 +335,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     }));
     setPicked(Object.fromEntries(homes.map((h) => [h.saleId, true])));
     setSeeded(true);
-  }, [seeded, owner, asking, draftRead, homes]);
+  }, [seeded, owner, asking, draftRead, houseRead, house, homes]);
 
   const chosen = useMemo(
     () => homes.filter((h) => picked[h.saleId]), [homes, picked]);
@@ -437,8 +480,36 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     } finally { setPulling(null); }
   };
 
+  /**
+   * Open a pack that has already gone out, as it stands.
+   *
+   * The signed copy where there is one, because once signed that IS the
+   * document -- and the office had no way to see it at all: the list
+   * said "Signed by ALDERCREST" and stopped there. Opened as a blob in
+   * a tab of its own rather than drawn into this page, so what is on
+   * screen is the frozen file and nothing here can edit it.
+   */
+  const readPack = async (id: string) => {
+    setReading(id); setSendSaid(null);
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/sent?pack=${id}`,
+        { cache: "no-store" });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.pack) {
+        setSendSaid(out.error ?? "That could not be opened."); return;
+      }
+      const url = URL.createObjectURL(
+        new Blob([out.pack as string], { type: "text/html" }));
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setSendSaid(e instanceof Error ? e.message : "That could not be opened.");
+    } finally { setReading(null); }
+  };
+
   const sendIt = async () => {
     setSendBusy(true); setSendSaid(null); setSentLink(null);
+    const body = dealText;
     try {
       const res = await fetch(`/api/owners/${ownerId}/send`, {
         method: "POST", headers: { "content-type": "application/json" },
@@ -451,6 +522,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
           toName: sendTo.name.trim() || terms.buyer,
           toEmail: sendTo.email.trim(),
           toPhone: sendTo.phone.trim(),
+          /* Sending is the moment the terms are final, so the draft goes
+             with the pack and Save stops being a thing to remember. */
+          deal,
         }),
       });
       const out = await res.json().catch(() => ({}));
@@ -459,6 +533,15 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       }
       setSentLink(out.link ?? null);
       setSentHow(Array.isArray(out.went) ? out.went : []);
+      /* Marked as kept against the text that was SENT, the same as the
+         Save button, and only where the server did not say otherwise --
+         a draft reported as saved when it was not is the fault this is
+         here to fix, wearing different clothes. */
+      if (!out.draftSaid) {
+        setBaseline(body);
+        setDrafted(true);
+        setSavedAt(new Date().toISOString());
+      }
       await readSent();
       /* WHAT WENT AND WHAT DID NOT, both. A link that exists and was not
          delivered is one copy-and-paste from fixed; a link reported as
@@ -466,6 +549,14 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       if (Array.isArray(out.failed) && out.failed.length) {
         setSendSaid(`The link was made but not delivered — ${out.failed.join("; ")}.`
           + " Send them the link below yourself.");
+      }
+      /* The pack went and the terms behind it did not save. Said out
+         loud, because the screen would otherwise look exactly as it does
+         when both worked, and Save is one press away. */
+      if (out.draftSaid) {
+        setSendSaid((was) => `${was ? was + " " : ""}The documents went, but`
+          + ` the terms behind them were not kept — ${out.draftSaid}.`
+          + " Press Save above.");
       }
     } catch (e) {
       setSendSaid(e instanceof Error ? e.message : "That did not send.");
@@ -602,6 +693,52 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     }
   };
 
+  /**
+   * Make what is on screen the terms every future deal starts from.
+   *
+   * The buyer, the date agreed, the date the lease runs from and the park
+   * are stripped on the way out of here and again in the route, because a
+   * standard carrying one investor's name would put that name on the next
+   * investor's contract.
+   */
+  const keepHouse = async () => {
+    setHouseBusy(true); setHouseSaid(null);
+    const sending = houseStandard(terms);
+    try {
+      const res = await fetch("/api/house-terms", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ terms: sending }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) {
+        setHouseSaid(out.error ?? "That did not save."); return;
+      }
+      /* Held against what was SENT, not against the screen as it is by
+         the time the answer comes back. */
+      setHouse(sending);
+      setHouseAt(out.savedAt ?? new Date().toISOString());
+      setHouseSaid("Kept. Every new investor starts from these.");
+    } catch (e) {
+      setHouseSaid(e instanceof Error ? e.message : "That did not save.");
+    } finally { setHouseBusy(false); }
+  };
+
+  /** Pull the standard over the screen, for one already filled in. */
+  const useHouse = () => {
+    if (!house) return;
+    setTerms((was) => applyHouse(was, house));
+    setHouseSaid("The standard is on the screen. Nothing is saved until"
+      + " you press Save.");
+  };
+
+  /** Whether the screen already matches the standard, term for term. */
+  const matchesHouse = useMemo(() => {
+    if (!house) return false;
+    const now = houseStandard(terms) as Record<string, unknown>;
+    return Object.entries(houseStandard(house)).every(
+      ([k, v]) => JSON.stringify(now[k]) === JSON.stringify(v));
+  }, [house, terms]);
+
   const set = (change: Partial<Terms>) => setTerms((was) => ({ ...was, ...change }));
   const num = (v: string) => (v === "" ? 0 : Number(v));
 
@@ -736,6 +873,90 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <Executed key={h.saleId} home={h} papers={filed[h.saleId] ?? []}
                       onChanged={() => { void load(); }} />
           ))}
+        </div>
+      )}
+
+      {(sent.length > 0 || !canList) && (
+        <div className="ownerpapers noprint">
+          {/* WHAT HAS ALREADY GONE OUT. This used to live INSIDE the send
+            panel, which is the one place it is no use: the panel opens
+            off a button that is disabled until homes are ticked, so on
+            an investor whose pack had already gone there was no path to
+            it at all. Two packs sat against ALDERCREST for a week with
+            nothing on any screen saying so.
+
+            A link lives for a fortnight and a signed copy lives for
+            good; neither should be a thing you have to remember. */}
+          {sent.length > 0 && (
+            <div className="sentlist">
+              <h2>Sent for signing</h2>
+              <table className="ownertbl">
+                <thead>
+                  <tr><th>To</th><th>Sent</th><th>Where it stands</th><th /></tr>
+                </thead>
+                <tbody>
+                  {sent.map((r) => {
+                    const expired = Date.parse(r.expires_at) < Date.now();
+                    const where = r.signed_at
+                      ? `Signed by ${r.signed_name ?? r.to_name}`
+                      : r.voided_at ? "Withdrawn — the link no longer works"
+                      : expired ? "Expired"
+                      : r.opened_at ? "Opened, not signed yet"
+                      : "Sent, not opened yet";
+                    const open = !r.signed_at && !r.voided_at && !expired;
+                    return (
+                      <tr key={r.id}>
+                        <td>
+                          <strong>{r.to_name}</strong><br />
+                          <span className="dim">
+                            {r.to_email || r.to_phone}
+                            {" · "}{r.doc_count} document
+                            {r.doc_count === 1 ? "" : "s"}
+                          </span>
+                        </td>
+                        <td>{new Date(r.sent_at).toLocaleDateString("en-US",
+                          { dateStyle: "medium" })}</td>
+                        <td className={r.signed_at ? "parkok"
+                          : r.voided_at || expired ? "dim" : ""}>{where}</td>
+                        <td className="sentacts">
+                          {!r.voided_at && (
+                            <button type="button" className="btn"
+                                    disabled={reading === r.id}
+                                    onClick={() => void readPack(r.id)}>
+                              {reading === r.id ? "Opening…"
+                                : r.signed_at ? "Read the signed copy"
+                                : "Read what was sent"}
+                            </button>
+                          )}
+                          {open && (
+                            <button type="button" className="btn"
+                                    disabled={pulling === r.id}
+                                    onClick={() => void pullBack(r.id)}>
+                              {pulling === r.id ? "Withdrawing…" : "Withdraw"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="dim">
+                Withdrawing stops the link working. A set somebody has
+                already signed cannot be withdrawn here — they are
+                holding a copy of it. A signed set is kept exactly as it
+                was signed and nothing on this screen can change it; the
+                link it went out on keeps working for them for good, so
+                both sides are reading the same copy.
+              </p>
+            </div>
+          )}
+          {!canList && (
+            <p className="dim">
+              What has been sent cannot be listed until migration 048 is
+              run on the database.
+            </p>
+          )}
         </div>
       )}
 
@@ -992,6 +1213,41 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
               {TEMPLATES.find((x) => x.key === templateOf(terms))?.blurb}
             </p>
 
+            {/* THE TERMS WE ALWAYS USE. A template is a starting point
+                that ships with the app; this is the answer this company
+                has settled on, and it is what the next investor opens
+                with. Only the terms travel -- the buyer, the dates and
+                the park stay with the deal they belong to. */}
+            <div className="tplrow housrow">
+              <span className="tpllabel">The terms we always use</span>
+              <button type="button" className="chip"
+                      disabled={houseBusy || !canHouse}
+                      onClick={() => void keepHouse()}>
+                {houseBusy ? "Keeping…" : "Make these the standard"}
+              </button>
+              <button type="button" className="chip"
+                      disabled={!house || matchesHouse}
+                      onClick={useHouse}>
+                Use the standard
+              </button>
+            </div>
+            <p className={houseSaid ? "tplsays houssaid" : "dim tplsays"}>
+              {houseSaid ? houseSaid
+                : !canHouse
+                  ? "Nothing is being kept: the standard needs migration 049"
+                    + " run on the database."
+                : !house
+                  ? "No standard set yet. Fill the terms in below and press"
+                    + " Make these the standard, and every investor after"
+                    + " this one starts from them."
+                : matchesHouse
+                  ? `These are the standard${houseAt
+                      ? `, set ${new Date(houseAt).toLocaleString("en-US",
+                          { dateStyle: "medium", timeStyle: "short" })}` : ""}.`
+                  : "This deal differs from the standard. Use the standard"
+                    + " to pull it back, or make these the new one."}
+            </p>
+
             <div className="tabsrow">
               {(["both", "purchase", "lease"] as const).map((k) => (
                 <button key={k} type="button"
@@ -1162,68 +1418,6 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                   <span className="dim">Sent to {sentHow.join(" and ")}.</span>
                 )}
               </div>
-              {/* WHAT HAS ALREADY GONE OUT, and a way to stop it. Without
-                  this a link lives for a fortnight with nothing on screen
-                  saying it exists -- which makes sending one to try it
-                  out a thing nobody dares do twice. */}
-              {sent.length > 0 && (
-                <div className="sentlist">
-                  <h3>Already sent</h3>
-                  <table className="ownertbl">
-                    <thead>
-                      <tr><th>To</th><th>Sent</th><th>Where it stands</th><th /></tr>
-                    </thead>
-                    <tbody>
-                      {sent.map((r) => {
-                        const expired = Date.parse(r.expires_at) < Date.now();
-                        const where = r.signed_at
-                          ? `Signed by ${r.signed_name ?? r.to_name}`
-                          : r.voided_at ? "Withdrawn — the link no longer works"
-                          : expired ? "Expired"
-                          : r.opened_at ? "Opened, not signed yet"
-                          : "Sent, not opened yet";
-                        const open = !r.signed_at && !r.voided_at && !expired;
-                        return (
-                          <tr key={r.id}>
-                            <td>
-                              <strong>{r.to_name}</strong><br />
-                              <span className="dim">
-                                {r.to_email || r.to_phone}
-                                {" · "}{r.doc_count} document
-                                {r.doc_count === 1 ? "" : "s"}
-                              </span>
-                            </td>
-                            <td>{new Date(r.sent_at).toLocaleDateString("en-US",
-                              { dateStyle: "medium" })}</td>
-                            <td className={r.signed_at ? "parkok"
-                              : r.voided_at || expired ? "dim" : ""}>{where}</td>
-                            <td>
-                              {open && (
-                                <button type="button" className="btn"
-                                        disabled={pulling === r.id}
-                                        onClick={() => void pullBack(r.id)}>
-                                  {pulling === r.id ? "Withdrawing…" : "Withdraw"}
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <p className="dim">
-                    Withdrawing stops the link working. A set somebody has
-                    already signed cannot be withdrawn here — they are
-                    holding a copy of it.
-                  </p>
-                </div>
-              )}
-              {!canList && (
-                <p className="dim">
-                  What has been sent cannot be listed until migration 048 is
-                  run on the database.
-                </p>
-              )}
 
               {sentLink && (
                 <label className="signname">The link, if you would rather send it yourself
@@ -1233,6 +1427,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
               )}
             </div>
           )}
+
 
           {forPapers.length > 0 && (
             <div className="paper" dangerouslySetInnerHTML={{ __html: built }} />
@@ -1294,6 +1489,29 @@ function Executed(
 ) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /* Offered as the first of the month after the sale, because that is
+     how every deal here is written -- but offered, not assumed: it is a
+     date on somebody's note and the screen does not get to decide it. */
+  const [due, setDue] = useState(
+    () => (home.soldOn ? firstOfMonthAfter(home.soldOn) : ""));
+
+  async function dateIt(on: string) {
+    setBusy(true); setProblem(null);
+    try {
+      const res = await fetch(`/api/units/${home.unitId}/sale`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "due", firstDueOn: on }),
+      });
+      const out = await res.json().catch(() => ({}));
+      /* Nothing on screen changes until the server says it took it. */
+      if (!res.ok || !out.ok) {
+        setProblem(out.error ?? "That date did not save."); return;
+      }
+      onChanged();
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "That date did not save.");
+    } finally { setBusy(false); }
+  }
   const loan = loanOf(home);
 
   async function take(files: FileList | null, kind: string) {
@@ -1350,6 +1568,23 @@ function Executed(
                 Needs {loan.missing.join(", ")} — the schedule cannot be
                 worked out without {loan.missing.length === 1 ? "it" : "them"}
               </span>
+            )}
+            {/* THE FIELD GOES WHERE THE WARNING IS. It said what was
+                missing and the only place to supply it was the lot card
+                -- a different screen, one per home, seven trips for one
+                investor. A screen that reports a state and offers no way
+                to act on it is the same fault as fitting inside the
+                boundary being reachable only from the county lookup. */}
+            {!home.firstDueOn && (
+              <label className="duefix">
+                First payment
+                <input type="date" disabled={busy || !home.unitId}
+                       value={due} onChange={(e) => setDue(e.target.value)} />
+                <button type="button" className="btn" disabled={busy || !due}
+                        onClick={() => void dateIt(due)}>
+                  {busy ? "Saving…" : "Save"}
+                </button>
+              </label>
             )}
           </>
         )}

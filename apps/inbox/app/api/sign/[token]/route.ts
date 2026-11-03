@@ -27,7 +27,12 @@ const PICK = "id, title, pack, to_name, expires_at, signed_at, signed_pack,"
 function why(row: Row | null): string | null {
   if (!row) return "This link is not one of ours, or it has been replaced.";
   if (row.voided_at) return "These documents were withdrawn and are no longer for signing.";
-  if (Date.parse(row.expires_at) < Date.now()) {
+  /* A SIGNED PACK NEVER EXPIRES. The fortnight is the window to sign in,
+     not a lease on the right to read what you signed -- and this closed
+     over the signed copy too, so a fortnight after signing the investor
+     opened their own executed contract and was told the link had run
+     out. There is no other copy on their side: this IS the vault. */
+  if (!row.signed_at && Date.parse(row.expires_at) < Date.now()) {
     return "This link has expired. Ask for a new one and it will be sent straight over.";
   }
   return null;

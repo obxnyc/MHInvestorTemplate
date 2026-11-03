@@ -2055,6 +2055,11 @@ a.metric:hover{border-color:var(--accent)}
 .tpllabel{font-size:.68rem;font-weight:700;color:var(--faint);
   text-transform:uppercase;letter-spacing:.06em;margin-right:.2rem}
 .tplsays{font-size:.8rem;margin:0 0 .6rem}
+/* The terms we always use. Its own class rather than `.check`, which is
+   already the setup page's result card -- borrowing a state name is how a
+   tick beside a sentence ended up wearing a bordered panel on six screens. */
+.housrow{margin-top:.2rem}
+.houssaid{color:var(--accent);font-weight:600}
 
 /* The three hands a typed signature can be written in. Self-hosted, so a
    signature is the same on every machine and does not depend on anybody
@@ -2255,6 +2260,17 @@ a.metric:hover{border-color:var(--accent)}
    furniture, it is miserable to sit beside while typing, and it tells
    nobody WHICH field is missing -- the words do that, which is the part
    that saves the trip. */
+/* The field goes where the warning is: a first payment date was only
+   enterable on the lot card, one screen per home. */
+.duefix{display:inline-flex;align-items:center;gap:.4rem;font-size:.74rem;
+  font-weight:700;color:var(--faint);text-transform:uppercase;
+  letter-spacing:.06em;flex-wrap:wrap}
+.duefix input{min-width:0;width:auto;font-size:.82rem;font-weight:400;
+  text-transform:none;letter-spacing:0;color:var(--ink)}
+.duefix .btn{font-size:.74rem;padding:.25rem .6rem}
+/* Two buttons in the last cell of the sent table, which wraps on a phone. */
+.sentacts{display:flex;gap:.35rem;flex-wrap:wrap}
+
 .needsyou{display:block;margin:.1rem 0;padding:.4rem .6rem;
   border-left:4px solid var(--warn);border-radius:0 8px 8px 0;
   background:var(--warn-soft);color:var(--warn);
