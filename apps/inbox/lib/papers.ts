@@ -143,7 +143,13 @@ export const DEFAULTS: Terms = {
   payMethod: "wire transfer or in certified funds payable to Seller or designee",
   lotRent: 500,
   consulting: 50,
-  reserve: 750,
+  /* $500 A LOT, UP TO $2,500. Both figures are the attorney's draft,
+     word for word: "a reserve fund in the amount of $500.00 (Five
+     Hundred Dollars) for each Lot leased by Homeowner in the Park (up to
+     a maximum of $2,500.00 in the aggregate)". This said 750, which came
+     from nowhere -- the old generator says $500 as well, and the only
+     papers that ever carried $750 are the ALDERCREST pack. */
+  reserve: 500,
   reserveCap: 2500,
   leaseForm: "house",
   noticeDays: 60,
