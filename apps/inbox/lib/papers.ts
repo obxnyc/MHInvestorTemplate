@@ -200,7 +200,7 @@ export const TEMPLATES: Template[] = [
     key: "investor",
     name: "Investor-friendly",
     blurb: "Their lease: a 33% ceiling on rent rises, 180 days if the park"
-      + " is sold, subletting allowed. No escalation, 90 days' notice,"
+      + " is sold, subletting allowed. No escalation, 60 days' notice,"
       + " 15 days to match an offer.",
     changes: {
       escalate: false,
@@ -213,9 +213,13 @@ export const TEMPLATES: Template[] = [
          a chip was selected. What makes this template investor-friendly
          now is the LEASE: the 33% ceiling on rent, 180 days if the park
          is sold, the right to sublet. */
-      late: true, graceDays: 15, lateFee: 100,
+      /* 60 days and 10 days, as the attorney's draft has them. These were
+         90 and 15 -- numbers chosen before that draft existed, quietly
+         overriding two terms somebody negotiated. Same fault as the lien:
+         a chip changing a term nobody chose. */
+      late: true, graceDays: 10, lateFee: 100,
       security: true, insure: true, amortize: true,
-      noticeDays: 90, rofrDays: 15, leaseForm: "investor",
+      noticeDays: 60, rofrDays: 15, leaseForm: "investor",
     },
   },
   {
@@ -407,6 +411,25 @@ export function notaryBlock(what: string): string {
   </div>`;
 }
 
+/**
+ * The first of the month after this date.
+ *
+ * THE LEASE AND THE PAYMENTS START ON A FIRST. A sale closes on whatever
+ * day it closes -- the 21st, the 27th -- and nothing good comes of a park
+ * collecting rent on fifty-nine different days of the month. So the lease
+ * runs from the first, the first payment falls on the first, and every
+ * payment after it lands on the first too.
+ *
+ * The month after, not the month of: a sale closed on the 21st does not
+ * owe a full month's rent ten days later.
+ */
+export function firstOfMonthAfter(iso: string): string {
+  if (!iso) return "";
+  const [y, m] = iso.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
+
 /** "August 27, 2026". The `longDate` form reads "the 27th day of August"
     and belongs after "made this the"; a payment that commences on one
     reads "commencing on 27th day of August", which is not English. The
@@ -461,7 +484,10 @@ export function ordinalDay(iso: string): string {
  */
 export function schedule(t: Terms) {
   const n = Math.max(1, Math.round((t.termYears || 20) * (t.perYear || 12)));
-  const first = plusMonths(t.agreedOn, 12 / (t.perYear || 12));
+  /* The first of the month after the agreement, not one month to the day
+     after it. Every instalment then falls on a first, and so does the
+     maturity date, because plusMonths off a first stays on a first. */
+  const first = firstOfMonthAfter(t.agreedOn);
   return { count: n, first, day: ordinalDay(first),
            maturity: plusMonths(first, n - 1) };
 }

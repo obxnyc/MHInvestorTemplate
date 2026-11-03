@@ -253,6 +253,36 @@ t("no clause was dropped on the way across", missing.length === 0,
   t("the installment count, the term, Schedule A and the Maturity Date agree",
     sentenceWrong.length === 0, sentenceWrong.slice(0, 3).join("; "));
 }
+/* THE LEASE AND THE PAYMENTS START ON A FIRST.
+   A sale closes on whatever day it closes. A park collecting on fifty-nine
+   different days of the month is a park nobody can reconcile, so the first
+   instalment, every instalment after it and the maturity date all land on
+   the first. Asked across a year-end and a month-end, because "add a
+   month" is where that arithmetic usually breaks. */
+{
+  const bad = [];
+  for (const on of ["2026-09-21", "2026-07-27", "2026-01-31", "2026-02-28",
+                    "2026-12-15", "2026-12-31"]) {
+    const sch = P.schedule({ ...P.DEFAULTS, agreedOn: on,
+      termYears: 30, perYear: 12 });
+    if (!sch.first.endsWith("-01")) bad.push(`${on}: first ${sch.first}`);
+    if (!sch.maturity.endsWith("-01")) bad.push(`${on}: maturity ${sch.maturity}`);
+    if (sch.day !== "1st") bad.push(`${on}: recurs on the ${sch.day}`);
+    /* The month AFTER: a sale closed on the 21st does not owe a full
+       month's rent ten days later. */
+    if (sch.first <= on) bad.push(`${on}: first payment ${sch.first} is not after it`);
+  }
+  t("every payment and the maturity date fall on the first of a month",
+    bad.length === 0, bad.slice(0, 3).join("; "));
+
+  /* The notice and grace the attorney drafted, on every template. */
+  for (const tpl of P.TEMPLATES) {
+    const n = tpl.changes.noticeDays ?? P.DEFAULTS.noticeDays;
+    const g = tpl.changes.graceDays ?? P.DEFAULTS.graceDays;
+    t(`${tpl.name} gives 60 days' notice and 10 days' grace`, n === 60 && g === 10);
+  }
+}
+
 /* NO TEMPLATE MAY GIVE AWAY THE SECURITY.
    Investor-friendly used to switch the late fee and the lien OFF, and that
    decision predated the attorney's draft, which carries both. Selecting a
