@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import SignaturePad from "@/components/SignaturePad";
 import { describe, homeSentence } from "@/lib/describe";
 import { DEFAULTS, TEMPLATES, templateOf, pack, docKey, money0, payment,
+         firstOfMonthAfter,
          type Terms, type Home } from "@/lib/papers";
 
 /** One executed document on file against a recorded sale. */
@@ -278,7 +279,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       buyer: owner.legal_name?.trim() || owner.name,
       parkName: first?.parkName || was.parkName,
       agreedOn: first?.soldOn ?? today,
-      leaseFrom: first?.soldOn ?? today,
+      /* A lease runs from the first of the month after the sale, not
+         from the day it closed. */
+      leaseFrom: firstOfMonthAfter(first?.soldOn ?? today),
       financed: first ? first.financed : was.financed,
       ratePct: first?.rateBps != null ? first.rateBps / 100 : was.ratePct,
       termYears: first?.termMonths ? Math.round(first.termMonths / 12) : was.termYears,
