@@ -65,17 +65,65 @@ export async function GET() {
     }
   }
 
+  /* WHERE EACH ONE'S PAPERS STAND. Until now the only way to find out
+     whether somebody had signed was to open their page -- so a list of
+     six investors said nothing at all about the one thing you check a
+     list of investors FOR.
+
+     Its own request again, and tolerated when it fails: signing_requests
+     arrives with migration 048, and an embed naming a table that is not
+     there would take the whole list down with it.
+
+     Newest first and the first one wins, because what matters is where
+     the LATEST pack stands -- an old withdrawn one does not describe
+     where a deal is. A withdrawn pack with nothing after it is skipped
+     rather than reported, for the same reason: it is not a state the
+     deal is in, it is a thing that was undone. */
+  const paper = new Map<string, { state: string; at: string }>();
+  let papers = false;
+  if (!error && owners.length) {
+    type Pack = {
+      owner_id: string | null; sent_at: string; expires_at: string;
+      opened_at: string | null; signed_at: string | null;
+      voided_at: string | null;
+    };
+    const got = await supabase.from("signing_requests")
+      .select("owner_id, sent_at, expires_at, opened_at, signed_at, voided_at")
+      .order("sent_at", { ascending: false });
+    if (!got.error) {
+      papers = true;
+      for (const r of (got.data ?? []) as Pack[]) {
+        if (!r.owner_id || paper.has(r.owner_id) || r.voided_at) continue;
+        paper.set(r.owner_id, {
+          state: r.signed_at ? "signed"
+            : Date.parse(r.expires_at) < Date.now() ? "expired"
+            : r.opened_at ? "opened" : "sent",
+          at: r.signed_at ?? r.opened_at ?? r.sent_at,
+        });
+      }
+    }
+  }
+
   return NextResponse.json({
     owners: owners.map((o) => {
       const run = held.get(o.id);
+      const pack = paper.get(o.id);
       return {
         ...o,
         homes: run?.homes ?? 0,
         owesCents: run?.owesCents ?? 0,
         parks: run ? [...run.parks].sort() : [],
+        /* Null is "nothing has gone out", which is a different answer
+           from "we cannot tell" -- see `papers` below. */
+        papers: pack?.state ?? null,
+        papersAt: pack?.at ?? null,
       };
     }),
     configured: !error,
+    /* Whether signing could be read at all, so the list can say nothing
+       rather than draw every investor as never having been sent
+       anything. */
+    papers,
     // Whether the holdings were readable at all, so a screen can say "not
     // recorded" rather than drawing every investor as holding nothing.
     holdings,

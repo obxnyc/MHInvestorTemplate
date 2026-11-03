@@ -119,6 +119,50 @@ const TABLES = {
     signed_at: null, signed_name: null, signed_png: null, signed_pack: null,
     signed_ip: null, signed_agent: null,
     voided_at: null, voided_by: null,
+  },
+  /* A WITHDRAWN PACK, NEWER THAN THE LIVE ONE. The investors list shows
+     where the latest pack stands, and a withdrawn pack is not a state a
+     deal is in -- it is a thing that was undone. With only the live row
+     here, "newest" and "newest that still counts" are the same row and
+     the fixture cannot tell a correct skip from no skip at all. This is
+     the real case: the first ALDERCREST pack went to the wrong address
+     and was withdrawn five minutes later. */
+  {
+    id: "sr0", token: "voided", owner_id: "ow1",
+    title: "Purchase Agreement and Park Land Lease",
+    doc_count: 2, pack: "<p>withdrawn</p>",
+    to_name: "Oak Ridge Holdings LLC", to_email: "wrong@example.com",
+    to_phone: null, sent_by: DESK,
+    sent_at: iso(now - 600e3),
+    expires_at: iso(now + 14 * 24 * 3600e3),
+    opened_at: null, agreed: false,
+    signed_at: null, signed_name: null, signed_png: null, signed_pack: null,
+    signed_ip: null, signed_agent: null,
+    voided_at: iso(now - 540e3), voided_by: DESK,
+  },
+  /* AND ONE THAT IS SIGNED, against the OTHER investor. "Signed" and
+     "sent, not opened" must not render the same -- which they did,
+     because `.pill` on its own has no ground and `.pill.ok` did not
+     exist. With every pack in the fixture unsigned, nothing could have
+     caught that.
+
+     Its expiry is in the PAST on purpose: a signed pack never expires,
+     and with the date in the future that rule has nothing to answer. */
+  {
+    id: "sr2", token: "signedpack", owner_id: "ow2",
+    title: "Purchase Agreement and Park Land Lease",
+    doc_count: 2,
+    pack: "<p>PURCHASE AGREEMENT</p>",
+    to_name: "Dale Prieto", to_email: "dale@example.com",
+    to_phone: null, sent_by: DESK,
+    sent_at: iso(now - 40 * 24 * 3600e3),
+    expires_at: iso(now - 26 * 24 * 3600e3),
+    opened_at: iso(now - 39 * 24 * 3600e3), agreed: true,
+    signed_at: iso(now - 39 * 24 * 3600e3), signed_name: "Dale Prieto",
+    signed_png: "data:image/png;base64,iVBORw0KGgo=",
+    signed_pack: "<p>PURCHASE AGREEMENT</p><p>Signed: Dale Prieto</p>",
+    signed_ip: "203.0.113.7", signed_agent: "fixture",
+    voided_at: null, voided_by: null,
   }],
 
   /* TWO INVESTORS, NOT ONE, and the second holds nothing.

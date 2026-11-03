@@ -6,6 +6,20 @@ import { money0 } from "@/lib/papers";
 type Row = {
   id: string; name: string; legal_name: string | null;
   homes: number; owesCents: number; parks: string[];
+  /** Where their latest pack stands, or null if none has gone out. */
+  papers: "signed" | "opened" | "sent" | "expired" | null;
+  papersAt: string | null;
+};
+
+/* Said in the words somebody would use, with the signed one marked so
+   it can be found by scanning rather than by reading. The point of this
+   line is one question -- have they signed -- and the answer to it must
+   not look like the other three. */
+const STANDS: Record<string, { say: string; tone: string }> = {
+  signed:  { say: "Signed",            tone: "pill ok" },
+  opened:  { say: "Opened, not signed", tone: "pill warn" },
+  sent:    { say: "Sent, not opened",   tone: "pill gray" },
+  expired: { say: "Link expired",       tone: "pill warn" },
 };
 
 /**
@@ -21,6 +35,8 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [configured, setConfigured] = useState(true);
   const [holdings, setHoldings] = useState(true);
+  /** Whether signing could be read, as opposed to nothing being sent. */
+  const [papers, setPapers] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [find, setFind] = useState("");
 
@@ -37,6 +53,7 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
     setRows(out.owners ?? []);
     setConfigured(out.configured !== false);
     setHoldings(out.holdings !== false);
+    setPapers(out.papers !== false);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -157,6 +174,25 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
                   </>
                 )}
               </p>
+              {/* WHERE THE PAPERS STAND, on the list rather than only
+                  inside. Opening six investors one at a time to find out
+                  who has signed is the whole job this list exists to
+                  save. `papers` false is the database not answering,
+                  which is not the same as nobody having been sent
+                  anything -- the same pair as `holdings` above. */}
+              {papers && r.papers && (
+                <p className="ownerstands">
+                  <span className={STANDS[r.papers].tone}>
+                    {STANDS[r.papers].say}
+                  </span>
+                  {r.papersAt && (
+                    <span className="dim">
+                      {" "}{new Date(r.papersAt).toLocaleDateString("en-US",
+                        { dateStyle: "medium" })}
+                    </span>
+                  )}
+                </p>
+              )}
               <Link className="btn" href={`/owners/${r.id}`}>Papers</Link>
             </div>
           ))}
