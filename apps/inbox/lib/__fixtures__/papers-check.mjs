@@ -378,6 +378,43 @@ t("no clause was dropped on the way across", missing.length === 0,
     && priced.includes("$500.00") && priced.includes("$2,500.00"));
 }
 
+// --- the money the draft actually names ---------------------------------
+//
+// THE FIGURES COME OUT OF THE ATTORNEY'S FILE, not out of this check.
+// The guard above hands `reserve: 500` in and then checks that $500 came
+// back -- which proves the figure flows through the template and says
+// nothing whatever about what the default is. So the default sat at 750
+// for weeks against a draft that says 500, and every check was green.
+//
+// A figure written into a test is a figure somebody invented. These two
+// are read off the clause itself.
+const RESERVE = readFileSync(
+  join(PAPERS, "land-lease-investor-clean.txt"), "utf8")
+  .split("\n").find((l) => /Reserve Fund/.test(l)) ?? "";
+const drafted = [...RESERVE.matchAll(/\$([\d,]+(?:\.\d\d)?)/g)]
+  .map((m) => Number(m[1].replace(/,/g, "")));
+
+t("the draft's reserve clause is there to read",
+  drafted.length >= 2 && /for each Lot/.test(RESERVE),
+  `found ${JSON.stringify(drafted)} in "${RESERVE.slice(0, 90)}"`);
+
+t(`the reserve per lot is the draft's ($${drafted[0]})`,
+  P.DEFAULTS.reserve === drafted[0],
+  `the draft says ${drafted[0]}, DEFAULTS says ${P.DEFAULTS.reserve}`);
+
+t(`and the cap across the park is the draft's ($${drafted[1]})`,
+  P.DEFAULTS.reserveCap === drafted[1],
+  `the draft says ${drafted[1]}, DEFAULTS says ${P.DEFAULTS.reserveCap}`);
+
+/* And no template may quietly move either. A chip that changes a figure
+   in a contract is the fault that nearly put $62,140 out with no lien. */
+for (const tpl of P.TEMPLATES) {
+  t(`the ${tpl.name} template does not move the reserve`,
+    tpl.changes.reserve === undefined && tpl.changes.reserveCap === undefined,
+    JSON.stringify({ reserve: tpl.changes.reserve,
+                     reserveCap: tpl.changes.reserveCap }));
+}
+
 t("five hundred is Five Hundred", P.words(500) === "Five Hundred");
 t("and reads as dollars", P.dollarsWords(500) === "Five Hundred Dollars");
 t("one is a Dollar, not Dollars", P.dollarsWords(1) === "One Dollar");
