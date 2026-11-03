@@ -368,6 +368,10 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .pill{font-size:.62rem;font-weight:700;padding:.1em .38em;border-radius:5px;flex:none;
   font-family:ui-monospace,monospace}
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
+/* Signed. `.pill` on its own has no ground at all, so "Signed" without
+   this read exactly like "Sent, not opened" -- the one distinction the
+   line exists to make. Both halves of the pair move between themes. */
+.pill.ok{background:var(--tn-soft);color:var(--tn-ink)}
 .pill.gray{background:var(--sunk);color:var(--faint)}
 /* A photo that cannot be shown is information, not a broken image icon. */
 .mms-gone{display:inline-block;margin-top:.4rem;padding:.4rem .6rem;border-radius:8px;
@@ -2059,6 +2063,11 @@ a.metric:hover{border-color:var(--accent)}
    already the setup page's result card -- borrowing a state name is how a
    tick beside a sentence ended up wearing a bordered panel on six screens. */
 .housrow{margin-top:.2rem}
+/* Where an investor's papers stand, on the list rather than only inside
+   their page. `.pill ok` / `.pill warn` already exist and already invert
+   between themes; this only places the line. */
+.ownerstands{margin:.1rem 0 .5rem;font-size:.78rem;display:flex;
+  align-items:center;gap:.35rem;flex-wrap:wrap}
 .houssaid{color:var(--accent);font-weight:600}
 
 /* The three hands a typed signature can be written in. Self-hosted, so a

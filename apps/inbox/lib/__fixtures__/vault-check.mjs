@@ -137,6 +137,52 @@ t("and the signed copy is what the link serves", () => {
 t("the office is served the same way", () =>
   /signed_pack \?\? data\.pack/.test(sent.replace(/\s+/g, " ")));
 
+// ---- where it stands, on the list ----------------------------------
+const board = readFileSync(join(app, "components", "OwnersBoard.tsx"), "utf8");
+const ownersApi = readFileSync(
+  join(app, "app", "api", "owners", "route.ts"), "utf8");
+const css = readFileSync(join(app, "app", "globals.css"), "utf8");
+
+t("the list says where each investor's papers stand", () =>
+  /className="ownerstands"/.test(board) && /r\.papers/.test(board));
+
+/* A WITHDRAWN PACK IS NOT A STATE A DEAL IS IN. The first ALDERCREST
+   pack went to the wrong address and was withdrawn five minutes later;
+   it is newer than the live one and must not be what the list reports. */
+t("a withdrawn pack is skipped, not reported", () => {
+  const block = blockAt(ownersApi, "for (const r of (got.data ?? []) as Pack[]) {");
+  return /r\.voided_at/.test(block) && /continue/.test(block);
+});
+t("and the newest that still counts is the one shown", () => {
+  const block = blockAt(ownersApi, "for (const r of (got.data ?? []) as Pack[]) {");
+  return /paper\.has\(r\.owner_id\)/.test(block)
+    && /ascending: false/.test(ownersApi);
+});
+
+/* Signing could not be read, versus nothing having been sent. Drawing
+   every investor as never sent anything is a sentence about the
+   database written as though it were a fact about the business -- the
+   same pair as `holdings`. */
+t("not readable is told apart from nothing sent", () =>
+  /papers,/.test(ownersApi) && /setPapers\(out\.papers !== false\)/.test(board)
+  && /papers && r\.papers/.test(board));
+
+/* THE ONE THE PICTURE NEARLY MISSED. `.pill` on its own has no ground,
+   so "Signed" rendered identically to "Sent, not opened" -- the single
+   distinction this line exists to make. Every tone the screen uses has
+   to be a tone the stylesheet defines. */
+t("every state is drawn differently from the others", () => {
+  const tones = [...board.matchAll(/tone: "pill([^"]*)"/g)]
+    .map((m) => m[1].trim());
+  if (tones.length < 4) return false;
+  return tones.every((mod) => mod === "" || css.includes(`.pill.${mod}{`));
+});
+/* And signed specifically is not the bare pill, which is what sent is. */
+t("and signed is not drawn as the bare pill", () => {
+  const signed = (board.match(/signed:\s*\{[^}]*tone: "([^"]*)"/) ?? [])[1];
+  return !!signed && signed.trim() !== "pill";
+});
+
 let bad = 0;
 for (const [name, ok, note] of checks) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}${!ok && note ? ` — ${note}` : ""}`);
