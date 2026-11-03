@@ -5,6 +5,7 @@ import { describe, homeSentence } from "@/lib/describe";
 import { DEFAULTS, TEMPLATES, templateOf, pack, docKey, money0, payment,
          firstOfMonthAfter,
          type Terms, type Home } from "@/lib/papers";
+import { applyHouse, houseStandard } from "@/lib/house-terms";
 
 /** One executed document on file against a recorded sale. */
 type Paper = {
@@ -101,6 +102,22 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   /** False when migration 046 has not been run. Not the same as no draft. */
   const [canKeep, setCanKeep] = useState(true);
+
+  /* THE TERMS WE ALWAYS USE. Six investors in a row want the same late
+     fee, the same grace period, the same notice period and the same
+     lease, and re-choosing each of them on each screen is how two
+     investors end up with terms that differ because somebody retyped
+     one. The standard is laid UNDER the figures read off the homes and
+     UNDER a draft left on the screen, so it decides what nobody retypes
+     and decides nothing belonging to one sale. */
+  const [house, setHouse] = useState<Partial<Terms> | null>(null);
+  /** Whether the standard has answered. Null is "not yet", not "none". */
+  const [houseRead, setHouseRead] = useState(false);
+  const [houseAt, setHouseAt] = useState<string | null>(null);
+  /** False when migration 049 has not been run. Not the same as no standard. */
+  const [canHouse, setCanHouse] = useState(true);
+  const [houseBusy, setHouseBusy] = useState(false);
+  const [houseSaid, setHouseSaid] = useState<string | null>(null);
 
   /* OUR SIDE, SIGNED BEFORE IT GOES OUT. Kept once and read back here, so
      it never travels in the deal draft: it is the same mark on every
@@ -231,6 +248,27 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     finally { setInkBusy(false); }
   };
 
+  /* THE STANDARD IS READ BEFORE ANYTHING IS SEEDED, for the same reason
+     the draft is: laying it over figures already on screen would flash
+     the wrong ones and race the seed. It is read on every owner screen
+     and not only on an empty one, because the Save button below writes
+     it and the line beside that button says when it was last set. */
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/house-terms", { cache: "no-store" });
+        const out = await res.json().catch(() => ({}));
+        if (gone) return;
+        if (out.keeping === false) setCanHouse(false);
+        if (out.terms) { setHouse(out.terms as Partial<Terms>); }
+        setHouseAt(out.savedAt ?? null);
+      } catch { /* the screen still works; it simply has no standard */ }
+      if (!gone) setHouseRead(true);
+    })();
+    return () => { gone = true; };
+  }, []);
+
   /* THE DRAFT COMES FIRST. Seeding from the recorded sales and then
      laying the draft over it would flash the wrong figures and, worse,
      race it. So nothing is seeded until this has answered. */
@@ -271,11 +309,14 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     // investor with nothing recorded yet is the one buying their first
     // home, and the buyer's name and today's date are the two things the
     // papers need most.
-    if (seeded || !owner || asking || !draftRead) return;
+    if (seeded || !owner || asking || !draftRead || !houseRead) return;
     const first: Held | undefined = homes[0];
     const today = new Date().toISOString().slice(0, 10);
     setTerms((was) => ({
-      ...was,
+      /* The standard first, the sale's own figures over the top. A rate
+         or a lot rent recorded against the home is this deal's answer and
+         outranks the one every deal starts from. */
+      ...applyHouse(was, house),
       buyer: owner.legal_name?.trim() || owner.name,
       parkName: first?.parkName || was.parkName,
       agreedOn: first?.soldOn ?? today,
@@ -292,7 +333,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     }));
     setPicked(Object.fromEntries(homes.map((h) => [h.saleId, true])));
     setSeeded(true);
-  }, [seeded, owner, asking, draftRead, homes]);
+  }, [seeded, owner, asking, draftRead, houseRead, house, homes]);
 
   const chosen = useMemo(
     () => homes.filter((h) => picked[h.saleId]), [homes, picked]);
@@ -439,6 +480,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
 
   const sendIt = async () => {
     setSendBusy(true); setSendSaid(null); setSentLink(null);
+    const body = dealText;
     try {
       const res = await fetch(`/api/owners/${ownerId}/send`, {
         method: "POST", headers: { "content-type": "application/json" },
@@ -451,6 +493,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
           toName: sendTo.name.trim() || terms.buyer,
           toEmail: sendTo.email.trim(),
           toPhone: sendTo.phone.trim(),
+          /* Sending is the moment the terms are final, so the draft goes
+             with the pack and Save stops being a thing to remember. */
+          deal,
         }),
       });
       const out = await res.json().catch(() => ({}));
@@ -459,6 +504,15 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       }
       setSentLink(out.link ?? null);
       setSentHow(Array.isArray(out.went) ? out.went : []);
+      /* Marked as kept against the text that was SENT, the same as the
+         Save button, and only where the server did not say otherwise --
+         a draft reported as saved when it was not is the fault this is
+         here to fix, wearing different clothes. */
+      if (!out.draftSaid) {
+        setBaseline(body);
+        setDrafted(true);
+        setSavedAt(new Date().toISOString());
+      }
       await readSent();
       /* WHAT WENT AND WHAT DID NOT, both. A link that exists and was not
          delivered is one copy-and-paste from fixed; a link reported as
@@ -466,6 +520,14 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       if (Array.isArray(out.failed) && out.failed.length) {
         setSendSaid(`The link was made but not delivered — ${out.failed.join("; ")}.`
           + " Send them the link below yourself.");
+      }
+      /* The pack went and the terms behind it did not save. Said out
+         loud, because the screen would otherwise look exactly as it does
+         when both worked, and Save is one press away. */
+      if (out.draftSaid) {
+        setSendSaid((was) => `${was ? was + " " : ""}The documents went, but`
+          + ` the terms behind them were not kept — ${out.draftSaid}.`
+          + " Press Save above.");
       }
     } catch (e) {
       setSendSaid(e instanceof Error ? e.message : "That did not send.");
@@ -601,6 +663,52 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
       setSaving(false);
     }
   };
+
+  /**
+   * Make what is on screen the terms every future deal starts from.
+   *
+   * The buyer, the date agreed, the date the lease runs from and the park
+   * are stripped on the way out of here and again in the route, because a
+   * standard carrying one investor's name would put that name on the next
+   * investor's contract.
+   */
+  const keepHouse = async () => {
+    setHouseBusy(true); setHouseSaid(null);
+    const sending = houseStandard(terms);
+    try {
+      const res = await fetch("/api/house-terms", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ terms: sending }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) {
+        setHouseSaid(out.error ?? "That did not save."); return;
+      }
+      /* Held against what was SENT, not against the screen as it is by
+         the time the answer comes back. */
+      setHouse(sending);
+      setHouseAt(out.savedAt ?? new Date().toISOString());
+      setHouseSaid("Kept. Every new investor starts from these.");
+    } catch (e) {
+      setHouseSaid(e instanceof Error ? e.message : "That did not save.");
+    } finally { setHouseBusy(false); }
+  };
+
+  /** Pull the standard over the screen, for one already filled in. */
+  const useHouse = () => {
+    if (!house) return;
+    setTerms((was) => applyHouse(was, house));
+    setHouseSaid("The standard is on the screen. Nothing is saved until"
+      + " you press Save.");
+  };
+
+  /** Whether the screen already matches the standard, term for term. */
+  const matchesHouse = useMemo(() => {
+    if (!house) return false;
+    const now = houseStandard(terms) as Record<string, unknown>;
+    return Object.entries(houseStandard(house)).every(
+      ([k, v]) => JSON.stringify(now[k]) === JSON.stringify(v));
+  }, [house, terms]);
 
   const set = (change: Partial<Terms>) => setTerms((was) => ({ ...was, ...change }));
   const num = (v: string) => (v === "" ? 0 : Number(v));
@@ -990,6 +1098,41 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             </div>
             <p className="dim tplsays">
               {TEMPLATES.find((x) => x.key === templateOf(terms))?.blurb}
+            </p>
+
+            {/* THE TERMS WE ALWAYS USE. A template is a starting point
+                that ships with the app; this is the answer this company
+                has settled on, and it is what the next investor opens
+                with. Only the terms travel -- the buyer, the dates and
+                the park stay with the deal they belong to. */}
+            <div className="tplrow housrow">
+              <span className="tpllabel">The terms we always use</span>
+              <button type="button" className="chip"
+                      disabled={houseBusy || !canHouse}
+                      onClick={() => void keepHouse()}>
+                {houseBusy ? "Keeping…" : "Make these the standard"}
+              </button>
+              <button type="button" className="chip"
+                      disabled={!house || matchesHouse}
+                      onClick={useHouse}>
+                Use the standard
+              </button>
+            </div>
+            <p className={houseSaid ? "tplsays houssaid" : "dim tplsays"}>
+              {houseSaid ? houseSaid
+                : !canHouse
+                  ? "Nothing is being kept: the standard needs migration 049"
+                    + " run on the database."
+                : !house
+                  ? "No standard set yet. Fill the terms in below and press"
+                    + " Make these the standard, and every investor after"
+                    + " this one starts from them."
+                : matchesHouse
+                  ? `These are the standard${houseAt
+                      ? `, set ${new Date(houseAt).toLocaleString("en-US",
+                          { dateStyle: "medium", timeStyle: "short" })}` : ""}.`
+                  : "This deal differs from the standard. Use the standard"
+                    + " to pull it back, or make these the new one."}
             </p>
 
             <div className="tabsrow">
