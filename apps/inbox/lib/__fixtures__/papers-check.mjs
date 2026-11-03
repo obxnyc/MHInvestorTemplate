@@ -253,6 +253,44 @@ t("no clause was dropped on the way across", missing.length === 0,
   t("the installment count, the term, Schedule A and the Maturity Date agree",
     sentenceWrong.length === 0, sentenceWrong.slice(0, 3).join("; "));
 }
+/* NO TEMPLATE MAY GIVE AWAY THE SECURITY.
+   Investor-friendly used to switch the late fee and the lien OFF, and that
+   decision predated the attorney's draft, which carries both. Selecting a
+   chip therefore dropped the purchase-money lien and the retained title on
+   a $62,140 seller-financed note -- silently, with nothing on the screen
+   saying a clause had gone. It was caught one press before it was sent.
+
+   So every template prints them, and the thing that tells the templates
+   apart is the lease. Asked of EVERY template rather than the two by name,
+   because the next one somebody adds is the one that will forget. */
+{
+  const must = [
+    ["the late payment clause", "Late Payment &amp; Default"],
+    ["the security interest", "Security Interest"],
+    ["the lien release on payoff", "release Seller&#39;s lien"],
+  ];
+  for (const tpl of P.TEMPLATES) {
+    /* Named `terms`, not `t`: `t` is this harness's assertion, and a local
+       of the same name shadows it inside the block. */
+    const terms = { ...P.DEFAULTS, ...tpl.changes, financed: true,
+      ratePct: 5.2, termYears: 30, perYear: 12, agreedOn: "2026-09-21" };
+    const html = P.purchaseAgreement(terms,
+      { lot: "1", describedAs: "A home", price: 95600, down: 33460 });
+    const flat = html.replace(/\s+/g, " ");
+    for (const [what, needle] of must) {
+      t(`${tpl.name} keeps ${what}`,
+        flat.includes(needle) || flat.includes(needle.replace("&amp;", "&")
+          .replace("&#39;", "'")));
+    }
+    /* One late charge, whatever chip is selected: a figure that moves with
+       the template is a term nobody chose. */
+    t(`${tpl.name} charges the same $100 late fee`,
+      (tpl.changes.lateFee ?? P.DEFAULTS.lateFee) === 100);
+  }
+  t("the park owner defaults to the company, not a person",
+    P.DEFAULTS.parkOwner === "Larabee Homes LLC");
+}
+
 /* WHICH LEASE GETS DRAWN.
    Matching prose proves the words are his; it says nothing about which
    document a deal actually gets. These two leases differ on terms, not

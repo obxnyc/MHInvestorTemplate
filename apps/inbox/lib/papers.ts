@@ -127,7 +127,10 @@ export type Home = {
 
 export const DEFAULTS: Terms = {
   seller: "Larabee Homes LLC",
-  parkOwner: "Benjamin Cade Larabee",
+  /* The park owner is the company on every deal. It was a person here,
+     which put "Benjamin Cade Larabee" on the Park Owner line of every
+     lease until somebody noticed and retyped it. */
+  parkOwner: "Larabee Homes LLC",
   buyer: "",
   parkName: "the Retreat",
   state: "North Carolina",
@@ -150,7 +153,10 @@ export const DEFAULTS: Terms = {
   escalateApplies: "lot rent and consulting fee",
   late: true,
   graceDays: 10,
-  lateFee: 50,
+  /* $100 on every template. The attorney's draft says $100 and a late
+     charge that differs by which chip is selected is a term nobody
+     chose. */
+  lateFee: 100,
   security: true,
   insure: true,
   notary: false,
@@ -180,12 +186,12 @@ export const TEMPLATES: Template[] = [
   {
     key: "house",
     name: "Larabee Homes",
-    blurb: "Annual escalation, late fee, lien until paid, 60 days' notice,"
-      + " 30 days to match an offer.",
+    blurb: "Our lease: annual escalation, 60 days' notice, 30 days to match"
+      + " an offer.",
     changes: {
       escalate: true, escalatePct: 3,
       escalateApplies: "lot rent and consulting fee",
-      late: true, graceDays: 10,
+      late: true, graceDays: 10, lateFee: 100,
       security: true, insure: true, amortize: true,
       noticeDays: 60, rofrDays: 30, leaseForm: "house",
     },
@@ -193,12 +199,22 @@ export const TEMPLATES: Template[] = [
   {
     key: "investor",
     name: "Investor-friendly",
-    blurb: "No escalation, no late fee, no lien, 90 days' notice,"
+    blurb: "Their lease: a 33% ceiling on rent rises, 180 days if the park"
+      + " is sold, subletting allowed. No escalation, 90 days' notice,"
       + " 15 days to match an offer.",
     changes: {
       escalate: false,
-      late: false, graceDays: 15,
-      security: false, insure: true, amortize: true,
+      /* THE LIEN AND THE LATE FEE STAY ON HERE TOO.
+         They used to be what made this template "investor-friendly", and
+         that was decided before the attorney's draft existed. That draft
+         carries both -- a $100 late charge with thirty days to cure, and
+         a purchase-money lien with title retained until paid. Dropping
+         them gave away the security on a $62,140 note, silently, because
+         a chip was selected. What makes this template investor-friendly
+         now is the LEASE: the 33% ceiling on rent, 180 days if the park
+         is sold, the right to sublet. */
+      late: true, graceDays: 15, lateFee: 100,
+      security: true, insure: true, amortize: true,
       noticeDays: 90, rofrDays: 15, leaseForm: "investor",
     },
   },
