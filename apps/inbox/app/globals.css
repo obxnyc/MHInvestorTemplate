@@ -2201,6 +2201,40 @@ a.metric:hover{border-color:var(--accent)}
   margin-bottom:2px}
 .paper .sig-block{margin-top:22px}
 .paper .pagebreak{break-before:page}
+
+/* READ BACK AS SHEETS, not as one long roll.
+   `.pagebreak` is the separator papers.ts already puts between the
+   documents, and in print it is a page break. On screen it was nothing
+   at all, so sixteen contracts arrived as one continuous column of
+   white -- "it should look more like a pdf".
+
+   A browser cannot cut a flowing box into letter pages, so this is the
+   honest version of the illusion: the band is a full-bleed strip of the
+   page's own background that reclaims the sheet's vertical padding on
+   both sides, with a shadow just inside each edge so the sheet above
+   appears to end and the one below to begin. `--page` moves between
+   themes and the strip moves with it; the sheets stay white, because a
+   contract is white paper in both. */
+.paper.sheets .pagebreak{
+  display:block;height:40px;
+  /* The sheet's own side padding, given back, so the strip reaches the
+     edges rather than sitting in a white frame. */
+  margin:0.9in -0.85in;
+  /* `--sunk` and not `--page`: this strip sits inside a white card, and
+     `--page` by day is #F7F8FA -- near enough to white that the gap read
+     as a crease rather than as the end of a sheet. */
+  background:var(--sunk);
+  box-shadow:inset 0 18px 14px -14px rgba(0,0,0,.34),
+             inset 0 -18px 14px -14px rgba(0,0,0,.34);
+}
+/* The last sheet needs its own bottom edge, and the stack as a whole
+   reads better a little narrower than the window. */
+.paper.sheets{padding-bottom:0.9in}
+@media print{
+  /* Back to a real page break, and no grey anywhere near the paper. */
+  .paper.sheets .pagebreak{height:0;margin:0;background:none;box-shadow:none}
+  .paper.sheets{box-shadow:none;max-width:none;padding:0}
+}
 .paper .witness{letter-spacing:6px;font-weight:700;text-align:center;margin:14px 0}
 
 /* EXECUTED DOCUMENTS, on the investor's own page.

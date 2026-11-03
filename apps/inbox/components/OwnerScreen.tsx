@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import SignaturePad from "@/components/SignaturePad";
 import { describe, homeSentence } from "@/lib/describe";
 import { DEFAULTS, TEMPLATES, templateOf, pack, docKey, money0, payment,
@@ -155,8 +156,6 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     voided_at: string | null;
   };
   const [sent, setSent] = useState<Sent[]>([]);
-  /** Which already-sent pack is being fetched to read. */
-  const [reading, setReading] = useState<string | null>(null);
   const [canList, setCanList] = useState(true);
   const [pulling, setPulling] = useState<string | null>(null);
   /** Set once from the first sale, so re-rendering does not overwrite
@@ -478,33 +477,6 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     } catch (e) {
       setSendSaid(e instanceof Error ? e.message : "That could not be withdrawn.");
     } finally { setPulling(null); }
-  };
-
-  /**
-   * Open a pack that has already gone out, as it stands.
-   *
-   * The signed copy where there is one, because once signed that IS the
-   * document -- and the office had no way to see it at all: the list
-   * said "Signed by ALDERCREST" and stopped there. Opened as a blob in
-   * a tab of its own rather than drawn into this page, so what is on
-   * screen is the frozen file and nothing here can edit it.
-   */
-  const readPack = async (id: string) => {
-    setReading(id); setSendSaid(null);
-    try {
-      const res = await fetch(`/api/owners/${ownerId}/sent?pack=${id}`,
-        { cache: "no-store" });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.pack) {
-        setSendSaid(out.error ?? "That could not be opened."); return;
-      }
-      const url = URL.createObjectURL(
-        new Blob([out.pack as string], { type: "text/html" }));
-      window.open(url, "_blank", "noopener");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (e) {
-      setSendSaid(e instanceof Error ? e.message : "That could not be opened.");
-    } finally { setReading(null); }
   };
 
   const sendIt = async () => {
@@ -919,15 +891,21 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                         <td className={r.signed_at ? "parkok"
                           : r.voided_at || expired ? "dim" : ""}>{where}</td>
                         <td className="sentacts">
-                          {!r.voided_at && (
-                            <button type="button" className="btn"
-                                    disabled={reading === r.id}
-                                    onClick={() => void readPack(r.id)}>
-                              {reading === r.id ? "Opening…"
-                                : r.signed_at ? "Read the signed copy"
-                                : "Read what was sent"}
-                            </button>
-                          )}
+                          {/* A LINK TO A PAGE, not a blob. The frozen
+                              pack is a fragment that has always leaned
+                              on `.paper` in globals.css for its margins,
+                              page breaks and signature lines; handed
+                              over as a file it arrives with no
+                              stylesheet and no charset, and sixteen
+                              contracts render as
+                              "SELLER:SignatureLarabee Homes LLC" with
+                              every curly quote mangled. */}
+                          <Link className="btn" target="_blank"
+                                href={`/owners/${ownerId}/pack/${r.id}`}>
+                            {r.signed_at ? "Read the signed copy"
+                              : r.voided_at ? "Read what had been sent"
+                              : "Read what was sent"}
+                          </Link>
                           {open && (
                             <button type="button" className="btn"
                                     disabled={pulling === r.id}
