@@ -54,6 +54,32 @@ const PROPERTIES = [
 ];
 
 const now = Date.now();
+
+/* A PACK WITH THE SHAPE PAPERS.TS WRITES, and more than one document in
+   it. The first version here was two lines long, and with a two-line
+   pack "reads as separate sheets" and "reads as one roll of white" are
+   the same picture -- so the page that reads a signed pack back shipped
+   looking like neither and the fixture could not have said so.
+   h2, .witness, .fill, .sig/.line/.signslot, and .pagebreak between the
+   documents, which is what the sheet separation keys on. */
+const CLAUSE = '<p>That Purchaser has offered to purchase such mobile home'
+  + ' and has tendered <span class="fill">$33,460.00</span> by certified'
+  + ' funds payable to Seller as a down payment, the receipt of which is'
+  + ' hereby acknowledged by Seller. The balance of the purchase price of'
+  + ' <span class="fill">$62,140.00</span> shall be paid in three hundred'
+  + ' sixty (360) consecutive monthly installments of'
+  + ' <span class="fill">$341.22</span> each.</p>';
+const sigFor = (who) => '<div class="sig"><div class="line"></div>'
+  + `<span class="signslot" data-for="${who}"></span>`
+  + ` Dated <span class="dateslot" data-for="${who}">__________</span></div>`;
+const docFor = (heading, who) => `<h2>${heading}</h2>`
+  + (who === "buyer" ? '<p class="witness">W I T N E S S E T H</p>' : "")
+  + CLAUSE.repeat(6) + sigFor(who);
+const BREAK = '<div class="pagebreak"></div>';
+const TWO_DOCS = [docFor("PURCHASE AGREEMENT", "buyer"),
+  docFor("MOBILE HOME PARK LAND LEASE AGREEMENT", "tenant")].join(BREAK);
+const THREE_DOCS = [TWO_DOCS,
+  docFor("PURCHASE AGREEMENT (LOT 3102)", "buyer")].join(BREAK);
 const iso = (ms) => new Date(ms).toISOString();
 const SHIFTS = [
   { id: "s1", staff_id: WHO, property_id: "p1", property_from: "fence",
@@ -152,7 +178,7 @@ const TABLES = {
     id: "sr2", token: "signedpack", owner_id: "ow2",
     title: "Purchase Agreement and Park Land Lease",
     doc_count: 2,
-    pack: "<p>PURCHASE AGREEMENT</p>",
+    pack: TWO_DOCS,
     to_name: "Dale Prieto", to_email: "dale@example.com",
     to_phone: null, sent_by: DESK,
     sent_at: iso(now - 40 * 24 * 3600e3),
@@ -160,7 +186,7 @@ const TABLES = {
     opened_at: iso(now - 39 * 24 * 3600e3), agreed: true,
     signed_at: iso(now - 39 * 24 * 3600e3), signed_name: "Dale Prieto",
     signed_png: "data:image/png;base64,iVBORw0KGgo=",
-    signed_pack: "<p>PURCHASE AGREEMENT</p><p>Signed: Dale Prieto</p>",
+    signed_pack: THREE_DOCS,
     signed_ip: "203.0.113.7", signed_agent: "fixture",
     voided_at: null, voided_by: null,
   }],
