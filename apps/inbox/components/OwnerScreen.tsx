@@ -155,6 +155,8 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     voided_at: string | null;
   };
   const [sent, setSent] = useState<Sent[]>([]);
+  /** Which already-sent pack is being fetched to read. */
+  const [reading, setReading] = useState<string | null>(null);
   const [canList, setCanList] = useState(true);
   const [pulling, setPulling] = useState<string | null>(null);
   /** Set once from the first sale, so re-rendering does not overwrite
@@ -476,6 +478,33 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
     } catch (e) {
       setSendSaid(e instanceof Error ? e.message : "That could not be withdrawn.");
     } finally { setPulling(null); }
+  };
+
+  /**
+   * Open a pack that has already gone out, as it stands.
+   *
+   * The signed copy where there is one, because once signed that IS the
+   * document -- and the office had no way to see it at all: the list
+   * said "Signed by ALDERCREST" and stopped there. Opened as a blob in
+   * a tab of its own rather than drawn into this page, so what is on
+   * screen is the frozen file and nothing here can edit it.
+   */
+  const readPack = async (id: string) => {
+    setReading(id); setSendSaid(null);
+    try {
+      const res = await fetch(`/api/owners/${ownerId}/sent?pack=${id}`,
+        { cache: "no-store" });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.pack) {
+        setSendSaid(out.error ?? "That could not be opened."); return;
+      }
+      const url = URL.createObjectURL(
+        new Blob([out.pack as string], { type: "text/html" }));
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setSendSaid(e instanceof Error ? e.message : "That could not be opened.");
+    } finally { setReading(null); }
   };
 
   const sendIt = async () => {
@@ -844,6 +873,90 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
             <Executed key={h.saleId} home={h} papers={filed[h.saleId] ?? []}
                       onChanged={() => { void load(); }} />
           ))}
+        </div>
+      )}
+
+      {(sent.length > 0 || !canList) && (
+        <div className="ownerpapers noprint">
+          {/* WHAT HAS ALREADY GONE OUT. This used to live INSIDE the send
+            panel, which is the one place it is no use: the panel opens
+            off a button that is disabled until homes are ticked, so on
+            an investor whose pack had already gone there was no path to
+            it at all. Two packs sat against ALDERCREST for a week with
+            nothing on any screen saying so.
+
+            A link lives for a fortnight and a signed copy lives for
+            good; neither should be a thing you have to remember. */}
+          {sent.length > 0 && (
+            <div className="sentlist">
+              <h2>Sent for signing</h2>
+              <table className="ownertbl">
+                <thead>
+                  <tr><th>To</th><th>Sent</th><th>Where it stands</th><th /></tr>
+                </thead>
+                <tbody>
+                  {sent.map((r) => {
+                    const expired = Date.parse(r.expires_at) < Date.now();
+                    const where = r.signed_at
+                      ? `Signed by ${r.signed_name ?? r.to_name}`
+                      : r.voided_at ? "Withdrawn — the link no longer works"
+                      : expired ? "Expired"
+                      : r.opened_at ? "Opened, not signed yet"
+                      : "Sent, not opened yet";
+                    const open = !r.signed_at && !r.voided_at && !expired;
+                    return (
+                      <tr key={r.id}>
+                        <td>
+                          <strong>{r.to_name}</strong><br />
+                          <span className="dim">
+                            {r.to_email || r.to_phone}
+                            {" · "}{r.doc_count} document
+                            {r.doc_count === 1 ? "" : "s"}
+                          </span>
+                        </td>
+                        <td>{new Date(r.sent_at).toLocaleDateString("en-US",
+                          { dateStyle: "medium" })}</td>
+                        <td className={r.signed_at ? "parkok"
+                          : r.voided_at || expired ? "dim" : ""}>{where}</td>
+                        <td className="sentacts">
+                          {!r.voided_at && (
+                            <button type="button" className="btn"
+                                    disabled={reading === r.id}
+                                    onClick={() => void readPack(r.id)}>
+                              {reading === r.id ? "Opening…"
+                                : r.signed_at ? "Read the signed copy"
+                                : "Read what was sent"}
+                            </button>
+                          )}
+                          {open && (
+                            <button type="button" className="btn"
+                                    disabled={pulling === r.id}
+                                    onClick={() => void pullBack(r.id)}>
+                              {pulling === r.id ? "Withdrawing…" : "Withdraw"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="dim">
+                Withdrawing stops the link working. A set somebody has
+                already signed cannot be withdrawn here — they are
+                holding a copy of it. A signed set is kept exactly as it
+                was signed and nothing on this screen can change it; the
+                link it went out on keeps working for them for good, so
+                both sides are reading the same copy.
+              </p>
+            </div>
+          )}
+          {!canList && (
+            <p className="dim">
+              What has been sent cannot be listed until migration 048 is
+              run on the database.
+            </p>
+          )}
         </div>
       )}
 
@@ -1305,68 +1418,6 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
                   <span className="dim">Sent to {sentHow.join(" and ")}.</span>
                 )}
               </div>
-              {/* WHAT HAS ALREADY GONE OUT, and a way to stop it. Without
-                  this a link lives for a fortnight with nothing on screen
-                  saying it exists -- which makes sending one to try it
-                  out a thing nobody dares do twice. */}
-              {sent.length > 0 && (
-                <div className="sentlist">
-                  <h3>Already sent</h3>
-                  <table className="ownertbl">
-                    <thead>
-                      <tr><th>To</th><th>Sent</th><th>Where it stands</th><th /></tr>
-                    </thead>
-                    <tbody>
-                      {sent.map((r) => {
-                        const expired = Date.parse(r.expires_at) < Date.now();
-                        const where = r.signed_at
-                          ? `Signed by ${r.signed_name ?? r.to_name}`
-                          : r.voided_at ? "Withdrawn — the link no longer works"
-                          : expired ? "Expired"
-                          : r.opened_at ? "Opened, not signed yet"
-                          : "Sent, not opened yet";
-                        const open = !r.signed_at && !r.voided_at && !expired;
-                        return (
-                          <tr key={r.id}>
-                            <td>
-                              <strong>{r.to_name}</strong><br />
-                              <span className="dim">
-                                {r.to_email || r.to_phone}
-                                {" · "}{r.doc_count} document
-                                {r.doc_count === 1 ? "" : "s"}
-                              </span>
-                            </td>
-                            <td>{new Date(r.sent_at).toLocaleDateString("en-US",
-                              { dateStyle: "medium" })}</td>
-                            <td className={r.signed_at ? "parkok"
-                              : r.voided_at || expired ? "dim" : ""}>{where}</td>
-                            <td>
-                              {open && (
-                                <button type="button" className="btn"
-                                        disabled={pulling === r.id}
-                                        onClick={() => void pullBack(r.id)}>
-                                  {pulling === r.id ? "Withdrawing…" : "Withdraw"}
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <p className="dim">
-                    Withdrawing stops the link working. A set somebody has
-                    already signed cannot be withdrawn here — they are
-                    holding a copy of it.
-                  </p>
-                </div>
-              )}
-              {!canList && (
-                <p className="dim">
-                  What has been sent cannot be listed until migration 048 is
-                  run on the database.
-                </p>
-              )}
 
               {sentLink && (
                 <label className="signname">The link, if you would rather send it yourself
@@ -1376,6 +1427,7 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
               )}
             </div>
           )}
+
 
           {forPapers.length > 0 && (
             <div className="paper" dangerouslySetInnerHTML={{ __html: built }} />
@@ -1437,6 +1489,29 @@ function Executed(
 ) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /* Offered as the first of the month after the sale, because that is
+     how every deal here is written -- but offered, not assumed: it is a
+     date on somebody's note and the screen does not get to decide it. */
+  const [due, setDue] = useState(
+    () => (home.soldOn ? firstOfMonthAfter(home.soldOn) : ""));
+
+  async function dateIt(on: string) {
+    setBusy(true); setProblem(null);
+    try {
+      const res = await fetch(`/api/units/${home.unitId}/sale`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "due", firstDueOn: on }),
+      });
+      const out = await res.json().catch(() => ({}));
+      /* Nothing on screen changes until the server says it took it. */
+      if (!res.ok || !out.ok) {
+        setProblem(out.error ?? "That date did not save."); return;
+      }
+      onChanged();
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : "That date did not save.");
+    } finally { setBusy(false); }
+  }
   const loan = loanOf(home);
 
   async function take(files: FileList | null, kind: string) {
@@ -1493,6 +1568,23 @@ function Executed(
                 Needs {loan.missing.join(", ")} — the schedule cannot be
                 worked out without {loan.missing.length === 1 ? "it" : "them"}
               </span>
+            )}
+            {/* THE FIELD GOES WHERE THE WARNING IS. It said what was
+                missing and the only place to supply it was the lot card
+                -- a different screen, one per home, seven trips for one
+                investor. A screen that reports a state and offers no way
+                to act on it is the same fault as fitting inside the
+                boundary being reachable only from the county lookup. */}
+            {!home.firstDueOn && (
+              <label className="duefix">
+                First payment
+                <input type="date" disabled={busy || !home.unitId}
+                       value={due} onChange={(e) => setDue(e.target.value)} />
+                <button type="button" className="btn" disabled={busy || !due}
+                        onClick={() => void dateIt(due)}>
+                  {busy ? "Saving…" : "Save"}
+                </button>
+              </label>
             )}
           </>
         )}

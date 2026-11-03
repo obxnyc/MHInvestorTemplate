@@ -13,11 +13,43 @@ const noTable = (e: { code?: string; message?: string } | null) =>
 const NEEDS = "Sending for signing needs migration 048 run on the database first.";
 
 /** What was sent to this investor, newest first. */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
   if (!staff) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const { id } = await ctx.params;
+
+  /* ONE PACK, TO READ. The investor can open their copy from the link
+     they were sent; the office had no way to see it at all -- the list
+     said "Signed by ALDERCREST" and that was the whole of it. The
+     signed copy is returned where there is one, because once signed
+     that IS the document; the unsigned one before that, so "what did we
+     actually send them" is answerable too.
+
+     Scoped to this owner in the query, so an id from another investor's
+     deal returns nothing rather than somebody else's contract. The
+     token is deliberately NOT returned: the office reads the pack, it
+     does not need the key to the investor's own door. */
+  const wants = new URL(req.url).searchParams.get("pack");
+  if (wants) {
+    const supabase = await supabaseServer();
+    const { data, error } = await supabase
+      .from("signing_requests")
+      .select("title, pack, signed_pack, signed_at, signed_name, sent_at, to_name")
+      .eq("owner_id", id).eq("id", wants).maybeSingle();
+    if (error) {
+      return NextResponse.json(
+        { error: noTable(error) ? NEEDS : error.message }, { status: 400 });
+    }
+    if (!data) return NextResponse.json({ error: "no such pack" }, { status: 404 });
+    return NextResponse.json({
+      title: data.title,
+      pack: data.signed_pack ?? data.pack,
+      signed: !!data.signed_at,
+      signedAt: data.signed_at, signedName: data.signed_name,
+      sentAt: data.sent_at, toName: data.to_name,
+    });
+  }
   const supabase = await supabaseServer();
   const { data, error } = await supabase
     .from("signing_requests")
