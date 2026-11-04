@@ -198,10 +198,20 @@ const TABLES = {
      say which one is running is not asking the question. The second one
      also stands for the case the papers were built for: somebody buying
      their first home, with no sale recorded to draw them from. */
+  /* FOUR OWNERS AND THREE KINDS. Twenty of the fifty-nine real ones were
+     never investors -- residents who own their own home on one of our
+     lots, and our own companies -- and every one was listed as an
+     investor. With every owner the same kind, "the Investors tab shows
+     investors" and "the tab shows everybody" are the same list. */
   owners: [
     { id: "ow1", name: "Oak Ridge Holdings", legal_name: "Oak Ridge Holdings LLC",
-      active: true, notes: null },
-    { id: "ow2", name: "Dale Prieto", legal_name: null, active: true, notes: null },
+      active: true, notes: null, kind: "investor" },
+    { id: "ow2", name: "Dale Prieto", legal_name: null, active: true,
+      notes: null, kind: "investor" },
+    { id: "ow3", name: "Earl McGraw", legal_name: null, active: true,
+      notes: null, kind: "resident" },
+    { id: "ow4", name: "Hudson Yards LLC", legal_name: "Hudson Yards LLC",
+      active: true, notes: null, kind: "ours" },
   ],
   units: [
     { id: "u1", label: "3124", property_id: "p1",

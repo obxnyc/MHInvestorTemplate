@@ -16,10 +16,22 @@ export async function GET() {
 
   const supabase = await supabaseServer();
   const { data, error } = await supabase
-    .from("owners").select("id, name, legal_name").eq("active", true).order("name");
+    .from("owners").select("id, name, legal_name, kind").eq("active", true).order("name");
 
-  const owners = (error ? [] : (data ?? [])) as
-    { id: string; name: string; legal_name: string | null }[];
+  /* `kind` arrives with migration 050. Before it has been run the column
+     is not there and the select fails -- which must not empty a list
+     that worked yesterday, so it falls back and everybody reads as an
+     investor, which is exactly what they were before the column
+     existed. */
+  const fell = error
+    ? await supabase.from("owners").select("id, name, legal_name")
+        .eq("active", true).order("name")
+    : null;
+  const kinds = !error;
+  const rows = (error ? (fell?.data ?? []) : (data ?? [])) as
+    { id: string; name: string; legal_name: string | null; kind?: string }[];
+  const broken = error && fell?.error;
+  const owners = broken ? [] : rows;
 
   // What each one holds, which a dropdown never needed and a list of
   // investors is unreadable without: two rows reading "Larabee Homes LLC"
@@ -31,7 +43,7 @@ export async function GET() {
   // the dropdown that depends on this would go empty with it.
   const held = new Map<string, { homes: number; owesCents: number; parks: Set<string> }>();
   let holdings = false;
-  if (!error && owners.length) {
+  if (!broken && owners.length) {
     type Row = {
       owner_id: string | null;
       monthly_cents?: number | null;
@@ -81,7 +93,7 @@ export async function GET() {
      deal is in, it is a thing that was undone. */
   const paper = new Map<string, { state: string; at: string }>();
   let papers = false;
-  if (!error && owners.length) {
+  if (!broken && owners.length) {
     type Pack = {
       owner_id: string | null; sent_at: string; expires_at: string;
       opened_at: string | null; signed_at: string | null;
@@ -117,9 +129,16 @@ export async function GET() {
            from "we cannot tell" -- see `papers` below. */
         papers: pack?.state ?? null,
         papersAt: pack?.at ?? null,
+        /* Three different things were sharing this list: somebody who
+           buys homes from us, somebody who owns their own home on one of
+           our lots, and one of our own companies. */
+        kind: o.kind ?? "investor",
       };
     }),
-    configured: !error,
+    configured: !broken,
+    /* Whether the kinds could be read, as opposed to everybody really
+       being an investor -- the same pair as `holdings` and `papers`. */
+    kinds,
     /* Whether signing could be read at all, so the list can say nothing
        rather than draw every investor as never having been sent
        anything. */
@@ -158,5 +177,49 @@ export async function POST(req: Request) {
         : error.message;
     return NextResponse.json({ error: why }, { status: 400 });
   }
+  return NextResponse.json({ ok: true, ...data });
+}
+
+/**
+ * Move somebody between investor, resident and one of ours.
+ *
+ * Twenty of the fifty-nine names on that list were never investors --
+ * residents who own their own home on one of our lots, and our own
+ * companies. Every one of them had to be read out to me and set by hand,
+ * which is the shape of a job that belongs on the screen.
+ *
+ * It changes a label and nothing else: no sale, no lot, no money moves,
+ * and nothing is deleted. Reversible by pressing the other chip.
+ */
+export async function PATCH(req: Request) {
+  const me = await requireStaff();
+  if (me?.role !== "admin" && me?.role !== "office") {
+    return NextResponse.json({ error: "not allowed" }, { status: 403 });
+  }
+
+  const body = await req.json().catch(() => ({})) as
+    { id?: unknown; kind?: unknown };
+  const id = String(body.id ?? "").trim();
+  const kind = String(body.kind ?? "").trim();
+  if (!id) return NextResponse.json({ error: "which owner?" }, { status: 400 });
+  /* Checked here as well as by the constraint, so a typo comes back as a
+     sentence rather than as a Postgres violation. */
+  if (!["investor", "resident", "ours"].includes(kind)) {
+    return NextResponse.json(
+      { error: "An owner is an investor, a resident, or one of ours." },
+      { status: 400 });
+  }
+
+  const { data, error } = await supabaseAdmin().from("owners")
+    .update({ kind }).eq("id", id).select("id, name, kind").maybeSingle();
+
+  if (error) {
+    const why = /column .*kind|schema cache|does not exist/i.test(error.message)
+      ? "Sorting owners into investors and residents needs migration 050"
+        + " run on the database first."
+      : error.message;
+    return NextResponse.json({ error: why }, { status: 400 });
+  }
+  if (!data) return NextResponse.json({ error: "no such owner" }, { status: 404 });
   return NextResponse.json({ ok: true, ...data });
 }

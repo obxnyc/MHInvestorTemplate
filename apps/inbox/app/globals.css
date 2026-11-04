@@ -2068,6 +2068,10 @@ a.metric:hover{border-color:var(--accent)}
    between themes; this only places the line. */
 .ownerstands{margin:.1rem 0 .5rem;font-size:.78rem;display:flex;
   align-items:center;gap:.35rem;flex-wrap:wrap}
+/* Investor / Resident / Ours, on the card, so moving somebody between
+   them is a press rather than a conversation. */
+.ownerkind{display:flex;gap:.3rem;flex-wrap:wrap;margin:0 0 .5rem}
+.ownerkind .chip{font-size:.7rem;padding:.2rem .5rem}
 .houssaid{color:var(--accent);font-weight:600}
 
 /* The three hands a typed signature can be written in. Self-hosted, so a
