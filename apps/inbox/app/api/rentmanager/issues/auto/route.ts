@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { pullServiceIssues } from "@/lib/rm-issues";
 import { repairIssues } from "@/lib/rm-repair";
+import { pullTenants } from "@/lib/rm-tenants";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -117,5 +119,46 @@ export async function POST() {
     p_ok: ok, p_filed: filed, p_error: error,
   });
 
-  return NextResponse.json({ ok, filed, mended, stillBlank, error });
+  /* AND THE TENANT ROSTER, WHICH NOBODY IS GOING TO PRESS A BUTTON FOR.
+   *
+   * It shipped as a button on the Rent Manager page and the button was
+   * never pressed, so the roster stayed empty and nothing downstream
+   * changed -- the office still typed every tenant's name from memory,
+   * and it read as the whole feature not working. It was not broken. It
+   * was waiting for somebody, which for a thing that has to happen once
+   * is the same as broken.
+   *
+   * Second time in this file: the repair pass learned the same lesson.
+   * A step that only ever needs doing once is exactly the step nobody
+   * remembers to do.
+   *
+   * Not on every inbox open, though -- a roster of several hundred
+   * people does not change between lunch and the afternoon. Only when
+   * there is nothing yet, or when what is here is a day old, and only
+   * with whatever time the pull and the repair have left.
+   */
+  let roster = 0;
+  if (ok && left() > 12) {
+    try {
+      const db = supabaseAdmin();
+      const { count } = await db.from("contacts")
+        .select("id", { count: "exact", head: true })
+        .not("rm_tenant_id", "is", null);
+      const { data: fresh } = await db.from("contacts")
+        .select("updated_at").not("rm_tenant_id", "is", null)
+        .order("updated_at", { ascending: false }).limit(1).maybeSingle();
+      const staleBy = fresh?.updated_at
+        ? Date.now() - new Date(String(fresh.updated_at)).getTime()
+        : Infinity;
+      if (!count || staleBy > 20 * 3600_000) {
+        const got = await pullTenants({ dryRun: false, seconds: left() - 4 });
+        roster = (got.added ?? 0) + (got.updated ?? 0) + (got.merged ?? 0);
+      }
+    } catch {
+      // Never fails the pull. New requests are what the office is
+      // waiting for; the roster can wait for the next open.
+    }
+  }
+
+  return NextResponse.json({ ok, filed, mended, stillBlank, roster, error });
 }

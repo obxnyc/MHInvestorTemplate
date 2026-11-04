@@ -167,8 +167,58 @@ export async function POST(req: Request) {
   if (convo.contact_id && unitId) {
     await db.from("contacts").update({ unit_id: unitId }).eq("id", convo.contact_id);
   }
+
+  /* AND WHO LIVES THERE, WHICH IS THE WHOLE POINT OF ANSWERING THIS.
+   *
+   * A Rent Manager request arrives attached to a placeholder contact --
+   * no name, no number, a `rm:issue:` string in the phone column
+   * because the column will not take a null. Somebody then picks the
+   * property, and until now that is all that happened: the thread knew
+   * the address and still said "Nobody is attached to this request, so
+   * there is nowhere to send a reply", with the tenant's name sitting
+   * in the lease roster one join away.
+   *
+   * So the thread is pointed at the person who lives there.
+   *
+   * THE TWO REFUSALS MATTER MORE THAN THE MATCH.
+   *
+   * Only when the thread names NOBODY. A named contact was put there by
+   * the email path or by a person, and a tenant reports a leak at their
+   * neighbour's as readily as their own -- overwriting that is how
+   * somebody's record quietly becomes wrong. Fill a blank, never an
+   * answer.
+   *
+   * And only when the unit has exactly ONE tenant on it. Two names
+   * against one address is a question, and picking either is a reply
+   * sent to the wrong person about their own home.
+   */
+  let person: string | null = null;
+  if (unitId && convo.contact_id) {
+    const { data: here } = await db.from("contacts")
+      .select("id, full_name, phone")
+      .eq("id", convo.contact_id).maybeSingle();
+    const anonymous = here
+      && !here.full_name
+      && (!here.phone || String(here.phone).startsWith("rm:")
+          || String(here.phone).startsWith("email:"));
+
+    if (anonymous) {
+      const { data: living } = await db.from("contacts")
+        .select("id, full_name")
+        .eq("unit_id", unitId)
+        .eq("party", "current_tenant")
+        .not("full_name", "is", null)
+        .neq("id", convo.contact_id)
+        .limit(2);
+      if (living?.length === 1) {
+        await db.from("conversations")
+          .update({ contact_id: living[0]!.id }).eq("id", conversationId);
+        person = living[0]!.full_name as string;
+      }
+    }
+  }
   await db.from("work_orders")
     .update({ unit_id: unitId }).eq("conversation_id", conversationId).is("unit_id", null);
 
-  return NextResponse.json({ ok: true, propertyId, unitId });
+  return NextResponse.json({ ok: true, propertyId, unitId, person });
 }
