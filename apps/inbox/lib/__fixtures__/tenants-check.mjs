@@ -141,6 +141,95 @@ t("somebody already here under their own number is joined, not duplicated",
   + "`contacts.phone` is unique -- inserting is refused and the roster "
   + "silently skips the people you talk to most");
 
+/* ------------------------ the two places it has to actually show up
+ *
+ * The roster shipped as a button and the button was never pressed, so
+ * the roster stayed empty and the whole feature read as broken. It was
+ * not broken. It was waiting for somebody, which for a step that needs
+ * doing once is the same thing.
+ */
+const auto = readFileSync(
+  join(lib, "..", "app/api/rentmanager/issues/auto/route.ts"), "utf8");
+
+t("the roster is brought across by itself, not by a button",
+  () => /pullTenants\(/.test(auto),
+  "a step that only ever needs doing once is exactly the step nobody "
+  + "remembers to do");
+
+/* Asked of the GATE, not of the words.
+ *
+ * The first version of this checked that `rm_tenant_id` and
+ * `updated_at` appear in the file, and passed when the condition they
+ * belong to was replaced with `if (true)` -- because the queries that
+ * read them are still sitting right above it. A guard that tests for
+ * the presence of words tests nothing about what they do. */
+t("and not on every single inbox open",
+  () => {
+    const call = auto.indexOf("await pullTenants(");
+    if (call < 0) return false;
+    // The condition immediately guarding the call, not anywhere in the file.
+    const before = auto.slice(Math.max(0, call - 400), call);
+    return /if\s*\([^)]*\b(?:count|staleBy)\b[\s\S]{0,80}\)\s*\{/.test(before);
+  },
+  "several hundred people do not change between lunch and the "
+  + "afternoon; re-reading the roster on every inbox open is a minute "
+  + "of Rent Manager's time, every five minutes, for nothing");
+
+t("it cannot cost the office the new requests",
+  () => {
+    const i = auto.indexOf("pullTenants(");
+    const around = auto.slice(Math.max(0, i - 600), i + 400);
+    return /try\s*\{/.test(around) && /catch/.test(around);
+  });
+
+t("the pull and the repair are asked for first",
+  () => {
+    const pull = auto.indexOf("pullServiceIssues(");
+    const fix = auto.indexOf("repairIssues(");
+    const ros = auto.indexOf("pullTenants(");
+    return pull > 0 && fix > pull && ros > fix;
+  },
+  "by position: what has just come in matters more than tidying the "
+  + "roster");
+
+/* FILLING THE PERSON IN WHEN THE ADDRESS IS ANSWERED.
+ *
+ * "This request did not say which property it is for... Nobody is
+ * attached to this request, so there is nowhere to send a reply." The
+ * office then picks the property, and until now that was all that
+ * happened -- the thread knew the address and still named nobody, with
+ * the tenant one join away in the lease roster. */
+const claim = readFileSync(
+  join(lib, "..", "app/api/places/claim/route.ts"), "utf8");
+const fill = (() => {
+  const i = claim.indexOf("let person: string | null = null;");
+  if (i < 0) return "";
+  const rest = claim.slice(i);
+  const end = rest.indexOf("await db.from(\"work_orders\")");
+  return end < 0 ? rest : rest.slice(0, end);
+})();
+
+t("the block that names the person can be found",
+  () => fill.length > 0 && /party", "current_tenant"/.test(fill),
+  "every rule below reads it");
+
+t("answering the address names the person who lives there",
+  () => /\.eq\("unit_id", unitId\)/.test(fill)
+     && /contact_id: living\[0\]/.test(fill),
+  "the whole point of answering 'which property is it' is that the "
+  + "reply then has somewhere to go");
+
+t("a thread that already names somebody is left alone",
+  () => /!here\.full_name/.test(fill),
+  "a named contact was put there by the email or by a person, and a "
+  + "tenant reports a leak at their neighbour's as readily as their "
+  + "own -- fill a blank, never an answer");
+
+t("two tenants at one address is refused, not picked between",
+  () => /\.limit\(2\)/.test(fill) && /living\?\.length === 1/.test(fill),
+  "picking either sends a reply to the wrong person about their own "
+  + "home; asking for two is how you can tell there was more than one");
+
 let failed = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);

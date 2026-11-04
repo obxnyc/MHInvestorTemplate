@@ -14,7 +14,7 @@ export const maxDuration = 60;
  *
  * `{"go": true}` is what makes it write. Re-running updates the people
  * it already has rather than making a second copy of each — the join is
- * Rent Manager's own tenant id, added in migration 049.
+ * Rent Manager's own tenant id, added in migration 050.
  */
 export async function POST(req: Request) {
   const me = await requireStaff();
