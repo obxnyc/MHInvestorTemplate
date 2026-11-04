@@ -7,6 +7,8 @@ import { openInquiry, knownPlaces } from "@/lib/inquiry";
 import { prettyPhone } from "@/lib/format";
 import { storeInboundMedia } from "@/lib/media";
 import { toEnglish } from "@/lib/translate";
+import { confirmByText } from "@/lib/pipeline";
+import { saysYes } from "@/lib/followups";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -188,6 +190,23 @@ export async function POST(req: Request) {
     .update({ last_message_at: new Date().toISOString(), status: "open",
               last_message_preview: readable.slice(0, 160) })
     .eq("id", convo.id);
+
+  // "Reply YES to confirm" is in every day-before reminder, so a YES is an
+  // answer to it -- but only a bare yes, and only with a showing in the next
+  // three days to be the thing it confirms. Written into the thread as a
+  // note, so whoever reads "YES" knows what it was a yes to.
+  if (saysYes(readable)) {
+    try {
+      if (await confirmByText(db, contact.id)) {
+        await db.from("notes").insert({
+          conversation_id: convo.id, author_id: null, kind: "event",
+          body: "Confirmed their showing by replying YES",
+        });
+      }
+    } catch (e) {
+      console.error("could not confirm a showing by text", e);
+    }
+  }
 
   const { data: who } = await db.from("contacts")
     .select("full_name, phone").eq("id", contact.id).maybeSingle();

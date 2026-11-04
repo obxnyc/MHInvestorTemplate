@@ -6,6 +6,7 @@ import { evaluate, declineMessage, type Answers, type RuleSet } from "@/lib/preq
 import { pushToTeam } from "@/lib/push";
 import { openInquiry, knownPlaces } from "@/lib/inquiry";
 import { sendSms, sendEmail } from "@/lib/notify";
+import { onPrequal } from "@/lib/pipeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,9 +73,38 @@ export async function POST(req: Request) {
 
   const result = evaluate(answers, rs.criteria as unknown as RuleSet);
 
-  // Contact, keyed on phone so this merges with any text thread they start.
+  // Somebody who arrived by their own prescreening link is already known --
+  // a Zillow lead, say, filed under the relay address Zillow gave us. The
+  // link says which contact they are, so this is the moment the number
+  // Zillow withheld gets attached to the right person, rather than a second
+  // contact being made for the same renter under their phone.
   let contact: { id: string } | null = null;
-  if (phone) {
+  let leadId: string | null = null;
+  if (body.lead) {
+    const { data: lead } = await db.from("inquiries").select("id, contact_id")
+      .eq("prescreen_token", String(body.lead)).maybeSingle();
+    if (lead) {
+      leadId = lead.id as string;
+      contact = { id: lead.contact_id as string };
+      const { data: had } = await db.from("contacts").select("phone, email")
+        .eq("id", contact.id).maybeSingle();
+      const update: Record<string, unknown> = { party: "prospect" };
+      if (name) update.full_name = name;
+      // The phone is the contact's key, and unique. Only take it if nobody
+      // else already has it -- if they do, that is the same person texting
+      // us from before, and merging two contacts is a person's decision.
+      if (phone && had?.phone?.startsWith("email:")) {
+        const { data: taken } = await db.from("contacts").select("id").eq("phone", phone).maybeSingle();
+        if (!taken) update.phone = phone;
+      }
+      // A real email beats Zillow's relay for anything we send later.
+      if (email && (!had?.email || /@convo\.zillow\.com$/i.test(had.email))) update.email = email;
+      await db.from("contacts").update(update).eq("id", contact.id);
+    }
+  }
+
+  // Contact, keyed on phone so this merges with any text thread they start.
+  if (!contact && phone) {
     const { data } = await db.from("contacts").select("id").eq("phone", phone).maybeSingle();
     contact = data;
   }
@@ -87,7 +117,7 @@ export async function POST(req: Request) {
       phone: phone ?? `email:${email}`, email, full_name: name, party: "prospect",
     }).select("id").single();
     contact = data!;
-  } else {
+  } else if (!leadId) {
     await db.from("contacts").update({
       full_name: name ?? undefined, email: email ?? undefined, party: "prospect",
     }).eq("id", contact.id);
@@ -127,6 +157,19 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error("prequal could not open an inquiry", { contact: contact.id, e });
+  }
+
+  // Move them along the pipeline: the nudges to answer stop, and the ones to
+  // book start if they may book.
+  try {
+    const { data: q } = await db.from("inquiries").select("id")
+      .eq("contact_id", contact.id).eq("outcome", "open").maybeSingle();
+    const inquiryId = leadId ?? (q?.id as string | undefined);
+    if (inquiryId) {
+      await onPrequal(db, inquiryId, result.outcome);
+    }
+  } catch (e) {
+    console.error("prequal could not move the pipeline on", { contact: contact.id, e });
   }
 
   const criteriaUrl = `${publicBase(req)}/criteria`;

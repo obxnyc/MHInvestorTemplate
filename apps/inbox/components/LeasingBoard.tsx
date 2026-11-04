@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import BackLink from "@/components/BackLink";
@@ -8,6 +8,12 @@ import { money } from "@/lib/prices";
 import { spell, howLong, worrying, longestFirst } from "@/lib/empty";
 import { matches, saidNothing, type Lot } from "@/lib/match";
 import type { Wanted } from "@/lib/wanted";
+import { STAGES } from "@/lib/followups";
+import type { Hours, Rules } from "@/lib/slots";
+import { ZONE } from "@/lib/zone";
+import ShowingsList, { type ShowingRow } from "@/components/ShowingsList";
+import ShowingHours from "@/components/ShowingHours";
+import ListingEditor, { type ListingDraft } from "@/components/ListingEditor";
 
 export type Looking = {
   id: string;
@@ -21,7 +27,26 @@ export type Looking = {
   /** The words each field was read out of. Empty for a field somebody typed
    *  themselves, which is how a correction stops looking like a guess. */
   read: Partial<Record<keyof Wanted, { from: string; at: number }>>;
+  stage: string;
+  stageAt: string;
+  unitId: string | null;
+  followups: { kind: string; dueAt: string; state: string; reason: string | null; channel: string | null }[];
 };
+
+/** What each planned follow-up is, said the way the office would say it. */
+const FOLLOWUP: Record<string, string> = {
+  invite_nudge_1: "Reminder to answer the questions",
+  invite_nudge_2: "Last reminder to answer the questions",
+  book_nudge_1: "Reminder to book a showing",
+  book_nudge_2: "Last reminder to book",
+  showing_day_before: "Day-before reminder",
+  showing_soon: "Two-hours-before reminder",
+  after_showing: "After-showing note with the application",
+  still_looking: "\u201cDid you find a place?\u201d",
+};
+
+const at = (iso: string) => new Date(iso).toLocaleString("en-US", {
+  timeZone: ZONE, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export type EmptyLot = Lot & {
   vacantSince: string | null;
@@ -58,13 +83,45 @@ function said(w: Wanted): { label: string; value: string; key: keyof Wanted }[] 
 }
 
 export default function LeasingBoard(
-  { looking, lots, full, clock, canEdit }:
-  { looking: Looking[]; lots: EmptyLot[]; full: boolean; clock: boolean; canEdit: boolean },
+  { looking, lots, full, clock, canEdit, pipeline, showings, listings, unitFacts, hours, rules, feedUrl }:
+  { looking: Looking[]; lots: EmptyLot[]; full: boolean; clock: boolean; canEdit: boolean;
+    pipeline: boolean; showings: ShowingRow[]; listings: Record<string, ListingDraft>;
+    unitFacts: Record<string, { bedrooms: string; bathrooms: string; rent: string; squareFeet: string }>;
+    hours: Hours[]; rules: Rules; feedUrl: string },
 ) {
   const router = useRouter();
   const [busy, start] = useTransition();
   const [open, setOpen] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [stage, setStage] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [showHours, setShowHours] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  // Opening this screen sends whatever follow-ups have come due. The cron
+  // fires once a day on this plan; the office looks far more often than
+  // that. The server decides whether a run is needed, so asking is cheap.
+  useEffect(() => {
+    if (!pipeline) return;
+    fetch("/api/followups/run", { method: "POST" })
+      .then((r) => r.json()).then((r) => { if (r?.sent) router.refresh(); })
+      .catch(() => {});
+  }, [pipeline, router]);
+
+  const act = async (body: Record<string, unknown>, done: string) => {
+    setProblem(null); setNote(null);
+    const res = await fetch("/api/leasing", {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+    const out = await res?.json().catch(() => ({})) ?? {};
+    if (!res || !res.ok) { setProblem(out.error ?? "That didn't go through. Try again."); return; }
+    setNote(done);
+    start(() => router.refresh());
+  };
+
+  const counts = Object.fromEntries(STAGES.map((st) => [st.key, looking.filter((p) => p.stage === st.key).length]));
+  const shown = stage ? looking.filter((p) => p.stage === stage) : looking;
 
   const call = async (body: Record<string, unknown>) => {
     setProblem(null);
@@ -99,6 +156,29 @@ export default function LeasingBoard(
       </p>
 
       {problem ? <p className="leadbad">{problem}</p> : null}
+      {note ? <p className="leadgood">{note}</p> : null}
+
+      {!pipeline ? (
+        <p className="leadnone">
+          Run migration 051 and this screen also tracks each person from enquiry to
+          showing, sends the prescreening questions and reminders, books showings, and
+          lists homes on Zillow.
+        </p>
+      ) : (
+        <div className="funnel" role="tablist" aria-label="Where they have got to">
+          <button role="tab" aria-selected={!stage} className={`funstage${!stage ? " on" : ""}`}
+                  onClick={() => setStage(null)}>
+            <b>{looking.length}</b><span>Everyone</span>
+          </button>
+          {STAGES.map((st) => (
+            <button key={st.key} role="tab" aria-selected={stage === st.key}
+                    className={`funstage${stage === st.key ? " on" : ""}${counts[st.key] ? "" : " none"}`}
+                    onClick={() => setStage(stage === st.key ? null : st.key)}>
+              <b>{counts[st.key]}</b><span>{st.said}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {!looking.length ? (
         /* Empty because nothing has arrived since this started recording, not
@@ -115,14 +195,17 @@ export default function LeasingBoard(
       ) : null}
 
       <ul className="leadlist">
-        {looking.map((p) => {
+        {shown.map((p) => {
           const fits = saidNothing(p.wanted) ? [] : matches(lots, p.wanted);
           const days = waiting(p.inquiredAt);
           return (
             <li key={p.id} className="lead">
               <div className="leadhead">
                 <span className="leadwho">{p.name ?? p.phone ?? "No name"}</span>
-                {p.phone ? <a className="leadtel" href={`tel:${p.phone}`}>{p.phone}</a> : null}
+                {p.phone ? <a className="leadtel" href={`tel:${p.phone}`}>{p.phone}</a>
+                  : /@convo\.zillow\.com$/i.test(p.email ?? "")
+                    ? <span className="leadnonum">Zillow lead — no number yet</span>
+                    : p.email ? <span className="leadnonum">{p.email}</span> : null}
                 {p.conversationId
                   ? <Link className="mini" href={`/c/${p.conversationId}`}>The conversation</Link>
                   : null}
@@ -131,6 +214,54 @@ export default function LeasingBoard(
                   {p.source ? ` · ${p.source}` : ""}
                 </span>
               </div>
+
+              {pipeline ? (
+                <div className="leadpipe">
+                  <span className={`stagepill st-${p.stage}`}>
+                    {STAGES.find((st) => st.key === p.stage)?.said ?? p.stage}
+                  </span>
+                  {(() => {
+                    const next = p.followups.find((f) => f.state === "scheduled" || f.state === "handed");
+                    const last = [...p.followups].reverse().find((f) => f.state === "sent");
+                    return (
+                      <span className="leadnext">
+                        {next ? `Next: ${FOLLOWUP[next.kind] ?? next.kind}, ${at(next.dueAt)}` : "Nothing planned"}
+                        {last ? ` · Last sent: ${FOLLOWUP[last.kind] ?? last.kind} by ${last.channel}` : ""}
+                      </span>
+                    );
+                  })()}
+                  {canEdit ? (
+                    <span className="leadacts">
+                      {p.stage === "new" ? (
+                        <button className="leadout" disabled={busy}
+                                onClick={() => act({ id: p.id, action: "invite" }, "Prescreening questions sent.")}>
+                          Send the questions
+                        </button>
+                      ) : null}
+                      {p.stage === "review" ? (
+                        <button className="leadout" disabled={busy}
+                                onClick={() => {
+                                  const reason = window.prompt("Why are they OK to book? (kept on the record)");
+                                  if (reason !== null) act({ id: p.id, action: "approve", reason }, "Booking link sent.");
+                                }}>
+                          Let them book
+                        </button>
+                      ) : null}
+                      {p.stage === "booked" || p.stage === "shown" ? (
+                        <button className="leadout" disabled={busy}
+                                onClick={() => act({ id: p.id, action: "applied" }, "Marked as applied.")}>
+                          They applied
+                        </button>
+                      ) : null}
+                    </span>
+                  ) : null}
+                  {p.followups.some((f) => f.state === "failed") ? (
+                    <span className="leadbut">
+                      A follow-up could not go: {p.followups.find((f) => f.state === "failed")?.reason}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
 
               <dl className="leadsaid">
                 {said(p.wanted).length ? said(p.wanted).map((s) => (
@@ -212,7 +343,29 @@ export default function LeasingBoard(
         })}
       </ul>
 
+      {pipeline ? (
+        <>
+          <h2>Showings</h2>
+          <ShowingsList rows={showings} canEdit={canEdit} />
+          {canEdit ? (
+            <p className="leadquiet">
+              <button className="mini" onClick={() => setShowHours(!showHours)}>
+                {showHours ? "Hide showing hours" : "When we show homes"}
+              </button>
+            </p>
+          ) : null}
+          {showHours ? <ShowingHours hours={hours} rules={rules} /> : null}
+        </>
+      ) : null}
+
       <h2>Empty, longest first</h2>
+      {pipeline ? (
+        <p className="leadquiet zillowfeed">
+          Homes you list go into the feed Zillow reads at {feedUrl}. Zillow has to approve
+          that address once before anything appears there; after that it picks up changes
+          on its own, usually within a day.
+        </p>
+      ) : null}
       {!clock ? (
         <p className="leadnone">
           Run migration 037 and this says how long each one has been empty and
@@ -236,6 +389,19 @@ export default function LeasingBoard(
               {l.blocker
                 ? <span className="leadblock">{l.blocker}</span>
                 : <span className="leadnoblock">Nothing said about what is stopping it</span>}
+              {pipeline && canEdit ? (
+                <span className="leadlist-z">
+                  {listings[l.id]?.onZillow ? <span className="leadyes">In the Zillow feed</span> : null}
+                  <button className="leadout" onClick={() => setEditing(editing === l.id ? null : l.id)}>
+                    {listings[l.id]?.onZillow ? "Edit listing" : "List on Zillow"}
+                  </button>
+                </span>
+              ) : null}
+              {editing === l.id && listings[l.id] ? (
+                <ListingEditor unitId={l.id} title={`${l.property} ${l.label}`}
+                               draft={listings[l.id]} facts={unitFacts[l.id]}
+                               onClose={() => setEditing(null)} />
+              ) : null}
             </li>
           );
         })}

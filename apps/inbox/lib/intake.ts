@@ -7,6 +7,8 @@ import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
 import { openInquiry, knownPlaces } from "./inquiry";
+import { startPipeline, baseUrl } from "./pipeline";
+import { matchListing } from "./zillow-feed";
 
 export type IntakeSource = "zego" | "zillow" | "website" | "voicemail";
 
@@ -289,6 +291,33 @@ export async function ingest(item: Intake) {
       inquiryId = got?.id ?? null;
     } catch (e) {
       console.error("intake could not open an inquiry", { source: item.source, e });
+    }
+  }
+
+  // And then the pipeline: the prescreening questions go back at once, by
+  // the road the enquiry came in on -- for Zillow that is the relay address,
+  // which reaches the renter in their Zillow inbox. Which home they asked
+  // about is read off the listing Zillow names, matched against our own
+  // listings, so the questions arrive already about the right home.
+  //
+  // Failing here costs nothing that is already written. The enquiry is a
+  // thread and a row on the leasing board whatever happens below.
+  if (inquiryId && autoStarts(item.source)) {
+    try {
+      if (item.unitHint) {
+        const { data: listed } = await db.from("listings")
+          .select("unit_id, street, units(label)").eq("on_zillow", true);
+        const hit = matchListing(item.unitHint, (listed ?? []).map((l) => ({
+          id: l.unit_id as string, street: (l.street as string | null) ?? "",
+          unitLabel: (l.units as unknown as { label: string } | null)?.label ?? null,
+        })));
+        if (hit) {
+          await db.from("inquiries").update({ unit_id: hit.id }).eq("id", inquiryId).is("unit_id", null);
+        }
+      }
+      await startPipeline(db, inquiryId, baseUrl());
+    } catch (e) {
+      console.error("intake could not start the pipeline", { source: item.source, e });
     }
   }
 
@@ -582,4 +611,20 @@ async function unitOfSingleHome(
   // One unit is the house itself. More than one is a building, and which
   // flat it is was never in the subject line.
   return units?.length === 1 ? (units[0]!.id as string) : null;
+}
+
+/**
+ * Which sources get the prescreening questions sent automatically.
+ *
+ * Zillow and the website by default: somebody filled in a form about renting
+ * a home, so the questions are the answer to what they asked. NOT a text to
+ * the shared line by default -- that path is read by a classifier, and a
+ * tenant's text filed as a prospect by mistake would get a rental
+ * questionnaire. Those start with one press on the leasing board, or by
+ * adding "sms" to PIPELINE_AUTO_START.
+ */
+export function autoStarts(source: string): boolean {
+  const list = (process.env.PIPELINE_AUTO_START ?? "zillow,website")
+    .split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  return list.includes(source.toLowerCase());
 }

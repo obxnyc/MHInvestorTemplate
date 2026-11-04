@@ -11,8 +11,14 @@ type Result =
   | { outcome: "manual_review" }
   | { outcome: "declined"; message: string };
 
-export default function ApplyForm({ homes }: { homes: Home[] }) {
-  const [unitId, setUnitId] = useState(homes[0]?.id ?? "");
+/** Who this is, when they came by their own link from a Zillow or website
+ *  enquiry. The name and the home are filled in for them; the email only if
+ *  it is a real one and not Zillow's relay. */
+export type Lead = { token: string; name: string | null; email: string | null; unitId: string | null };
+
+export default function ApplyForm({ homes, lead }: { homes: Home[]; lead?: Lead | null }) {
+  const [unitId, setUnitId] = useState(
+    (lead?.unitId && homes.some((h) => h.id === lead.unitId) ? lead.unitId : null) ?? homes[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +35,12 @@ export default function ApplyForm({ homes }: { homes: Home[] }) {
       body: JSON.stringify({ ...payload, has_cosigner: fd.get("has_cosigner") === "on" }),
     });
     setBusy(false);
-    if (!res.ok) { setError("Something went wrong. Please try again."); return; }
+    if (!res.ok) {
+      const said = await res.json().catch(() => ({}));
+      setError(said.error === "choose a home" ? "Please choose a home."
+        : "Something went wrong. Please try again.");
+      return;
+    }
     setResult(await res.json());
   }
 
@@ -95,12 +106,14 @@ export default function ApplyForm({ homes }: { homes: Home[] }) {
         <fieldset>
           <legend>How do we reach you?</legend>
           <label htmlFor="name">Your name</label>
-          <input id="name" name="name" required autoComplete="name" />
+          <input id="name" name="name" required autoComplete="name"
+                 defaultValue={lead?.name ?? ""} />
           <label htmlFor="phone">Mobile number</label>
           <input id="phone" name="phone" type="tel" required autoComplete="tel"
                  placeholder="(252) 555-0100" />
           <label htmlFor="email">Email</label>
-          <input id="email" name="email" type="email" autoComplete="email" />
+          <input id="email" name="email" type="email" autoComplete="email"
+                 defaultValue={lead?.email ?? ""} />
         </fieldset>
 
         <fieldset>
@@ -159,6 +172,7 @@ export default function ApplyForm({ homes }: { homes: Home[] }) {
           </p>
         </fieldset>
 
+        {lead ? <input type="hidden" name="lead" value={lead.token} /> : null}
         {/* honeypot */}
         <input type="text" name="company" tabIndex={-1} autoComplete="off" className="hp" />
 

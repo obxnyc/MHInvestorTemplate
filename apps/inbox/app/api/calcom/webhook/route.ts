@@ -61,7 +61,9 @@ export async function POST(req: Request) {
     scheduled_for: startTime,
     external_event_id: p.uid,
     submission_id: sub.id,
-    prequalified: true,
+    // No `prequalified`: the live table has no such column, and sending it
+    // made every booking from Cal.com fail to record.
+    status: "booked",
   }, { onConflict: "external_event_id" }).select("id").maybeSingle();
 
   await db.from("prequal_submissions")

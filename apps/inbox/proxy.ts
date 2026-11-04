@@ -12,6 +12,8 @@ import { NextResponse, type NextRequest } from "next/server";
  *               fair-housing defence is worth nothing behind a login
  *  - /book/…    the tokenised showing link a prequalified applicant is sent.
  *               The token is the credential; the page shows nothing without one.
+ *  - /showing/… a prospect's own booked showing: when, where, change or
+ *               cancel. Linked from every reminder; same token rule as /book.
  *
  *  Everything else -- threads, calls, court filings, the audit trail -- needs a
  *  session, and then row-level security decides what that session may see. */
@@ -27,6 +29,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // warns about -- added an hour after the page shipped, by somebody who had
 // read that comment and walked past it anyway.
 const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
+                /^\/showing\//,
                 /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//, /^\/report/,
                 /* A buyer signing a purchase agreement has no account and is
                    not going to make one to read what they are buying. The

@@ -29,6 +29,10 @@ export default function PullNew() {
     if (asked.current) return;
     asked.current = true;
     let alive = true;
+    // Leasing follow-ups ride on the same visit: a reminder that was due an
+    // hour ago goes out now rather than at tomorrow's cron. Fire and forget;
+    // the server decides whether anything is due and that only one runs.
+    fetch("/api/followups/run", { method: "POST" }).catch(() => {});
     (async () => {
       const res = await fetch("/api/rentmanager/issues/auto", { method: "POST" })
         .catch(() => null);

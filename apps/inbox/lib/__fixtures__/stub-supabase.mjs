@@ -18,6 +18,33 @@
  */
 import { createServer } from "node:http";
 
+/* THE COMPARISON FILTERS: lt, lte, gt, gte, neq and in. They were ignored,
+   which made a "does anything overlap this half-hour" query answer with every
+   showing ever booked -- so a free slot read as taken, and a check written
+   the other way round would have read every taken slot as free. A stand-in
+   that ignores the question answers the wrong one confidently, and this is
+   the fourth time that sentence has been written about this file.
+
+   Returns undefined for an operator it does not know, so the callers can
+   keep their own rules for eq and is.null. */
+function compares(got, v) {
+  const m = /^(lt|lte|gt|gte|neq|in)\.(.*)$/.exec(v);
+  if (!m) return undefined;
+  const [, op, raw] = m;
+  if (op === "in") {
+    const list = raw.replace(/^\(|\)$/g, "").split(",").map((x) => x.replace(/^"|"$/g, ""));
+    return list.includes(String(got));
+  }
+  if (op === "neq") return String(got) !== raw;
+  if (got === null || got === undefined) return false;
+  const a = String(got), b = raw;
+  // Timestamps written two ways ("...Z" and "...000Z") compare as instants.
+  const ta = Date.parse(a), tb = Date.parse(b);
+  const [x, y] = Number.isFinite(ta) && Number.isFinite(tb) && /\d{4}-\d\d-\d\d/.test(a)
+    ? [ta, tb] : Number.isFinite(Number(a)) && Number.isFinite(Number(b)) ? [Number(a), Number(b)] : [a, b];
+  return op === "lt" ? x < y : op === "lte" ? x <= y : op === "gt" ? x > y : x >= y;
+}
+
 const WHO = "11111111-1111-1111-1111-111111111111";
 const USER = { id: WHO, aud: "authenticated", role: "authenticated",
                email: "cade@larabeehomesllc.com", app_metadata: {},
@@ -110,7 +137,72 @@ const TABLES = {
   clock_rules: [{ id: true, daily_cap: 10, break_after: 6, break_minutes: 30,
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
-  work_orders: [], inquiries: [],
+  work_orders: [],
+
+  /* THE LEASING PIPELINE (051). Three people at three different stages,
+     because a board that shows one stage cannot tell a stage filter from
+     no filter; an empty lot with a listing in the feed and one without, so
+     "In the Zillow feed" has somewhere to be wrong; a showing in the past
+     still waiting to be marked, beside one coming up. */
+  inquiries: [
+    { id: "iq1", inquired_at: "2026-11-03T15:00:00Z", source: "zillow form", bedrooms_min: 3,
+      price_ceiling: 1000, area: null, has_pets: true, move_in_from: null, outcome: "open",
+      contact_id: "ct9", conversation_id: null, read: {}, unit_id: "u4", owner_id: null,
+      stage: "invited", stage_at: "2026-11-03T15:00:00Z", prescreen_token: "lead-tok-1",
+      contacts: { full_name: "Jordan Pike", phone: "email:4pbz@convo.zillow.com",
+                  email: "4pbz@convo.zillow.com" } },
+    { id: "iq2", inquired_at: "2026-11-01T15:00:00Z", source: "prequal form", bedrooms_min: null,
+      price_ceiling: null, area: null, has_pets: null, move_in_from: null, outcome: "open",
+      contact_id: "ct10", conversation_id: null, read: {}, unit_id: "u4", owner_id: null,
+      stage: "booked", stage_at: "2026-11-02T15:00:00Z", prescreen_token: "lead-tok-2",
+      contacts: { full_name: "Avery Lane", phone: "+12525550177", email: "avery@example.com" } },
+    { id: "iq3", inquired_at: "2026-10-30T15:00:00Z", source: "website form", bedrooms_min: 2,
+      price_ceiling: null, area: null, has_pets: null, move_in_from: null, outcome: "open",
+      contact_id: "ct11", conversation_id: null, read: {}, unit_id: null, owner_id: null,
+      stage: "review", stage_at: "2026-10-31T15:00:00Z", prescreen_token: "lead-tok-3",
+      contacts: { full_name: "Sam Ortiz", phone: "+12525550188", email: null } },
+  ],
+  lead_followups: [
+    { inquiry_id: "iq1", kind: "invite_nudge_1", due_at: "2026-11-04T15:00:00Z", state: "scheduled",
+      skipped_reason: null, sent_at: null, channel: null },
+    { inquiry_id: "iq2", kind: "showing_day_before", due_at: "2026-11-06T15:00:00Z", state: "handed",
+      skipped_reason: null, sent_at: null, channel: "sms" },
+  ],
+  followup_runs: [{ id: true, started_at: null, finished_at: null, sent: 0, error: null }],
+  showings: [
+    { id: "sh1", scheduled_for: "2030-11-07T15:00:00Z", ends_at: "2030-11-07T15:30:00Z",
+      status: "booked", inquiry_id: "iq2", unit_id: "u4", contact_id: "ct10",
+      manage_token: "manage-tok-1",
+      contacts: { full_name: "Avery Lane", phone: "+12525550177" },
+      units: { label: "14", properties: { name: "1140 Northside Road Mobile Home Community" } } },
+    { id: "sh2", scheduled_for: "2026-11-03T18:00:00Z", ends_at: "2026-11-03T18:30:00Z",
+      status: "booked", inquiry_id: null, unit_id: "u4", contact_id: "ct11",
+      manage_token: "manage-tok-2",
+      contacts: { full_name: "Sam Ortiz", phone: "+12525550188" },
+      units: { label: "14", properties: { name: "1140 Northside Road Mobile Home Community" } } },
+  ],
+  showing_hours: [
+    { weekday: 1, starts: "10:00:00", ends: "18:00:00" }, { weekday: 2, starts: "10:00:00", ends: "18:00:00" },
+    { weekday: 3, starts: "10:00:00", ends: "18:00:00" }, { weekday: 4, starts: "10:00:00", ends: "18:00:00" },
+    { weekday: 5, starts: "10:00:00", ends: "18:00:00" }, { weekday: 6, starts: "10:00:00", ends: "14:00:00" },
+  ],
+  showing_rules: [{ id: true, slot_minutes: 30, notice_minutes: 120, horizon_days: 14, at_once: 1 }],
+  listings: [
+    { id: "li1", unit_id: "u4", on_zillow: true, listed_at: "2026-11-01T15:00:00Z", unlisted_at: null,
+      headline: "3 bed, 2 bath with a new deck",
+      description: "A three bedroom, two bath home on a corner lot with a new deck and a storage shed. Water and trash included.",
+      street: "1140 Northside Rd Lot 14", city: "Elizabeth City", state: "NC", zip: "27909",
+      deposit: 950, pets: "both", lease_months: 12,
+      photos: ["https://example.com/listing/front.jpg"], updated_at: "2026-11-01T15:00:00Z",
+      created_at: "2026-11-01T15:00:00Z" },
+  ],
+  prequal_submissions: [
+    { id: "ps1", outcome: "auto_approve", reviewed_at: null, contact_id: "ct10", unit_id: "u4",
+      booking_token: "book-tok-1", decided_at: "2026-11-02T15:00:00Z",
+      contacts: { full_name: "Avery Lane", email: "avery@example.com" },
+      units: { label: "14", properties: { name: "1140 Northside Road Mobile Home Community" } } },
+  ],
+  consent_current: [],
 
   /* Nobody has signed: the papers panel has to be right before anyone
      has, which is every account the first time. */
@@ -231,6 +323,21 @@ const TABLES = {
     { id: "u2", label: "17", property_id: "p2",
       properties: { id: "p2", name: "1140 Northside Road Mobile Home Community",
                     address: "1140 Northside Rd, Elizabeth City NC" } },
+    /* Empty, rented through the pipeline. The only lot here with the
+       columns the leasing board asks for, which the column check reads
+       as the table having them. */
+    { id: "u4", label: "14", property_id: "p2", is_vacant: true, monthly_rent: 950,
+      bedrooms: 3, bathrooms: 2, square_feet: 1100, available_on: "2026-12-01",
+      vacant_since: "2026-09-20", vacant_since_estimated: false, blocker: null,
+      lat: null, lng: null,
+      properties: { id: "p2", name: "1140 Northside Road Mobile Home Community",
+                    address: "1140 Northside Rd, Elizabeth City, NC 27909", kind: "mhp", lat: 36.3, lng: -76.2 } },
+    { id: "u5", label: "22", property_id: "p2", is_vacant: true, monthly_rent: 875,
+      bedrooms: 2, bathrooms: 1, square_feet: 840, available_on: null,
+      vacant_since: "2026-10-28", vacant_since_estimated: false, blocker: "Waiting on flooring",
+      lat: null, lng: null,
+      properties: { id: "p2", name: "1140 Northside Road Mobile Home Community",
+                    address: "1140 Northside Rd, Elizabeth City, NC 27909", kind: "mhp", lat: 36.3, lng: -76.2 } },
   ],
   /* Two homes, in two parks, to ow1 -- so "across N parks" has a number
      to get wrong, and ow2 has nothing.
@@ -524,6 +631,7 @@ createServer((req, res) => {
           if (["select", "order", "limit", "offset"].includes(k)) continue;
           const m = /^eq\.(.*)$/.exec(v);
           if (m && String(row[k]) !== m[1]) { match = false; break; }
+          if (compares(row[k], v) === false) { match = false; break; }
           if (/^is\.null$/.test(v) && row[k] !== null && row[k] !== undefined) {
             match = false; break;
           }
@@ -571,6 +679,8 @@ createServer((req, res) => {
         });
         continue;
       }
+      const c = /^(lt|lte|gt|gte|neq|in)\./.test(v);
+      if (c) { rows = rows.filter((r) => compares(r[k], v)); continue; }
       const m = /^eq\.(.*)$/.exec(v);
       if (!m) continue;
       const want = m[1] === "null" ? null : m[1];
@@ -597,6 +707,7 @@ createServer((req, res) => {
       dm_members: { thread: ["thread_id", "dm_threads"] },
       shifts: { properties: ["property_id", "properties"] },
       properties: { owners: ["owner_id", "owners"] },
+      listings: { units: ["unit_id", "units"] },
     };
 
     /* THE OTHER DIRECTION. A property carries its lots, and PostgREST

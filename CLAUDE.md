@@ -1408,3 +1408,36 @@ because membership changes: somebody joins the office and a thread matched on
 need a part" is "where are you?", and the screen it was sent from already
 knows. Read from the database, never from the request: a claim about which job
 somebody is on is worth nothing if the person sending it chose the words.
+
+### From a Zillow message to a showing
+
+`lib/pipeline.ts` runs it: enquiry, prescreening questions sent at once (to
+Zillow's relay address for a Zillow lead), nudges at 1 and 3 days, a booking
+link on a pass, our own calendar (`showing_hours`), reminders the day before
+and two hours before, a note three hours after with the application link,
+and "did you find a place?" at 14 days. Every follow-up is a row in
+`lead_followups` before it is sent and is asked again at send time whether it
+still makes sense (`lib/followups.ts`). Migration 051.
+
+**Zillow does not take listings pushed at it.** It reads a feed we host --
+`/api/feeds/zillow`, HotPads `hotPadsItems` XML -- and only after Zillow's
+rentals team has approved that URL once (rentalfeeds@zillow.com, weeks the
+first time). So "List on Zillow" puts a home in OUR feed instantly, and the
+screen says that, not "on Zillow". Do not tell the owner a listing is live on
+Zillow because the button turned green.
+
+**The times that must land at a minute go to Twilio, not the cron.** Hobby
+fires a cron once a day, so the two showing reminders are handed to Twilio as
+scheduled messages at booking and cancelled through it if the showing is.
+Everything else runs from the daily cron (midday Eastern -- a 6am run inside
+quiet hours sends nothing) and from anybody opening the inbox or the leasing
+screen.
+
+**A text to the shared line does not start the pipeline by default.** It is
+read by a classifier, and a tenant filed as a prospect by mistake would get a
+rental questionnaire. `PIPELINE_AUTO_START` says which sources do.
+
+The stand-in database ignored `lt`, `gt` and `in`, so "does anything overlap
+this half-hour" answered with every showing ever booked and a free slot read
+as taken. It honours them now. Fifth time for that sentence about that file:
+**a stand-in that ignores the question answers the wrong one confidently.**

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { closeInquiry, type Outcome } from "@/lib/inquiry";
+import { startPipeline, approveReview } from "@/lib/pipeline";
+import { publicBase } from "@/lib/twilio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +31,30 @@ export async function PATCH(req: Request) {
   if (!id) return NextResponse.json({ error: "which inquiry?" }, { status: 400 });
 
   const db = supabaseAdmin();
+
+  // The three things a person does to move somebody along the pipeline.
+  if (body.action === "invite") {
+    const out = await startPipeline(db, id, publicBase(req));
+    if (!out.started) {
+      return NextResponse.json({ error: out.why
+        ? `Nothing was sent: ${out.why}.` : "They have already been sent the questions." }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, channel: out.channel });
+  }
+  if (body.action === "approve") {
+    try {
+      const out = await approveReview(db, id, me.id, String(body.reason ?? ""), publicBase(req));
+      return NextResponse.json(out);
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    }
+  }
+  if (body.action === "applied") {
+    const { error } = await db.from("inquiries")
+      .update({ stage: "applied", stage_at: new Date().toISOString() }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   if (body.outcome) {
     const outcome = String(body.outcome) as Outcome;

@@ -20,7 +20,10 @@
 import { existsSync, readdirSync, mkdirSync } from "node:fs";
 
 const BASE = process.env.PHONE_CHECK_BASE ?? "http://127.0.0.1:3100";
-const PAGES = ["/report", "/login", "/apply", "/criteria", "/trades/apply"];
+const PAGES = ["/report", "/login", "/apply", "/criteria", "/trades/apply",
+  // The pipeline's three public pages: the questions by somebody's own link,
+  // the calendar, and their own showing.
+  "/apply?lead=lead-tok-1", "/book/book-tok-1", "/showing/manage-tok-1"];
 
 /* THE SIGNED-IN SCREENS, which are the ones anybody complains about.
  *

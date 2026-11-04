@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import ApplyForm from "@/components/ApplyForm";
+import ApplyForm, { type Lead } from "@/components/ApplyForm";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Check if you prequalify — Larabee Homes" };
@@ -11,8 +11,32 @@ export const metadata = { title: "Check if you prequalify — Larabee Homes" };
  * the process defensible — and what stops a reviewer from being influenced by
  * information they should never have had.
  */
-export default async function Apply() {
-  const { data: units } = await supabaseAdmin()
+export default async function Apply(
+  { searchParams }: { searchParams: Promise<{ lead?: string }> },
+) {
+  const { lead: token } = await searchParams;
+  const db = supabaseAdmin();
+
+  // Their own link, from the message the pipeline sent. Unknown or stale
+  // tokens fall through to the ordinary form rather than an error page: the
+  // questions are public anyway, and a dead end loses a person who wanted in.
+  let lead: Lead | null = null;
+  if (token) {
+    const { data: q } = await db.from("inquiries")
+      .select("unit_id, contacts(full_name, email)").eq("prescreen_token", token)
+      .eq("outcome", "open").maybeSingle();
+    if (q) {
+      const c = q.contacts as unknown as { full_name: string | null; email: string | null } | null;
+      lead = {
+        token,
+        name: c?.full_name ?? null,
+        email: c?.email && !/@convo\.zillow\.com$/i.test(c.email) ? c.email : null,
+        unitId: (q.unit_id as string | null) ?? null,
+      };
+    }
+  }
+
+  const { data: units } = await db
     .from("units")
     .select("id, label, bedrooms, monthly_rent, available_on, properties(name, address)")
     .eq("is_vacant", true)
@@ -30,5 +54,5 @@ export default async function Apply() {
     };
   });
 
-  return <ApplyForm homes={homes} />;
+  return <ApplyForm homes={homes} lead={lead} />;
 }
