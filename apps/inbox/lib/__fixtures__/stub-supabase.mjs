@@ -224,7 +224,20 @@ const TABLES = {
     { id: "ow4", name: "Hudson Yards LLC", legal_name: "Hudson Yards LLC",
       active: true, notes: null, kind: "ours" },
   ],
+  /* A PARK WITH SEVERAL LOTS. With one lot each, "see the lots" and
+     "there is nothing to drill into" are the same screen, and the pin
+     badge has no number to draw -- so the fixture could not tell a
+     working drill-in from a missing one. */
   units: [
+    ...Array.from({ length: 7 }, (_, i) => ({
+      id: `uR${i}`, label: `31${String(10 + i * 2).padStart(2, "0")}`,
+      property_id: "p1", bedrooms: 3, bathrooms: 2, square_feet: 924,
+      monthly_rent: 0, is_vacant: i === 5, available_on: null,
+      home_owner: null, home_year: 2026, home_make: "Champion",
+      home_serial: null,
+      properties: { id: "p1", name: "The Retreat",
+                    address: "3100 Lady Viola Dr, Fayetteville NC" },
+    })),
     { id: "u1", label: "3124", property_id: "p1",
       properties: { id: "p1", name: "The Retreat",
                     address: "3100 Lady Viola Dr, Fayetteville NC" } },

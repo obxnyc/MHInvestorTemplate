@@ -1446,6 +1446,48 @@ a.metric:hover{border-color:var(--accent)}
 .propgo{color:var(--faint);flex:none;font-size:.8rem}
 .propbody{padding:.2rem .95rem 1rem;border-top:1px solid var(--hair-2)}
 
+/* EVERYTHING YOU OWN, ON THE GROUND.
+   Its own names throughout -- `.propmap`, `.proppin`, `.propmapcard` --
+   rather than borrowing `.card`, `.pin` or `.propcard`, which are each
+   already something else on other screens. Reusing one of those is the
+   mistake this stylesheet has now made four times. */
+/* The card below is positioned against THIS, not against the page.
+   Without it an absolutely-placed card walks to the bottom of the
+   document and sits over whatever happens to be there. */
+.propmapwrap{position:relative;margin:1rem 0 0}
+.propmap{height:min(66vh, 620px);min-height:320px;border-radius:var(--radius);
+  overflow:hidden;border:1px solid var(--hair);background:var(--sunk)}
+.propmapsays{margin:.5rem 0 0}
+
+/* A pin you can hit with a thumb. The smallest comfortable target is
+   about 40px and a bare dot is nowhere near it -- the park map already
+   cost a round for a target smaller than the cursor's own point. */
+.proppin{width:2.1rem;height:2.1rem;border-radius:50%;cursor:pointer;
+  border:2px solid #FFFFFF;background:var(--pin, var(--accent));
+  /* White on the pin's own colour, and white in both themes, because
+     the ground under it is an aerial photograph rather than the page.
+     A token that inverts would turn this dark against dark grass. */
+  color:#FFFFFF;font:inherit;font-size:.72rem;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 6px rgba(0,0,0,.45);transition:transform .12s}
+.proppin:hover{transform:scale(1.14)}
+.proppin:focus-visible{outline:3px solid #FFFFFF;outline-offset:2px}
+
+/* The chosen one, over the map rather than under it: on a phone a card
+   below the fold is a card nobody sees. */
+.propmapcard{position:absolute;left:.7rem;right:.7rem;bottom:.7rem;
+  display:flex;flex-direction:column;gap:.15rem;z-index:2;
+  background:var(--card);border:1px solid var(--hair);
+  border-radius:var(--radius);padding:.7rem .85rem;
+  box-shadow:0 6px 24px rgba(0,0,0,.22)}
+.propmapcard strong{font-size:.95rem}
+.propmapacts{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.5rem}
+@media (min-width: 640px) {
+  /* Room for the map beside it on a wide screen, so choosing a pin does
+     not cover the park you are comparing it with. */
+  .propmapcard{right:auto;max-width:22rem}
+}
+
 /* THE CARD ON A PHONE. One row of dot, name, code, type, lot count and
    chevron does not fit 390px, and `flex:1` on the name only promises it
    a SHARE of the row -- not a width. So the name was squeezed to its

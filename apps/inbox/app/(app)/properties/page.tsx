@@ -19,7 +19,11 @@ export default async function Properties() {
   // a migration degrades to being absent; it does not break the page it is on.
   const UNITS = "id, label, bedrooms, bathrooms, square_feet, monthly_rent, is_vacant, available_on, home_owner, home_year, home_make, home_serial";
   const CLOCK = ", vacant_since, vacant_since_estimated, blocker";
-  const HEAD = "id, name, address, color, code, owner_id, owners(name), kind, lat, lng, confirmed_at";
+  /* `owners(name, kind)` and not just the name: the map draws a property
+     we own differently from one we only manage, and that distinction
+     lives on the owner. One string literal -- a joined select makes
+     every field on the result an error rather than a column. */
+  const HEAD = "id, name, address, color, code, owner_id, owners(name, kind), kind, lat, lng, confirmed_at";
 
   // Three tiers rather than two, and the reason is worth keeping.
   //
@@ -59,6 +63,10 @@ export default async function Properties() {
     code: (p.code as string | null) ?? null,
     ownerId: (p.owner_id as string | null) ?? null,
     owner: (p.owners as { name: string } | null)?.name ?? null,
+    /* "ours" is one of our own companies; anything else is somebody
+       we manage for. Absent where migration 050 has not been run, and
+       the map treats that as unknown rather than as ours. */
+    ownerKind: (p.owners as { kind?: string } | null)?.kind ?? null,
     kind: ((p.kind as Kind | undefined) ?? "sfh"),
     lat: p.lat === null || p.lat === undefined ? null : Number(p.lat),
     lng: p.lng === null || p.lng === undefined ? null : Number(p.lng),

@@ -1,11 +1,18 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import dynamicImport from "next/dynamic";
+import nextDynamic from "next/dynamic";
+
 import { useRouter } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import Confirm from "@/components/Confirm";
 import AddressPicker, { type Place } from "@/components/AddressPicker";
 import OwnerPicker, { type Owner } from "@/components/OwnerPicker";
+/* Loaded only when the map is asked for: maplibre and its stylesheet
+   are a sizeable download and the list is what most visits want. */
+const PropertiesMap = nextDynamic(
+  () => import("@/components/PropertiesMap"),
+  { ssr: false, loading: () => <p className="parkhint">Drawing the map…</p> },
+);
 import { KIND_LIST, kindOf, nextCode, unitWord, type Kind } from "@/lib/property";
 import { money } from "@/lib/prices";
 import { spell, howLong, worrying } from "@/lib/empty";
@@ -28,6 +35,8 @@ export type Property = {
   ownerId: string | null;
   /** The LLC's name, joined for display. */
   owner: string | null;
+  /** "ours" | "investor" | "resident", or null before migration 050. */
+  ownerKind: string | null;
   kind: Kind; lat: number | null; lng: number | null; confirmed_at: string | null;
   units: Unit[];
 };
@@ -129,6 +138,10 @@ export default function PropertyBoard(
      others. The list is a hundred and fourteen properties long and the
      only way to reach one was the scrollbar. */
   const [find, setFind] = useState("");
+  /* The list, or the same properties on the ground. A list of a hundred
+     and fourteen addresses cannot answer "which of these is off
+     Halstead"; a map answers it by being looked at. */
+  const [view, setView] = useState<"list" | "map">("list");
 
   useEffect(() => {
     fetch("/api/owners").then((r) => r.json())
@@ -272,13 +285,23 @@ export default function PropertyBoard(
             )}
           </label>
           <div className="groupbar">
-            <span>Group by</span>
-            {([["none", "Nothing"], ["owner", "Owner"], ["kind", "Type"]] as const)
-              .map(([k, label]) => (
-                <button key={k} className={groupBy === k ? "on" : ""}
-                        onClick={() => setGroupBy(k)}>{label}</button>
-              ))}
+            {([["list", "List"], ["map", "Map"]] as const).map(([k, label]) => (
+              <button key={k} className={view === k ? "on" : ""}
+                      onClick={() => setView(k)}>{label}</button>
+            ))}
           </div>
+          {/* Grouping is a thing you do to a list. On a map the ground
+              does the grouping. */}
+          {view === "list" && (
+            <div className="groupbar">
+              <span>Group by</span>
+              {([["none", "Nothing"], ["owner", "Owner"], ["kind", "Type"]] as const)
+                .map(([k, label]) => (
+                  <button key={k} className={groupBy === k ? "on" : ""}
+                          onClick={() => setGroupBy(k)}>{label}</button>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -294,7 +317,17 @@ export default function PropertyBoard(
         </p>
       )}
 
-      {groups.map(([heading, inGroup]) => (
+      {/* THE SAME PROPERTIES THE SEARCH LEFT, on the ground. Opening one
+          from a pin switches back to the list with that card open,
+          rather than navigating away -- the map is a way of finding the
+          one you want, and what you do next is what you already do to a
+          property. */}
+      {view === "map" && (
+        <PropertiesMap properties={found}
+                       onOpen={(id) => { setView("list"); setOpen(id); }} />
+      )}
+
+      {view === "list" && groups.map(([heading, inGroup]) => (
       <section key={heading} className="propgroup">
         {heading && <h2 className="grouphead">{heading}</h2>}
       <ul className="proplist">
