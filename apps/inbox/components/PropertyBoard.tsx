@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import dynamicImport from "next/dynamic";
 import { useRouter } from "next/navigation";
 import BackLink from "@/components/BackLink";
 import Confirm from "@/components/Confirm";
@@ -124,6 +125,10 @@ export default function PropertyBoard(
     useState<{ kind: "property" | "unit"; id: string; label: string } | null>(null);
   const [owners, setOwners] = useState<Owner[]>([]);
   const [groupBy, setGroupBy] = useState<"owner" | "kind" | "none">("none");
+  /* FINDING ONE, rather than scrolling past a hundred and thirteen
+     others. The list is a hundred and fourteen properties long and the
+     only way to reach one was the scrollbar. */
+  const [find, setFind] = useState("");
 
   useEffect(() => {
     fetch("/api/owners").then((r) => r.json())
@@ -159,12 +164,32 @@ export default function PropertyBoard(
     return out as Record<string, unknown>;
   }
 
+  /**
+   * The properties the search leaves.
+   *
+   * Name, address, owner, code and the type -- and the LOT LABELS too,
+   * because "3107" is how somebody asks for a park they cannot name,
+   * and a search that cannot answer that sends them back to the
+   * scrollbar it was meant to replace.
+   */
+  const found = useMemo(() => {
+    const q = find.trim().toLowerCase();
+    if (!q) return properties;
+    return properties.filter((p) =>
+      p.name.toLowerCase().includes(q)
+      || (p.address ?? "").toLowerCase().includes(q)
+      || (p.owner ?? "").toLowerCase().includes(q)
+      || (p.code ?? "").toLowerCase().includes(q)
+      || kindOf(p.kind).label.toLowerCase().includes(q)
+      || p.units.some((u) => (u.label ?? "").toLowerCase().includes(q)));
+  }, [properties, find]);
+
   /** One unnamed group when grouping is off, so the list renders the same way
    *  either way rather than through two branches that drift apart. */
   const groups: [string | null, Property[]][] = (() => {
-    if (groupBy === "none") return [[null, properties]];
+    if (groupBy === "none") return [[null, found]];
     const by = new Map<string, Property[]>();
-    for (const p of properties) {
+    for (const p of found) {
       const key = groupBy === "owner"
         ? (p.owner ?? "No owner set")
         : kindOf(p.kind).label;
@@ -185,18 +210,46 @@ export default function PropertyBoard(
   return (
     <main className="people">
       <BackLink fallback="/home" />
-      <h1 className="pagetitle">Properties</h1>
+      {/* ADD A PROPERTY BELONGS AT THE TOP. It was the last element on
+          the page, under a hundred and fourteen cards -- so adding one
+          began with scrolling past every property you already own. */}
+      <div className="proptop">
+        <h1 className="pagetitle">Properties</h1>
+        {canEdit && !adding && (
+          <button className="btn pri" onClick={() => setAdding(true)}>
+            Add a property
+          </button>
+        )}
+      </div>
       <p className="muted">
         {properties.length
           ? `${properties.length} ${properties.length === 1 ? "property" : "properties"}`
             + ` · ${totals.units} lots · ${totals.vacant} empty`
             + ` · ${money(totals.roll * 100)}/mo let`
             + (totals.lost ? ` · ${money(totals.lost * 100)}/mo empty` : "")
-          : "Nothing here yet. Add the first one below."}
+          : "Nothing here yet. Add the first one above."}
       </p>
 
       {error && <p className="err">{error}</p>}
       {done && <p className="okmsg">{done}</p>}
+
+      {/* Open where the button is, so what you typed and whether it took
+          are on the same screen. */}
+      {canEdit && adding && (
+        <AddProperty busy={busy} owners={owners} ready={ready}
+                     taken={takenCodes} onOwnerAdded={addOwner}
+                     onCancel={() => setAdding(false)}
+                     onAdd={async (body) => {
+                       const out = await call("/api/properties", "POST", body);
+                       if (!out) return;
+                       setAdding(false);
+                       setOpen(String(out.id));
+                       /* It saved, but without its code or its type. Said
+                          plainly: a property that quietly came out
+                          unidentified is a bug nobody can explain later. */
+                       if (out.pending) setError(String(out.pending));
+                     }} />
+      )}
 
       {/* Said once, at the top, rather than leaving three features quietly
           missing and letting somebody work out why the codes never appear. */}
@@ -209,14 +262,36 @@ export default function PropertyBoard(
       )}
 
       {properties.length > 1 && (
-        <div className="groupbar">
-          <span>Group by</span>
-          {([["none", "Nothing"], ["owner", "Owner"], ["kind", "Type"]] as const)
-            .map(([k, label]) => (
-              <button key={k} className={groupBy === k ? "on" : ""}
-                      onClick={() => setGroupBy(k)}>{label}</button>
-            ))}
+        <div className="propbar">
+          <label className="propfind">
+            <input value={find} onChange={(e) => setFind(e.target.value)}
+                   placeholder="Find a property, owner, address or lot" />
+            {find && (
+              <button type="button" className="propclear"
+                      onClick={() => setFind("")} aria-label="Clear">×</button>
+            )}
+          </label>
+          <div className="groupbar">
+            <span>Group by</span>
+            {([["none", "Nothing"], ["owner", "Owner"], ["kind", "Type"]] as const)
+              .map(([k, label]) => (
+                <button key={k} className={groupBy === k ? "on" : ""}
+                        onClick={() => setGroupBy(k)}>{label}</button>
+              ))}
+          </div>
         </div>
+      )}
+
+      {/* What the search left, said out loud. A list that silently shows
+          eleven of a hundred and fourteen is a list somebody reads as
+          the whole of what they own. */}
+      {find.trim() && (
+        <p className="muted">
+          {found.length === 0
+            ? `Nothing matches “${find.trim()}”.`
+            : `${found.length} of ${properties.length} match `
+              + `“${find.trim()}”.`}
+        </p>
       )}
 
       {groups.map(([heading, inGroup]) => (
@@ -441,25 +516,10 @@ export default function PropertyBoard(
                       }} />
       )}
 
-      {canEdit && (
-        adding
-          ? <AddProperty busy={busy} owners={owners} ready={ready}
-                         taken={takenCodes} onOwnerAdded={addOwner}
-                         onCancel={() => setAdding(false)}
-                         onAdd={async (body) => {
-                           const out = await call("/api/properties", "POST", body);
-                           if (!out) return;
-                           setAdding(false);
-                           setOpen(String(out.id));
-                           // It saved, but without its code or its type. Said
-                           // plainly: a property that quietly came out
-                           // unidentified is a bug nobody can explain later.
-                           if (out.pending) setError(String(out.pending));
-                         }} />
-          : <button className="btn pri addprop" onClick={() => setAdding(true)}>
-              Add a property
-            </button>
-      )}
+      {/* The form that used to live here is at the top now, beside the
+          button that opens it. Filling it in at the bottom of a hundred
+          and fourteen cards meant scrolling back up to see whether it
+          had worked. */}
     </main>
   );
 }
