@@ -253,6 +253,74 @@ t("no clause was dropped on the way across", missing.length === 0,
   t("the installment count, the term, Schedule A and the Maturity Date agree",
     sentenceWrong.length === 0, sentenceWrong.slice(0, 3).join("; "));
 }
+/* THE LEASE AND THE PAYMENTS START ON A FIRST.
+   A sale closes on whatever day it closes. A park collecting on fifty-nine
+   different days of the month is a park nobody can reconcile, so the first
+   instalment, every instalment after it and the maturity date all land on
+   the first. Asked across a year-end and a month-end, because "add a
+   month" is where that arithmetic usually breaks. */
+{
+  const bad = [];
+  for (const on of ["2026-09-21", "2026-07-27", "2026-01-31", "2026-02-28",
+                    "2026-12-15", "2026-12-31"]) {
+    const sch = P.schedule({ ...P.DEFAULTS, agreedOn: on,
+      termYears: 30, perYear: 12 });
+    if (!sch.first.endsWith("-01")) bad.push(`${on}: first ${sch.first}`);
+    if (!sch.maturity.endsWith("-01")) bad.push(`${on}: maturity ${sch.maturity}`);
+    if (sch.day !== "1st") bad.push(`${on}: recurs on the ${sch.day}`);
+    /* The month AFTER: a sale closed on the 21st does not owe a full
+       month's rent ten days later. */
+    if (sch.first <= on) bad.push(`${on}: first payment ${sch.first} is not after it`);
+  }
+  t("every payment and the maturity date fall on the first of a month",
+    bad.length === 0, bad.slice(0, 3).join("; "));
+
+  /* The notice and grace the attorney drafted, on every template. */
+  for (const tpl of P.TEMPLATES) {
+    const n = tpl.changes.noticeDays ?? P.DEFAULTS.noticeDays;
+    const g = tpl.changes.graceDays ?? P.DEFAULTS.graceDays;
+    t(`${tpl.name} gives 60 days' notice and 10 days' grace`, n === 60 && g === 10);
+  }
+}
+
+/* NO TEMPLATE MAY GIVE AWAY THE SECURITY.
+   Investor-friendly used to switch the late fee and the lien OFF, and that
+   decision predated the attorney's draft, which carries both. Selecting a
+   chip therefore dropped the purchase-money lien and the retained title on
+   a $62,140 seller-financed note -- silently, with nothing on the screen
+   saying a clause had gone. It was caught one press before it was sent.
+
+   So every template prints them, and the thing that tells the templates
+   apart is the lease. Asked of EVERY template rather than the two by name,
+   because the next one somebody adds is the one that will forget. */
+{
+  const must = [
+    ["the late payment clause", "Late Payment &amp; Default"],
+    ["the security interest", "Security Interest"],
+    ["the lien release on payoff", "release Seller&#39;s lien"],
+  ];
+  for (const tpl of P.TEMPLATES) {
+    /* Named `terms`, not `t`: `t` is this harness's assertion, and a local
+       of the same name shadows it inside the block. */
+    const terms = { ...P.DEFAULTS, ...tpl.changes, financed: true,
+      ratePct: 5.2, termYears: 30, perYear: 12, agreedOn: "2026-09-21" };
+    const html = P.purchaseAgreement(terms,
+      { lot: "1", describedAs: "A home", price: 95600, down: 33460 });
+    const flat = html.replace(/\s+/g, " ");
+    for (const [what, needle] of must) {
+      t(`${tpl.name} keeps ${what}`,
+        flat.includes(needle) || flat.includes(needle.replace("&amp;", "&")
+          .replace("&#39;", "'")));
+    }
+    /* One late charge, whatever chip is selected: a figure that moves with
+       the template is a term nobody chose. */
+    t(`${tpl.name} charges the same $100 late fee`,
+      (tpl.changes.lateFee ?? P.DEFAULTS.lateFee) === 100);
+  }
+  t("the park owner defaults to the company, not a person",
+    P.DEFAULTS.parkOwner === "Larabee Homes LLC");
+}
+
 /* WHICH LEASE GETS DRAWN.
    Matching prose proves the words are his; it says nothing about which
    document a deal actually gets. These two leases differ on terms, not
@@ -308,6 +376,43 @@ t("no clause was dropped on the way across", missing.length === 0,
   t("the investor lease prints the deal's own rent and reserve",
     priced.includes("$412.00") && priced.includes("$60.00")
     && priced.includes("$500.00") && priced.includes("$2,500.00"));
+}
+
+// --- the money the draft actually names ---------------------------------
+//
+// THE FIGURES COME OUT OF THE ATTORNEY'S FILE, not out of this check.
+// The guard above hands `reserve: 500` in and then checks that $500 came
+// back -- which proves the figure flows through the template and says
+// nothing whatever about what the default is. So the default sat at 750
+// for weeks against a draft that says 500, and every check was green.
+//
+// A figure written into a test is a figure somebody invented. These two
+// are read off the clause itself.
+const RESERVE = readFileSync(
+  join(PAPERS, "land-lease-investor-clean.txt"), "utf8")
+  .split("\n").find((l) => /Reserve Fund/.test(l)) ?? "";
+const drafted = [...RESERVE.matchAll(/\$([\d,]+(?:\.\d\d)?)/g)]
+  .map((m) => Number(m[1].replace(/,/g, "")));
+
+t("the draft's reserve clause is there to read",
+  drafted.length >= 2 && /for each Lot/.test(RESERVE),
+  `found ${JSON.stringify(drafted)} in "${RESERVE.slice(0, 90)}"`);
+
+t(`the reserve per lot is the draft's ($${drafted[0]})`,
+  P.DEFAULTS.reserve === drafted[0],
+  `the draft says ${drafted[0]}, DEFAULTS says ${P.DEFAULTS.reserve}`);
+
+t(`and the cap across the park is the draft's ($${drafted[1]})`,
+  P.DEFAULTS.reserveCap === drafted[1],
+  `the draft says ${drafted[1]}, DEFAULTS says ${P.DEFAULTS.reserveCap}`);
+
+/* And no template may quietly move either. A chip that changes a figure
+   in a contract is the fault that nearly put $62,140 out with no lien. */
+for (const tpl of P.TEMPLATES) {
+  t(`the ${tpl.name} template does not move the reserve`,
+    tpl.changes.reserve === undefined && tpl.changes.reserveCap === undefined,
+    JSON.stringify({ reserve: tpl.changes.reserve,
+                     reserveCap: tpl.changes.reserveCap }));
 }
 
 t("five hundred is Five Hundred", P.words(500) === "Five Hundred");

@@ -127,7 +127,10 @@ export type Home = {
 
 export const DEFAULTS: Terms = {
   seller: "Larabee Homes LLC",
-  parkOwner: "Benjamin Cade Larabee",
+  /* The park owner is the company on every deal. It was a person here,
+     which put "Benjamin Cade Larabee" on the Park Owner line of every
+     lease until somebody noticed and retyped it. */
+  parkOwner: "Larabee Homes LLC",
   buyer: "",
   parkName: "the Retreat",
   state: "North Carolina",
@@ -140,7 +143,13 @@ export const DEFAULTS: Terms = {
   payMethod: "wire transfer or in certified funds payable to Seller or designee",
   lotRent: 500,
   consulting: 50,
-  reserve: 750,
+  /* $500 A LOT, UP TO $2,500. Both figures are the attorney's draft,
+     word for word: "a reserve fund in the amount of $500.00 (Five
+     Hundred Dollars) for each Lot leased by Homeowner in the Park (up to
+     a maximum of $2,500.00 in the aggregate)". This said 750, which came
+     from nowhere -- the old generator says $500 as well, and the only
+     papers that ever carried $750 are the ALDERCREST pack. */
+  reserve: 500,
   reserveCap: 2500,
   leaseForm: "house",
   noticeDays: 60,
@@ -150,7 +159,10 @@ export const DEFAULTS: Terms = {
   escalateApplies: "lot rent and consulting fee",
   late: true,
   graceDays: 10,
-  lateFee: 50,
+  /* $100 on every template. The attorney's draft says $100 and a late
+     charge that differs by which chip is selected is a term nobody
+     chose. */
+  lateFee: 100,
   security: true,
   insure: true,
   notary: false,
@@ -180,12 +192,12 @@ export const TEMPLATES: Template[] = [
   {
     key: "house",
     name: "Larabee Homes",
-    blurb: "Annual escalation, late fee, lien until paid, 60 days' notice,"
-      + " 30 days to match an offer.",
+    blurb: "Our lease: annual escalation, 60 days' notice, 30 days to match"
+      + " an offer.",
     changes: {
       escalate: true, escalatePct: 3,
       escalateApplies: "lot rent and consulting fee",
-      late: true, graceDays: 10,
+      late: true, graceDays: 10, lateFee: 100,
       security: true, insure: true, amortize: true,
       noticeDays: 60, rofrDays: 30, leaseForm: "house",
     },
@@ -193,13 +205,27 @@ export const TEMPLATES: Template[] = [
   {
     key: "investor",
     name: "Investor-friendly",
-    blurb: "No escalation, no late fee, no lien, 90 days' notice,"
+    blurb: "Their lease: a 33% ceiling on rent rises, 180 days if the park"
+      + " is sold, subletting allowed. No escalation, 60 days' notice,"
       + " 15 days to match an offer.",
     changes: {
       escalate: false,
-      late: false, graceDays: 15,
-      security: false, insure: true, amortize: true,
-      noticeDays: 90, rofrDays: 15, leaseForm: "investor",
+      /* THE LIEN AND THE LATE FEE STAY ON HERE TOO.
+         They used to be what made this template "investor-friendly", and
+         that was decided before the attorney's draft existed. That draft
+         carries both -- a $100 late charge with thirty days to cure, and
+         a purchase-money lien with title retained until paid. Dropping
+         them gave away the security on a $62,140 note, silently, because
+         a chip was selected. What makes this template investor-friendly
+         now is the LEASE: the 33% ceiling on rent, 180 days if the park
+         is sold, the right to sublet. */
+      /* 60 days and 10 days, as the attorney's draft has them. These were
+         90 and 15 -- numbers chosen before that draft existed, quietly
+         overriding two terms somebody negotiated. Same fault as the lien:
+         a chip changing a term nobody chose. */
+      late: true, graceDays: 10, lateFee: 100,
+      security: true, insure: true, amortize: true,
+      noticeDays: 60, rofrDays: 15, leaseForm: "investor",
     },
   },
   {
@@ -391,6 +417,25 @@ export function notaryBlock(what: string): string {
   </div>`;
 }
 
+/**
+ * The first of the month after this date.
+ *
+ * THE LEASE AND THE PAYMENTS START ON A FIRST. A sale closes on whatever
+ * day it closes -- the 21st, the 27th -- and nothing good comes of a park
+ * collecting rent on fifty-nine different days of the month. So the lease
+ * runs from the first, the first payment falls on the first, and every
+ * payment after it lands on the first too.
+ *
+ * The month after, not the month of: a sale closed on the 21st does not
+ * owe a full month's rent ten days later.
+ */
+export function firstOfMonthAfter(iso: string): string {
+  if (!iso) return "";
+  const [y, m] = iso.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
+
 /** "August 27, 2026". The `longDate` form reads "the 27th day of August"
     and belongs after "made this the"; a payment that commences on one
     reads "commencing on 27th day of August", which is not English. The
@@ -445,7 +490,10 @@ export function ordinalDay(iso: string): string {
  */
 export function schedule(t: Terms) {
   const n = Math.max(1, Math.round((t.termYears || 20) * (t.perYear || 12)));
-  const first = plusMonths(t.agreedOn, 12 / (t.perYear || 12));
+  /* The first of the month after the agreement, not one month to the day
+     after it. Every instalment then falls on a first, and so does the
+     maturity date, because plusMonths off a first stays on a first. */
+  const first = firstOfMonthAfter(t.agreedOn);
   return { count: n, first, day: ordinalDay(first),
            maturity: plusMonths(first, n - 1) };
 }

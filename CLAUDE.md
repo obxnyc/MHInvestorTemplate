@@ -233,6 +233,34 @@ And the failure now says what it means: `fetch failed` on its own reads as
 "Supabase is down", when in a cloud session it nearly always means the egress
 policy refused the host and nothing was ever sent.
 
+### A sale in this app is the record
+
+I deleted five of SHB Investments' sale rows because an executed DocuSign
+pack named six homes and the table held eleven. The pack was their most
+recent purchase; the other five are homes they own in Elizabeth City, and
+the pack said nothing whatever about them. Absence of evidence read as
+evidence of absence, and the rows went.
+
+**A sale entered in this app is the current record and supersedes Rent
+Manager, a document, or any import.** It is somebody's typing. Nothing
+reconciles it away, nothing deletes it to match another source, and a
+document that covers some of a list is not a statement about the rest of
+the list.
+
+The shape is the oldest one in this file wearing new clothes: **a screen --
+or a chain of reasoning -- that answers a narrower question than the one
+being asked, and answers it confidently.** "Which homes are in this pack"
+is not "which homes does this investor own", the same way `described`
+keyed on rows was not "has this park been described" and `has` keyed on a
+line was not "is this the deed line".
+
+And the practical rule underneath it: **deleting somebody's data is not a
+step in a plan.** Read-only work needs no permission and should not ask
+for any. A delete is a different kind of act, and the standing instruction
+to stop asking before running things was about migrations and chores -- it
+was never a licence to remove records. Where a row looks wrong, say which
+row and why, and let the owner decide.
+
 ## Shipping
 
 The site deploys from `main`. Pushing the feature branch alone changes nothing

@@ -18,6 +18,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!staff) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const { id } = await ctx.params;
+
   const supabase = await supabaseServer();
   const { data, error } = await supabase
     .from("signing_requests")

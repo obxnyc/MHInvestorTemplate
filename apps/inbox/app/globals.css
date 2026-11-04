@@ -368,6 +368,10 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .pill{font-size:.62rem;font-weight:700;padding:.1em .38em;border-radius:5px;flex:none;
   font-family:ui-monospace,monospace}
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
+/* Signed. `.pill` on its own has no ground at all, so "Signed" without
+   this read exactly like "Sent, not opened" -- the one distinction the
+   line exists to make. Both halves of the pair move between themes. */
+.pill.ok{background:var(--tn-soft);color:var(--tn-ink)}
 .pill.gray{background:var(--sunk);color:var(--faint)}
 /* A photo that cannot be shown is information, not a broken image icon. */
 .mms-gone{display:inline-block;margin-top:.4rem;padding:.4rem .6rem;border-radius:8px;
@@ -2055,6 +2059,16 @@ a.metric:hover{border-color:var(--accent)}
 .tpllabel{font-size:.68rem;font-weight:700;color:var(--faint);
   text-transform:uppercase;letter-spacing:.06em;margin-right:.2rem}
 .tplsays{font-size:.8rem;margin:0 0 .6rem}
+/* The terms we always use. Its own class rather than `.check`, which is
+   already the setup page's result card -- borrowing a state name is how a
+   tick beside a sentence ended up wearing a bordered panel on six screens. */
+.housrow{margin-top:.2rem}
+/* Where an investor's papers stand, on the list rather than only inside
+   their page. `.pill ok` / `.pill warn` already exist and already invert
+   between themes; this only places the line. */
+.ownerstands{margin:.1rem 0 .5rem;font-size:.78rem;display:flex;
+  align-items:center;gap:.35rem;flex-wrap:wrap}
+.houssaid{color:var(--accent);font-weight:600}
 
 /* The three hands a typed signature can be written in. Self-hosted, so a
    signature is the same on every machine and does not depend on anybody
@@ -2222,6 +2236,40 @@ a.metric:hover{border-color:var(--accent)}
   margin-bottom:2px}
 .paper .sig-block{margin-top:22px}
 .paper .pagebreak{break-before:page}
+
+/* READ BACK AS SHEETS, not as one long roll.
+   `.pagebreak` is the separator papers.ts already puts between the
+   documents, and in print it is a page break. On screen it was nothing
+   at all, so sixteen contracts arrived as one continuous column of
+   white -- "it should look more like a pdf".
+
+   A browser cannot cut a flowing box into letter pages, so this is the
+   honest version of the illusion: the band is a full-bleed strip of the
+   page's own background that reclaims the sheet's vertical padding on
+   both sides, with a shadow just inside each edge so the sheet above
+   appears to end and the one below to begin. `--page` moves between
+   themes and the strip moves with it; the sheets stay white, because a
+   contract is white paper in both. */
+.paper.sheets .pagebreak{
+  display:block;height:40px;
+  /* The sheet's own side padding, given back, so the strip reaches the
+     edges rather than sitting in a white frame. */
+  margin:0.9in -0.85in;
+  /* `--sunk` and not `--page`: this strip sits inside a white card, and
+     `--page` by day is #F7F8FA -- near enough to white that the gap read
+     as a crease rather than as the end of a sheet. */
+  background:var(--sunk);
+  box-shadow:inset 0 18px 14px -14px rgba(0,0,0,.34),
+             inset 0 -18px 14px -14px rgba(0,0,0,.34);
+}
+/* The last sheet needs its own bottom edge, and the stack as a whole
+   reads better a little narrower than the window. */
+.paper.sheets{padding-bottom:0.9in}
+@media print{
+  /* Back to a real page break, and no grey anywhere near the paper. */
+  .paper.sheets .pagebreak{height:0;margin:0;background:none;box-shadow:none}
+  .paper.sheets{box-shadow:none;max-width:none;padding:0}
+}
 .paper .witness{letter-spacing:6px;font-weight:700;text-align:center;margin:14px 0}
 
 /* EXECUTED DOCUMENTS, on the investor's own page.
@@ -2255,6 +2303,17 @@ a.metric:hover{border-color:var(--accent)}
    furniture, it is miserable to sit beside while typing, and it tells
    nobody WHICH field is missing -- the words do that, which is the part
    that saves the trip. */
+/* The field goes where the warning is: a first payment date was only
+   enterable on the lot card, one screen per home. */
+.duefix{display:inline-flex;align-items:center;gap:.4rem;font-size:.74rem;
+  font-weight:700;color:var(--faint);text-transform:uppercase;
+  letter-spacing:.06em;flex-wrap:wrap}
+.duefix input{min-width:0;width:auto;font-size:.82rem;font-weight:400;
+  text-transform:none;letter-spacing:0;color:var(--ink)}
+.duefix .btn{font-size:.74rem;padding:.25rem .6rem}
+/* Two buttons in the last cell of the sent table, which wraps on a phone. */
+.sentacts{display:flex;gap:.35rem;flex-wrap:wrap}
+
 .needsyou{display:block;margin:.1rem 0;padding:.4rem .6rem;
   border-left:4px solid var(--warn);border-radius:0 8px 8px 0;
   background:var(--warn-soft);color:var(--warn);

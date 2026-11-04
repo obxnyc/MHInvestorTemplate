@@ -291,6 +291,33 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true });
   }
 
+  /* --- the date the payments start counting from ---
+     Narrow on purpose. `amend` rewrites the whole sale and wants a price,
+     a term and a monthly payment with it, which is the wrong shape for
+     filling in one date that was never captured -- and a route that
+     demands six fields to set one is a route somebody skips. Thirty-four
+     sales rebuilt after the import have this blank, and the schedule
+     cannot be worked out without it. */
+  if (body.action === "due") {
+    const { data: live } = await db.from("home_sales")
+      .select("id").eq("unit_id", id).is("ended_on", null).maybeSingle();
+    if (!live) {
+      return NextResponse.json({
+        error: "There is no current sale on this home to date.",
+      }, { status: 400 });
+    }
+    const raw = String(body.firstDueOn ?? "").trim();
+    /* Empty clears it, which is a real answer -- "we do not know yet" is
+       better recorded as nothing than as a date somebody invented. */
+    if (raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return NextResponse.json({ error: "That is not a date." }, { status: 400 });
+    }
+    const { error } = await db.from("home_sales")
+      .update({ first_due_on: raw || null }).eq("id", live.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true, firstDueOn: raw || null });
+  }
+
   // --- what this owner and their tenant pay every month ---
   if (body.action === "money") {
     const { data: live } = await db.from("home_sales")
