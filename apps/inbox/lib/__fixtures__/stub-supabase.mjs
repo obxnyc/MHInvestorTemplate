@@ -43,14 +43,25 @@ const STAFF = [
     created_at: "2026-01-01T00:00:00Z" },
 ];
 
+/* THE COLUMNS THE PROPERTIES SCREEN ASKS FOR, all of them. That screen
+   selects color, code, owner_id, owners(name) and confirmed_at, and one
+   unknown column fails the whole select -- so with these missing the
+   page fell all the way through its three tiers and rendered as nobody
+   owning anything. The stand-in could not show the screen it was being
+   used to check. */
 const PROPERTIES = [
   { id: "p1", name: "The Retreat", address: "3100 Lady Viola Dr, Fayetteville NC",
-    kind: "mhp", lat: 35.1, lng: -78.96, fence_m: 250 },
+    kind: "mhp", lat: 35.1, lng: -78.96, fence_m: 250,
+    color: "#405981", code: "RETR", owner_id: "ow4",
+    confirmed_at: "2026-02-01T00:00:00Z" },
   { id: "p2", name: "1140 Northside Road Mobile Home Community",
     address: "1140 Northside Rd, Elizabeth City NC", kind: "mhp",
-    lat: 36.3, lng: -76.2, fence_m: 250 },
+    lat: 36.3, lng: -76.2, fence_m: 250,
+    color: "#2E8B68", code: "NRTH", owner_id: "ow4", confirmed_at: null },
   { id: "p3", name: "1012 Chason St", address: "1012 Chason St", kind: "sfh",
-    lat: 35.11, lng: -78.97, fence_m: null },
+    lat: 35.11, lng: -78.97, fence_m: null,
+    color: "#B0561F", code: "CHAS", owner_id: "ow1",
+    confirmed_at: "2026-03-14T00:00:00Z" },
 ];
 
 const now = Date.now();
@@ -569,6 +580,15 @@ createServer((req, res) => {
     const EMBEDS = {
       dm_members: { thread: ["thread_id", "dm_threads"] },
       shifts: { properties: ["property_id", "properties"] },
+      properties: { owners: ["owner_id", "owners"] },
+    };
+
+    /* THE OTHER DIRECTION. A property carries its lots, and PostgREST
+       returns them as an array under the alias. Without this the
+       properties screen read every park as having no lots -- which is
+       not a shape a list of lots can be checked against. */
+    const HAS_MANY = {
+      properties: { units: ["property_id", "units"] },
     };
     const want = url.searchParams.get("select") ?? "";
 
@@ -598,7 +618,7 @@ createServer((req, res) => {
         .filter((x) => x && !x.includes("("))
         .map((x) => (x.includes(":") ? x.split(":")[1] : x).trim())
         .filter((x) => x && x !== "*" && !known.has(x)
-          && !(EMBEDS[table] ?? {})[x]);
+          && !(EMBEDS[table] ?? {})[x] && !(HAS_MANY[table] ?? {})[x]);
       if (missing.length) {
         return send(400, {
           code: "42703",
@@ -611,6 +631,14 @@ createServer((req, res) => {
       if (!new RegExp(`(^|,)\\s*${alias}\\s*[:(]`).test(want)) continue;
       rows = rows.map((r) => (alias in r ? r : {
         ...r, [alias]: (TABLES[target] ?? []).find((x) => x.id === r[fk]) ?? null,
+      }));
+    }
+    for (const [alias, [fk, target]] of Object.entries(HAS_MANY[table] ?? {})) {
+      if (!new RegExp(`(^|,)\\s*${alias}\\s*[:(]`).test(want)) continue;
+      /* An ARRAY, and an empty one where there are none -- a property
+         with no lots is a real answer and must not arrive as null. */
+      rows = rows.map((r) => (alias in r ? r : {
+        ...r, [alias]: (TABLES[target] ?? []).filter((x) => x[fk] === r.id),
       }));
     }
 
