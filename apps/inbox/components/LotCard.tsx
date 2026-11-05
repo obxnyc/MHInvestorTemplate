@@ -929,9 +929,10 @@ function SaleForm(
    *
    * Ten homes sold on the same terms is the same form ten times, and the
    * buyer memory only helps when it is the same buyer. This is the deal
-   * rather than the person: price, note and the monthly charges, with
-   * the buyer and the date left blank, because those are the two things
-   * that are never the same twice.
+   * rather than the person: price and the monthly charges, with the buyer
+   * and the date left blank, because those are the two things that are
+   * never the same twice. The note is not recalled -- it belongs to one
+   * sale, the way the serial does.
    *
    * The form is uncontrolled, so recalling remounts it through `key`
    * rather than reaching into the DOM to set values.
@@ -1021,7 +1022,7 @@ function SaleForm(
       {recall && !editing && (
         <p className="memory">
           Copied from {recall.units?.label ?? "an earlier sale"} — buyer,
-          date, terms, charges and the note. The serial is this
+          date, terms and charges. The serial and the note are this
           home&rsquo;s own.
           Change whatever differs.{" "}
           <button type="button" className="aslink" onClick={() => {
@@ -1113,7 +1114,13 @@ function SaleForm(
         <label>Serial<input name="homeSerial" defaultValue={editing?.home_serial ?? ""}
                             placeholder={recall ? "this home's own" : undefined} /></label>
       </div>
-      <label>Note<textarea name="note" rows={2} defaultValue={from?.note ?? ""} /></label>
+      {/* Never recalled, for the same reason as the serial: a note is
+          about one sale -- "sold with the shed", or the one-time line left
+          when the rows were rebuilt -- and copying it forward puts a
+          sentence about an earlier home onto this one. Kept when correcting
+          this sale, blank when copying to a new lot. */}
+      <label>Note<textarea name="note" rows={2} defaultValue={editing?.note ?? ""}
+                           placeholder={recall ? "this home's own" : undefined} /></label>
 
       <div className="invacts">
         <button type="button" className="btn" onClick={onCancel}>Cancel</button>
