@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendSms } from "@/lib/notify";
-import { dueKinds, localOf, plan, type DayShift } from "@/lib/clock-texts";
+import { autoOuts, autoOutText, dueKinds, localOf, plan, type DayShift } from "@/lib/clock-texts";
+import { worked } from "@/lib/shift";
 import { loadSetup, loadTextSettings, asPerson } from "@/lib/crew-data";
 
 export const runtime = "nodejs";
@@ -58,13 +59,20 @@ export async function GET(req: Request) {
   const started = Date.now();
   const now = new Date();
   const settings = await loadTextSettings();
-  if (!settings.enabled) return NextResponse.json({ ok: true, off: true });
+  const db = supabaseAdmin();
+
+  // The forgotten shifts first, every wake, whether the texts are on or not:
+  // this is a pay record, not a reminder. And first so the 9pm recap sees
+  // the shift the clock has just closed rather than one still running.
+  const closed = await closeForgotten(db, settings, now);
+  if (closed.length && settings.enabled) await tellThem(db, closed, settings, req);
+
+  if (!settings.enabled) return NextResponse.json({ ok: true, off: true, closed: closed.length });
 
   // The cheap question first: most wakes end here.
   const due = dueKinds(now, settings);
-  if (!due.length) return NextResponse.json({ ok: true, due: [] });
+  if (!due.length) return NextResponse.json({ ok: true, due: [], closed: closed.length });
 
-  const db = supabaseAdmin();
   const { day } = localOf(now, settings.tz);
 
   const [people, shiftsRes, sentRes] = await Promise.all([
@@ -72,7 +80,7 @@ export async function GET(req: Request) {
     // A day and a half back covers "today" in any US zone; the plan keeps
     // only the shifts that started on the local day.
     db.from("shifts")
-      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, start_fence, properties(name), shift_breaks(started_at, ended_at)")
+      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, start_fence, auto_clocked_out, properties(name), shift_breaks(started_at, ended_at)")
       .gte("started_at", new Date(now.getTime() - 36 * 3_600_000).toISOString()),
     db.from("clock_texts_sent").select("key").like("key", `%:${day}`),
   ]);
@@ -85,6 +93,7 @@ export async function GET(req: Request) {
       propertyId: (s.property_id as string | null) ?? null,
       siteName: (s.properties as unknown as { name: string } | null)?.name ?? null,
       startFence: (s.start_fence as string | null) ?? null,
+      autoOut: !!s.auto_clocked_out,
       startedAt: String(s.started_at),
       endedAt: (s.ended_at as string | null) ?? null,
       signedOffAt: (s.signed_off_at as string | null) ?? null,
@@ -113,6 +122,89 @@ export async function GET(req: Request) {
     done.push({ key: t.key, ok: !!sid });
   }
 
-  return NextResponse.json({ ok: true, due, sent: done.length, failed: done.filter((d) => !d.ok).length,
+  return NextResponse.json({ ok: true, closed: closed.length, due, sent: done.length, failed: done.filter((d) => !d.ok).length,
                              left: texts.length - done.length });
+}
+
+type Admin = ReturnType<typeof supabaseAdmin>;
+type Closed = { shiftId: string; staffId: string; endedAt: string; hours: number };
+
+/**
+ * Close every shift nobody clocked out of, by the rule in `autoOuts`.
+ *
+ * Each update is guarded on `ended_at is null`, so a man who clocks out in
+ * the same second wins and the clock writes nothing over him. Returns what
+ * it actually closed, with the hours as they now stand.
+ */
+async function closeForgotten(db: Admin, settings: Awaited<ReturnType<typeof loadTextSettings>>,
+                              now: Date): Promise<Closed[]> {
+  if (!settings.autoOut) return [];
+  const { data: open, error } = await db.from("shifts")
+    .select("id, staff_id, started_at, shift_breaks(id, started_at, ended_at)")
+    .is("ended_at", null);
+  if (error || !open?.length) return [];
+
+  const ids = open.map((o) => String(o.id));
+  const { data: pings } = await db.from("shift_pings")
+    .select("shift_id, at").in("shift_id", ids).order("at", { ascending: false }).limit(1000);
+  const lastPing = new Map<string, string>();
+  for (const p of pings ?? []) if (!lastPing.has(String(p.shift_id))) lastPing.set(String(p.shift_id), String(p.at));
+
+  const breaksOf = new Map(open.map((o) => [String(o.id),
+    ((o.shift_breaks ?? []) as { id: string; started_at: string; ended_at: string | null }[])]));
+
+  const plan = autoOuts(open.map((o) => ({
+    id: String(o.id), staffId: String(o.staff_id), startedAt: String(o.started_at),
+    breaks: breaksOf.get(String(o.id))!.map((b) => ({ startedAt: b.started_at, endedAt: b.ended_at })),
+    lastPing: lastPing.get(String(o.id)) ?? null,
+  })), now, settings);
+
+  const done: Closed[] = [];
+  for (const a of plan) {
+    const { data: hit, error: e } = await db.from("shifts").update({
+      ended_at: a.endedAt, end_fence: "unsure",
+      auto_clocked_out: true, settled_at: now.toISOString(),
+    }).eq("id", a.shiftId).is("ended_at", null).select("id, started_at");
+    if (e || !hit?.length) continue; // he clocked out himself, or 052 is not run
+
+    const breaks = breaksOf.get(a.shiftId) ?? [];
+    if (a.closeBreak) {
+      await db.from("shift_breaks").update({ ended_at: a.endedAt })
+        .eq("shift_id", a.shiftId).is("ended_at", null);
+    }
+    const w = worked([{
+      id: a.shiftId, staffId: a.staffId, propertyId: null,
+      startedAt: String(hit[0].started_at), endedAt: a.endedAt,
+      breaks: breaks.map((b) => ({ startedAt: b.started_at,
+        endedAt: b.ended_at ?? (a.closeBreak ? a.endedAt : null) })),
+    }], now);
+    done.push({ ...a, hours: w.hours });
+  }
+  return done;
+}
+
+/** Text each man whose shift the clock closed. Claimed in the ledger first,
+ *  like every other text, keyed on the shift so it goes once. */
+async function tellThem(db: Admin, closed: Closed[],
+                        settings: Awaited<ReturnType<typeof loadTextSettings>>, req: Request) {
+  const people = new Map((await loadSetup()).map((p) => [p.id, asPerson(p)]));
+  for (const c of closed) {
+    const p = people.get(c.staffId);
+    if (!p?.phone) continue;
+    // A shift closed weeks after it ended -- the first run after this ships,
+    // or the clock having been switched off -- is flagged on Friday pay and
+    // in the recap, not texted: "the clock closed your shift (10:00 today)"
+    // about a day three weeks ago is a text nobody can act on.
+    if (Date.now() - Date.parse(c.endedAt) > 24 * 3_600_000) continue;
+    const key = `crew_autoout:${c.staffId}:${c.shiftId}`;
+    const body = autoOutText(p, c.endedAt, c.hours, { tz: settings.tz, base: base(req) });
+    const claim = await db.from("clock_texts_sent").insert({
+      key, kind: "crew_autoout", staff_id: c.staffId, to_phone: p.phone, body,
+    });
+    if (claim.error) continue;
+    const sid = await sendSms(p.phone, body);
+    await db.from("clock_texts_sent")
+      .update(sid ? { sid } : { error: "Twilio did not accept it -- see the function log" })
+      .eq("key", key);
+  }
 }

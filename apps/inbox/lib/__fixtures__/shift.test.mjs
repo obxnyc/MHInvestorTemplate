@@ -198,14 +198,26 @@ const ET = 240;
 const wk = (shifts, start, o = {}) =>
   week(shifts, start, NOW, { offsetMinutes: ET, ...o });
 
-t("the week starts on Monday", () => WEEK_STARTS_ON === 1);
-t("a Wednesday belongs to its Monday",
-  () => weekStart(new Date("2026-10-21T12:00:00Z"), ET) === "2026-10-19");
-t("a Monday is its own week start",
-  () => weekStart(new Date("2026-10-19T12:00:00Z"), ET) === "2026-10-19");
-// The plain subtraction goes negative on Sunday, which is why the +7 is there.
-t("a Sunday belongs to the Monday before it, not the one after",
-  () => weekStart(new Date("2026-10-25T12:00:00Z"), ET) === "2026-10-19");
+// Pay goes out Friday for Friday to Thursday, so the week is Friday's.
+t("the week starts on Friday", () => WEEK_STARTS_ON === 5);
+t("a Wednesday belongs to the Friday before it",
+  () => weekStart(new Date("2026-10-21T12:00:00Z"), ET) === "2026-10-16");
+t("a Thursday is the last day of that same week",
+  () => weekStart(new Date("2026-10-22T12:00:00Z"), ET) === "2026-10-16");
+t("a Friday is its own week start, not the end of the last one",
+  () => weekStart(new Date("2026-10-23T12:00:00Z"), ET) === "2026-10-23");
+t("a Saturday belongs to the Friday just gone",
+  () => weekStart(new Date("2026-10-24T12:00:00Z"), ET) === "2026-10-23");
+// Friday two minutes after midnight in Eastern is still Thursday in UTC's
+// eyes only if the offset is ignored: local Friday is a new week.
+t("just after midnight on Friday, Eastern, is the new week",
+  () => weekStart(new Date("2026-10-23T04:02:00Z"), ET) === "2026-10-23");
+// The arithmetic for any start day, kept with Monday passed in. The plain
+// subtraction goes negative on Sunday, which is why the +7 is there.
+t("with Monday asked for, a Wednesday belongs to its Monday",
+  () => weekStart(new Date("2026-10-21T12:00:00Z"), ET, 1) === "2026-10-19");
+t("with Monday asked for, a Sunday belongs to the Monday before it",
+  () => weekStart(new Date("2026-10-25T12:00:00Z"), ET, 1) === "2026-10-19");
 
 // A week built from the shifts that exist shows four rows and reads as four
 // days worked. The days off have to be there, empty, or the shape of the

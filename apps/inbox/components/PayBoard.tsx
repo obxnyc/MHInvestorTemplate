@@ -21,7 +21,7 @@ type Line = {
   hours: number; regular: number; overtime: number;
   rateCents: number | null; amountCents: number | null;
   method: string | null; handle: string | null;
-  openShifts: number; unsigned: number; payLink: string | null;
+  openShifts: number; unsigned: number; autoClosed: number; payLink: string | null;
 };
 type Crew = { id: string | null; name: string; hours: number; amountCents: number; people: number };
 type Data = {
@@ -126,6 +126,7 @@ export default function PayBoard() {
 
   const open = data.lines.filter((l) => l.openShifts).length;
   const unsigned = data.lines.reduce((a, l) => a + l.unsigned, 0);
+  const auto = data.lines.filter((l) => l.autoClosed);
 
   return (
     <main className="wrap crewwrap">
@@ -158,6 +159,14 @@ export default function PayBoard() {
         <p className="tsnudge loud">
           {open} {open === 1 ? "person has a shift" : "people have shifts"} nobody clocked out of.
           Those hours are not in the amounts until the shift is closed with a correction.
+        </p>
+      ) : null}
+      {auto.length ? (
+        <p className="tsnudge loud">
+          The clock closed {auto.reduce((a, l) => a + l.autoClosed, 0)} shift
+          {auto.reduce((a, l) => a + l.autoClosed, 0) === 1 ? "" : "s"} nobody clocked out of
+          ({auto.map((l) => l.name).join(", ")}). They are paid to the clock&rsquo;s best guess at
+          the end time — check them before paying.
         </p>
       ) : null}
       {unsigned ? (
@@ -199,6 +208,7 @@ export default function PayBoard() {
                     {hhmm(l.hours)} hrs
                     {l.overtime ? ` (${hhmm(l.overtime)} overtime)` : ""}
                     {l.rateCents !== null ? ` × ${usd(l.rateCents)}` : " · no rate"}
+                    {l.autoClosed ? ` · ${l.autoClosed} closed by the clock` : ""}
                   </span>
                   <span className="payhow">
                     {paid

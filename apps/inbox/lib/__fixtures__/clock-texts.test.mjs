@@ -19,6 +19,7 @@ const js = tr("clock-texts.ts").replace(/from\s+["']\.\/shift["']/, `from "${shi
 const { plan, dueKinds, localOf, DEFAULTS, GRACE } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
+let NOW_;
 const checks = [];
 const t = (name, ok) => {
   try { checks.push([name, typeof ok === "function" ? !!ok() : !!ok]); }
@@ -81,7 +82,7 @@ t("due at 8:45", () => dueKinds(new Date(et(8, 45)), S).includes("lead_morning")
 t("still due inside the grace window", () => dueKinds(new Date(et(8, 45 + GRACE - 1)), S).includes("lead_morning"));
 t("not due after it: no 8:45 report at lunchtime", () =>
   !dueKinds(new Date(et(10, 15 + GRACE)), S).includes("lead_morning"));
-t("nothing on Saturday by default", () => dueKinds(new Date(et(8, 50, 14)), S).length === 0);
+t("nothing on Sunday by default", () => dueKinds(new Date(et(8, 50, 15)), S).length === 0);
 t("a switched-off slot never fires", () =>
   !dueKinds(new Date(et(8, 50)), { ...S, at: { ...S.at, lead_morning: null } }).includes("lead_morning"));
 
@@ -165,6 +166,88 @@ t("the after-lunch report in Spanish", () =>
 t("the recap in Spanish", () => /^Resumen del día/.test(to(runEs(21, 0), "lead_recap", JOSE)?.body ?? ""));
 t("no English left in a Spanish report", () =>
   !/\b(clocked|Not|Working|report|since|break)\b/i.test(to(runEs(13, 15), "lead_lunch", JOSE)?.body ?? "x"));
+
+/* ---------------------------------------------------------- Saturday
+ * Saturday 14 November. Jose's crew work SOME Saturdays: Juan and Pedro came,
+ * the rest did not. A Saturday treated like a weekday texts Ana, Luis, Tony
+ * and Ray to clock in, and lists them all as missing in Jose's report. */
+const satShifts = [
+  sh("sj", "juan", et(7, 40, 14), null),
+  sh("sp", "pedro", et(7, 55, 14), et(12, 0, 14)),
+];
+const sat = (h, m = 0) => plan(new Date(et(h, m, 14)), S, people,
+  satShifts.filter((x) => Date.parse(x.startedAt) <= Date.parse(et(h, m, 14))), new Set());
+t("Saturday is a day by default", () => dueKinds(new Date(et(8, 50, 14)), S).includes("lead_morning"));
+t("but nobody is reminded to come in", () => !sat(7, 55).some((x) => x.kind === "crew_morning"));
+// Asked of the schedule on its own: the crew filter above ALSO keeps the
+// reminder from anybody, so with only that check the schedule rule could go.
+t("the morning reminder is not even due on a Saturday", () =>
+  !dueKinds(new Date(et(7, 55, 14)), S).includes("crew_morning")
+  && dueKinds(new Date(et(7, 55, 13)), S).includes("crew_morning"));
+const sat845 = to(sat(8, 45), "lead_morning", JOSE)?.body ?? "";
+t("Saturday's report lists who came", () => sat845.includes("Juan Ruiz") && sat845.includes("Pedro Gil"));
+t("and not the men who were not asked", () => !sat845.includes("Ana Cruz") && !sat845.includes("Tony Vega"));
+t("so nobody reads as missing", () => sat845.includes("Not clocked in (0):"));
+t("Saturday lunch reminder only to a man who came", () =>
+  to(sat(13), "crew_lunch", "pedro") && !sat(13).some((x) => x.staffId === "ana"));
+t("no 'you have no hours' text on a Saturday off", () =>
+  !to(sat(17, 30), "crew_evening", "ana") && to(sat(17, 30), "crew_evening", "juan"));
+t("nobody came, no report at all", () =>
+  !plan(new Date(et(8, 45, 14)), S, people, [], new Set()).some((x) => x.kind === "lead_morning"));
+t("a weekday is unchanged: Ana is still missing on Tuesday",
+  () => (to(run(8, 45), "lead_morning", JOSE)?.body ?? "").includes("Not clocked in (1):\n• Ana Cruz"));
+
+/* -------------------------------------------------------- auto clock-out */
+// Default cut is 18:00 Eastern. Tuesday 10 November, EST.
+const { autoOuts, autoOutText, QUIET_MINUTES } = await import("data:text/javascript," + encodeURIComponent(js));
+const open = (extra = {}) => ({ id: "x", staffId: "juan", startedAt: et(7, 30), breaks: [], lastPing: null, ...extra });
+const ao = (h, m, list) => autoOuts(list, new Date(et(h, m)), S);
+t("not before six", () => ao(17, 59, [open()]).length === 0);
+t("at six, closed at six", () => ao(18, 0, [open()])[0]?.endedAt === et(18, 0));
+t("at nine, still closed at six -- not at nine", () => ao(21, 0, [open()])[0]?.endedAt === et(18, 0));
+t("a ping at 7:10 says he was there: closed at 7:10", () =>
+  ao(21, 0, [open({ lastPing: et(19, 10) })])[0]?.endedAt === et(19, 10));
+t("a ping at 3pm is not evidence of anything after six", () =>
+  ao(21, 0, [open({ lastPing: et(15, 0) })])[0]?.endedAt === et(18, 0));
+t("still pinging: left alone", () => ao(18, 20, [open({ lastPing: et(18, 10) })]).length === 0);
+t(`quiet for ${QUIET_MINUTES} minutes: closed at the last ping`, () =>
+  ao(18, 45, [open({ lastPing: et(18, 10) })])[0]?.endedAt === et(18, 10));
+t("a break taken and ended after six moves the end to its end", () =>
+  ao(21, 0, [open({ breaks: [{ startedAt: et(18, 30), endedAt: et(18, 40) }] })])[0]?.endedAt === et(18, 40));
+// Never came back from it: shift and break both end a minute after it began,
+// and the minute is break -- so the hours stop exactly at 6:40.
+t("a break never ended: the shift ends a minute after it began", () =>
+  ao(21, 0, [open({ breaks: [{ startedAt: et(18, 40), endedAt: null }] })])[0]?.endedAt === et(18, 41));
+t("an open break from lunch does not move a six o'clock end", () =>
+  ao(21, 0, [open({ breaks: [{ startedAt: et(12, 0), endedAt: null }] })])[0]?.endedAt === et(18, 0));
+t("and that lunch break is NOT closed -- six hours of it would be docked on a guess", () =>
+  ao(21, 0, [open({ breaks: [{ startedAt: et(12, 0), endedAt: null }] })])[0]?.closeBreak === false);
+t("the break after six is closed with the shift", () =>
+  ao(21, 0, [open({ breaks: [{ startedAt: et(18, 40), endedAt: null }] })])[0]?.closeBreak === true);
+t("an evening job is not closed at a six o'clock before it began", () =>
+  ao(21, 0, [open({ startedAt: et(19, 0) })]).length === 0);
+t("an evening job is closed at start plus the daily cap", () =>
+  ao(5, 0, [{ ...open({ startedAt: et(19, 0) }), id: "e" }]).length === 0
+  && autoOuts([open({ startedAt: et(19, 0) })], new Date(et(5, 0, 11)), S)[0]?.endedAt === et(5, 0, 11));
+t("last week's forgotten shift is closed at ITS day's six", () =>
+  autoOuts([open({ startedAt: et(7, 0, 3) })], NOW_ = new Date(et(9, 0)), S)[0]?.endedAt === et(18, 0, 3));
+t("switched off, nothing closes", () => autoOuts([open()], new Date(et(21)), { ...S, autoOut: null }).length === 0);
+t("daylight saving: six in July is six local", () => {
+  const jul = new Date(Date.UTC(2026, 6, 14, 11, 0)).toISOString(); // 7:00 EDT
+  const r = autoOuts([open({ startedAt: jul })], new Date(Date.UTC(2026, 6, 15, 0, 0)), S)[0];
+  return r?.endedAt === new Date(Date.UTC(2026, 6, 14, 22, 0)).toISOString(); // 18:00 EDT
+});
+t("the man is told, with the time and the link", () =>
+  autoOutText(people[2], et(18, 0), 10.5, S) ===
+  "Juan, you did not clock out, so the clock closed your shift at 6:00 PM (10:30 today). "
+  + "If you worked later or left earlier, fix it here: https://example.test/clock");
+t("in Spanish for a Spanish reader", () =>
+  autoOutText({ ...people[2], lang: "es" }, et(18, 0), 10.5, S).startsWith("Juan, no marcaste tu salida"));
+t("the recap says the clock closed it", () => {
+  const closed = [sh("a1", "juan", et(7, 30), et(18, 0), { autoOut: true })];
+  const body = to(plan(new Date(et(21)), S, people, closed, new Set()), "lead_recap", JOSE)?.body ?? "";
+  return body.includes("Juan Ruiz 10:30 – Lady Viola 3124 – did not clock out, closed by the clock at 6:00 PM, check it");
+});
 
 /* ------------------------------------------------------------ once */
 

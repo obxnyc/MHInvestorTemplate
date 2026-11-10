@@ -16,6 +16,7 @@ type Person = {
 };
 type Settings = {
   enabled: boolean; tz: string; overtime: boolean; days: number[];
+  optionalDays: number[]; autoOut: string | null;
   at: Record<string, string | null>;
 };
 type Sent = {
@@ -157,7 +158,10 @@ export default function CrewSetup() {
     setBusy(true); setMsg({});
     const res = await fetch("/api/crew", {
       method: "PATCH", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ settings: { enabled: s.enabled, overtime: s.overtime, days: s.days, at: s.at } }),
+      body: JSON.stringify({ settings: {
+        enabled: s.enabled, overtime: s.overtime, days: s.days, at: s.at,
+        optionalDays: s.optionalDays, autoOut: s.autoOut,
+      } }),
     }).catch(() => null);
     const out = await res?.json().catch(() => ({})) ?? {};
     setBusy(false);
@@ -226,16 +230,45 @@ export default function CrewSetup() {
             </li>
           ))}
         </ul>
-        <div className="crewdays" role="group" aria-label="Days the texts go out">
-          {DAYS.map((d, i) => (
-            <label key={d} className="crewtick">
-              <input type="checkbox" checked={s.days.includes(i)}
-                     onChange={(e) => setS({ ...s, days: e.target.checked
-                       ? [...s.days, i] : s.days.filter((x) => x !== i) })} />
-              <span>{d}</span>
-            </label>
-          ))}
-        </div>
+        {/* One choice per day. "Some weeks" is Jose's Saturday: nobody is told
+            to come in, and only the men who do are texted or reported on. */}
+        <ul className="crewslots" aria-label="Which days are worked">
+          {DAYS.map((d, i) => {
+            const mode = !s.days.includes(i) ? "off" : s.optionalDays.includes(i) ? "some" : "every";
+            return (
+              <li key={d}>
+                <span className="tsspan">{d}</span>
+                <select aria-label={`${d}: worked`} value={mode}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          const days = s.days.filter((x) => x !== i);
+                          const opt = s.optionalDays.filter((x) => x !== i);
+                          setS({ ...s,
+                            days: v === "off" ? days : [...days, i],
+                            optionalDays: v === "some" ? [...opt, i] : opt });
+                        }}>
+                  <option value="every">Every week</option>
+                  <option value="some">Some weeks — only who clocks in</option>
+                  <option value="off">Not worked — no texts</option>
+                </select>
+              </li>
+            );
+          })}
+        </ul>
+        <ul className="crewslots">
+          <li>
+            <div>
+              <span className="tsspan">Clock out anyone who forgot at</span>
+              <span className="tsnote">
+                Closed at this time, or later if the phone shows they were still working.
+                They get a text with the link to fix it, and it is flagged on Friday pay.
+                Clear it to switch this off.
+              </span>
+            </div>
+            <input type="time" aria-label="Automatic clock-out time" value={s.autoOut ?? ""}
+                   onChange={(e) => setS({ ...s, autoOut: e.target.value || null })} />
+          </li>
+        </ul>
         <label className="crewtick">
           <input type="checkbox" checked={s.overtime}
                  onChange={(e) => setS({ ...s, overtime: e.target.checked })} />

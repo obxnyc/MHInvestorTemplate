@@ -103,6 +103,8 @@ export type PayShift = Shift & {
   propertyFrom: string | null;
   startFence: string | null;
   endFence: string | null;
+  /** Closed by the clock because nobody clocked out. */
+  autoOut?: boolean;
 };
 
 const FENCE_SAID: Record<string, string> = {
@@ -160,7 +162,8 @@ export function payrollCsv(
   for (const s of sorted) {
     const h = shiftHours(s, rules);
     const hoursOpen = (now.getTime() - Date.parse(s.startedAt)) / 3_600_000;
-    const status = s.endedAt ? "Finished"
+    const status = s.endedAt && s.autoOut ? "Clocked out automatically — check the end time"
+      : s.endedAt ? "Finished"
       : hoursOpen >= rules.abandonedAfter ? "Not clocked out — needs fixing"
       : "Still on the clock";
 

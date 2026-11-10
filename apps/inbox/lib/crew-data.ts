@@ -78,6 +78,12 @@ export async function loadTextSettings(): Promise<TextSettings> {
     tz: String(data?.tz ?? DEFAULTS.tz),
     at,
     days: Array.isArray(data?.days) ? (data!.days as number[]).map(Number) : DEFAULTS.days,
+    optionalDays: Array.isArray(data?.optional_days)
+      ? (data!.optional_days as number[]).map(Number) : DEFAULTS.optionalDays,
+    // Absent column (052 not run) is the default; a stored null is "off".
+    autoOut: data && "auto_out" in data
+      ? (typeof data.auto_out === "string" && data.auto_out ? data.auto_out : null)
+      : DEFAULTS.autoOut,
     overtime: data ? data.overtime !== false : true,
   };
 }

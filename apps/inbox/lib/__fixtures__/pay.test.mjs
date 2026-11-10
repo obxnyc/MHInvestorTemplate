@@ -74,6 +74,12 @@ t("Zelle has no link", () => L("luis").payLink === null);
 t("no link for a junk cashtag", () => payLink("cashapp", "$juan r/../x", 100) === null);
 t("no link for nothing owed", () => payLink("cashapp", "$a", 0) === null);
 
+// A shift the clock closed is PAID (it is finished) and FLAGGED.
+const withAuto = payWeek(payees, [...shifts, day(7, 12, 20, "ray", { autoOut: true })], {});
+const ray = withAuto.lines.find((l) => l.staffId === "ray");
+t("a shift the clock closed is paid", () => ray.hours === 16 && ray.amountCents === 40000);
+t("and counted as closed by the clock", () => ray.autoClosed === 1 && L("ray").autoClosed === 0);
+
 const bad = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` (${why})` : ""}`);
 console.log(`\n${checks.length - bad.length}/${checks.length} passed`);

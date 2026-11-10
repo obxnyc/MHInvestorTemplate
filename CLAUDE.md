@@ -1458,3 +1458,29 @@ so the phone harness could not see it either. Name the key:
 `staff!shifts_staff_id_fkey(full_name)`. `embed-check.mjs` reads the
 migrations for tables with two links to one target and fails any unnamed
 embed on them.
+
+### The week is Friday to Thursday
+
+Pay goes out Friday for Friday to Thursday, so `WEEK_STARTS_ON` is 5 and the
+crew's "this week", the office grid and the pay run are one week. Changing
+only the pay screen would have shown a man 32 hours on his phone and paid
+him for a different 32.
+
+### The clock closes a shift nobody closed, and says so
+
+At `auto_out` (6pm by default) on the day a shift began, or later if a ping
+or a break says he was still working; never while the phone is still
+pinging. `shifts.auto_clocked_out` marks it, Friday pay and the recap flag
+it, and the man is texted with the link to fix it -- unless the shift ended
+more than a day ago, which is a flag, not a text.
+
+An open break from lunch is LEFT open when the clock closes the shift.
+Closing it at six would deduct six hours of lunch nobody measured, and a
+break with no end is never deducted. Only a break begun after six, the one
+that moved the end, is closed with it -- a minute on, because a break must
+end after it starts, and that minute is break so the hours stop exactly
+where the break began.
+
+A data change made once (Saturday some weeks, overtime off) does not go in
+a migration file: a re-run would undo whatever was chosen on the screen
+since.

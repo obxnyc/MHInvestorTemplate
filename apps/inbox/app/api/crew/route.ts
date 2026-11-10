@@ -55,6 +55,18 @@ export async function PATCH(req: Request) {
         .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
       patch.days = [...new Set(days)].sort();
     }
+    if ("optionalDays" in s) {
+      const d = (Array.isArray(s.optionalDays) ? s.optionalDays : []).map(Number)
+        .filter((x) => Number.isInteger(x) && x >= 0 && x <= 6);
+      patch.optional_days = [...new Set(d)].sort();
+    }
+    if ("autoOut" in s) {
+      const v = s.autoOut;
+      if (v === null || v === "") patch.auto_out = null;
+      else if (typeof v !== "string" || !HHMM.test(v)) {
+        return NextResponse.json({ error: `"${String(v)}" is not a time of day.` }, { status: 400 });
+      } else patch.auto_out = v.padStart(5, "0");
+    }
     if (s.at && typeof s.at === "object") {
       const at: Record<string, string | null> = {};
       for (const k of KINDS) {

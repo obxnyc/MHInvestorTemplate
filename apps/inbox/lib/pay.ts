@@ -51,6 +51,9 @@ export type PayLine = {
   openShifts: number;
   /** Finished shifts the man himself has not agreed. */
   unsigned: number;
+  /** Shifts the clock closed because he never clocked out. Paid, and to be
+   *  looked at: the end time is the clock's best evidence, not his. */
+  autoClosed: number;
   /** A tap that opens the payment with the amount filled in, where one exists. */
   payLink: string | null;
 };
@@ -81,7 +84,7 @@ export function payLink(method: Method | null, handle: string | null, cents: num
 }
 
 export function payWeek(
-  payees: Payee[], shifts: Shift[], crewNames: Record<string, string>,
+  payees: Payee[], shifts: (Shift & { autoOut?: boolean })[], crewNames: Record<string, string>,
   opts: { overtime?: boolean; rules?: Rules; note?: string } = {},
 ): { lines: PayLine[]; crews: Crew[]; totalCents: number; missingRates: number } {
   const rules = opts.rules ?? RULES;
@@ -106,6 +109,7 @@ export function payWeek(
       handle: p.handle,
       openShifts: mine.filter((s) => !s.endedAt).length,
       unsigned: mine.filter((s) => s.endedAt && !s.signedOffAt).length,
+      autoClosed: mine.filter((s) => s.autoOut && s.endedAt).length,
       payLink: payLink(p.method, p.handle, amountCents, opts.note),
     };
   }).sort((a, b) => a.crew.localeCompare(b.crew) || a.name.localeCompare(b.name));

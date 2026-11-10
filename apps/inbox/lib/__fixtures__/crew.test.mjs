@@ -113,6 +113,8 @@ t("a formula is neutered", () => csv.includes(`"'=HYPERLINK(""x"")"`) && !/(^|,)
 t("a comma in a name is quoted", () => csv.includes(`"Northside, Lot 12"`));
 t("no site says so", () => rows.some((r) => r.startsWith("Zed,2026-11-10,Not set")));
 t("how the site was decided", () => csv.includes("Phone location") && csv.includes("Picked by employee"));
+t("a shift the clock closed says so in the spreadsheet", () =>
+  payrollCsv([{ ...pay[0], autoOut: true }], NOW).includes("Clocked out automatically — check the end time"));
 t("lines end CRLF", () => csv.endsWith("\r\n") && !/[^\r]\n/.test(csv));
 t("cell leaves ordinary words alone", () => cell("Amy") === "Amy" && cell(null) === "");
 

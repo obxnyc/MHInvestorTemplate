@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * Friday's pay: what each man is owed for a week, by crew, and who has been
  * paid.
  *
- * The week defaults to LAST week -- Monday to Sunday, finished -- because a
+ * The week defaults to LAST week -- Friday to Thursday, finished -- because a
  * week still being worked is not one anybody can be paid for.
  *
  * Marking paid records the amount as it was when it was paid. If a
@@ -37,12 +37,13 @@ async function build(week: string, offset: number) {
     loadSetup(),
     loadTextSettings(),
     db.from("shifts")
-      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, shift_breaks(started_at, ended_at)")
+      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, auto_clocked_out, shift_breaks(started_at, ended_at)")
       .gte("started_at", from).lt("started_at", to),
     db.from("pay_runs").select("*").eq("week_start", week),
   ]);
 
-  const shifts: Shift[] = (shiftsRes.data ?? []).map((s) => ({
+  const shifts: (Shift & { autoOut: boolean })[] = (shiftsRes.data ?? []).map((s) => ({
+    autoOut: !!s.auto_clocked_out,
     id: String(s.id), staffId: String(s.staff_id),
     propertyId: (s.property_id as string | null) ?? null,
     startedAt: String(s.started_at), endedAt: (s.ended_at as string | null) ?? null,

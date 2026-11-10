@@ -245,8 +245,10 @@ export function byProperty(shifts: Shift[], rules: Rules = RULES): {
  * off have to be there, empty, or the shape of the week is a guess.
  */
 
-/** Monday by default: the week a payroll run asks for. 0 is Sunday. */
-export const WEEK_STARTS_ON = 1;
+/** Friday: pay goes out on Friday for Friday to Thursday, so the week the
+ *  crew see on their phone, the office grid and the pay run are one week.
+ *  Changed from Monday in November 2026 at the owner's word. 0 is Sunday. */
+export const WEEK_STARTS_ON = 5;
 
 const dayMs = (iso: string, offsetMinutes: number) => {
   const t = new Date(new Date(iso).getTime() - offsetMinutes * 60_000);

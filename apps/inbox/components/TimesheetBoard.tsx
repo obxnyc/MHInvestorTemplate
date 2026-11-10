@@ -302,6 +302,7 @@ export default function TimesheetBoard() {
         </div>
 
         {data.people.length ? (
+          <div className="tsscroll">
           <table className="tsweek">
             <thead>
               <tr>
@@ -329,6 +330,7 @@ export default function TimesheetBoard() {
               ))}
             </tbody>
           </table>
+          </div>
         ) : (
           /* Nobody on the crew yet is not the same as nobody having worked,
              and the screen should say which it is. */

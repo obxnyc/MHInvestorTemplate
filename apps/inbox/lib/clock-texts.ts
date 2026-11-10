@@ -42,6 +42,14 @@ export type Settings = {
   at: Record<Kind, string | null>;
   /** Days texts go out, 0 = Sunday. */
   days: number[];
+  /** Days that are worked SOMETIMES -- Jose's Saturdays. Nobody is reminded
+   *  to clock in, and only the people who did clock in get a text or are
+   *  in a report. A Saturday report that lists twelve men as "not clocked
+   *  in" when three were asked to come is twelve lines of noise. */
+  optionalDays: number[];
+  /** "HH:MM": a shift nobody clocked out of is closed at this time. Null
+   *  switches the catch off. */
+  autoOut: string | null;
   /** The site's own address, for the link in the text. */
   base: string;
 };
@@ -56,7 +64,9 @@ export const DEFAULTS: Omit<Settings, "base"> = {
     crew_evening: "17:30",
     lead_recap: "21:00",
   },
-  days: [1, 2, 3, 4, 5],
+  days: [1, 2, 3, 4, 5, 6],
+  optionalDays: [6],
+  autoOut: "18:00",
 };
 
 /** How long after its time a text may still go out. */
@@ -76,9 +86,15 @@ export type Person = {
   lang?: Lang;
 };
 
-export type DayShift = Shift & { siteName: string | null; startFence: string | null };
+export type DayShift = Shift & {
+  siteName: string | null; startFence: string | null;
+  /** Closed by the clock rather than by the man. */
+  autoOut?: boolean;
+};
 
-export type Text = { kind: Kind; staffId: string; to: string; body: string; key: string };
+export type Text = {
+  kind: Kind | "crew_autoout"; staffId: string; to: string; body: string; key: string;
+};
 
 /* ------------------------------------------------------------------ time */
 
@@ -106,10 +122,15 @@ const slotMinutes = (hhmm: string | null): number | null => {
 };
 
 /** Which kinds are due right now. */
-export function dueKinds(now: Date, s: Pick<Settings, "tz" | "at" | "days">): Kind[] {
+export function dueKinds(
+  now: Date, s: Pick<Settings, "tz" | "at" | "days"> & { optionalDays?: number[] },
+): Kind[] {
   const l = localOf(now, s.tz);
   if (!s.days.includes(l.dow)) return [];
+  // Nobody is told to come in on a day only some are asked to work.
+  const optional = (s.optionalDays ?? []).includes(l.dow);
   return KINDS.filter((k) => {
+    if (optional && k === "crew_morning") return false;
     const at = slotMinutes(s.at[k]);
     return at !== null && l.minutes >= at && l.minutes < at + GRACE;
   });
@@ -208,6 +229,10 @@ const W = {
     recap: (d: string) => `Daily recap ${d}`,
     noneToday: "no hours",
     stillOpen: (t: string) => `STILL CLOCKED IN since ${t}`,
+    autoNote: (t: string) => `did not clock out, closed by the clock at ${t}, check it`,
+    autoOut: (n: string, t: string, h: string, l: string) =>
+      `${n}, you did not clock out, so the clock closed your shift at ${t} (${h} today). `
+      + `If you worked later or left earlier, fix it here: ${l}`,
     offSites: (k: number) => `${k} clock-in${k === 1 ? "" : "s"} off site`,
     total: (h: string) => `Total finished: ${h}`,
     details: (l: string) => `Details: ${l}`,
@@ -240,6 +265,10 @@ const W = {
     recap: (d: string) => `Resumen del día ${d}`,
     noneToday: "sin horas",
     stillOpen: (t: string) => `TODAVÍA MARCADO desde las ${t}`,
+    autoNote: (t: string) => `no marcó salida, el reloj la cerró a las ${t}, revísalo`,
+    autoOut: (n: string, t: string, h: string, l: string) =>
+      `${n}, no marcaste tu salida, así que el reloj cerró tu turno a las ${t} (${h} hoy). `
+      + `Si trabajaste más tarde o saliste antes, corrígelo aquí: ${l}`,
     offSites: (k: number) => `${k} entrada${k === 1 ? "" : "s"} fuera del sitio`,
     total: (h: string) => `Total terminado: ${h}`,
     details: (l: string) => `Detalles: ${l}`,
@@ -328,6 +357,8 @@ function leadText(
         if (!c.today.length) return `• ${c.person.name} – ${w.noneToday}`;
         const bits = [`• ${c.person.name} ${hm(c.hours)} – ${c.sites.map((x) => x === NOT_SET ? w.notSet : x).join(", ")}`];
         if (c.open) bits.push(` – ${w.stillOpen(t(c.open.startedAt))}`);
+        const auto = c.today.filter((x) => x.autoOut && x.endedAt).at(-1);
+        if (auto) bits.push(` – ${w.autoNote(t(auto.endedAt!))}`);
         if (c.offSite) bits.push(` – ${w.offSites(c.offSite)}`);
         return bits.join("");
       }),
@@ -352,11 +383,15 @@ export function plan(
 ): Text[] {
   const kinds = dueKinds(now, settings);
   if (!kinds.length) return [];
-  const { day } = localOf(now, settings.tz);
+  const { day, dow } = localOf(now, settings.tz);
 
-  const crew = people.filter((p) => p.onClock)
+  const everyone = people.filter((p) => p.onClock)
     .sort((a, b) => a.name.localeCompare(b.name));
-  const status = new Map(crew.map((p) => [p.id, statusOf(p, shifts, now, rules)]));
+  const status = new Map(everyone.map((p) => [p.id, statusOf(p, shifts, now, rules)]));
+  // On a day only some are asked to work, the crew IS whoever came. Nobody
+  // else is texted, and nobody else is a line in a report.
+  const optional = (settings.optionalDays ?? []).includes(dow);
+  const crew = optional ? everyone.filter((p) => status.get(p.id)!.today.length) : everyone;
 
   const out: Text[] = [];
   const push = (kind: Kind, p: Person, body: string | null) => {
@@ -378,4 +413,103 @@ export function plan(
     }
   }
   return out;
+}
+
+/* ------------------------------------------------------- the auto clock-out
+ *
+ * "Guys that don't clock out need to get clocked out." A shift left open
+ * runs all night, and the old answer -- flag it, add no hours, wait for
+ * somebody -- leaves a man unpaid for a day he worked until the office
+ * notices. So the clock closes it, and SAYS it did, everywhere it matters.
+ *
+ * WHEN IT ENDS is the whole question, because either wrong answer is
+ * somebody's money. The end is the clock-out time (six by default) on the
+ * day the shift began -- unless the phone says he was still at it later: a
+ * position sent, or a break taken, after six. Then it ends at the last of
+ * those, because that is the last moment anything says he was working.
+ *
+ * WHO IS LEFT ALONE: anybody whose phone is still pinging. The clock screen
+ * is open and sending its position every ten minutes; that is a man still
+ * working, and closing his shift under him is the clock arguing with him.
+ * Once it has gone quiet for half an hour, it closes at the last ping.
+ *
+ * A shift begun AFTER the clock-out time -- an evening job -- is closed at
+ * its start plus the daily cap, not at a six o'clock that was before it.
+ */
+
+export type OpenForAuto = {
+  id: string; staffId: string; startedAt: string;
+  breaks: { startedAt: string; endedAt: string | null }[];
+  /** The newest position the phone sent on this shift, if any. */
+  lastPing: string | null;
+};
+
+export const QUIET_MINUTES = 30;
+
+export type AutoOut = {
+  shiftId: string; staffId: string; endedAt: string;
+  /** End the open break at `endedAt` too. Only ever the break that began
+   *  after the clock-out time and is the reason the end moved. */
+  closeBreak: boolean;
+};
+
+/** Midnight-relative minutes in `tz` -> the instant, on the local day of `ref`. */
+function atLocal(ref: Date, minutes: number, tz: string): Date {
+  // Start from the reference instant, step to the wanted wall-clock time, and
+  // correct once for any offset change between the two (a DST night).
+  const l = localOf(ref, tz);
+  let t = ref.getTime() + (minutes - l.minutes) * 60_000;
+  const l2 = localOf(new Date(t), tz);
+  if (l2.minutes !== minutes && l2.day === l.day) t += (minutes - l2.minutes) * 60_000;
+  return new Date(t - (t % 60_000));
+}
+
+export function autoOuts(
+  open: OpenForAuto[], now: Date,
+  s: Pick<Settings, "tz" | "autoOut">, rules: Rules = RULES,
+): AutoOut[] {
+  const cut = slotMinutes(s.autoOut);
+  if (cut === null) return [];
+  const out: AutoOut[] = [];
+
+  for (const sh of open) {
+    const start = new Date(sh.startedAt);
+    let end = atLocal(start, cut, s.tz);
+    if (end.getTime() <= start.getTime()) {
+      end = new Date(start.getTime() + rules.dailyCap * 3_600_000);
+    }
+    if (now.getTime() < end.getTime()) continue;
+
+    // Still pinging: still working. Leave him be.
+    const ping = sh.lastPing ? Date.parse(sh.lastPing) : null;
+    if (ping !== null && now.getTime() - ping < QUIET_MINUTES * 60_000) continue;
+
+    // The last thing that says he was on the clock, if it is after the cut.
+    const evidence = [ping, ...sh.breaks.flatMap((b) => [
+      Date.parse(b.startedAt), b.endedAt ? Date.parse(b.endedAt) : null,
+    ])].filter((x): x is number => x !== null && Number.isFinite(x) && x <= now.getTime());
+    let latest = Math.max(end.getTime(), ...evidence);
+    // On a break that never ended, and that break is the last sign of work:
+    // he stopped when it began. A break must end after it starts, so both
+    // end a minute on -- and that minute is break, deducted, so the hours
+    // paid still stop exactly when the break began. Nothing is deleted.
+    const stuck = sh.breaks.find((b) => !b.endedAt);
+    const closeBreak = !!stuck && Date.parse(stuck.startedAt) >= latest;
+    if (closeBreak) latest = Date.parse(stuck!.startedAt) + 60_000;
+
+    // Any OTHER open break -- lunch at noon, never ended -- is left open.
+    // Closing it at six would deduct six hours of "lunch" nobody measured,
+    // and a break with no end is never deducted. The recap says "check it".
+    out.push({ shiftId: sh.id, staffId: sh.staffId, endedAt: new Date(latest).toISOString(),
+               closeBreak });
+  }
+  return out;
+}
+
+/** The text to the man whose shift the clock closed. */
+export function autoOutText(
+  p: Person, endedAt: string, hours: number, s: Pick<Settings, "tz" | "base">,
+): string {
+  const lang = p.lang ?? "en";
+  return W[lang].autoOut(first(p.name), timeIn(endedAt, s.tz, lang), hm(hours), `${s.base}/clock`);
 }

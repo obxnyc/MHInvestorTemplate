@@ -3446,9 +3446,15 @@ a.metric:hover{border-color:var(--accent)}
 .crewtick input{width:1.2rem;height:1.2rem;flex:none}
 .crewslots{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
 .crewslots li{display:flex;align-items:center;justify-content:space-between;gap:.6rem;
+  /* Wraps: on a small phone the time box goes under its words rather than
+     pushing the row out of the card. */
+  flex-wrap:wrap;
   padding:.5rem .6rem;border-radius:10px;background:var(--sunk)}
-.crewslots li>div{display:flex;flex-direction:column;min-width:0}
-.crewslots input{min-height:2.75rem;padding:.3rem .5rem;border:1px solid var(--hair);
+.crewslots li>div{display:flex;flex-direction:column;min-width:0;flex:1 1 11rem}
+/* .tsspan is nowrap for figures; a setting's NAME has to wrap, or
+   "Back-from-lunch reminder" holds the row 24px out of its card. */
+.crewslots .tsspan{white-space:normal}
+.crewslots input,.crewslots select{min-height:2.75rem;max-width:58%;padding:.3rem .5rem;border:1px solid var(--hair);
   border-radius:10px;background:var(--card);color:var(--ink);font:inherit;flex:none}
 .crewdays{display:flex;flex-wrap:wrap;gap:.2rem .8rem}
 .crewbody{width:100%;color:var(--ink-2);font-size:.82rem;line-height:1.45;white-space:pre-line}
@@ -3458,3 +3464,7 @@ a.metric:hover{border-color:var(--accent)}
 .crewwrap{width:100%;max-width:52rem;margin:0 auto;padding:1rem 1rem 3rem;
   display:flex;flex-direction:column;gap:.85rem}
 .crewwrap>.leadsay{margin:0}
+
+/* The week grid in a box of its own that scrolls sideways on the smallest
+   phones: eight columns of hours do not fit in 288px and should not try to. */
+.tsscroll{overflow-x:auto;max-width:100%}
