@@ -19,6 +19,11 @@ export type Unit = {
   vacant_since: string | null; vacant_since_estimated: boolean;
   /** The one thing stopping it being let. */
   blocker: string | null;
+  /** The office's word on it (052): ready to show, being made ready, or
+   *  neither. Separate from is_vacant, which is Rent Manager's and counts
+   *  every bare pad. Undefined until 052 runs. */
+  listing?: "for_rent" | "upcoming" | null;
+  ready_on?: string | null;
   home_owner: "ours" | "theirs" | "none";
   home_year: number | null; home_make: string | null; home_serial: string | null;
 };
@@ -87,6 +92,39 @@ function Blocker(
 }
 
 /**
+ * For rent, upcoming, or neither -- what puts a home on the morning report's
+ * vacancy list.
+ *
+ * A select rather than two buttons because there are three answers, and the
+ * third ("not listed") is the one most homes have. The ready date appears
+ * only for upcoming, the one state it means anything in.
+ */
+function Listing(
+  { unit, busy, call }:
+  { unit: Unit; busy: boolean;
+    call: (url: string, method: string, body?: unknown) => Promise<Record<string, unknown> | null> },
+) {
+  const now = unit.listing ?? "";
+  return (
+    <span className="ulisting">
+      <select value={now} disabled={busy}
+              aria-label={`Listing for ${unit.label}`}
+              onChange={(e) => call(`/api/units/${unit.id}`, "PATCH", { listing: e.target.value })}>
+        <option value="">Not listed</option>
+        <option value="for_rent">For rent</option>
+        <option value="upcoming">Upcoming</option>
+      </select>
+      {now === "upcoming" && (
+        <input type="date" value={unit.ready_on ?? ""} disabled={busy}
+               aria-label={`When ${unit.label} will be ready`}
+               title="When it should be ready to show"
+               onChange={(e) => call(`/api/units/${unit.id}`, "PATCH", { readyOn: e.target.value })} />
+      )}
+    </span>
+  );
+}
+
+/**
  * Every property, and every lot in it.
  *
  * One screen rather than a list that opens a page per park, because the useful
@@ -99,8 +137,10 @@ function Blocker(
  * markable by the person who let it.
  */
 export default function PropertyBoard(
-  { properties, ready, clock, canEdit, canDelete }:
+  { properties, ready, clock, listing = false, canEdit, canDelete }:
   { properties: Property[]; ready: boolean; clock: boolean;
+    /** Whether 052's listing columns came back with the rows. */
+    listing?: boolean;
     canEdit: boolean; canDelete: boolean },
 ) {
   const router = useRouter();
@@ -396,6 +436,14 @@ export default function PropertyBoard(
                               ) : null}
                             </span>
                           )}
+                          {listing && (canEdit
+                            ? <Listing unit={u} busy={busy} call={call} />
+                            : u.listing ? (
+                              <span className="ulisting">
+                                {u.listing === "for_rent" ? "For rent"
+                                  : `Upcoming${u.ready_on ? `, ready ${u.ready_on}` : ""}`}
+                              </span>
+                            ) : null)}
                           {canEdit && (
                             <>
                               <button className="mini" disabled={busy}

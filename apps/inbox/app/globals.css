@@ -1504,6 +1504,15 @@ a.metric:hover{border-color:var(--accent)}
 .ublockin{flex:1;min-width:6rem;padding:.3rem .45rem;font:inherit;font-size:.78rem;
   border:1px solid var(--hair);border-radius:6px;background:var(--card);color:var(--ink)}
 .ublocksay{color:var(--muted);white-space:nowrap}
+/* For rent / upcoming (052). Tokens only, so the ink moves with the ground
+   between themes; the date input is sized to its content rather than given
+   width:100%, which would stretch it across the row. */
+.ulisting{display:inline-flex;align-items:center;gap:.35rem;flex-wrap:wrap;
+  font-size:.78rem;font-weight:600;color:var(--ink-2)}
+.ulisting select{padding:.3rem 1.5rem .3rem .5rem}
+.ulisting input[type=date]{padding:.28rem .4rem;font:inherit;font-size:.78rem;
+  border:1px solid var(--hair);border-radius:6px;background:var(--card);color:var(--ink);
+  min-width:8.5rem}
 
 .addunits{margin-top:.9rem}
 .unitrow{display:flex;gap:.4rem;flex-wrap:wrap}

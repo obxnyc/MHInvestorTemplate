@@ -28,6 +28,10 @@ export default async function Properties() {
   // and falling all the way back to the narrow one -- losing the serial
   // number, the make and the year along with it. One missing column would
   // have taken away six working features instead of the one it belongs to.
+  // 052: for rent / upcoming. Its own tier on top, for the same reason as
+  // the clock -- a database without it loses the listing control and
+  // nothing else.
+  const LISTED = `${HEAD}, units(${UNITS}${CLOCK}, listing, ready_on)`;
   const FULL = `${HEAD}, units(${UNITS}${CLOCK})`;
   const WIDE = `${HEAD}, units(${UNITS})`;
   const BASE = "id, name, address, color, units(id, label, bedrooms, monthly_rent, is_vacant, available_on)";
@@ -35,7 +39,7 @@ export default async function Properties() {
   // Typed loosely on purpose. Each tier returns a different row shape and the
   // mapping below reads every field defensively anyway, which is the whole
   // point of having tiers.
-  const tiers = [FULL, WIDE, BASE];
+  const tiers = [LISTED, FULL, WIDE, BASE];
   let rows: unknown[] | null = null;
   let answered = tiers.length;            // which tier came back
   for (let i = 0; i < tiers.length; i++) {
@@ -47,8 +51,9 @@ export default async function Properties() {
   // real -- both wide tiers name those columns. `clock` asks whether 037 is,
   // which only the first tier does. A screen with the clock missing has to
   // say so rather than draw every lot as empty since today.
-  const ready = answered <= 1;
-  const clock = answered === 0;
+  const ready = answered <= 2;
+  const clock = answered <= 1;
+  const listing = answered === 0;
 
   type Row = Record<string, unknown> & { units?: unknown };
   const properties: Property[] = ((rows ?? []) as unknown as Row[]).map((p) => ({
@@ -73,6 +78,8 @@ export default async function Properties() {
       vacant_since: u.vacant_since ?? null,
       vacant_since_estimated: u.vacant_since_estimated ?? false,
       blocker: u.blocker ?? null,
+      listing: u.listing ?? null,
+      ready_on: u.ready_on ?? null,
       home_owner: u.home_owner ?? "ours",
       home_year: u.home_year ?? null,
       home_make: u.home_make ?? null,
@@ -87,7 +94,7 @@ export default async function Properties() {
       }),
   }));
 
-  return <PropertyBoard properties={properties}
+  return <PropertyBoard properties={properties} listing={listing}
                         // The wide select succeeding IS the migration check:
                         // it names every column 016 and 017 add, and the join
                         // to the owners table they create. If it came back,
