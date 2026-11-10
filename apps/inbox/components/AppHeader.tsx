@@ -4,7 +4,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import AccountMenu from "./AccountMenu";
-import { isClockOnly, type Role } from "@/lib/roles";
+import { isClockOnly, isDesk, type Role } from "@/lib/roles";
 import OmniSearch from "@/components/OmniSearch";
 
 
@@ -38,6 +38,8 @@ export default function AppHeader(
         ["/owners", "Investors"],
         ["/clock", "On the clock"],
         ["/timesheets", "Timesheets"],
+        // Everybody's wage: only the two roles the page itself lets in.
+        ...(isDesk(role) ? [["/pay", "Pay"] as [string, string]] : []),
         ["/settings", "Settings"],
       ];
 

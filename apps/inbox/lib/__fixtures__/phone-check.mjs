@@ -53,6 +53,9 @@ const SIGNED_IN = [
      and the setup page is read on a phone more often than at a desk,
      because it is read when somebody rings up. */
   ["desk", "/rentmanager"], ["desk", "/setup"],
+  // Crews, rates and the clock texts; and Friday pay. Set up from a phone
+  // in a truck as often as at a desk.
+  ["desk", "/crew"], ["desk", "/pay"],
 ];
 // A phone, a small phone, and a phone held sideways.
 const SIZES = [[390, 844], [320, 568], [844, 390]];
@@ -158,7 +161,7 @@ const wrong = [];
  * signed-in pass cannot drift apart. A harness whose two halves measure
  * different things reports a pass that means two different things. */
 const LOOK = () => {
-    const gone = [], thin = [], small = [], over = [], faint = [];
+    const gone = [], thin = [], small = [], over = [], faint = [], spill = [];
     /* Words that are not there at all. The floor is 1.6:1, NOT a contrast
        audit -- this stylesheet uses a deliberately quiet grey for small
        labels and that is a choice. 1.6 is what white-on-white and
@@ -208,10 +211,17 @@ const LOOK = () => {
       for (let i = stack.length - 1; i >= 0; i--) out = blend(stack[i], out);
       return out;
     };
-    const scrolls = (el) => {
-      for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+    /* Is `el` inside something that scrolls sideways ON PURPOSE -- a tab
+       strip, a wide table in its own box? Stops at `upTo` when given.
+       A scroller as wide as the page is NOT that: every signed-in screen
+       sits in `.boardscroll`, which is overflow-x:auto, so counting it
+       excused everything on those screens and "off the screen" checked
+       nothing on any of them since the day it was written. */
+    const scrolls = (el, upTo = document.body) => {
+      for (let a = el.parentElement; a && a !== document.body && a !== upTo; a = a.parentElement) {
         const ov = getComputedStyle(a).overflowX;
-        if (ov === "auto" || ov === "scroll") return true;
+        if ((ov === "auto" || ov === "scroll")
+            && a.getBoundingClientRect().width < window.innerWidth - 2) return true;
       }
       return false;
     };
@@ -242,8 +252,22 @@ const LOOK = () => {
       const st = getComputedStyle(el);
       if (st.visibility === "hidden" || st.opacity === "0") continue;
       const name = `${el.tagName.toLowerCase()}.${el.className || "-"}`.slice(0, 48);
-      if (!scrolls(el) && (r.left < -1 || r.right > window.innerWidth + 1)) {
+      // A map's markers sit wherever the earth puts them and the map clips them.
+      if (!scrolls(el) && !el.closest(".maplibregl-map")
+          && (r.left < -1 || r.right > window.innerWidth + 1)) {
         gone.push(`${name} ${Math.round(r.left)}..${Math.round(r.right)}`);
+      }
+      /* OUT OF ITS CARD, while still on the screen. The crew settings rows
+         ran 24px past their card -- a word that would not wrap -- and stayed
+         inside the viewport, so "off the screen" never saw it. Anything in a
+         card that leaves the card's box is the same fault one box in.
+         A map's own markers are clipped by the map and are not counted. */
+      const card = el.closest(".tscard");
+      if (card && card !== el && !scrolls(el, card) && !el.closest(".crewmap, .maplibregl-map")) {
+        const c = card.getBoundingClientRect();
+        if (r.left < c.left - 1 || r.right > c.right + 1) {
+          spill.push(`${name} ${Math.round(r.left)}..${Math.round(r.right)} in a card ${Math.round(c.left)}..${Math.round(c.right)}`);
+        }
       }
       const tag = el.tagName.toLowerCase();
       // A field nobody can type into, and a target nobody can hit. 30px is
@@ -259,6 +283,7 @@ const LOOK = () => {
       }
     }
     return {
+      spill: [...new Set(spill)],
       gone: [...new Set(gone)], thin: [...new Set(thin)],
       small: [...new Set(small)], over: [...new Set(over)],
       faint: [...new Set(faint)],
@@ -372,6 +397,7 @@ for (const path of PAGES) {
 
     const at = `${scheme} ${path} at ${width}x${height}`;
     if (said.gone.length) wrong.push(`${at}: off the screen -- ${said.gone.join(", ")}`);
+    if (said.spill?.length) wrong.push(`${at}: out of its card -- ${said.spill.join(", ")}`);
     if (said.sideways) wrong.push(`${at}: the page scrolls sideways`);
     if (said.thin.length) wrong.push(`${at}: too narrow to type into -- ${said.thin.join(", ")}`);
     if (said.over.length) wrong.push(`${at}: a tick box stretched -- ${said.over.join(", ")}`);
@@ -412,6 +438,7 @@ for (const [who, path] of stubUp ? SIGNED_IN : []) {
     await probeOpen(p, at, wrong);
     await ctx.close();
     if (said.gone.length) wrong.push(`${at}: off the screen -- ${said.gone.join(", ")}`);
+    if (said.spill?.length) wrong.push(`${at}: out of its card -- ${said.spill.join(", ")}`);
     if (said.sideways) wrong.push(`${at}: the page scrolls sideways`);
     if (said.thin.length) wrong.push(`${at}: too narrow to type into -- ${said.thin.join(", ")}`);
     if (said.over.length) wrong.push(`${at}: a tick box stretched -- ${said.over.join(", ")}`);

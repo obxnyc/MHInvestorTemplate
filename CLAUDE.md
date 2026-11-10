@@ -1408,3 +1408,79 @@ because membership changes: somebody joins the office and a thread matched on
 need a part" is "where are you?", and the screen it was sent from already
 knows. Read from the database, never from the request: a claim about which job
 somebody is on is worth nothing if the person sending it chose the words.
+
+### Texts at a time of day: the scheduler is in the database
+
+Crew reminders and Jose's 8:45 report need a time of day, and Vercel's Hobby
+crons cannot say one -- once a day, somewhere inside the hour. So migration
+051 turns on pg_cron and pg_net and the DATABASE wakes
+`/api/cron/clock-texts` every five minutes; the route works out what is due in
+Eastern time (Intl does daylight saving) and sends it. `plan-check.mjs` is
+untouched because nothing was added to `vercel.json`.
+
+The scheduler's token is generated inside Postgres (`private.cron_tokens`)
+and checked there (`clock_cron_ok`, service role only). Nobody copies a secret
+between two dashboards, which is the step that costs a round every time.
+
+A text is CLAIMED before it is sent: the ledger row (`kind:person:day`) goes
+in first and a second overlapping wake loses the insert. Send-then-record
+sends twice whenever two wakes overlap.
+
+**`staff.forward_to` is the ring group.** A number written there rings for
+every tenant call. The clock texts read it as a fallback and never write it;
+their own number is `crew_setup.phone`. Wages live in `crew_setup` too,
+because every signed-in person -- crew included -- can read `staff`.
+
+### A failed read must not say "nobody"
+
+The office's live crew card said "Nobody is on the clock" while the header
+above it said one person was. The stand-in had no `start_lat`, the select
+failed, and an empty list rendered exactly like the truth. The route now
+returns the error and the card says it could not read. Same shape as
+`described` keyed on rows: the absence of an answer is not an answer.
+
+### Zelle and Cash App cannot be paid from software
+
+Neither has an API a business can send money through. `/pay` does the rest --
+the amounts, a Cash App or Venmo link with the amount filled in, and one press
+that records the run so nobody is paid twice. A true one-button payout needs
+a payroll or payouts provider; that is the owner's decision, not a feature.
+
+### Two foreign keys to one table and the embed fails outright
+
+`shifts` points at `staff` twice (`staff_id`, `settled_by`) and so does
+`shift_edits` (`staff_id`, `decided_by`). PostgREST refuses `staff(full_name)`
+on either -- the WHOLE select fails, `data` is null, and the code reading it
+carries on. The week grid read as nobody having worked, and the corrections
+queue told an office that had run 039 to "run migration 039", so no crew
+correction ever reached anybody. The stand-in does not model foreign keys,
+so the phone harness could not see it either. Name the key:
+`staff!shifts_staff_id_fkey(full_name)`. `embed-check.mjs` reads the
+migrations for tables with two links to one target and fails any unnamed
+embed on them.
+
+### The week is Friday to Thursday
+
+Pay goes out Friday for Friday to Thursday, so `WEEK_STARTS_ON` is 5 and the
+crew's "this week", the office grid and the pay run are one week. Changing
+only the pay screen would have shown a man 32 hours on his phone and paid
+him for a different 32.
+
+### The clock closes a shift nobody closed, and says so
+
+At `auto_out` (6pm by default) on the day a shift began, or later if a ping
+or a break says he was still working; never while the phone is still
+pinging. `shifts.auto_clocked_out` marks it, Friday pay and the recap flag
+it, and the man is texted with the link to fix it -- unless the shift ended
+more than a day ago, which is a flag, not a text.
+
+An open break from lunch is LEFT open when the clock closes the shift.
+Closing it at six would deduct six hours of lunch nobody measured, and a
+break with no end is never deducted. Only a break begun after six, the one
+that moved the end, is closed with it -- a minute on, because a break must
+end after it starts, and that minute is break so the hours stop exactly
+where the break began.
+
+A data change made once (Saturday some weeks, overtime off) does not go in
+a migration file: a re-run would undo whatever was chosen on the screen
+since.

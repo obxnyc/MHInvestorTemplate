@@ -96,11 +96,15 @@ const SHIFTS = [
   { id: "s1", staff_id: WHO, property_id: "p1", property_from: "fence",
     started_at: iso(now - 7 * 3600e3), ended_at: iso(now - 2 * 3600e3),
     signed_off_at: null, start_fence: "inside", end_fence: "inside",
+    // The position columns 038 has. Without them every select that asks for
+    // where somebody clocked in fails, and the office's live map reads empty.
+    start_lat: 35.1, start_lng: -78.96, start_acc: 18,
     shift_breaks: [{ started_at: iso(now - 5 * 3600e3),
                      ended_at: iso(now - 4.5 * 3600e3) }] },
   { id: "s2", staff_id: WHO, property_id: null, property_from: null,
     started_at: iso(now - 1.5 * 3600e3), ended_at: null, signed_off_at: null,
-    start_fence: "unsure", end_fence: null, shift_breaks: [] },
+    start_fence: "unsure", end_fence: null, shift_breaks: [],
+    start_lat: 35.104, start_lng: -78.955, start_acc: 140 },
 ];
 
 const TABLES = {

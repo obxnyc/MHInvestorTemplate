@@ -101,7 +101,7 @@ async function since(db: Db, staffId: string, from: string): Promise<Shift[]> {
 async function state(db: Db, staffId: string, offset = 0) {
   const now = new Date();
   // Back far enough to hold the week being reviewed AND the one before it,
-  // so last week is readable on a Monday morning when this week is empty.
+  // so last week is readable on a Friday morning when this week is empty.
   const from = new Date(now.getTime() - 21 * 864e5).toISOString();
 
   const [shifts, rules, where, asks] = await Promise.all([
