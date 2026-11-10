@@ -120,29 +120,53 @@ t("a failed report is still an email, and says it failed",
 t("and says plainly it is not a clean bill",
   () => failed.text.includes("not a report saying nobody owes"));
 
-/* ---- vacancies */
-const v = (place, daysEmpty, extra = {}) => ({ place, rent: 850, beds: 3, baths: 2, daysEmpty,
-  availableOn: null, blocker: null, upcomingShowings: 0, recentShowings: 0, nextShowing: null,
-  why: ["Rent Manager"], ...extra });
-const vac = { rmOk: true, note: null, list: [
-  v("Park · 2", 5),
-  v("Park · 9", 80, { blocker: "flooring" }),
-  v("Park · 4", null, { upcomingShowings: 2, nextShowing: "2026-11-12T19:00:00Z", why: ["showing"] }),
+/* ---- vacancies: what the office marked, for rent and upcoming */
+const v = (place, status, extra = {}) => ({ place, status, rent: 850, beds: 3, baths: 2,
+  daysListed: null, readyOn: null, blocker: null,
+  upcomingShowings: 0, recentShowings: 0, nextShowing: null, ...extra });
+/* The days and dates are deliberately NOT in the order the names are, so a
+   sort by name and a sort by the right thing give different answers. */
+const vac = { note: null, list: [
+  v("A Street", "for_rent", { daysListed: 3 }),
+  v("B Street", "for_rent", { daysListed: 40,
+    upcomingShowings: 2, nextShowing: "2026-11-12T19:00:00Z" }),
+  v("C Street", "for_rent"),
+  v("D Street", "upcoming", { readyOn: "2026-12-22" }),
+  v("E Street", "upcoming", { readyOn: "2026-11-12", blocker: "Being cleaned Nov 11" }),
+  v("F Street", "upcoming", { readyOn: "2026-11-01" }),
 ] };
 const both = D.render({ ...base, debtors }, vac);
-t("the vacancy count is in the subject", () => both.subject.includes("3 vacant"));
-t("longest empty first: the one costing the most",
-  () => both.text.indexOf("Park · 9") < both.text.indexOf("Park · 2")
-     && both.text.indexOf("Park · 2") < both.text.indexOf("Park · 4"));
-t("what it is waiting on is said", () => both.text.includes("Waiting on: flooring"));
+const at = (x) => both.text.indexOf(x);
+t("the subject counts for rent and upcoming separately",
+  () => both.subject.includes("3 for rent, 3 upcoming"));
+t("for rent: longest on the market first",
+  () => at("B Street") < at("A Street"));
+t("for rent: a home nobody measured goes last, not first as zero days",
+  () => at("A Street") < at("C Street") && !/C Street -- [^\n]*listed/.test(both.text));
+t("upcoming: soonest ready first",
+  () => at("F Street") < at("E Street") && at("E Street") < at("D Street"));
+t("every for-rent home comes before the upcoming list",
+  () => at("C Street") < at("UPCOMING") && at("UPCOMING") < at("D Street"));
+t("what an upcoming home is waiting on is said",
+  () => both.text.includes("Waiting on: Being cleaned Nov 11"));
 t("a booked showing is said, with when",
   () => both.text.includes("2 showings booked, next Thu, Nov 12"));
+t("a for-rent home with nothing booked says so",
+  () => /A Street[^\n]*\n\s+no showings booked/.test(both.text));
+t("a ready date in the past on a home still upcoming is called overdue",
+  () => /F Street[^\n]*overdue/.test(both.text) && !/D Street[^\n]*overdue/.test(both.text));
+t("ready dates read as distance from today",
+  () => D.readyText("2026-11-12", "2026-11-10") === "ready about Nov 12 (2 days)"
+     && D.readyText("2026-12-01", "2026-11-10") === "ready about Dec 1 (3 weeks)");
 t("balances failing does not take the vacancy list down with it",
-  () => D.render({ ...base, ok: false, error: "x" }, vac).text.includes("Park · 9"));
-t("a note about Rent Manager not answering reaches the email",
-  () => D.render({ ...base, debtors }, { ...vac, note: "app's own record only" }).text.includes("app's own record only"));
-t("an empty vacancy list says so rather than vanishing",
-  () => D.render({ ...base, debtors }, { rmOk: true, note: null, list: [] }).text.includes("Nothing is vacant"));
+  () => D.render({ ...base, ok: false, error: "x" }, vac).text.includes("B Street"));
+t("a note about the list not being read reaches the email",
+  () => D.render({ ...base, debtors }, { ...vac, note: "could not be read" }).text.includes("could not be read"));
+t("empty lists say so rather than vanishing",
+  () => { const e = D.render({ ...base, debtors }, { note: null, list: [] }).text;
+          return e.includes("Nothing is marked for rent") && e.includes("Nothing is marked upcoming"); });
+t("names are escaped in the vacancy html",
+  () => !D.render({ ...base, debtors }, { note: null, list: [v("<i>x</i>", "for_rent")] }).html.includes("<i>x</i>"));
 
 let bad = 0;
 for (const [name, ok, why] of checks) {

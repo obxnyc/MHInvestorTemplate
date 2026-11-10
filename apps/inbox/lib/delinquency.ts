@@ -217,27 +217,36 @@ function longDay(day: string): string {
 
 /* ---------------------------------------------------------------- vacancies */
 
+/**
+ * A home on the vacancy list.
+ *
+ * The list is what the office has marked FOR RENT or UPCOMING on the
+ * Properties page (`units.listing`, migration 052) -- not Rent Manager's
+ * vacant flag, which counts every bare pad in a park bought last month and
+ * would bury the six homes anybody can actually show under a hundred lots
+ * with nothing on them.
+ */
 export type Vacancy = {
   place: string;
+  status: "for_rent" | "upcoming";
   /** Dollars a month, when on file. */
   rent: number | null;
   beds: number | null;
   baths: number | null;
-  daysEmpty: number | null;
-  availableOn: string | null;
+  /** Days since it was marked for rent. Null when nobody measured -- a home
+   *  already on the market before the field existed. */
+  daysListed: number | null;
+  /** Upcoming: the best guess at when it is ready, YYYY-MM-DD. */
+  readyOn: string | null;
   /** What it is waiting on, when somebody has said. */
   blocker: string | null;
   upcomingShowings: number;
   recentShowings: number;
   nextShowing: string | null;
-  /** Why it is on the list: "Rent Manager", "marked vacant", "showing". */
-  why: string[];
 };
 
 export type Vacancies = {
   list: Vacancy[];
-  /** Whether Rent Manager's own vacant list was read this morning. */
-  rmOk: boolean;
   /** Anything the reader needs to know about how complete this is. */
   note: string | null;
 } | null;
@@ -245,22 +254,40 @@ export type Vacancies = {
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-US",
   { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" });
 
-function vacancyLine(v: Vacancy): string[] {
-  const bits: string[] = [];
-  if (v.beds != null || v.baths != null) bits.push(`${v.beds ?? "?"} bd / ${v.baths ?? "?"} ba`);
-  if (v.rent != null) bits.push(`${usd(v.rent)}/mo`);
-  if (v.daysEmpty != null) bits.push(`empty ${v.daysEmpty} day${v.daysEmpty === 1 ? "" : "s"}`);
-  else if (v.availableOn) bits.push(`available ${v.availableOn}`);
-  const shows: string[] = [];
-  if (v.upcomingShowings) shows.push(`${v.upcomingShowings} showing${v.upcomingShowings === 1 ? "" : "s"} booked${v.nextShowing ? `, next ${shortDate(v.nextShowing)}` : ""}`);
-  if (v.recentShowings) shows.push(`${v.recentShowings} shown in the last 2 weeks`);
-  return [bits.join(" · "), shows.join("; "), v.blocker ? `Waiting on: ${v.blocker}` : ""];
+const dayDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US",
+  { month: "short", day: "numeric", timeZone: "UTC" });
+
+/** "ready about Dec 1 (3 weeks)", or "overdue since Nov 12" -- a date that
+ *  has passed on a home still marked upcoming is the thing to chase. */
+export function readyText(readyOn: string | null, day: string): string | null {
+  if (!readyOn) return null;
+  if (readyOn < day) return `was due ${dayDate(readyOn)} -- overdue`;
+  const n = daysBetween(day, readyOn);
+  const away = n === 0 ? "today" : n === 1 ? "tomorrow"
+    : n < 14 ? `${n} days` : `${Math.round(n / 7)} weeks`;
+  return `ready about ${dayDate(readyOn)} (${away})`;
 }
 
-/** Longest empty first: that is the one costing the most. */
-export function sortVacancies(list: Vacancy[]): Vacancy[] {
-  return [...list].sort((a, b) =>
-    (b.daysEmpty ?? -1) - (a.daysEmpty ?? -1) || a.place.localeCompare(b.place));
+function size(v: Vacancy): string | null {
+  return v.beds != null || v.baths != null ? `${v.beds ?? "?"} bd / ${v.baths ?? "?"} ba` : null;
+}
+
+function showText(v: Vacancy): string {
+  const out: string[] = [];
+  if (v.upcomingShowings) out.push(`${v.upcomingShowings} showing${v.upcomingShowings === 1 ? "" : "s"} booked${v.nextShowing ? `, next ${shortDate(v.nextShowing)}` : ""}`);
+  if (v.recentShowings) out.push(`${v.recentShowings} shown in the last 2 weeks`);
+  return out.join("; ");
+}
+
+/** For rent: longest on the market first, because that one is costing the
+ *  most. Upcoming: soonest ready first, because that is the next one to
+ *  list. */
+export function sortVacancies(list: Vacancy[]): { forRent: Vacancy[]; upcoming: Vacancy[] } {
+  const forRent = list.filter((v) => v.status === "for_rent").sort((a, b) =>
+    (b.daysListed ?? -1) - (a.daysListed ?? -1) || a.place.localeCompare(b.place));
+  const upcoming = list.filter((v) => v.status === "upcoming").sort((a, b) =>
+    (a.readyOn ?? "9999") .localeCompare(b.readyOn ?? "9999") || a.place.localeCompare(b.place));
+  return { forRent, upcoming };
 }
 
 /* ---------------------------------------------------------------- the email */
@@ -275,14 +302,14 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
   const current = owing.filter((d) => isCurrent(d.status));
   const former = owing.filter((d) => !isCurrent(d.status));
   const aged = owing.some((d) => d.daysLate !== null);
-  const vacant = vac ? sortVacancies(vac.list) : [];
+  const { forRent, upcoming } = vac ? sortVacancies(vac.list) : { forRent: [], upcoming: [] };
 
   /* ---- subject */
   const owesPart = !r.ok
     ? "balances could not be read"
     : owing.length ? `${owing.length} owe ${usd(total)}${r.partial ? " (incomplete)" : ""}`
     : `nobody owes${r.partial ? " (incomplete)" : ""}`;
-  const vacPart = vac ? ` · ${vacant.length} vacant` : "";
+  const vacPart = vac ? ` · ${forRent.length} for rent, ${upcoming.length} upcoming` : "";
   const subject = `Morning report ${short}: ${owesPart}${vacPart}`;
 
   const partialNote = r.partial
@@ -323,18 +350,25 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
   if (vac) {
     lines.push("", "", "VACANCIES", "");
     if (vac.note) lines.push(vac.note, "");
-    if (!vacant.length) lines.push("Nothing is vacant or being shown.");
-    else {
-      lines.push(`${vacant.length} home${vacant.length === 1 ? "" : "s"} vacant or being shown.`, "");
-      for (const v of vacant) {
-        const [facts, shows, blocker] = vacancyLine(v);
-        lines.push(`  ${v.place}${facts ? ` -- ${facts}` : ""}`);
-        if (shows) lines.push(`      ${shows}`);
-        if (blocker) lines.push(`      ${blocker}`);
-      }
+    lines.push(`FOR RENT NOW (${forRent.length})`);
+    if (!forRent.length) lines.push("  Nothing is marked for rent.");
+    for (const v of forRent) {
+      const facts = [size(v), v.rent != null ? `${usd(v.rent)}/mo` : null,
+        v.daysListed != null ? `listed ${v.daysListed} day${v.daysListed === 1 ? "" : "s"}` : null]
+        .filter(Boolean).join(" · ");
+      lines.push(`  ${v.place}${facts ? ` -- ${facts}` : ""}`);
+      const sh = showText(v);
+      lines.push(`      ${sh || "no showings booked"}`);
+    }
+    lines.push("", `UPCOMING (${upcoming.length})`);
+    if (!upcoming.length) lines.push("  Nothing is marked upcoming.");
+    for (const v of upcoming) {
+      const facts = [readyText(v.readyOn, r.day), size(v)].filter(Boolean).join(" · ");
+      lines.push(`  ${v.place}${facts ? ` -- ${facts}` : ""}`);
+      if (v.blocker) lines.push(`      Waiting on: ${v.blocker}`);
     }
   }
-  lines.push("", "Balances and the vacant list are Rent Manager's, read at the time this was sent.");
+  lines.push("", "Balances are Rent Manager's, read at the time this was sent. For rent and upcoming are what the office has marked on the Properties page.");
 
   /* ================================================================ html */
   const th = `style="text-align:left;padding:6px 10px;border-bottom:2px solid #d5dbe5;font-size:13px;color:#4b5563"`;
@@ -378,27 +412,42 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
       + table(former.length ? "Current tenants" : "Owing", current)
       + table("Moved out or not current", former);
 
-  const vacancyHtml = !vac ? "" :
-    h2(`Vacancies · ${vacant.length}`)
-    + (vac.note ? banner(vac.note, "Note.") : "")
-    + (!vacant.length
-      ? `<p>Nothing is vacant or being shown.</p>`
+  const forRentHtml = `<h3 style="margin:18px 0 6px;font-size:15px">For rent now · ${forRent.length}</h3>`
+    + (!forRent.length ? `<p>${muted("Nothing is marked for rent.")}</p>`
       : `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:720px">`
-        + `<tr><th ${th}>Home</th><th ${th}>Size</th><th ${thr}>Rent</th><th ${thr}>Empty</th><th ${th}>Showings</th></tr>`
-        + vacant.map((v) => {
+        + `<tr><th ${th}>Home</th><th ${th}>Size</th><th ${thr}>Rent</th><th ${thr}>Listed</th><th ${th}>Showings</th></tr>`
+        + forRent.map((v) => {
           const shows = [
             v.upcomingShowings ? `${v.upcomingShowings} booked${v.nextShowing ? `, next ${esc(shortDate(v.nextShowing))}` : ""}` : "",
             v.recentShowings ? `${v.recentShowings} in last 2 wks` : "",
           ].filter(Boolean).join("<br>");
-          return `<tr><td ${td}><b>${esc(v.place)}</b>`
-            + (v.blocker ? `<div style="font-size:13px;color:#b45309">Waiting on: ${esc(v.blocker)}</div>` : "")
-            + `</td>`
-            + `<td ${td}>${v.beds != null || v.baths != null ? `${v.beds ?? "?"} bd / ${v.baths ?? "?"} ba` : muted("—")}</td>`
+          return `<tr><td ${td}><b>${esc(v.place)}</b></td>`
+            + `<td ${td}>${size(v) ?? muted("—")}</td>`
             + `<td ${tdr}>${v.rent != null ? usd(v.rent) : muted("—")}</td>`
-            + `<td ${tdr}>${v.daysEmpty != null ? `${v.daysEmpty} days` : v.availableOn ? `avail. ${esc(v.availableOn)}` : muted("—")}</td>`
+            + `<td ${tdr}>${v.daysListed != null ? `${v.daysListed} days` : muted("—")}</td>`
             + `<td ${td}>${shows || muted("none booked")}</td></tr>`;
         }).join("")
         + `</table>`);
+
+  const upcomingHtml = `<h3 style="margin:18px 0 6px;font-size:15px">Upcoming · ${upcoming.length}</h3>`
+    + (!upcoming.length ? `<p>${muted("Nothing is marked upcoming.")}</p>`
+      : `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:720px">`
+        + `<tr><th ${th}>Home</th><th ${th}>Ready</th><th ${th}>Size</th></tr>`
+        + upcoming.map((v) => {
+          const ready = readyText(v.readyOn, r.day);
+          const late = !!v.readyOn && v.readyOn < r.day;
+          return `<tr><td ${td}><b>${esc(v.place)}</b>`
+            + (v.blocker ? `<div style="font-size:13px;color:#b45309">Waiting on: ${esc(v.blocker)}</div>` : "")
+            + `</td>`
+            + `<td ${td}>${ready ? (late ? `<b style="color:#b91c1c">${esc(ready)}</b>` : esc(ready)) : muted("no date")}</td>`
+            + `<td ${td}>${size(v) ?? muted("—")}</td></tr>`;
+        }).join("")
+        + `</table>`);
+
+  const vacancyHtml = !vac ? "" :
+    h2("Vacancies")
+    + (vac.note ? banner(vac.note, "Note.") : "")
+    + forRentHtml + upcomingHtml;
 
   const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Arial,sans-serif;color:#1d2433">`
     + `<h1 style="margin:0 0 2px;font-size:22px">Morning report</h1>`
@@ -406,7 +455,7 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
     + h2("Delinquency")
     + delinquencyHtml
     + vacancyHtml
-    + `<p style="color:#9ca3af;font-size:12px;margin-top:24px">Balances and the vacant list are Rent Manager's, read at the time this was sent.</p></div>`;
+    + `<p style="color:#9ca3af;font-size:12px;margin-top:24px">Balances are Rent Manager's, read at the time this was sent. For rent and upcoming are what the office has marked on the Properties page.</p></div>`;
 
   return { subject, text: lines.join("\n"), html };
 }

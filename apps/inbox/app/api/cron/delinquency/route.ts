@@ -85,7 +85,7 @@ async function handle(req: Request) {
       debtors: [], tenantsRead: 0, partial: false, using: null, readAs: {},
     })),
     pullVacancies(now.day).catch((e): Vacancies => ({
-      list: [], rmOk: false,
+      list: [],
       note: `The vacancy list could not be produced: ${(e as Error).message}`,
     })),
   ]);
@@ -101,7 +101,7 @@ async function handle(req: Request) {
       ok: report.ok, error: report.error, owing: report.debtors.length,
       tenantsRead: report.tenantsRead, partial: report.partial,
       using: report.using, readAs: report.readAs,
-      vacant: vac?.list.length ?? null, vacancyNote: vac?.note ?? null,
+      listed: vac?.list.length ?? null, vacancyNote: vac?.note ?? null,
     });
   }
 
@@ -111,7 +111,7 @@ async function handle(req: Request) {
     report.ok
       ? `${report.debtors.length} owing of ${report.tenantsRead} read via ${report.using}${report.partial ? " (partial)" : ""}`
       : `no report: ${report.error}`,
-    `${vac?.list.length ?? 0} vacant${vac?.rmOk ? " (Rent Manager read)" : ""}${vac?.note ? `: ${vac.note}` : ""}`,
+    `${vac?.list.filter((v) => v.status === "for_rent").length ?? 0} for rent, ${vac?.list.filter((v) => v.status === "upcoming").length ?? 0} upcoming${vac?.note ? `: ${vac.note}` : ""}`,
     `read as ${JSON.stringify(report.readAs)}`,
   ].join(" | ");
   await db.from("report_runs").update({

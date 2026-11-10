@@ -1430,3 +1430,12 @@ deployment, and a start date in the future is honoured.
 
 A report Rent Manager could not produce is still sent, saying so. Silence
 at 10am would read as "nobody owes" or "it broke" with no way to tell which.
+
+**The vacancy half is the office's list, not Rent Manager's.** Rent Manager
+calls a lot vacant when there is no lease on it, so a park bought last month
+is fifty "vacancies" with no home on any of them. The first version read that
+list; the owner caught it before it ever sent. `units.listing` (052) is
+`for_rent`, `upcoming` or null, set on the Properties page, and no import
+writes it. `is_vacant` still means what Rent Manager says, and the two are
+different questions -- the same shape as the fence and "which job are you
+on".

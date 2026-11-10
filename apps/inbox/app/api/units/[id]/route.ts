@@ -43,6 +43,24 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if ("blocker" in body) {
     patch.blocker = String(body.blocker ?? "").trim() || null;
   }
+  // For rent / upcoming / neither (052). The office's word, not Rent
+  // Manager's: a bare pad is "vacant" there and must never be on the list
+  // the morning report sends. The trigger keeps listed_at and clears a
+  // ready date from a home that is no longer coming.
+  if ("listing" in body) {
+    const v = body.listing === "" || body.listing === null ? null : String(body.listing);
+    if (v !== null && v !== "for_rent" && v !== "upcoming") {
+      return NextResponse.json({ error: "listing is for_rent, upcoming, or empty" }, { status: 400 });
+    }
+    patch.listing = v;
+  }
+  if ("readyOn" in body) {
+    const v = String(body.readyOn ?? "").trim();
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+      return NextResponse.json({ error: "ready date should be a date" }, { status: 400 });
+    }
+    patch.ready_on = v || null;
+  }
   for (const [field, col] of [["bathrooms", "bathrooms"], ["squareFeet", "square_feet"],
                              ["homeYear", "home_year"]] as const) {
     if (field in body) {
