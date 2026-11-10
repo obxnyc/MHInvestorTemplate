@@ -39,9 +39,11 @@ export const CLAIM_ACTIONS: Push["actions"] = [
  * browser, and the push service answers 404/410 for those -- delete rather than
  * retry, or the dead rows accumulate forever and every send gets slower.
  */
-export async function pushToStaff(staffIds: string[], payload: Push) {
-  if (!staffIds.length) return;
-  if (!process.env.VAPID_PRIVATE_KEY) return; // push not configured yet
+/** Returns how many devices took it, so a caller that keeps a record can say
+ *  "delivered" only when something was. Existing callers ignore it. */
+export async function pushToStaff(staffIds: string[], payload: Push): Promise<number> {
+  if (!staffIds.length) return 0;
+  if (!process.env.VAPID_PRIVATE_KEY) return 0; // push not configured yet
   configure();
 
   const db = supabaseAdmin();
@@ -49,15 +51,17 @@ export async function pushToStaff(staffIds: string[], payload: Push) {
     .from("push_subscriptions")
     .select("id, endpoint, p256dh, auth")
     .in("staff_id", staffIds);
-  if (!subs?.length) return;
+  if (!subs?.length) return 0;
 
   const dead: string[] = [];
+  let took = 0;
   await Promise.all(subs.map(async (s) => {
     try {
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
         JSON.stringify(payload),
       );
+      took++;
     } catch (e) {
       const code = (e as { statusCode?: number }).statusCode;
       if (code === 404 || code === 410) dead.push(s.id);
@@ -66,6 +70,7 @@ export async function pushToStaff(staffIds: string[], payload: Push) {
   }));
 
   if (dead.length) await db.from("push_subscriptions").delete().in("id", dead);
+  return took;
 }
 
 /** Everyone on the team that owns this conversation, minus the person who

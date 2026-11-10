@@ -27,7 +27,7 @@ const MIRRORS = [
  *  than an error. Node sends no User-Agent at all unless told to, which
  *  looks exactly like a scraper and comes back looking exactly like a city
  *  with no streets in it. */
-const WHO = "LarabeeHomes-ParkMap/1.0 (+https://mh-investor-template.vercel.app)";
+const WHO = "LarabeeHomes-ParkMap/1.0 (+https://app.larabeehomesllc.com)";
 
 /**
  * The park's real streets, real boundary and real outlines.

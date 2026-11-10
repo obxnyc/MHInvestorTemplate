@@ -29,16 +29,22 @@ export type SetupRow = {
   /** What a text would actually go to: crew_setup.phone, else the number
    *  they gave when they joined. Null when neither is a real mobile. */
   textsTo: string | null;
+  /** Has the app's notifications on, on at least one device. */
+  push: boolean;
 };
 
 export async function loadSetup(): Promise<SetupRow[]> {
   const db = supabaseAdmin();
-  const [{ data: staff }, { data: setup, error }] = await Promise.all([
+  const [{ data: staff }, { data: setup, error }, { data: subs }] = await Promise.all([
     db.from("staff").select("id, full_name, role, forward_to").eq("active", true).order("full_name"),
     db.from("crew_setup").select("*"),
+    // Who has the app's notifications on: the way to reach somebody whose
+    // number the company line cannot text.
+    db.from("push_subscriptions").select("staff_id"),
   ]);
   // Absent until 051 is run: everybody shows with nothing set up, rather than
   // the screen failing to load.
+  const pushers = new Set((subs ?? []).map((r) => String(r.staff_id)));
   const by = new Map((error ? [] : setup ?? []).map((r) => [String(r.staff_id), r]));
 
   return (staff ?? []).map((s) => {
@@ -60,6 +66,7 @@ export async function loadSetup(): Promise<SetupRow[]> {
       phone: typed,
       lang: c?.lang === "es" ? "es" : "en",
       textsTo: e164 && isValidPhone(e164) && canSmsFromLine(e164) ? e164 : null,
+      push: pushers.has(String(s.id)),
     };
   });
 }
@@ -91,4 +98,5 @@ export async function loadTextSettings(): Promise<TextSettings> {
 export const asPerson = (r: SetupRow): Person => ({
   id: r.id, name: r.name, phone: r.textsTo,
   onClock: r.onClock, leadId: r.leadId, allReports: r.allReports, lang: r.lang,
+  push: r.push,
 });
