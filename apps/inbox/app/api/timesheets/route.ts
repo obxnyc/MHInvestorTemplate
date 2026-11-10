@@ -24,7 +24,10 @@ type Db = Awaited<ReturnType<typeof supabaseServer>>;
 
 async function shiftsSince(db: Db, from: string): Promise<(Shift & { name: string })[]> {
   const { data } = await db.from("shifts")
-    .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, staff(full_name), shift_breaks(started_at, ended_at)")
+    // Named FK, not `staff(...)`: shifts points at staff twice (staff_id and
+    // settled_by) and PostgREST refuses an embed it cannot disambiguate --
+    // the whole select fails and every hour on this screen reads as nought.
+    .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, staff!shifts_staff_id_fkey(full_name), shift_breaks(started_at, ended_at)")
     .gte("started_at", from)
     .order("started_at", { ascending: true });
 
@@ -57,11 +60,17 @@ export async function GET(req: Request) {
     shiftsSince(db, from),
     db.from("staff").select("id, full_name, role").eq("active", true),
     db.from("shift_edits")
-      .select("id, shift_id, staff_id, kind, asked_start, asked_end, asked_break_minutes, reason, state, created_at, staff(full_name)")
+      // shift_edits points at staff twice too (staff_id, decided_by). Unnamed,
+      // the select failed and the queue said "run migration 039" -- so no
+      // correction the crew asked for ever reached the office.
+      .select("id, shift_id, staff_id, kind, asked_start, asked_end, asked_break_minutes, reason, state, created_at, staff!shift_edits_staff_id_fkey(full_name)")
       .eq("state", "asked").order("created_at", { ascending: true }),
   ]);
 
-  const { live, liveError, sites, bySite, pinned } = await liveAndSites(db, rows, start, off);
+  // Names from the staff list already read, not from an embed on the shift:
+  // the roster is the one source every other line on this screen uses.
+  const nameOf = new Map((crew.data ?? []).map((s) => [String(s.id), String(s.full_name ?? "")]));
+  const { live, liveError, sites, bySite, pinned } = await liveAndSites(db, rows, start, off, nameOf);
 
   // Everyone who could be on a clock, not only those who have been. Somebody
   // with no hours this week is a row that says nought, which is an answer --
@@ -103,16 +112,18 @@ export async function GET(req: Request) {
  * see, and a "since Monday" filter is how it would vanish from view while
  * still being open.
  */
-async function liveAndSites(db: Db, rows: Shift[], start: string, off: number) {
+async function liveAndSites(
+  db: Db, rows: Shift[], start: string, off: number, nameOf: Map<string, string>,
+) {
   const [openRes, siteRes] = await Promise.all([
     db.from("shifts")
-      .select("id, staff_id, property_id, started_at, ended_at, start_lat, start_lng, start_acc, start_fence, staff(full_name)")
+      .select("id, staff_id, property_id, started_at, ended_at, start_lat, start_lng, start_acc, start_fence")
       .is("ended_at", null),
     db.from("properties").select("id, name, lat, lng").order("name"),
   ]);
   const open: OpenShift[] = (openRes.data ?? []).map((s) => ({
     id: String(s.id), staffId: String(s.staff_id),
-    name: (s.staff as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
+    name: nameOf.get(String(s.staff_id)) || "Somebody no longer on staff",
     propertyId: (s.property_id as string | null) ?? null,
     startedAt: String(s.started_at), endedAt: null,
     startLat: s.start_lat === null ? null : Number(s.start_lat),

@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
   const db = await supabaseServer();
   const { data, error } = await db.from("shifts")
-    .select("id, staff_id, property_id, property_from, started_at, ended_at, signed_off_at, start_fence, end_fence, staff(full_name), properties(name, address), shift_breaks(started_at, ended_at)")
+    .select("id, staff_id, property_id, property_from, started_at, ended_at, signed_off_at, start_fence, end_fence, staff!shifts_staff_id_fkey(full_name), properties(name, address), shift_breaks(started_at, ended_at)")
     .gte("started_at", from).lt("started_at", to);
   if (error) return new Response(error.message, { status: 500 });
 

@@ -1445,3 +1445,16 @@ Neither has an API a business can send money through. `/pay` does the rest --
 the amounts, a Cash App or Venmo link with the amount filled in, and one press
 that records the run so nobody is paid twice. A true one-button payout needs
 a payroll or payouts provider; that is the owner's decision, not a feature.
+
+### Two foreign keys to one table and the embed fails outright
+
+`shifts` points at `staff` twice (`staff_id`, `settled_by`) and so does
+`shift_edits` (`staff_id`, `decided_by`). PostgREST refuses `staff(full_name)`
+on either -- the WHOLE select fails, `data` is null, and the code reading it
+carries on. The week grid read as nobody having worked, and the corrections
+queue told an office that had run 039 to "run migration 039", so no crew
+correction ever reached anybody. The stand-in does not model foreign keys,
+so the phone harness could not see it either. Name the key:
+`staff!shifts_staff_id_fkey(full_name)`. `embed-check.mjs` reads the
+migrations for tables with two links to one target and fails any unnamed
+embed on them.
