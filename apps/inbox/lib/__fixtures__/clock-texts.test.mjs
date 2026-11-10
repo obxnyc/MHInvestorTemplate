@@ -249,6 +249,22 @@ t("the recap says the clock closed it", () => {
   return body.includes("Juan Ruiz 10:30 – Lady Viola 3124 – did not clock out, closed by the clock at 6:00 PM, check it");
 });
 
+/* ------------------------------------------------- no number to text */
+// Alex's number is Colombian and the line can text only the US and Canada.
+// With the app's notifications on, the report comes that way; with them off,
+// nothing -- never a text to a number Twilio will refuse.
+const alexOn = { id: "alex", name: "Alex Prieto", phone: null, push: true, onClock: false, leadId: null, allReports: true };
+const alexOff = { ...alexOn, push: false };
+const withAlex = (a) => plan(new Date(et(8, 45)), S, [...people, a], shiftsAt(8, 45), new Set());
+t("no number, notifications on: the report comes as a notification",
+  () => to(withAlex(alexOn), "lead_morning", "alex")?.via === "push");
+t("and it is the same report", () =>
+  to(withAlex(alexOn), "lead_morning", "alex")?.body === to(withAlex(alexOn), "lead_morning", OFFICE)?.body);
+t("no number, notifications off: nothing", () => !to(withAlex(alexOff), "lead_morning", "alex"));
+t("a number that can be texted is texted, notifications or not", () =>
+  plan(new Date(et(8, 45)), S, people.map((p) => p.id === OFFICE ? { ...p, push: true } : p),
+       shiftsAt(8, 45), new Set()).find((x) => x.staffId === OFFICE)?.via === "sms");
+
 /* ------------------------------------------------------------ once */
 
 const first = run(8, 45);

@@ -84,6 +84,10 @@ export type Person = {
   allReports: boolean;
   /** The language their texts are written in. English when not said. */
   lang?: Lang;
+  /** Has the app's notifications on. Used when there is no number the
+   *  company line can text -- Alex's is Colombian, and a US long code may
+   *  only text the US and Canada. */
+  push?: boolean;
 };
 
 export type DayShift = Shift & {
@@ -94,6 +98,8 @@ export type DayShift = Shift & {
 
 export type Text = {
   kind: Kind | "crew_autoout"; staffId: string; to: string; body: string; key: string;
+  /** A text message, or the app's own notification when no number can be texted. */
+  via: "sms" | "push";
 };
 
 /* ------------------------------------------------------------------ time */
@@ -395,10 +401,13 @@ export function plan(
 
   const out: Text[] = [];
   const push = (kind: Kind, p: Person, body: string | null) => {
-    if (!body || !p.phone) return;
+    if (!body) return;
+    // A number the line can text, else the app's notification, else nothing.
+    const via = p.phone ? "sms" : p.push ? "push" : null;
+    if (!via) return;
     const key = `${kind}:${p.id}:${day}`;
     if (sent.has(key)) return;
-    out.push({ kind, staffId: p.id, to: p.phone, body, key });
+    out.push({ kind, staffId: p.id, to: p.phone ?? "app", body, key, via });
   };
 
   for (const kind of kinds) {

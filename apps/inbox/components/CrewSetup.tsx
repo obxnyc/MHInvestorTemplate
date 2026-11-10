@@ -12,7 +12,7 @@ type Person = {
   id: string; name: string; role: string; field: boolean;
   leadId: string | null; onClock: boolean; allReports: boolean;
   rateCents: number | null; method: string | null; handle: string | null;
-  phone: string | null; textsTo: string | null; lang: "en" | "es";
+  phone: string | null; textsTo: string | null; lang: "en" | "es"; push: boolean;
 };
 type Settings = {
   enabled: boolean; tz: string; overtime: boolean; days: number[];
@@ -126,7 +126,11 @@ function PersonCard({ p, everyone, onSaved }: {
         ) : null}
       </div>
       {!p.textsTo && !f.phone ? (
-        <p className="tsnote">No mobile number on file, so no texts can reach {p.name.split(" ")[0]}.</p>
+        <p className="tsnote">
+          {p.push
+            ? `No US or Canadian mobile on file, so ${p.name.split(" ")[0]}'s texts and reports arrive as app notifications instead.`
+            : `No US or Canadian mobile on file and app notifications are off, so nothing can reach ${p.name.split(" ")[0]}.`}
+        </p>
       ) : null}
       {state.error ? <p className="tsalert" role="alert">{state.error}</p> : null}
       <button className="tsminor" disabled={state.busy} onClick={save}>

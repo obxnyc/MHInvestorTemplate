@@ -150,7 +150,9 @@ select cron.schedule(
   '*/5 * * * *',
   $job$
     select net.http_get(
-      url := 'https://mh-investor-template.vercel.app/api/cron/clock-texts',
+      -- The owner's domain, not the Vercel project's name: every link in a
+      -- text is built from the host this call arrives on.
+      url := 'https://app.larabeehomesllc.com/api/cron/clock-texts',
       headers := jsonb_build_object('authorization',
         'Bearer ' || (select token from private.cron_tokens where name = 'clock-texts')),
       timeout_milliseconds := 55000

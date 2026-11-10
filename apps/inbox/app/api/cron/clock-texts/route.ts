@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendSms } from "@/lib/notify";
+import { pushToStaff } from "@/lib/push";
 import { autoOuts, autoOutText, dueKinds, localOf, plan, type DayShift } from "@/lib/clock-texts";
 import { worked } from "@/lib/shift";
 import { loadSetup, loadTextSettings, asPerson } from "@/lib/crew-data";
@@ -115,11 +116,8 @@ export async function GET(req: Request) {
     });
     if (claim.error) continue; // another wake has it
 
-    const sid = await sendSms(t.to, t.body);
-    await db.from("clock_texts_sent")
-      .update(sid ? { sid } : { error: "Twilio did not accept it -- see the function log" })
-      .eq("key", t.key);
-    done.push({ key: t.key, ok: !!sid });
+    const ok = await deliver(db, t.via, t.staffId, t.to, t.body, t.key, base(req));
+    done.push({ key: t.key, ok });
   }
 
   return NextResponse.json({ ok: true, closed: closed.length, due, sent: done.length, failed: done.filter((d) => !d.ok).length,
@@ -190,7 +188,8 @@ async function tellThem(db: Admin, closed: Closed[],
   const people = new Map((await loadSetup()).map((p) => [p.id, asPerson(p)]));
   for (const c of closed) {
     const p = people.get(c.staffId);
-    if (!p?.phone) continue;
+    const via = p?.phone ? "sms" : p?.push ? "push" : null;
+    if (!p || !via) continue;
     // A shift closed weeks after it ended -- the first run after this ships,
     // or the clock having been switched off -- is flagged on Friday pay and
     // in the recap, not texted: "the clock closed your shift (10:00 today)"
@@ -199,12 +198,36 @@ async function tellThem(db: Admin, closed: Closed[],
     const key = `crew_autoout:${c.staffId}:${c.shiftId}`;
     const body = autoOutText(p, c.endedAt, c.hours, { tz: settings.tz, base: base(req) });
     const claim = await db.from("clock_texts_sent").insert({
-      key, kind: "crew_autoout", staff_id: c.staffId, to_phone: p.phone, body,
+      key, kind: "crew_autoout", staff_id: c.staffId, to_phone: p.phone ?? "app", body,
     });
     if (claim.error) continue;
-    const sid = await sendSms(p.phone, body);
-    await db.from("clock_texts_sent")
-      .update(sid ? { sid } : { error: "Twilio did not accept it -- see the function log" })
-      .eq("key", key);
+    await deliver(db, via, c.staffId, p.phone ?? "app", body, key, base(req));
   }
+}
+
+/**
+ * Send one, and write down what actually happened.
+ *
+ * A text records Twilio's sid. An app notification records "push:<n>" -- how
+ * many of the person's devices took it -- and a push nobody's device took is
+ * recorded as a failure, not as sent. A ledger that says "sent" for a
+ * notification that went nowhere is the screen saying success for silence.
+ */
+async function deliver(db: Admin, via: "sms" | "push", staffId: string, to: string,
+                       body: string, key: string, site: string): Promise<boolean> {
+  if (via === "push") {
+    const took = await pushToStaff([staffId], {
+      title: "Larabee crew clock", body, url: `${site}/timesheets`, tag: key,
+    }).catch(() => 0);
+    await db.from("clock_texts_sent")
+      .update(took ? { sid: `push:${took}` }
+                   : { error: "No device took the notification (none on, or turned off)" })
+      .eq("key", key);
+    return took > 0;
+  }
+  const sid = await sendSms(to, body);
+  await db.from("clock_texts_sent")
+    .update(sid ? { sid } : { error: "Twilio did not accept it -- see the function log" })
+    .eq("key", key);
+  return !!sid;
 }
