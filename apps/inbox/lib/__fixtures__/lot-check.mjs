@@ -1,187 +1,180 @@
-/** Migration 040, run rather than read.
+/**
+ * Finding the lot a Tenant Web Access request is about.
  *
- *  Starts a Postgres, builds the tables as the earlier migrations left them,
- *  and applies 040. Skips where there is no postgres, the way the picture
- *  harnesses skip without a browser.
+ *     node lib/__fixtures__/lot-check.mjs
  *
- *  The thing reading cannot settle: two columns on one row that can disagree.
- *  A shift against lot 20 of Northside with property_id pointing at The
- *  Retreat is two different claims about where somebody was, and nothing in
- *  the table would object. A CHECK cannot help, because the answer lives in
- *  another table. So the property is DERIVED -- and whether that actually
- *  holds on an UPDATE as well as an INSERT is a question only the database
- *  can answer.
+ * The subject line below is real, off the email that brought Tiffany
+ * Jernigan's request, and the labels are the real ones out of the
+ * database. It arrived naming her, her number and her lot, and filed
+ * against nothing.
+ *
+ * TWO FAULTS STACKED, and either alone was enough.
+ *
+ * `lotDigits` took the FIRST lot marker. Rent Manager's property is
+ * named "1140 Northside #46" and the unit is Lot #45 -- the numbers
+ * genuinely differ -- so the lot read as 46.
+ *
+ * And the unit lookup compared EVERY DIGIT of the label against it:
+ * "1140 Northside Rd, Lot #45" became "114045", tested against "45".
+ * No lot in any park could ever match. 310 requests, every one of
+ * them, with the address in the subject line that delivered it.
  */
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
+import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SQL = join(here, "..", "..", "..", "..", "docs", "shared-line",
-  "040-which-lot-the-hours-went-against.sql");
+const lib = join(here, "..");
+const strip = (f) => readFileSync(join(lib, f), "utf8")
+  .replace(/^import\b[\s\S]*?from\s*"[^"]*";/gm, "");
+const tsc = (s) => ts.transpileModule(s,
+  { compilerOptions: { target: 99, module: 99 } }).outputText;
 
-const BIN = ["/usr/lib/postgresql/16/bin", "/usr/lib/postgresql/15/bin",
-  "/usr/local/pgsql/bin"].find((d) => existsSync(join(d, "initdb")));
-if (!BIN || !existsSync(SQL)) {
-  console.log("skipped: no postgres here to run the migration against.");
-  process.exit(0);
-}
-
-const PORT = "55441";
-const dir = mkdtempSync(join(tmpdir(), "lot-check-"));
-const run = (cmd, args, opts = {}) =>
-  execFileSync(cmd, args, { encoding: "utf8", stdio: "pipe", ...opts });
-const asPg = (line) => {
-  try { run("id", ["postgres"]); return ["su", ["postgres", "-c", line]]; }
-  catch { return ["sh", ["-c", line]]; }
+writeFileSync(join(here, "placematch.gen.mjs"), tsc(strip("placematch.ts")));
+writeFileSync(join(here, "alias.gen.mjs"), tsc(strip("alias.ts")));
+/* Only the two readers out of `jobs.ts`, cut at their own boundaries.
+   A first attempt truncated the file at `urgencyFromText` -- which sits
+   ABOVE `lotDigits`, so it took away the very function under test and
+   every check threw instead of failing. A harness that dies reads as a
+   harness that is broken. */
+const jobs = strip("jobs.ts");
+const cut = (name) => {
+  const i = jobs.indexOf(`export function ${name}(`);
+  if (i < 0) throw new Error(`jobs.ts no longer exports ${name}`);
+  const rest = jobs.slice(i);
+  const end = rest.indexOf("\n}\n");
+  return end < 0 ? rest : rest.slice(0, end + 3);
 };
+writeFileSync(join(here, "jobs.gen.mjs"),
+  tsc([cut("lotDigits"), cut("propertyHint")].join("\n\n")));
+
+const { unitKey, addressKey } = await import(join(here, "placematch.gen.mjs"));
+const { readHint } = await import(join(here, "alias.gen.mjs"));
+const { lotDigits } = await import(join(here, "jobs.gen.mjs"));
 
 const checks = [];
-/* Every assertion is a thunk, so a fault that removes a column is reported as
-   a named failure rather than taking the whole run down with a TypeError. */
-const t = (name, fn) => {
-  try { checks.push([name, Boolean(fn())]); }
-  catch (e) {
-    const why = String(e.stderr ?? e.message ?? e).replace(/\s+/g, " ").trim();
-    checks.push([name, false, why.slice(0, 160)]);
-  }
+const t = (name, fn, why) => {
+  let ok = false, blew = null;
+  try { ok = fn() === true; } catch (e) { blew = e.message; }
+  checks.push([name, ok, blew ? `threw: ${blew}` : why]);
 };
 
-try {
-  run("chmod", ["777", dir]);
-  run(...asPg(`${BIN}/initdb -D ${dir}/d -A trust -U postgres`));
-  run(...asPg(`${BIN}/pg_ctl -D ${dir}/d -o '-p ${PORT} -k /tmp' -l ${dir}/log start`));
-  await new Promise((r) => setTimeout(r, 1500));
+/* The real labels, out of the database. Three shapes, all live. */
+const LOTS = [
+  // The Retreat: the whole address, with the lot on the end.
+  "1140 Northside Rd", "1140 Northside Rd, Lot #02",
+  "1140 Northside Rd, Lot #04", "1140 Northside Rd, Lot #45",
+  "1140 Northside Rd, Lot #46",
+  /* TWO STREETS, ONE LOT NUMBER, both real in this park. Without this
+     row, dropping the street from the key changes no answer -- every
+     numbered lot in the fixture was on one street, so "lot 45" named
+     exactly one thing and the fault was a no-op. */
+  "1142 Northside Rd, Lot #04", "1142 Northside Rd, Lot #45",
+  // Cross Creek: the lot IS the address, no number to find.
+  "3100 Lady Viola Dr", "3104 Lady Viola Dr", "3100 Lady Cheryl Dr",
+  // Pines: likewise.
+  "102 Evergreen St", "103 Evergreen St",
+];
 
-  /* THE FIRST LINE ONLY. `psql -tAc "insert ... returning id"` prints the
-     value and then its command tag on the next line, so the whole output is
-     "<uuid>\nINSERT 0 1" -- which compares equal to nothing and reads as the
-     trigger not firing. Half an hour went on that reading once before; the
-     answer came from asking psql directly rather than instrumenting the
-     harness a third time. */
-  const psql = (sql) => run("psql",
-    ["-h", "/tmp", "-p", PORT, "-U", "postgres", "-d", "t", "-tAc", sql])
-    .split("\n")[0].trim();
-  const takes = (sql) => {
-    try { psql(sql); return true; }
-    catch (e) { return !String(e.stderr ?? e).includes("ERROR"); }
-  };
+/** What the lookup does: both sides into one shape, then compare. */
+const find = (subject) => {
+  const said = readHint(subject);
+  const want = unitKey(said.address ?? said.property ?? subject, said.lot);
+  if (!want) return [];
+  return LOTS.filter((l) => unitKey(l, lotDigits(l)) === want);
+};
 
-  run("psql", ["-h", "/tmp", "-p", PORT, "-U", "postgres", "-d", "postgres",
-    "-c", "create database t"]);
+/* --------------------------------------------- Tiffany Jernigan's request */
 
-  // The world as the earlier migrations left it, and no more of it.
-  psql(`
-    create table properties (id uuid primary key default gen_random_uuid(),
-      name text not null, kind text);
-    create table units (id uuid primary key default gen_random_uuid(),
-      property_id uuid not null references properties(id) on delete cascade,
-      label text not null, unique (property_id, label));
-    create table staff (id uuid primary key default gen_random_uuid(),
-      full_name text);
-    create table shifts (id uuid primary key default gen_random_uuid(),
-      staff_id uuid not null references staff(id) on delete cascade,
-      property_id uuid references properties(id) on delete set null,
-      property_from text check (property_from is null
-        or property_from in ('fence','chosen','office')),
-      started_at timestamptz not null default now(),
-      ended_at timestamptz);
-    insert into properties (id, name, kind) values
-      ('00000000-0000-0000-0000-0000000000a1','The Retreat','mhp'),
-      ('00000000-0000-0000-0000-0000000000a2','Northside','mhp');
-    insert into units (id, property_id, label) values
-      ('00000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-0000000000a1','20'),
-      ('00000000-0000-0000-0000-0000000000b2','00000000-0000-0000-0000-0000000000a2','20');
-    insert into staff (id, full_name)
-      values ('00000000-0000-0000-0000-0000000000c1','Cade');
-  `);
+const REAL = "1140 Northside #46, 1140 Northside Rd, Lot #45";
 
-  /* THE MOST IMPORTANT FAILURE A HARNESS CAN REPORT is a migration that will
-     not apply, so it is a named check rather than something that throws. */
-  t("040 applies", () => {
-    run("psql", ["-h", "/tmp", "-p", PORT, "-U", "postgres", "-d", "t",
-      "-v", "ON_ERROR_STOP=1", "-f", SQL]);
-    return true;
-  });
-  t("and replays without complaint", () => {
-    run("psql", ["-h", "/tmp", "-p", PORT, "-U", "postgres", "-d", "t",
-      "-v", "ON_ERROR_STOP=1", "-f", SQL]);
-    return true;
-  });
+t("the lot is read off the END of the subject, not the property's name",
+  () => lotDigits(REAL) === "45",
+  "'1140 Northside #46' is what Rent Manager calls the PROPERTY and "
+  + "'Lot #45' is the unit; taking the first match reads 46 and files "
+  + "the request against the wrong home");
 
-  const shift = (sql) => psql(sql);
-  const RETREAT = "00000000-0000-0000-0000-0000000000a1";
-  const NORTH = "00000000-0000-0000-0000-0000000000a2";
-  const R20 = "00000000-0000-0000-0000-0000000000b1";
-  const N20 = "00000000-0000-0000-0000-0000000000b2";
-  const ME = "00000000-0000-0000-0000-0000000000c1";
+t("her request finds exactly one lot",
+  () => { const got = find(REAL);
+          return got.length === 1 && got[0] === "1140 Northside Rd, Lot #45"; },
+  "THE ONE THAT MATTERS: it arrived with her name, her number and her "
+  + "lot, and filed against nothing");
 
-  t("a shift against a LOT files itself against that lot's property", () => {
-    const got = shift(`insert into shifts (staff_id, unit_id, property_from)
-      values ('${ME}','${N20}','chosen') returning property_id`);
-    return got === NORTH;
-  });
+t("and not the lot whose number is in the property's name",
+  () => find(REAL)[0] !== "1140 Northside Rd, Lot #46",
+  "46 and 45 are both real lots in this park, which is exactly why "
+  + "reading the wrong one is not a harmless mistake");
 
-  /* The case the trigger exists for, and the one a CHECK could not catch:
-     the two columns naming DIFFERENT places in the same statement. Lot 20 of
-     Northside with The Retreat written beside it. */
-  t("a lot and a property that disagree are not stored as a disagreement", () => {
-    const got = shift(`insert into shifts (staff_id, unit_id, property_id, property_from)
-      values ('${ME}','${N20}','${RETREAT}','chosen') returning property_id`);
-    return got === NORTH;
-  });
+/* ------------------------------------------------ the three label shapes */
 
-  /* An INSERT trigger alone would pass the check above and leave this one
-     broken, which is why it is asked separately. */
-  t("moving a shift to another park's lot moves the property with it", () => {
-    const id = shift(`insert into shifts (staff_id, unit_id, property_from)
-      values ('${ME}','${N20}','chosen') returning id`);
-    const got = shift(`update shifts set unit_id = '${R20}'
-      where id = '${id}' returning property_id`);
-    return got === RETREAT;
-  });
+t("a lot written as an address plus a number",
+  () => { const got = find("1140 Northside #04, 1140 Northside Rd, Lot #04");
+          return got.length === 1 && got[0] === "1140 Northside Rd, Lot #04"; });
 
-  t("and writing a wrong property onto a shift that has a lot is corrected", () => {
-    const id = shift(`insert into shifts (staff_id, unit_id, property_from)
-      values ('${ME}','${N20}','chosen') returning id`);
-    const got = shift(`update shifts set property_id = '${RETREAT}'
-      where id = '${id}' returning property_id`);
-    return got === NORTH;
-  });
+t("the street decides between two parks' lot 04",
+  () => find("1142 Northside #04, 1142 Northside Rd, Lot #04")[0]
+          === "1142 Northside Rd, Lot #04",
+  "1140 and 1142 Northside both have a Lot #04 and a Lot #45; on the "
+  + "number alone they are the same lot, and they are different homes");
 
-  /* Hours against the whole park are real work -- mowing the common ground --
-     so a shift with no lot must keep the property it was given. A trigger
-     that nulled it would quietly unfile every one of those. */
-  t("a shift with no lot keeps the property it was given", () => {
-    const got = shift(`insert into shifts (staff_id, property_id, property_from)
-      values ('${ME}','${RETREAT}','chosen') returning property_id`);
-    return got === RETREAT;
-  });
+t("and between two parks' lot 45 -- hers",
+  () => find(REAL)[0] === "1140 Northside Rd, Lot #45"
+     && find(REAL).length === 1,
+  "with the street dropped, Tiffany's request matches two lots and is "
+  + "refused -- which is the old behaviour wearing a new coat");
 
-  /* Deleting a lot must not delete the hours or unfile them from the park.
-     `on delete set null` nulls the lot and fires the UPDATE trigger, which
-     must then leave the property alone -- the work still happened there. */
-  t("deleting a lot leaves the hours filed against the park", () => {
-    psql(`insert into units (id, property_id, label)
-      values ('00000000-0000-0000-0000-0000000000b9','${NORTH}','99')`);
-    const id = shift(`insert into shifts (staff_id, unit_id, property_from)
-      values ('${ME}','00000000-0000-0000-0000-0000000000b9','chosen') returning id`);
-    psql(`delete from units where id = '00000000-0000-0000-0000-0000000000b9'`);
-    const row = psql(`select coalesce(unit_id::text,'-') || ' ' || coalesce(property_id::text,'-')
-      from shifts where id = '${id}'`);
-    return row === `- ${NORTH}`;
-  });
-} finally {
-  try { run(...asPg(`${BIN}/pg_ctl -D ${dir}/d -m immediate stop`)); } catch { /* going anyway */ }
-  rmSync(dir, { recursive: true, force: true });
-}
+t("a leading zero is not a different lot",
+  () => find("1140 Northside, 1140 Northside Rd, Lot 4")[0]
+          === "1140 Northside Rd, Lot #04",
+  "'Lot #04' and 'Lot 4' are one lot; compared as text they are two");
+
+t("a park whose lots are labelled by street address",
+  () => { const got = find("3104 Lady Viola Dr, 3104 Lady Viola Dr");
+          return got.length === 1 && got[0] === "3104 Lady Viola Dr"; },
+  "Cross Creek has no lot numbers at all -- the address is the lot, "
+  + "and a rule that needs a '#' finds nothing here");
+
+t("the same street, a different number, is a different lot",
+  () => find("3100 Lady Viola Dr, 3100 Lady Viola Dr")[0] === "3100 Lady Viola Dr");
+
+t("two streets in one park do not collide on the house number",
+  () => find("3100 Lady Cheryl Dr, 3100 Lady Cheryl Dr")[0]
+          === "3100 Lady Cheryl Dr",
+  "3100 Lady Viola and 3100 Lady Cheryl are both lot 3100 by digits "
+  + "alone, and they are different homes");
+
+t("the third shape, Pines",
+  () => find("103 Evergreen St, 103 Evergreen St")[0] === "103 Evergreen St");
+
+/* ------------------------------------------------------ refusing to guess */
+
+t("a lot we do not hold matches nothing",
+  () => find("1140 Northside #99, 1140 Northside Rd, Lot #99").length === 0,
+  "filing against the wrong lot is worse than filing against none");
+
+t("the park's own address, with no lot, is not one of its lots",
+  () => { const got = find("1140 Northside Rd, 1140 Northside Rd");
+          return got.length === 1 && got[0] === "1140 Northside Rd"; });
+
+/* ----------------------------------------------------------- the key itself */
+
+t("Ave and Avenue are the same lot's street",
+  () => unitKey("12 Park Ave", "3") === unitKey("12 Park Avenue", "3"));
+
+t("the lot number is part of the key, not decoration",
+  () => unitKey("1140 Northside Rd", "45") !== unitKey("1140 Northside Rd", "46"));
+
+t("no street is no key, rather than a key matching everything",
+  () => unitKey("", "45") === "" && unitKey(null, null) === "",
+  "an empty key that compared equal would file every request against "
+  + "whichever lot was first in the list");
 
 let failed = 0;
 for (const [name, ok, why] of checks) {
-  if (ok) console.log(` ok  ${name}`);
-  else { failed++; console.error(` ✗  ${name}${why ? ` -- ${why}` : ""}`); }
+  console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);
+  if (!ok) { console.log(`        ${why ?? ""}`); failed += 1; }
 }
-if (failed) process.exit(1);
-console.log("the lot owns the answer to which property");
+console.log(failed ? `\n${failed} of ${checks.length} wrong`
+                   : `\nnothing obviously wrong (${checks.length} checks)`);
+process.exit(failed ? 1 : 0);

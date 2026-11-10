@@ -2,7 +2,7 @@ import { supabaseAdmin } from "./supabase-admin";
 import { placeKey, readHint } from "./alias";
 import { twinFragment } from "./sameissue";
 import { mendFor, type Held } from "./fillblanks";
-import { matchPlace } from "./placematch";
+import { matchPlace, unitKey } from "./placematch";
 import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
@@ -463,18 +463,55 @@ export async function unitFromHint(
   if (alias?.unit_id) return alias.unit_id as string;
 
   const lot = lotDigits(hint);
+
+  /* THE LOT, MATCHED ON THE LOT AND NOT ON EVERY DIGIT IN THE LABEL.
+   *
+   * A real subject: "1140 Northside #46, 1140 Northside Rd, Lot #45".
+   * The unit is labelled "1140 Northside Rd, Lot #45" -- Rent Manager
+   * gives a lot its whole address. The old comparison took every digit
+   * of that label, "114045", and tested it against the lot number from
+   * the subject. It could not match, ever, for any lot in any park.
+   * Three hundred and ten requests filed against nothing, with the
+   * address written in the subject line that brought them.
+   *
+   * `unitKey` puts both sides in the same shape: the street normalised
+   * the way every other address here is, plus the lot as a number, so
+   * "Lot #04" and "lot 4" are one lot. It also covers the parks whose
+   * lots are labelled by street address alone -- Cross Creek and Pines,
+   * where the lot IS the address and there is no number to find. */
+  const { data: units } = await db.from("units")
+    .select("id, label, properties(name, address)");
+  if (units?.length) {
+    const said = readHint(hint);
+    const want = unitKey(said.address ?? said.property ?? hint, said.lot);
+    if (want) {
+      /* ONE expression, not two. An earlier version also accepted
+         `unitKey(u.label, null)` -- the label's street with its own lot
+         thrown away -- so the park's bare address, "1140 Northside Rd",
+         matched every one of its sixty-four lots. `lotDigits` already
+         returns null for a label that carries no lot, which is the case
+         that alternative was reaching for. */
+      const exact = units.filter(
+        (u) => unitKey(u.label, lotDigits(u.label)) === want);
+      if (exact.length === 1) return exact[0].id;
+      /* Two lots answering to one address is a question, not a match --
+         the same refusal `matchPlace` makes about two houses. */
+      if (exact.length > 1) return null;
+    }
+  }
+
   /* No lot number in the subject is a SINGLE HOME, not a failure. "114 Lisas
      Way, 114 Lisas Way" has no lot and never could -- and returning null here
      meant a house could never be matched even when we held it, which is why
      requests kept arriving filed against nothing. */
   if (!lot) return unitOfSingleHome(db, hint);
-
-  const { data: units } = await db.from("units")
-    .select("id, label, properties(name)");
   if (!units?.length) return null;
 
-  const digits = (s: string) => s.replace(/\D+/g, "");
-  const candidates = units.filter((u) => digits(u.label) === lot);
+  /* The older, looser pass: the lot number on its own, for labels that
+     are nothing but a number. Kept because a park set up by hand here
+     rather than imported has labels like "51". */
+  const candidates = units.filter((u) => /^\s*\D{0,4}\d{1,5}\s*$/.test(u.label)
+    && u.label.replace(/\D+/g, "") === lot);
   if (candidates.length === 1) return candidates[0].id;
   if (!candidates.length) return null;
 
