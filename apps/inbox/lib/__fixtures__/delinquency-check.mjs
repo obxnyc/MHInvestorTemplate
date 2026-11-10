@@ -168,6 +168,10 @@ t("empty lists say so rather than vanishing",
 t("names are escaped in the vacancy html",
   () => !D.render({ ...base, debtors }, { note: null, list: [v("<i>x</i>", "for_rent")] }).html.includes("<i>x</i>"));
 
+t("one day late is a day, not days",
+  () => D.render({ ...base, debtors: [{ ...debtors[0], daysLate: 1 }] }).text.includes("-- 1 day\n")
+     || D.render({ ...base, debtors: [{ ...debtors[0], daysLate: 1 }] }).text.match(/-- 1 day$/m));
+
 let bad = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "ok  " : "FAIL"}  ${name}${why ? `  (${why})` : ""}`);

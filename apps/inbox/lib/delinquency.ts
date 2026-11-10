@@ -340,7 +340,7 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
       for (const d of list) {
         lines.push(`  ${usd(d.balance).padStart(11)}  ${d.name}`
           + (d.place ? ` -- ${d.place}` : "")
-          + (d.daysLate !== null ? ` -- ${d.daysLate} days` : ""));
+          + (d.daysLate !== null ? ` -- ${d.daysLate} day${d.daysLate === 1 ? "" : "s"}` : ""));
       }
     };
     textGroup(former.length ? "Current tenants" : "Owing", current);
