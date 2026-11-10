@@ -53,6 +53,9 @@ const SIGNED_IN = [
      and the setup page is read on a phone more often than at a desk,
      because it is read when somebody rings up. */
   ["desk", "/rentmanager"], ["desk", "/setup"],
+  // Crews, rates and the clock texts; and Friday pay. Set up from a phone
+  // in a truck as often as at a desk.
+  ["desk", "/crew"], ["desk", "/pay"],
 ];
 // A phone, a small phone, and a phone held sideways.
 const SIZES = [[390, 844], [320, 568], [844, 390]];

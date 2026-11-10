@@ -1408,3 +1408,40 @@ because membership changes: somebody joins the office and a thread matched on
 need a part" is "where are you?", and the screen it was sent from already
 knows. Read from the database, never from the request: a claim about which job
 somebody is on is worth nothing if the person sending it chose the words.
+
+### Texts at a time of day: the scheduler is in the database
+
+Crew reminders and Jose's 8:45 report need a time of day, and Vercel's Hobby
+crons cannot say one -- once a day, somewhere inside the hour. So migration
+051 turns on pg_cron and pg_net and the DATABASE wakes
+`/api/cron/clock-texts` every five minutes; the route works out what is due in
+Eastern time (Intl does daylight saving) and sends it. `plan-check.mjs` is
+untouched because nothing was added to `vercel.json`.
+
+The scheduler's token is generated inside Postgres (`private.cron_tokens`)
+and checked there (`clock_cron_ok`, service role only). Nobody copies a secret
+between two dashboards, which is the step that costs a round every time.
+
+A text is CLAIMED before it is sent: the ledger row (`kind:person:day`) goes
+in first and a second overlapping wake loses the insert. Send-then-record
+sends twice whenever two wakes overlap.
+
+**`staff.forward_to` is the ring group.** A number written there rings for
+every tenant call. The clock texts read it as a fallback and never write it;
+their own number is `crew_setup.phone`. Wages live in `crew_setup` too,
+because every signed-in person -- crew included -- can read `staff`.
+
+### A failed read must not say "nobody"
+
+The office's live crew card said "Nobody is on the clock" while the header
+above it said one person was. The stand-in had no `start_lat`, the select
+failed, and an empty list rendered exactly like the truth. The route now
+returns the error and the card says it could not read. Same shape as
+`described` keyed on rows: the absence of an answer is not an answer.
+
+### Zelle and Cash App cannot be paid from software
+
+Neither has an API a business can send money through. `/pay` does the rest --
+the amounts, a Cash App or Venmo link with the amount filled in, and one press
+that records the run so nobody is paid twice. A true one-button payout needs
+a payroll or payouts provider; that is the owner's decision, not a feature.

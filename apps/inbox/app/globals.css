@@ -3408,3 +3408,53 @@ a.metric:hover{border-color:var(--accent)}
 .unplaced-acts .btn{min-height:44px}
 .unplaced-bad{margin:.6rem 0 0;padding:.5rem .65rem;border-radius:8px;
   background:var(--card);color:var(--crit);font-size:.82rem}
+
+/* The crew map on the office's timesheets. A fixed height, because a map
+   with no height is a map that is not there. */
+.crewmap{width:100%;height:18rem;border-radius:12px;overflow:hidden;
+  border:1px solid var(--hair)}
+.crewdot{width:14px;height:14px;border-radius:50%;background:var(--accent);
+  border:2px solid var(--card);box-shadow:0 0 0 1px var(--accent);position:relative}
+.crewdot span{position:absolute;left:18px;top:-3px;white-space:nowrap;
+  font-size:.72rem;font-weight:700;color:var(--ink);background:var(--card);
+  padding:0 .3rem;border-radius:6px;border:1px solid var(--hair)}
+.crewdot.stale{background:var(--card)}
+.crewdot.lost{box-shadow:0 0 0 2px var(--crit)}
+.crewsite{width:9px;height:9px;background:var(--muted);border-radius:2px;opacity:.7}
+
+/* Friday pay: one row per man, the amount where the eye lands. */
+.paylines{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+.paylines li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem .6rem;
+  padding:.6rem .7rem;border-radius:10px;background:var(--sunk);align-items:baseline}
+.paylines li.paid{opacity:.7}
+.paypick{display:flex;align-items:center;gap:.5rem;min-width:0}
+.paypick input{width:1.2rem;height:1.2rem;flex:none}
+.payamt{font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
+.paymath,.payhow{color:var(--muted);font-size:.82rem;min-width:0}
+.payhow{text-align:right}
+.paygo{grid-column:1/-1;display:flex;align-items:center;justify-content:center;
+  text-decoration:none;min-height:2.75rem}
+
+/* Crews & texts. Each person is a card, not a wide row: it is set up from a
+   phone as often as a desk. */
+.crewpeople{list-style:none;margin:0 0 .85rem;padding:0;display:grid;gap:.85rem}
+.crewgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:.6rem}
+.crewwide{grid-column:1/-1}
+/* Not .check -- that is the setup page's result card. A tick beside words. */
+.crewtick{display:flex;align-items:center;gap:.5rem;font-size:.9rem;color:var(--ink);
+  min-height:2.25rem;cursor:pointer}
+.crewtick input{width:1.2rem;height:1.2rem;flex:none}
+.crewslots{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}
+.crewslots li{display:flex;align-items:center;justify-content:space-between;gap:.6rem;
+  padding:.5rem .6rem;border-radius:10px;background:var(--sunk)}
+.crewslots li>div{display:flex;flex-direction:column;min-width:0}
+.crewslots input{min-height:2.75rem;padding:.3rem .5rem;border:1px solid var(--hair);
+  border-radius:10px;background:var(--card);color:var(--ink);font:inherit;flex:none}
+.crewdays{display:flex;flex-wrap:wrap;gap:.2rem .8rem}
+.crewbody{width:100%;color:var(--ink-2);font-size:.82rem;line-height:1.45;white-space:pre-line}
+
+/* The office's clock screens. `.wrap` is used on several screens and has no
+   rule of its own, so these were edge to edge with the cards touching. */
+.crewwrap{width:100%;max-width:52rem;margin:0 auto;padding:1rem 1rem 3rem;
+  display:flex;flex-direction:column;gap:.85rem}
+.crewwrap>.leadsay{margin:0}

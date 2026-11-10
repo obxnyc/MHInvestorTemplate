@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { week, weekStart, type Shift } from "@/lib/shift";
 import { isField } from "@/lib/roles";
+import { whereNow, hoursBySite, type OpenShift, type Ping } from "@/lib/crew";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +61,8 @@ export async function GET(req: Request) {
       .eq("state", "asked").order("created_at", { ascending: true }),
   ]);
 
+  const { live, liveError, sites, bySite, pinned } = await liveAndSites(db, rows, start, off);
+
   // Everyone who could be on a clock, not only those who have been. Somebody
   // with no hours this week is a row that says nought, which is an answer --
   // a list built from the shifts that exist cannot say "nobody turned up".
@@ -82,7 +85,79 @@ export async function GET(req: Request) {
       name: (a.staff as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
     })),
     migrationMissing: !!asks.error,
+    live,
+    liveError,
+    bySite,
+    // How many job sites the phone can recognise at all. A fence needs a pin.
+    sites: { total: sites.length, pinned },
+    // Only the pinned ones: these are drawn, and a site with no pin has nowhere to be.
+    sitesList: sites.filter((s) => s.lat !== null && s.lng !== null),
   });
+}
+
+/**
+ * Who is out right now and where, and the week's hours by job site.
+ *
+ * The live list reads the open shifts with NO date bound: a shift opened
+ * three weeks ago and never closed is exactly the one the office needs to
+ * see, and a "since Monday" filter is how it would vanish from view while
+ * still being open.
+ */
+async function liveAndSites(db: Db, rows: Shift[], start: string, off: number) {
+  const [openRes, siteRes] = await Promise.all([
+    db.from("shifts")
+      .select("id, staff_id, property_id, started_at, ended_at, start_lat, start_lng, start_acc, start_fence, staff(full_name)")
+      .is("ended_at", null),
+    db.from("properties").select("id, name, lat, lng").order("name"),
+  ]);
+  const open: OpenShift[] = (openRes.data ?? []).map((s) => ({
+    id: String(s.id), staffId: String(s.staff_id),
+    name: (s.staff as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
+    propertyId: (s.property_id as string | null) ?? null,
+    startedAt: String(s.started_at), endedAt: null,
+    startLat: s.start_lat === null ? null : Number(s.start_lat),
+    startLng: s.start_lng === null ? null : Number(s.start_lng),
+    startAcc: s.start_acc === null ? null : Number(s.start_acc),
+    startFence: (s.start_fence as string | null) ?? null,
+  }));
+
+  let pings: Ping[] = [];
+  if (open.length) {
+    const { data } = await db.from("shift_pings")
+      .select("shift_id, at, lat, lng, accuracy, fence, metres")
+      .in("shift_id", open.map((o) => o.id))
+      .order("at", { ascending: false }).limit(500);
+    pings = (data ?? []).map((p) => ({
+      shiftId: String(p.shift_id), at: String(p.at),
+      lat: Number(p.lat), lng: Number(p.lng),
+      accuracy: p.accuracy === null ? null : Number(p.accuracy),
+      fence: (p.fence as string | null) ?? null,
+      metres: p.metres === null ? null : Number(p.metres),
+    }));
+  }
+
+  const sites = (siteRes.data ?? []).map((p) => ({
+    id: String(p.id), name: String(p.name),
+    lat: p.lat === null ? null : Number(p.lat), lng: p.lng === null ? null : Number(p.lng),
+  }));
+
+  // Only this week's shifts for the by-site total: `rows` reaches a day early
+  // so the week's first local morning is not lost to the time zone.
+  const end = Date.parse(`${start}T00:00:00Z`) + 7 * 864e5;
+  const inWeek = rows.filter((r) => {
+    const local = Date.parse(r.startedAt) - off * 60_000;
+    return local >= Date.parse(`${start}T00:00:00Z`) && local < end;
+  });
+
+  return {
+    // A failed read is not "nobody is out". Said as what it is, or the card
+    // reads exactly like the truth.
+    liveError: openRes.error ? openRes.error.message : null,
+    live: whereNow(open, pings, sites, new Date()),
+    sites,
+    bySite: hoursBySite(inWeek, sites),
+    pinned: sites.filter((s) => s.lat !== null && s.lng !== null).length,
+  };
 }
 
 export async function PATCH(req: Request) {

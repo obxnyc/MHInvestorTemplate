@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+
+// MapLibre touches `window` on import, so it loads in the browser only.
+const CrewMap = dynamic(() => import("./CrewMap"), { ssr: false });
 
 /**
  * The office's side of the clock.
@@ -23,6 +27,24 @@ type Ask = {
   asked_start: string | null; asked_end: string | null;
   asked_break_minutes: number | null; created_at: string;
 };
+
+type Live = {
+  shiftId: string; staffId: string; name: string; startedAt: string;
+  site: { id: string; name: string } | null;
+  at: { lat: number; lng: number; accuracy: number | null } | null;
+  from: "ping" | "clock-in" | null; seenAt: string | null;
+  fence: string | null; metres: number | null;
+  abandoned: boolean; quietMinutes: number | null;
+};
+type SiteHours = { id: string | null; name: string; hours: number; people: number };
+type SiteRow = { id: string; name: string; lat: number | null; lng: number | null };
+
+const FENCE_SAID: Record<string, string> = {
+  inside: "on site", outside: "off site", unsure: "can't tell if on site",
+};
+const ago = (mins: number | null) => mins === null ? ""
+  : mins < 2 ? "just now" : mins < 90 ? `${mins} min ago`
+  : mins < 48 * 60 ? `${Math.round(mins / 60)} hr ago` : `${Math.round(mins / 1440)} days ago`;
 
 const KIND_SAID: Record<string, string> = {
   missed_clock_in: "Started before clocking in",
@@ -54,7 +76,10 @@ const shift = (start: string, days: number) => {
 export default function TimesheetBoard() {
   const [data, setData] = useState<{
     week: string; people: Person[]; asks: Ask[]; migrationMissing: boolean;
+    live: Live[]; bySite: SiteHours[]; sites: { total: number; pinned: number };
+    sitesList: SiteRow[]; liveError: string | null;
   } | null>(null);
+  const [pinning, setPinning] = useState<string | null>(null);
   const [showing, setShowing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -70,6 +95,37 @@ export default function TimesheetBoard() {
   }, []);
 
   useEffect(() => { void load(showing ?? undefined); }, [load, showing]);
+  // The live list goes stale while the screen sits open on somebody's desk.
+  useEffect(() => {
+    const id = setInterval(() => { void load(showing ?? undefined); }, 120_000);
+    return () => clearInterval(id);
+  }, [load, showing]);
+
+  const pinSites = async () => {
+    setPinning("Finding the addresses…");
+    let total = 0;
+    const missed: string[] = [];
+    // The function stops before Vercel's sixty seconds and says `more`; keep
+    // asking until it does not.
+    for (let round = 0; round < 10; round++) {
+      const res = await fetch("/api/clock/pins", { method: "POST" }).catch(() => null);
+      const text = await res?.text().catch(() => "") ?? "";
+      let out: { pinned?: number; missed?: string[]; more?: boolean; error?: string } = {};
+      try { out = JSON.parse(text); } catch { /* a cut-off reply is not JSON */ }
+      if (!res?.ok) {
+        setPinning(out.error ?? `Stopped after ${total}: the server did not finish (${res?.status ?? "no answer"}).`);
+        return;
+      }
+      total += out.pinned ?? 0;
+      missed.push(...(out.missed ?? []));
+      setPinning(`${total} pinned so far…`);
+      if (!out.more) break;
+    }
+    setPinning(`${total} job site${total === 1 ? "" : "s"} pinned from their address.`
+      + (missed.length ? ` No match for ${missed.length}: ${missed.slice(0, 8).join(", ")}`
+        + `${missed.length > 8 ? "…" : ""} — set those on the property's own page.` : ""));
+    await load(showing ?? undefined);
+  };
 
   const decide = async (id: string, decision: "approve" | "decline", why?: string) => {
     setBusy(true);
@@ -87,13 +143,19 @@ export default function TimesheetBoard() {
     await load(showing ?? undefined);
   };
 
-  if (!data) return <main className="wrap"><p className="tsloading">Loading&hellip;</p></main>;
+  if (!data) return <main className="wrap crewwrap"><p className="tsloading">Loading&hellip;</p></main>;
 
   const out = data.people.filter((p) => p.onTheClock);
 
   return (
-    <main className="wrap">
-      <h1>Timesheets</h1>
+    <main className="wrap crewwrap">
+      <div className="tshead">
+        <h1>Timesheets</h1>
+        <span className="tsrow">
+          <a className="tslink" href="/pay">Friday pay</a>
+          <a className="tslink" href="/crew">Crews &amp; texts</a>
+        </span>
+      </div>
 
       {problem ? <p className="tsalert" role="alert">{problem}</p> : null}
 
@@ -109,6 +171,66 @@ export default function TimesheetBoard() {
         <p className="leadnone">
           Run migration 039 and corrections requested by the crew appear here.
         </p>
+      ) : null}
+
+      {/* ---------------------------------------------------------- crew now */}
+      <section className="tscard">
+        <div className="tscardhead"><h2>On the Clock Now</h2></div>
+        {data.liveError ? (
+          <p className="tsalert" role="alert">
+            Could not read who is on the clock: {data.liveError}
+          </p>
+        ) : data.live.length ? (
+          <>
+            <CrewMap
+              dots={data.live.filter((l) => l.at).map((l) => ({
+                id: l.shiftId, name: l.name, lat: l.at!.lat, lng: l.at!.lng,
+                fresh: l.from === "ping" && (l.quietMinutes ?? 99) <= 20,
+                abandoned: l.abandoned,
+              }))}
+              sites={data.sitesList.filter((s) => s.lat !== null && s.lng !== null)
+                .map((s) => ({ id: s.id, name: s.name, lat: s.lat!, lng: s.lng! }))}
+            />
+            <ul className="tsruns">
+              {data.live.map((l) => (
+                <li key={l.shiftId}>
+                  <span className="tsspan">{l.name}</span>
+                  {l.abandoned
+                    ? <span className="tsbadge asked">Never clocked out</span>
+                    : <span className="tsbadge onclock">since {when(l.startedAt)}</span>}
+                  <span className="tsplace">
+                    {l.site?.name ?? "Site not set"}
+                    {l.fence ? ` · ${FENCE_SAID[l.fence] ?? l.fence}` : ""}
+                    {l.from === "ping" ? ` · seen ${ago(l.quietMinutes)}`
+                      : l.from === "clock-in" ? ` · position from clock-in, ${ago(l.quietMinutes)}`
+                      : " · phone gave no position"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="tsnote">
+              The phone sends its position every ten minutes while the clock
+              screen is open. With the phone locked or the app closed it cannot,
+              so a dot that has gone quiet is the last place it was seen.
+            </p>
+          </>
+        ) : <p className="tsnote">Nobody is on the clock right now.</p>}
+      </section>
+
+      {data.sites.pinned < data.sites.total ? (
+        <section className="tscard">
+          <div className="tscardhead"><h2>Job Site Pins</h2></div>
+          <p className="tsnote">
+            {data.sites.pinned} of {data.sites.total} job sites have a pin on the map.
+            The phone can only tell somebody is on site where there is one; everywhere
+            else a clock-in reads &ldquo;can&rsquo;t tell&rdquo;.
+          </p>
+          <button className="tsminor" disabled={!!pinning && !/pinned from|Stopped|No match/.test(pinning)}
+                  onClick={pinSites}>
+            Pin job sites from their addresses
+          </button>
+          {pinning ? <p className="tsnote" role="status">{pinning}</p> : null}
+        </section>
       ) : null}
 
       {/* ------------------------------------------------------ corrections */}
@@ -166,6 +288,10 @@ export default function TimesheetBoard() {
         <div className="tscardhead">
           <h2>Week of {weekLabel(data.week)}</h2>
           <span className="tsrow">
+            <a className="tslink"
+               href={`/api/timesheets/export?week=${data.week}&offset=${new Date().getTimezoneOffset()}`}>
+              Download spreadsheet
+            </a>
             <button className="tslink" onClick={() => setShowing(shift(data.week, -7))}>
               &larr; Earlier
             </button>
@@ -212,6 +338,29 @@ export default function TimesheetBoard() {
           </p>
         )}
       </section>
+
+      {/* ----------------------------------------------------------- by site */}
+      {data.bySite.length ? (
+        <section className="tscard">
+          <div className="tscardhead"><h2>Hours by Job Site</h2></div>
+          <table className="tsweek">
+            <thead>
+              <tr><th scope="col">Site</th><th scope="col" className="tsnum">People</th>
+                  <th scope="col" className="tsnum">Hours</th></tr>
+            </thead>
+            <tbody>
+              {data.bySite.map((s) => (
+                <tr key={s.id ?? "none"} className={s.id ? "" : "tsoff"}>
+                  <th scope="row">{s.name}</th>
+                  <td className="tsnum">{s.people}</td>
+                  <td className="tsnum">{hhmm(s.hours)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="tsnote">Finished shifts only. A shift still running counts once it ends.</p>
+        </section>
+      ) : null}
     </main>
   );
 }
