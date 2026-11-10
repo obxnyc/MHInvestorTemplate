@@ -1526,3 +1526,16 @@ list; the owner caught it before it ever sent. `units.listing` (052) is
 writes it. `is_vacant` still means what Rent Manager says, and the two are
 different questions -- the same shape as the fence and "which job are you
 on".
+
+### Which build is live can be asked from here after all
+
+This machine cannot reach mh-investor-template.vercel.app, but the database
+can: pg_net is on (051). So instead of asking the owner to open
+https://mh-investor-template.vercel.app/api/whoami, ask Postgres through the
+Supabase connector --
+
+    select net.http_get('https://mh-investor-template.vercel.app/api/whoami');
+
+-- then read the answer a second later from `net._http_response` by the id
+it returned, and compare `commit` to `git log origin/main -1`. The same
+trick does a dry run of a cron route with its real key and real data.
