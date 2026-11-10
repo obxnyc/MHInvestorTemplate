@@ -137,7 +137,10 @@ export async function pullDelinquency(day: string, seconds = 42): Promise<Report
     }[]) {
       const u = c.units;
       if (!u) continue;
-      const where = [u.properties?.name, u.label].filter(Boolean).join(" · ");
+      // A house is a property whose one unit carries its own address, so
+      // the two say the same thing; say it once.
+      const prop = u.properties?.name ?? null;
+      const where = !prop ? (u.label ?? "") : !u.label || u.label === prop ? prop : `${prop} · ${u.label}`;
       if (where) place.set(Number(c.rm_tenant_id), where);
     }
   }
