@@ -125,8 +125,20 @@ export function lotDigits(hint: string | null | undefined): string | null {
   // No word boundary after the digits: "Unit 3B" is lot 3, and \b between a
   // digit and a letter does not exist, so requiring one dropped every
   // letter-suffixed unit on the floor.
-  const m = /(?:#|\blot\s*#?\s*|\bunit\s*#?\s*|\bapt\s*#?\s*)(\d{1,5})/i.exec(hint);
-  return m ? m[1] : null;
+  /* THE LAST ONE, NOT THE FIRST.
+   *
+   * A real subject line: "1140 Northside #46, 1140 Northside Rd, Lot #45".
+   * Rent Manager's PROPERTY is named "1140 Northside #46" and the unit is
+   * Lot #45 -- the two numbers genuinely differ in this account -- so
+   * taking the first match reads the lot as 46 and files the request
+   * against the wrong home, or against none.
+   *
+   * `readHint` has always taken the last for exactly this reason: the
+   * trailing "Lot #45" is the one written to be read. These two
+   * disagreed, and this one is what the unit lookup used. */
+  const all = [...hint.matchAll(
+    /(?:#|\blot\s*#?\s*|\bunit\s*#?\s*|\bapt\s*#?\s*)(\d{1,5})/gi)];
+  return all.length ? all[all.length - 1]![1]! : null;
 }
 
 /** The property part of the same subject line: everything before the first

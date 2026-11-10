@@ -123,6 +123,38 @@ export function streetName(raw: string | null | undefined): string {
     .join(" ");
 }
 
+/**
+ * One lot, reduced to the words and the number that identify it.
+ *
+ * THE COMPARISON THIS REPLACES COULD NEVER MATCH. A unit's label comes
+ * from Rent Manager as a whole address -- "1140 Northside Rd, Lot #45"
+ * -- and the lookup compared EVERY DIGIT in it ("114045") against the
+ * lot number read out of the subject line ("45"). Not occasionally: no
+ * lot in any park has ever matched, which is three hundred and ten
+ * maintenance requests filed against nothing while the address sat in
+ * the subject line of the email that brought them.
+ *
+ * Three label shapes have to come out the same as the subject that
+ * names them, and all three are real on this account:
+ *
+ *   "1140 Northside Rd, Lot #45"  <- The Retreat, address plus lot
+ *   "3100 Lady Viola Dr"          <- Cross Creek, the lot IS the address
+ *   "102 Evergreen St"            <- Pines, likewise
+ *
+ * So: the street, normalised the way every other address here is, and
+ * the lot number if there is one. A lot written "Lot #04" and one
+ * written "lot 4" are the same lot, so the number is compared as a
+ * number.
+ */
+export function unitKey(
+  street: string | null | undefined, lot: string | null | undefined,
+): string {
+  const where = addressKey(streetLine(street));
+  if (!where) return "";
+  const n = (lot ?? "").replace(/\D+/g, "");
+  return n ? `${where} lot ${Number(n)}` : where;
+}
+
 /** A property as far as matching cares. */
 export type Place = { id: string; name: string | null; address: string | null };
 
