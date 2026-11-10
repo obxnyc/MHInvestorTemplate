@@ -248,13 +248,17 @@ export default function CrewSetup() {
                             optionalDays: v === "some" ? [...opt, i] : opt });
                         }}>
                   <option value="every">Every week</option>
-                  <option value="some">Some weeks — only who clocks in</option>
-                  <option value="off">Not worked — no texts</option>
+                  <option value="some">Some weeks</option>
+                  <option value="off">Not worked</option>
                 </select>
               </li>
             );
           })}
         </ul>
+        <p className="tsnote">
+          On a &ldquo;some weeks&rdquo; day nobody is told to come in, and only the people who
+          clock in get texts or show up in a report. &ldquo;Not worked&rdquo; sends nothing.
+        </p>
         <ul className="crewslots">
           <li>
             <div>
