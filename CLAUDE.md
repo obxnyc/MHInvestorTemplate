@@ -14,22 +14,34 @@ were aimed at a domain that does not resolve.
 ### The live site
 
 ```
-https://mh-investor-template.vercel.app
+https://app.larabeehomesllc.com
 ```
+
+**Use this address for everything the owner is sent.** "mh-investor-template"
+is only the Vercel project's original name and the owner asked not to see
+it -- that was one part of what Larabee Homes does. The domain was confirmed
+serving the app on 10 November 2026: the scheduler's call to it came back
+200 from the app's own route. https://mh-investor-template.vercel.app still
+answers and is the fallback if the domain ever misbehaves.
 
 | Page | Link |
 | --- | --- |
-| Home dashboard | https://mh-investor-template.vercel.app/home |
-| Messages (shared line) | https://mh-investor-template.vercel.app/ |
-| Team chat | https://mh-investor-template.vercel.app/team |
-| Jobs | https://mh-investor-template.vercel.app/jobs |
-| Properties | https://mh-investor-template.vercel.app/properties |
-| Setup check | https://mh-investor-template.vercel.app/setup |
-| Which build is live | https://mh-investor-template.vercel.app/api/whoami |
+| Home dashboard | https://app.larabeehomesllc.com/home |
+| Messages (shared line) | https://app.larabeehomesllc.com/ |
+| Team chat | https://app.larabeehomesllc.com/team |
+| Jobs | https://app.larabeehomesllc.com/jobs |
+| Properties | https://app.larabeehomesllc.com/properties |
+| Crew clock | https://app.larabeehomesllc.com/clock |
+| Timesheets | https://app.larabeehomesllc.com/timesheets |
+| Friday pay | https://app.larabeehomesllc.com/pay |
+| Crews & texts | https://app.larabeehomesllc.com/crew |
+| Setup check | https://app.larabeehomesllc.com/setup |
+| Which build is live | https://app.larabeehomesllc.com/api/whoami |
 
 `inbox.larabeehomesllc.com` in `.env.example` and the README is a placeholder
-and has never resolved. `app.larabeehomesllc.com` already points at Vercel and
-is the domain the owner wants; DNS for `larabeehomesllc.com` is at Squarespace.
+and has never resolved. DNS for `larabeehomesllc.com` is at Squarespace.
+
+**Dana Forsyth is a man** -- he, not she. Never infer from a name.
 
 ### Vercel
 
@@ -278,7 +290,7 @@ mh-investor-template.vercel.app, so "I merged it" is the last thing Claude can
 honestly say about whether something shipped.
 
 So **before telling the owner to go and look at a new screen, ask them for**
-https://mh-investor-template.vercel.app/api/whoami **and compare the commit to
+https://app.larabeehomesllc.com/api/whoami **and compare the commit to
 `git log origin/main -1`.** That page exists for exactly this and it was in
 this file the whole time -- three rounds were spent on "it is probably still
 building" and "it is probably your browser" when one link would have answered
