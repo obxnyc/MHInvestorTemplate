@@ -1,7 +1,7 @@
 {
-  "name": "Larabee Inbox",
+  "name": "Larabee Homes",
   "short_name": "Larabee",
-  "description": "Shared line for Larabee Homes",
+  "description": "Larabee Homes: the crew clock, jobs, and the shared line",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

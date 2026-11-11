@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Larabee Inbox",
+  title: "Larabee Homes",
   description: "Shared line for Larabee Homes",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Larabee", statusBarStyle: "default" },
