@@ -1496,3 +1496,16 @@ where the break began.
 A data change made once (Saturday some weeks, overtime off) does not go in
 a migration file: a re-run would undo whatever was chosen on the screen
 since.
+
+### Crew could never have a PIN
+
+038 added the `crew` role and never told `set_staff_pin` or
+`verify_staff_pin`, which both still said `('tech','shower')`. So a man added
+as Crew reached "pick your PIN" on his setup link and was refused -- the crew
+clock's entire sign-in was a door with no key, and no check here could see
+it, because none of them ever ran the real functions against a crew row.
+The owner found it on his first try. 053 adds crew to both lists and nothing
+else.
+
+When a role is added, search the DATABASE for every function that lists
+roles (`position('''shower''' in prosrc)`), not just the TypeScript.
