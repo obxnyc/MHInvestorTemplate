@@ -1603,3 +1603,16 @@ Supabase connector --
 -- then read the answer a second later from `net._http_response` by the id
 it returned, and compare `commit` to `git log origin/main -1`. The same
 trick does a dry run of a cron route with its real key and real data.
+
+### Crew could never have a PIN
+
+038 added the `crew` role and never told `set_staff_pin` or
+`verify_staff_pin`, which both still said `('tech','shower')`. So a man added
+as Crew reached "pick your PIN" on his setup link and was refused -- the crew
+clock's entire sign-in was a door with no key, and no check here could see
+it, because none of them ever ran the real functions against a crew row.
+The owner found it on his first try. 053 adds crew to both lists and nothing
+else.
+
+When a role is added, search the DATABASE for every function that lists
+roles (`position('''shower''' in prosrc)`), not just the TypeScript.
