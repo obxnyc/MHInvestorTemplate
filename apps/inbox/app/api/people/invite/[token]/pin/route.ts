@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { supabaseServer } from "@/lib/supabase-server";
-import { FIELD } from "@/lib/roles";
+import { FIELD, isClockOnly } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,16 +105,30 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     }, { status: 400 });
   }
 
+  /* NOT INTO THE RING GROUP if he is crew. `forward_to` is the list of
+     phones that ring when a tenant calls the main line, and a crew member
+     added here used to land on it -- so a man on a roof rang for every
+     tenant call. Crew get their number on the clock texts instead, and are
+     put on the crew clock, which is what they were added for. */
+  const crew = isClockOnly(invite.role);
   const { error: rowError } = await db.from("staff").insert({
     id: created.user.id,
     full_name: name || invite.full_name || "New starter",
     role: invite.role,
-    forward_to: invite.phone,
+    forward_to: crew ? null : invite.phone,
   });
   if (rowError) {
     await auth.auth.admin.deleteUser(created.user.id);
     await giveBack();
     return NextResponse.json({ error: rowError.message }, { status: 500 });
+  }
+
+  if (crew && !rowError) {
+    // Best effort: without 051 there is no crew_setup, and that must not
+    // stop somebody signing in.
+    await db.from("crew_setup").upsert({
+      staff_id: created.user.id, phone: invite.phone, on_clock: true,
+    }, { onConflict: "staff_id" });
   }
 
   /* The PIN, hashed by the database. It never touches a log here and the
