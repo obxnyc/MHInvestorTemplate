@@ -16,7 +16,7 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
   const { token } = use(params);
   const [lang] = useLang();
   const [state, setState] = useState<"loading" | "form" | "password" | "bad">("loading");
-  const [known, setKnown] = useState<{ name: string | null; phone: string; field?: boolean } | null>(null);
+  const [known, setKnown] = useState<{ name: string | null; phone: string; field?: boolean; crew?: boolean } | null>(null);
   /* A link that is SPENT rather than unheard-of: we still know whose it was,
      which is the whole reason a button can exist here at all. */
   const [spent, setSpent] = useState<{ name: string | null; asked: boolean } | null>(null);
@@ -190,8 +190,9 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
               }} />
             {known?.phone && (
               <p className="authnote">
-                Calls to the shared line will ring {known.phone}. The office can
-                change that later.
+                {known.crew
+                  ? "This is for your hours only. Tenant calls never ring your phone."
+                  : `Calls to the shared line will ring ${known.phone}. The office can change that later.`}
               </p>
             )}
           </>
@@ -210,7 +211,7 @@ export default function Welcome({ params }: { params: Promise<{ token: string }>
               <input id="e" type="email" value={email} autoComplete="email"
                      onChange={(e) => setEmail(e.target.value)} required />
 
-              {known?.phone && (
+              {known?.phone && !known.crew && (
                 <p className="muted" style={{ fontSize: ".82rem", marginTop: ".5rem" }}>
                   Calls to the shared line will ring {known.phone}. The office can
                   change that later.

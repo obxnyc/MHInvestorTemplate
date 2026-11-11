@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { isRole } from "@/lib/roles";
+import { isRole, isClockOnly } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
@@ -64,7 +64,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     id: created.user.id,
     full_name: request.full_name,
     role: granted,
-    forward_to: request.phone,
+    // Crew never ring for tenant calls; see `rings` in lib/voice.ts.
+    forward_to: isClockOnly(granted) ? null : request.phone,
   });
   if (rowError) {
     // Never leave an account that can sign in with no staff row behind it:

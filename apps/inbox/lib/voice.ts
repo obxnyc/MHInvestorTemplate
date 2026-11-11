@@ -1,14 +1,27 @@
 import { supabaseAdmin } from "./supabase-admin";
+import { isClockOnly } from "./roles";
+
+/**
+ * WHO MAY RING FOR A TENANT CALL. Crew never: they are hourly on site and
+ * have nothing to do with tenants. This is the one place a call becomes a
+ * phone ringing, so it is the one place that has to be right -- whatever
+ * number is sitting in `forward_to`, whoever put it there. Every way of
+ * adding a person also leaves crew out, but this is the rule; those are
+ * tidiness.
+ */
+export function rings(p: { active?: boolean | null; forward_to?: string | null; role?: unknown } | null): boolean {
+  return Boolean(p && p.active && p.forward_to && !isClockOnly(p.role));
+}
 
 /** The ring group, in the order Twilio should dial them. Everyone rings at
  *  once; the whisper decides who actually gets the call. */
 export async function ringGroup() {
   const { data } = await supabaseAdmin()
     .from("staff")
-    .select("id, full_name, forward_to")
+    .select("id, full_name, forward_to, role, active")
     .eq("active", true)
     .not("forward_to", "is", null);
-  return data ?? [];
+  return (data ?? []).filter(rings);
 }
 
 export function escapeXml(s: string) {
@@ -72,7 +85,7 @@ export type Stage = { position: number; seconds: number; numbers: string[] };
 export async function ringStages(groupId: string): Promise<Stage[]> {
   const { data } = await supabaseAdmin()
     .from("ring_stages")
-    .select("position, ring_seconds, ring_stage_members(staff:staff_id(id, forward_to, active))")
+    .select("position, ring_seconds, ring_stage_members(staff:staff_id(id, forward_to, active, role))")
     .eq("group_id", groupId)
     .order("position");
 
@@ -80,11 +93,10 @@ export async function ringStages(groupId: string): Promise<Stage[]> {
     position: s.position,
     seconds: s.ring_seconds,
     numbers: ((s.ring_stage_members ?? []) as unknown as {
-      staff: { id: string; forward_to: string | null; active: boolean } | null;
+      staff: { id: string; forward_to: string | null; active: boolean; role: string } | null;
     }[])
       .map((m) => m.staff)
-      .filter((p): p is { id: string; forward_to: string; active: boolean } =>
-        Boolean(p?.active && p.forward_to))
+      .filter((p): p is { id: string; forward_to: string; active: boolean; role: string } => rings(p))
       .map((p) => p.forward_to),
   }));
 }
