@@ -1616,3 +1616,20 @@ else.
 
 When a role is added, search the DATABASE for every function that lists
 roles (`position('''shower''' in prosrc)`), not just the TypeScript.
+
+### A crew member's phone never rings for a tenant call
+
+"A crew member SHOULD NEVER GET AN OFFICE CALL." The owner read his own
+crew setup page say "Calls to the shared line will ring" his number.
+
+`rings()` in `lib/voice.ts` is the rule, and `ringGroup` and `ringStages`
+-- the only ways a call becomes a phone ringing -- both go through it: a
+clock-only role never rings, WHATEVER is in `forward_to`. Every way of
+adding a person (PIN invite, email invite, access request, the People
+form) also leaves crew out of `forward_to`, but that is tidiness; the rule
+is the filter, because a crew row with a number already exists in the live
+data and nothing should have to be cleaned up for the rule to hold.
+
+`crew-ring-check.mjs` holds it. (`ring-check.mjs` is a different thing --
+polygon rings for the property line. Writing over it was caught by the
+Write tool saying "updated" for a file I thought was new; restored.)
