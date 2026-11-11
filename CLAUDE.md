@@ -1421,6 +1421,70 @@ need a part" is "where are you?", and the screen it was sent from already
 knows. Read from the database, never from the request: a claim about which job
 somebody is on is worth nothing if the person sending it chose the words.
 
+### Five fixes downstream of a pipe that never carried water
+
+The owner photographed the Rent Manager email: Tiffany Jernigan, her
+number, and "1140 Northside #46, 1140 Northside Rd, Lot #45" in the
+subject. "this cannot happen. it has to recognize that."
+
+It could not. Her request in the app is `rm:issue:310`, from the hourly
+API read, whose subject is the issue Title -- "Multiple" -- and which
+carries no address of any kind, because Rent Manager's endpoint has
+none to give. The email that has all of it has never reached this
+application. **Zero inbound messages have ever carried a Message-ID.
+Not one, since the day the forward was built.** 309 by the pull, 16 by
+text, nought by email.
+
+So a week went on the half that READS the address -- `matchPlace`, the
+repair pass, `unitKey`, the lot lookup -- each one a real fault, each
+one fixed, and not one of them reachable, because the half that
+RECEIVES it has been dead the whole time.
+
+**ASK HOW THE WORK IS GETTING IN BEFORE FIXING WHAT IS DONE WITH IT.**
+One query -- count inbound messages by the mark each path leaves --
+would have said this on the first day. It was run on the last.
+
+And the reason nobody knew: the two paths are told apart by the id
+stamped on the message (`rm:issue:<n>` from the pull, a Message-ID from
+mail) and NOT by `conversations.source`, which both write as `zego`
+because it is the maintenance-intake key. The setup page counted
+`source` and reported "Email intake. Arriving. 200 zego" on a database
+where no email had ever landed. A green line is worse than a missing
+one.
+
+So `lib/intake-health.ts` puts it in the 10am report, in the SUBJECT
+when it is broken, because a fault in the body of a daily email is a
+fault nobody reads about.
+
+**The rule it has to get right is the one that is easy to get wrong.**
+"No emails arrived" is not a fault -- a quiet week looks exactly like
+that, and a check that shouts at one is a check nobody reads by
+Thursday, which is worse than no check because the real finding is in
+that list too. The fault is ONE PATH SILENT WHILE ANOTHER IS BUSY.
+`intake-health-check.mjs` holds a broken week and a quiet week that
+differ in one number, because with only the broken one in the fixture
+"shout when no email came" and "shout when the forward is dead" are the
+same rule.
+
+Two faults in that harness were no-ops on the first run, both the same
+shape as every other one in this file: a guard that tests for the
+PRESENCE OF A NAME tests nothing about whether anything reads it.
+`/intakePart/.test(source)` passed with the subject line no longer
+using it, because the declaration was still sitting there. Ask the
+subject template what it interpolates.
+
+### What the pull cannot ever tell you
+
+Settled, so nobody spends another week on it. A Service Manager issue
+as `/ServiceManagerIssues` hands it over carries `CreateWebUserID` and
+no PropertyID, UnitID or TenantID; Property, Unit and Tenant embeds all
+404; and `/TenantWebUsers` and `/WebUsers` 404 by every spelling tried.
+`/Tenants` has no web-user id to join back on either.
+
+**There is no route from a pulled issue to a lot.** The email's subject
+line is the only thing that says where a request came from, which is
+why the forward is not a nice-to-have.
+
 ### Texts at a time of day: the scheduler is in the database
 
 Crew reminders and Jose's 8:45 report need a time of day, and Vercel's Hobby
