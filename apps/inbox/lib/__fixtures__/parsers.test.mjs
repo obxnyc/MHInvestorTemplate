@@ -8,7 +8,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import ts from "typescript";
-import { RENT_MANAGER, VOICEMAIL, VOICEMAIL_BLANK, ZILLOW_FIRST, ZILLOW_REPLY, SQUARESPACE,
+import { RENT_MANAGER, RENT_MANAGER_FORWARDED, VOICEMAIL, VOICEMAIL_BLANK, ZILLOW_FIRST, ZILLOW_REPLY, SQUARESPACE,
          SQUARESPACE_NO_CONSENT, SQUARESPACE_DECLINED, SQUARESPACE_MAINTENANCE,
          COURT_FILING } from "./samples.mjs";
 
@@ -20,6 +20,7 @@ const js = ts.transpileModule(src, {
 const { routeEmail, parseCourtFiling, isCourtFilingEmail } = await import("data:text/javascript," + encodeURIComponent(js));
 
 const rm = routeEmail(RENT_MANAGER);
+const fwd = routeEmail(RENT_MANAGER_FORWARDED);
 const vm = routeEmail(VOICEMAIL);
 const blank = routeEmail(VOICEMAIL_BLANK);
 const za = routeEmail(ZILLOW_FIRST);
@@ -51,6 +52,24 @@ const checks = [
   ["tenant 'Doe, Jane' renders as 'Jane Doe'", rm?.name === "Jane Doe"],
   ["reads the 'Number:' label, not 'Phone:'", !!rm?.phone?.includes("555-0100")],
   ["unit comes from the subject line", !!rm?.unitHint?.includes("Lot #51")],
+
+  /* FORWARDED, which is how every one of these has actually arrived.
+     Rent Manager writes the number as a link and the client that turns
+     HTML into text leaves the href behind: "5555550100 <(555)%20555-0100>".
+     `field` handed back the whole line, twenty-two digits, which
+     `isValidPhone` correctly refused -- so a tenant who HAD given us
+     her number arrived with none and nobody could ring her back. */
+  ["a forwarded notification still routes to maintenance",
+    fwd?.category === "maintenance"],
+  ["the number survives the client turning it into a link",
+    fwd?.phone === "5555550100",
+    () => `got ${JSON.stringify(fwd?.phone)} -- the href must not come with it`],
+  ["and it is the tenant's number, not the one inside the link",
+    !String(fwd?.phone ?? "").includes("%20")],
+  ["the lot still comes off the forwarded subject",
+    !!fwd?.unitHint?.includes("Lot #45")],
+  ["the forwarded header does not become the tenant",
+    fwd?.name === "Jane Doe"],
   // Regression: \s* after a colon matches newlines, so an empty "Assigned To:"
   // used to reach across the blank line and capture "Tenant: Doe, Jane".
   ["empty 'Assigned To:' does not capture the next field",
