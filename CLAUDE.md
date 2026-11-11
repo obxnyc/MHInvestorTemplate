@@ -1648,3 +1648,23 @@ All-day location with the phone locked needs an INSTALLED app with the
 operating system's background-location permission ("Always" on iPhone, a
 foreground-service notification on Android). That is the phase-2 item in the
 owner's original brief, and the owner has now said it is required.
+
+### Where are you, then which job, then the clock
+
+The owner clocked in at a job he was nowhere near and nothing asked. The
+clock started first and the job was asked afterwards, and nothing compared
+the two -- and the clock-in had no position at all, because six seconds was
+not long enough for a cold GPS and the press went through without one.
+
+Now `lib/clockin.ts`: Clock In takes a fix (fifteen seconds), suggests the
+nearest job, and asks "You're 4.8 mi from X. Clock in there anyway?" when the
+job chosen is far. Still never refused. What changes is that it is recorded
+-- `shifts.start_metres` (054), `start_fence` 'outside' -- and the lead's
+8:45 report says "(off site, 4.8 mi away)" or "(no location)".
+
+**"Far" is its own test, not the fence's "outside".** `readFix` answers
+"cannot tell" for any fix vaguer than 500m, which would wave through a phone
+plainly five miles away. Far is: even the most generous reading of the fix
+-- metres minus its own accuracy -- is outside the site's radius.
+
+Suggesting a site needs a pin on it. On 11 November 2026 two of 114 had one.
