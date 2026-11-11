@@ -1633,3 +1633,18 @@ data and nothing should have to be cleaned up for the rule to hold.
 `crew-ring-check.mjs` holds it. (`ring-check.mjs` is a different thing --
 polygon rings for the property line. Writing over it was caught by the
 Write tool saying "updated" for a file I thought was new; restored.)
+
+### A web page cannot track a phone in a pocket
+
+The owner's crews swing hammers with the phone locked in a pocket, and play
+music or read his texts in between. A browser page gets NO location once the
+screen locks or another app is in front -- iOS and Android both enforce it,
+and no setting, wake lock or service worker changes that. The ping interval
+is two minutes now (it was ten), but that only helps while the screen is
+open. The hours are unaffected either way: a shift is a server row from the
+tap, and nothing about a locked phone touches it.
+
+All-day location with the phone locked needs an INSTALLED app with the
+operating system's background-location permission ("Always" on iPhone, a
+foreground-service notification on Android). That is the phase-2 item in the
+owner's original brief, and the owner has now said it is required.

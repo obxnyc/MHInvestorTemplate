@@ -185,7 +185,7 @@ export default function TimesheetBoard() {
             <CrewMap
               dots={data.live.filter((l) => l.at).map((l) => ({
                 id: l.shiftId, name: l.name, lat: l.at!.lat, lng: l.at!.lng,
-                fresh: l.from === "ping" && (l.quietMinutes ?? 99) <= 20,
+                fresh: l.from === "ping" && (l.quietMinutes ?? 99) <= 6,
                 abandoned: l.abandoned,
               }))}
               sites={data.sitesList.filter((s) => s.lat !== null && s.lng !== null)
@@ -209,7 +209,7 @@ export default function TimesheetBoard() {
               ))}
             </ul>
             <p className="tsnote">
-              The phone sends its position every ten minutes while the clock
+              The phone sends its position every two minutes while the clock
               screen is open. With the phone locked or the app closed it cannot,
               so a dot that has gone quiet is the last place it was seen.
             </p>

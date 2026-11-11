@@ -59,10 +59,10 @@ type State = {
 
 /** How long to wait for a position before going without one. */
 const FIX_MS = 6_000;
-/** How often to send one while on the clock. Generous on purpose: a ping a
- *  minute is a battery complaint and a tracking device, and neither is what
- *  was asked for. */
-const PING_MS = 10 * 60_000;
+/** How often to send one while on the clock. Two minutes, at the owner's
+ *  word: ten left a whole morning on a roof as five dots. Still only while
+ *  on the clock -- the tracking belongs to the shift, not to the login. */
+const PING_MS = 2 * 60_000;
 
 const KINDS: { key: string; said: string; needs: "times" | "break" | "none" }[] = [
   { key: "missed_clock_in", said: "I started before I clocked in", needs: "times" },
@@ -360,8 +360,9 @@ export default function ClockScreen({ name }: { name: string }) {
         {on ? (
           <p className="tstrail">
             Your location is recorded about every {Math.round(PING_MS / 60_000)} minutes
-            while this screen is open and you are on the clock. It stops when you
-            clock out, and while your phone is locked or on another app.
+            while you are on the clock and this screen is open. Your hours count
+            either way: locking your phone or using another app does not stop
+            the clock, only the location.
           </p>
         ) : null}
       </section>
