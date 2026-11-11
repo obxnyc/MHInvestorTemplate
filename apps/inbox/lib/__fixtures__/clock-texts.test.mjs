@@ -14,8 +14,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const tr = (f) => ts.transpileModule(readFileSync(join(here, "..", f), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const shiftUrl = "data:text/javascript," + encodeURIComponent(tr("shift.ts"));
-const js = tr("clock-texts.ts").replace(/from\s+["']\.\/shift["']/, `from "${shiftUrl}"`);
+const url = (src) => "data:text/javascript," + encodeURIComponent(src);
+const shiftUrl = url(tr("shift.ts"));
+const fenceUrl = url(tr("fence.ts"));
+const clockinUrl = url(tr("clockin.ts").replace(/from\s+["']\.\/fence["']/, `from "${fenceUrl}"`));
+const js = tr("clock-texts.ts")
+  .replace(/from\s+["']\.\/shift["']/, `from "${shiftUrl}"`)
+  .replace(/from\s+["']\.\/clockin["']/, `from "${clockinUrl}"`);
 const { plan, dueKinds, localOf, DEFAULTS, GRACE } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
@@ -264,6 +269,31 @@ t("no number, notifications off: nothing", () => !to(withAlex(alexOff), "lead_mo
 t("a number that can be texted is texted, notifications or not", () =>
   plan(new Date(et(8, 45)), S, people.map((p) => p.id === OFFICE ? { ...p, push: true } : p),
        shiftsAt(8, 45), new Set()).find((x) => x.staffId === OFFICE)?.via === "sms");
+
+/* -------------------------------------------- how far, and no location
+ * "I don't want employees laying in bed saying they are on site." Three men
+ * clock in: one at the job, one 4.2 miles off, one whose phone gave nothing.
+ * Each gets a DIFFERENT flag, so a rule that lumps two together fails. */
+const flagged = [
+  sh("f1", "juan", et(7, 50), null, { startFence: "inside", startMetres: 20, startFix: true }),
+  sh("f2", "pedro", et(7, 55), null, { startFence: "outside", startMetres: 6760, startFix: true }),
+  sh("f3", "tony", et(8, 0), null, { startFence: "unsure", startMetres: null, startFix: false }),
+];
+const flag845 = to(plan(new Date(et(8, 45)), S, people, flagged, new Set()), "lead_morning", JOSE)?.body ?? "";
+t("on site: no flag", () => /• Juan Ruiz – Lady Viola 3124, 7:50 AM\n/.test(flag845 + "\n"));
+t("off site says how far", () => flag845.includes("Pedro Gil – Lady Viola 3124, 7:55 AM (off site, 4.2 mi away)"));
+t("no position says so", () => flag845.includes("Tony Vega – Lady Viola 3124, 8:00 AM (no location)"));
+t("not knowing is not a flag (an old shift with no startFix)",
+  () => !(to(run(8, 45), "lead_morning", JOSE)?.body ?? "").includes("no location"));
+const flagRecap = to(plan(new Date(et(21)), S, people,
+  flagged.map((x) => ({ ...x, endedAt: et(16) })), new Set()), "lead_recap", JOSE)?.body ?? "";
+t("the recap counts a no-location clock-in", () => flagRecap.includes("Tony Vega 8:00 – Lady Viola 3124 – 1 clock-in with no location"));
+t("and an off-site one", () => flagRecap.includes("Pedro Gil 8:05 – Lady Viola 3124 – 1 clock-in off site"));
+t("in Spanish for a Spanish lead", () => {
+  const es2 = people.map((p) => p.id === JOSE ? { ...p, lang: "es" } : p);
+  const b = to(plan(new Date(et(8, 45)), S, es2, flagged, new Set()), "lead_morning", JOSE)?.body ?? "";
+  return b.includes("(fuera del sitio, a 4.2 mi)") && b.includes("(sin ubicación)");
+});
 
 /* ------------------------------------------------------------ once */
 

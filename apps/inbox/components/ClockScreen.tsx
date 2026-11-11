@@ -50,7 +50,7 @@ type State = {
   onBreak: boolean;
   openShiftId: string | null;
   nudges: Nudge[];
-  places: { id: string; name: string }[];
+  places: Place[];
   shifts: Shift[];
   week: Week;
   lastWeek: Week;
@@ -59,6 +59,11 @@ type State = {
 
 /** How long to wait for a position before going without one. */
 const FIX_MS = 6_000;
+/** Longer at clock-in: this one decides which job the day is filed against
+ *  and whether his lead is told he was somewhere else, so a cold GPS gets the
+ *  time it needs. Six seconds is what left the owner's first clock-in with
+ *  no position at all. */
+const CLOCK_IN_FIX_MS = 15_000;
 /** How often to send one while on the clock. Two minutes, at the owner's
  *  word: ten left a whole morning on a roof as five dots. Still only while
  *  on the clock -- the tracking belongs to the shift, not to the login. */
@@ -72,7 +77,7 @@ const KINDS: { key: string; said: string; needs: "times" | "break" | "none" }[] 
   { key: "other", said: "Something else", needs: "none" },
 ];
 
-function position(): Promise<GeolocationPosition | null> {
+function position(ms = FIX_MS): Promise<GeolocationPosition | null> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     return Promise.resolve(null);
   }
@@ -84,11 +89,11 @@ function position(): Promise<GeolocationPosition | null> {
     // Belt as well as braces: the browser's own timeout is not always
     // honoured when permission has never been answered, and a promise that
     // never settles is a button that never does anything.
-    const t = setTimeout(() => finish(null), FIX_MS);
+    const t = setTimeout(() => finish(null), ms);
     navigator.geolocation.getCurrentPosition(
       (p) => { clearTimeout(t); finish(p); },
       () => { clearTimeout(t); finish(null); },
-      { enableHighAccuracy: true, timeout: FIX_MS, maximumAge: 30_000 },
+      { enableHighAccuracy: true, timeout: ms, maximumAge: 30_000 },
     );
   });
 }
@@ -119,6 +124,29 @@ type Back = { threadId: string | null; unread: number;
 import { say, LANGS, LANG_NAME, type Key } from "@/lib/say";
 import { useLang } from "@/components/useLang";
 import PinChoose from "@/components/PinChoose";
+import { suggest, check, howFar, type Place } from "@/lib/clockin";
+import type { Fix } from "@/lib/fence";
+
+/** Every job, for the one that is not near: a list of a hundred-odd does not
+ *  fit as buttons. Choosing one goes through the same "are you sure?". */
+function JobPicker({ places, busy, label, placeholder, onPick }: {
+  places: Place[]; busy: boolean; label: string; placeholder: string;
+  onPick: (p: Place) => void;
+}) {
+  return (
+    <div className="tsfield">
+      <label htmlFor="jobpick">{label}</label>
+      <select id="jobpick" disabled={busy} value=""
+              onChange={(e) => {
+                const p = places.find((x) => x.id === e.target.value);
+                if (p) onPick(p);
+              }}>
+        <option value="" disabled>{placeholder}</option>
+        {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+    </div>
+  );
+}
 
 export default function ClockScreen({ name }: { name: string }) {
   /* The crew's own words. The handset decides; the toggle is for when it is
@@ -132,6 +160,13 @@ export default function ClockScreen({ name }: { name: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const [finding, setFinding] = useState(false);
+  /* Clocking in is three steps now, not one: where are you, which job, and
+     only then the clock. `pick` is the middle of that -- the fix taken, and
+     a far-away job waiting on "are you sure?". Null when not clocking in. */
+  const [pick, setPick] = useState<{
+    fix: Fix | null;
+    confirm?: { place: Place; far: string };
+  } | null>(null);
   const [showLast, setShowLast] = useState(false);
   const [asking, setAsking] = useState(false);
   /* Reaching the office from the clock. Four separate pieces of state and
@@ -173,10 +208,14 @@ export default function ClockScreen({ name }: { name: string }) {
     setBusy(true);
     setProblem(null);
     setSaid(null);
-    const wantsFix = action === "in" || action === "out";
+    // A clock-in carries the fix taken when the job was chosen. Asking the
+    // phone again here would be a second, different answer to the question
+    // the choice was checked against.
+    const given = "fix" in extra;
+    const wantsFix = !given && (action === "in" || action === "out");
     setFinding(wantsFix);
 
-    const fix = wantsFix ? fixOf(await position()) : null;
+    const fix = given ? (extra.fix as Fix | null) : wantsFix ? fixOf(await position()) : null;
 
     const res = await fetch("/api/clock", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -194,6 +233,30 @@ export default function ClockScreen({ name }: { name: string }) {
     }
     setState(out as State);
     return true;
+  };
+
+  /* Step one: where are you. The clock does not start here. */
+  const startClockIn = async () => {
+    setBusy(true);
+    setProblem(null);
+    setFinding(true);
+    const fix = fixOf(await position(CLOCK_IN_FIX_MS));
+    setFinding(false);
+    setBusy(false);
+    setPick({ fix });
+  };
+
+  /* Step two: this job. Asks first if it is far from where the phone is. */
+  const chooseJob = async (place: Place, sure = false) => {
+    if (!pick) return;
+    const c = check(pick.fix, place);
+    if (c.kind === "far" && !sure) {
+      setPick({ ...pick, confirm: { place, far: howFar(c.metres) } });
+      return;
+    }
+    // Step three: the clock. The pick panel goes only once the server has
+    // taken it -- a refused clock-in must leave the choice on screen.
+    if (await act("in", { fix: pick.fix, propertyId: place.id })) setPick(null);
   };
 
   // The trail belongs to the shift. It starts when the shift does and stops
@@ -301,12 +364,78 @@ export default function ClockScreen({ name }: { name: string }) {
           ? <p className="tsnote">{today.breakMinutes} minutes of breaks recorded</p>
           : null}
 
-        <button className={`tsact ${on ? "stop" : "go"}`} disabled={busy}
-                onClick={() => act(on ? "out" : "in")}>
-          {busy
-            ? s(finding ? "checkingLocation" : "pleaseWait")
-            : s(on ? "clockOut" : "clockIn")}
-        </button>
+        {!on && pick ? (() => {
+          /* Where are you, which job, then the clock. See lib/clockin.ts. */
+          const { here, nearby } = suggest(pick.fix, state.places);
+          if (pick.confirm) {
+            const { place, far } = pick.confirm;
+            return (
+              <div className="tsform" role="alertdialog" aria-label={s("areYouSure", { far, name: place.name })}>
+                <p className="tsnudge loud">{s("areYouSure", { far, name: place.name })}</p>
+                <p className="tsnote">{s("areYouSureWhy", { far })}</p>
+                <div className="tsrow">
+                  <button className="tsact go" disabled={busy}
+                          onClick={() => chooseJob(place, true)}>{s("yesClockIn")}</button>
+                  <button className="tsminor" disabled={busy}
+                          onClick={() => setPick({ fix: pick.fix })}>{s("pickAgain")}</button>
+                </div>
+              </div>
+            );
+          }
+          if (!pick.fix) {
+            return (
+              <div className="tsform">
+                <p className="tsnudge loud">{s("noLocation")}</p>
+                <p className="tsnote">{s("noLocationHow")}</p>
+                <button className="tsact go" disabled={busy} onClick={startClockIn}>
+                  {busy ? s("checkingLocation") : s("tryAgain")}
+                </button>
+                <p className="tsnote">{s("noLocationWhy")}</p>
+                <JobPicker places={state.places} busy={busy} label={s("clockInNoLocation")}
+                           placeholder={s("selectProperty")}
+                           onPick={(p) => chooseJob(p)} />
+                <button className="tsminor" disabled={busy} onClick={() => setPick(null)}>{s("cancel")}</button>
+              </div>
+            );
+          }
+          return (
+            <div className="tsform">
+              {here ? (
+                <>
+                  <p className="tsnote">{s("looksLikeHere")}</p>
+                  <button className="tsact go" disabled={busy} onClick={() => chooseJob(here.place)}>
+                    {busy ? s("pleaseWait") : s("clockInAt", { name: here.place.name })}
+                  </button>
+                </>
+              ) : null}
+              {nearby.filter((n) => n.place.id !== here?.place.id).length ? (
+                <>
+                  <p className="tsnote">{s(here ? "somewhereElse" : "nearYou")}</p>
+                  <ul className="tsruns">
+                    {nearby.filter((n) => n.place.id !== here?.place.id).map((n) => (
+                      <li key={n.place.id}>
+                        <button className="tsminor" disabled={busy} onClick={() => chooseJob(n.place)}>
+                          {n.place.name} · {s("away", { far: howFar(n.metres) })}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              <JobPicker places={state.places} busy={busy} label={s("otherJob")}
+                         placeholder={s("selectProperty")}
+                         onPick={(p) => chooseJob(p)} />
+              <button className="tsminor" disabled={busy} onClick={() => setPick(null)}>{s("cancel")}</button>
+            </div>
+          );
+        })() : (
+          <button className={`tsact ${on ? "stop" : "go"}`} disabled={busy}
+                  onClick={() => (on ? act("out") : startClockIn())}>
+            {busy
+              ? s(finding ? "checkingLocation" : "pleaseWait")
+              : s(on ? "clockOut" : "clockIn")}
+          </button>
+        )}
 
         {on ? (
           <button className="tsminor" disabled={busy}

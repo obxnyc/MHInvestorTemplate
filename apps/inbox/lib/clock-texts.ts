@@ -30,6 +30,7 @@
  */
 
 import { worked, RULES, type Rules, type Shift } from "./shift";
+import { howFar } from "./clockin";
 
 export const KINDS = [
   "crew_morning", "lead_morning", "crew_lunch", "lead_lunch", "crew_evening", "lead_recap",
@@ -94,7 +95,22 @@ export type DayShift = Shift & {
   siteName: string | null; startFence: string | null;
   /** Closed by the clock rather than by the man. */
   autoOut?: boolean;
+  /** How far the phone was from the chosen job at clock-in (054). */
+  startMetres?: number | null;
+  /** False when the phone gave no position at all at clock-in. Undefined is
+   *  "not known", which reports nothing -- only a known absence is a flag. */
+  startFix?: boolean;
 };
+
+/** The flag after a clock-in line: how far off site, or no position at all. */
+function clockInFlag(sh: DayShift, w: (typeof W)[Lang]): string {
+  if (sh.startFix === false) return w.noFix;
+  if (sh.startFence === "outside") {
+    return sh.startMetres !== null && sh.startMetres !== undefined
+      ? w.offSiteBy(howFar(sh.startMetres)) : w.offSite;
+  }
+  return "";
+}
 
 export type Text = {
   kind: Kind | "crew_autoout"; staffId: string; to: string; body: string; key: string;
@@ -172,6 +188,8 @@ type Status = {
   running: number;
   sites: string[];
   offSite: number;
+  /** Clock-ins with no position at all. */
+  noFix: number;
 };
 
 function statusOf(p: Person, shifts: DayShift[], now: Date, rules: Rules): Status {
@@ -192,6 +210,7 @@ function statusOf(p: Person, shifts: DayShift[], now: Date, rules: Rules): Statu
     // Each site once, in the order they were worked.
     sites: [...new Set(today.map((s) => s.siteName ?? NOT_SET))],
     offSite: today.filter((s) => s.startFence === "outside").length,
+    noFix: today.filter((s) => s.startFix === false).length,
   };
 }
 
@@ -221,6 +240,9 @@ const W = {
       `${n}, today you have ${h} at ${w}. If that is not right, fix it here: ${l}`,
     notSet: "site not set",
     offSite: " (off site)",
+    offSiteBy: (far: string) => ` (off site, ${far} away)`,
+    noFix: " (no location)",
+    noFixes: (k: number) => `${k} clock-in${k === 1 ? "" : "s"} with no location`,
     mReport: (t: string) => `Clock-in report ${t}`,
     clockedIn: (k: number) => `Clocked in (${k}):`,
     leftAlready: (k: number) => `Already clocked out (${k}):`,
@@ -257,6 +279,9 @@ const W = {
       `${n}, hoy tienes ${h} horas en ${w}. Si no es correcto, corrígelo aquí: ${l}`,
     notSet: "sitio sin asignar",
     offSite: " (fuera del sitio)",
+    offSiteBy: (far: string) => ` (fuera del sitio, a ${far})`,
+    noFix: " (sin ubicación)",
+    noFixes: (k: number) => `${k} entrada${k === 1 ? "" : "s"} sin ubicación`,
     mReport: (t: string) => `Reporte de entrada ${t}`,
     clockedIn: (k: number) => `Marcaron entrada (${k}):`,
     leftAlready: (k: number) => `Ya marcaron salida (${k}):`,
@@ -330,7 +355,7 @@ function leadText(
       w.mReport(at),
       w.clockedIn(inNow.length),
       ...inNow.map((c) => `• ${c.person.name} – ${site(c.open!.siteName)}, `
-        + `${t(c.open!.startedAt)}${c.open!.startFence === "outside" ? w.offSite : ""}`),
+        + `${t(c.open!.startedAt)}${clockInFlag(c.open!, w)}`),
       left.length ? w.leftAlready(left.length) : "",
       ...left.map((c) => `• ${c.person.name} – ${w.outAt(t(c.clockedOutAt!))}`),
       w.notIn(notIn.length),
@@ -366,6 +391,7 @@ function leadText(
         const auto = c.today.filter((x) => x.autoOut && x.endedAt).at(-1);
         if (auto) bits.push(` – ${w.autoNote(t(auto.endedAt!))}`);
         if (c.offSite) bits.push(` – ${w.offSites(c.offSite)}`);
+        if (c.noFix) bits.push(` – ${w.noFixes(c.noFix)}`);
         return bits.join("");
       }),
       w.total(hm(total)),

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { readFix, whichSite, defaultRadius, type Fence, type Fix } from "@/lib/fence";
 import { worked, nudges, week, weekStart, type Shift, type Rules, RULES } from "@/lib/shift";
+import { check, type Place } from "@/lib/clockin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,9 +53,18 @@ async function fences(db: Db): Promise<Fence[]> {
  * dropped a pin on them. "Which job are you on" is about every property we
  * have, and the whole point of asking is that the phone could not tell.
  */
-async function places(db: Db) {
-  const { data } = await db.from("properties").select("id, name").order("name");
-  return (data ?? []).map((p) => ({ id: String(p.id), name: String(p.name) }));
+async function places(db: Db): Promise<Place[]> {
+  // Where each job is, as well as what it is called, so the phone can say
+  // which one you are standing at and ask "are you sure?" about the others.
+  const { data } = await db.from("properties")
+    .select("id, name, address, kind, lat, lng, fence_m").order("name");
+  return (data ?? []).map((p) => ({
+    id: String(p.id), name: String(p.name),
+    address: (p.address as string | null) ?? null,
+    lat: p.lat === null ? null : Number(p.lat),
+    lng: p.lng === null ? null : Number(p.lng),
+    radius: p.fence_m ? Number(p.fence_m) : defaultRadius(p.kind as string | null),
+  }));
 }
 
 async function rulesOf(db: Db): Promise<Rules> {
@@ -179,19 +189,40 @@ export async function POST(req: Request) {
     const { on } = whichSite(fix, sites);
     const reading = on ? on.reading : null;
 
-    // The fix is recorded, never enforced. Off site goes in as off site --
-    // refusing it would leave somebody who worked a day with no record of it,
-    // which is the worse failure by a long way.
+    /* The job, if the man chose one on the way in -- which the screen now
+       asks for BEFORE the clock starts, with the nearest suggested. What he
+       chose is what is filed; how far he was from it is recorded beside it,
+       and a clock-in from far away goes in as OFF SITE so his lead's report
+       says so. The fix is recorded, never enforced: refusing a clock-in
+       leaves somebody who worked a day with no record of it, which is the
+       worse failure by a long way. */
+    const chosenId = String(body.propertyId ?? "") || null;
+    const chosen = chosenId ? (await places(db)).find((p) => p.id === chosenId) ?? null : null;
+    if (chosenId && !chosen) {
+      return NextResponse.json({ error: "That job is not on file. Pick it again." }, { status: 400 });
+    }
+    const verdict = chosen ? check(fix, chosen) : null;
+    const startFence = verdict
+      ? (verdict.kind === "far" ? "outside"
+         : verdict.kind === "ok" && on?.fence.propertyId === chosen!.id ? reading!.verdict
+         : "unsure")
+      : reading?.verdict
+        ?? (fix && sites.length ? whichSite(fix, sites).maybe[0]?.reading.verdict : null)
+        ?? "unsure";
+
     const { data, error } = await db.from("shifts").insert({
       staff_id: me.id,
-      property_id: on?.fence.propertyId ?? null,
-      property_from: on ? "fence" : null,
+      property_id: chosen?.id ?? on?.fence.propertyId ?? null,
+      // "fence" only when the phone itself put him there; a choice that
+      // happens to agree with the fence is still the phone's evidence.
+      property_from: chosen
+        ? (on?.fence.propertyId === chosen.id ? "fence" : "chosen")
+        : on ? "fence" : null,
       start_lat: fix?.lat ?? null,
       start_lng: fix?.lng ?? null,
       start_acc: fix?.accuracy ?? null,
-      start_fence: reading?.verdict
-        ?? (fix && sites.length ? whichSite(fix, sites).maybe[0]?.reading.verdict : null)
-        ?? "unsure",
+      start_fence: startFence,
+      start_metres: verdict && "metres" in verdict ? Math.round(verdict.metres) : null,
     }).select("id").single();
 
     if (error) {
