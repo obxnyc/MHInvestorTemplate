@@ -292,7 +292,22 @@ export function sortVacancies(list: Vacancy[]): { forRent: Vacancy[]; upcoming: 
 
 /* ---------------------------------------------------------------- the email */
 
-export function render(r: Report, vac: Vacancies = null): { subject: string; text: string; html: string } {
+/** The reading from `intake-health`, passed in rather than imported.
+ *
+ *  THIS FILE HAS NO IMPORTS ON PURPOSE -- its own header says so, and
+ *  `delinquency-check.mjs` loads it as a data: URL, where a relative
+ *  import cannot resolve at all. Importing `intakeVerdict` here took
+ *  the whole harness down with ERR_INVALID_URL. The verdict is worked
+ *  out by the caller, which already has the database open. */
+export type IntakeVerdict = {
+  level: "ok" | "warn" | "bad";
+  headline: string;
+  detail: string;
+};
+
+export function render(
+  r: Report, vac: Vacancies = null, intake: IntakeVerdict | null = null,
+): { subject: string; text: string; html: string } {
   const when = longDay(r.day);
   const short = new Date(`${r.day}T12:00:00Z`).toLocaleDateString("en-US",
     { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
@@ -310,7 +325,11 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
     : owing.length ? `${owing.length} owe ${usd(total)}${r.partial ? " (incomplete)" : ""}`
     : `nobody owes${r.partial ? " (incomplete)" : ""}`;
   const vacPart = vac ? ` · ${forRent.length} for rent, ${upcoming.length} upcoming` : "";
-  const subject = `Morning report ${short}: ${owesPart}${vacPart}`;
+  /* It goes in the SUBJECT when it is broken. A fault reported only
+     in the body of a daily email is a fault nobody reads about. */
+  const intakePart = intake?.level === "bad"
+    ? " · MAINTENANCE EMAILS NOT ARRIVING" : "";
+  const subject = `Morning report ${short}: ${owesPart}${vacPart}${intakePart}`;
 
   const partialNote = r.partial
     ? "Rent Manager was still answering when time ran out, so this list is NOT complete. Totals below are a floor, not the figure."
@@ -320,7 +339,15 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
     : null;
 
   /* ================================================================ text */
-  const lines: string[] = [`Morning report for ${when}`, "", "DELINQUENCY", ""];
+  const lines: string[] = [`Morning report for ${when}`, ""];
+  /* Above the money, because a request that never arrived is work
+     nobody knows about, and a balance can be read any time. */
+  if (intake) {
+    lines.push("MAINTENANCE REQUESTS", "", intake.headline);
+    if (intake.level === "bad") lines.push("", intake.detail);
+    lines.push("");
+  }
+  lines.push("DELINQUENCY", "");
   if (failNote) lines.push(failNote);
   else {
     if (partialNote) lines.push(partialNote, "");
@@ -449,9 +476,17 @@ export function render(r: Report, vac: Vacancies = null): { subject: string; tex
     + (vac.note ? banner(vac.note, "Note.") : "")
     + forRentHtml + upcomingHtml;
 
+  const intakeHtml = !intake ? ""
+    : intake.level === "bad"
+      ? h2("Maintenance requests")
+        + banner(`${intake.headline} ${intake.detail}`, "Not arriving.")
+      : h2("Maintenance requests")
+        + `<p style="margin:0 0 8px">${esc(intake.headline)}</p>`;
+
   const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Arial,sans-serif;color:#1d2433">`
     + `<h1 style="margin:0 0 2px;font-size:22px">Morning report</h1>`
     + `<div style="color:#6b7280">${esc(when)}</div>`
+    + intakeHtml
     + h2("Delinquency")
     + delinquencyHtml
     + vacancyHtml

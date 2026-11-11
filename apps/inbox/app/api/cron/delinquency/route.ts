@@ -5,6 +5,7 @@ import { pullDelinquency } from "@/lib/delinquency-pull";
 import { pullVacancies } from "@/lib/vacancy-pull";
 import { activeRecipients, newYork, render, SEND_HOUR, type Recipient, type Report, type Vacancies } from "@/lib/delinquency";
 import { sendEmailChecked } from "@/lib/notify";
+import { readArrivals, intakeVerdict } from "@/lib/intake-health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,7 +90,17 @@ async function handle(req: Request) {
       note: `The vacancy list could not be produced: ${(e as Error).message}`,
     })),
   ]);
-  const mail = render(report, vac);
+  /* HOW THE WORK IS GETTING IN, which is the thing nobody checks.
+     Never allowed to stop the report: a balance that could not be read
+     is still worth sending, and so is one read while this failed. */
+  let intake = null;
+  try {
+    intake = intakeVerdict(await readArrivals(supabaseAdmin()));
+  } catch {
+    intake = null;
+  }
+
+  const mail = render(report, vac, intake);
 
   const { data: list } = await db.from("report_recipients")
     .select("email, name, starts_on, ends_on").eq("report", REPORT);
