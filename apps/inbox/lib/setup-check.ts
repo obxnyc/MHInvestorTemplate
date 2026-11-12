@@ -758,7 +758,13 @@ async function intakeChecks(): Promise<Check[]> {
     let byEmail = 0, byPull = 0;
     try {
       byPull = await ask("external_id=like.rm:issue:*");
-      byEmail = await ask("external_id=like.*@*&external_id=not.like.rm:issue:*");
+      /* NOT by looking for an `@`. Postmark's id is a plain UUID, not an
+         RFC Message-ID, so that rule counted zero while email worked --
+         and this page would have gone on saying "nothing has arrived by
+         email in 30 days" for ever. By exclusion of the paths we can
+         name instead: the pull stamps `rm:issue:<n>`, a text stamps
+         nothing, everything else arrived as mail. */
+      byEmail = await ask("external_id=not.is.null&external_id=not.like.rm:issue:*");
     } catch (e) {
       return [{
         name: "Could not check whether email is arriving",

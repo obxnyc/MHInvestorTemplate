@@ -35,7 +35,8 @@ const raw = readFileSync(join(lib, "intake-health.ts"), "utf8");
 writeFileSync(join(here, "intake-health.gen.mjs"), ts.transpileModule(
   raw.replace(/^import\b[\s\S]*?from\s*"[^"]*";/gm, ""),
   { compilerOptions: { target: 99, module: 99 } }).outputText);
-const { intakeVerdict } = await import(join(here, "intake-health.gen.mjs"));
+const { intakeVerdict, arrivedBy } =
+  await import(join(here, "intake-health.gen.mjs"));
 
 const checks = [];
 const t = (name, fn, why) => {
@@ -52,6 +53,36 @@ const BROKEN = week({ byPull: 42, byText: 3 });        // the real one
 const QUIET  = week({});                               // nothing at all
 const WORKING = week({ byEmail: 9, byPull: 42, byText: 3 });
 const EMAIL_ONLY = week({ byEmail: 4 });
+
+/* ------------------------------------- the ids, as they really are
+ *
+ * Every one of these was read out of the live database. The rule they
+ * replace was written from imagination -- "mail carries a Message-ID,
+ * so look for an @" -- and Postmark does not pass that through. It
+ * counted zero emails while two had arrived, so the report would have
+ * cried wolf every morning with the forward working perfectly.
+ */
+t("the hourly API read is the pull",
+  () => arrivedBy("rm:issue:310") === "pull");
+
+t("a text carries no id at all",
+  () => arrivedBy(null) === "text");
+
+t("an email is Postmark's UUID, which has no @ in it",
+  () => arrivedBy("c6c580be-d5f1-4883-94d7-91d5a023cb5a") === "email",
+  "THE REAL ID off the first TWA email that ever arrived. A rule that "
+  + "looks for an @ reads this as not-an-email and reports a working "
+  + "forward as a dead one, every morning, for ever");
+
+t("an RFC Message-ID is an email too, for whatever does send one",
+  () => arrivedBy("<rm-1@rentmanager.com>") === "email",
+  "the old rule was not wrong about this shape, only about it being "
+  + "the only one");
+
+t("the three paths are told apart, not merely counted",
+  () => new Set(["rm:issue:1", null, "c6c580be"].map(arrivedBy)).size === 3,
+  "if two paths come out the same, the check cannot say which is "
+  + "silent -- which is the only thing it is for");
 
 /* ------------------------------------------------- the fault, and only it */
 
