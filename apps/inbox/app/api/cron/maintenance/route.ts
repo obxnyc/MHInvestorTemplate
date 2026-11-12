@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { pullServiceIssues } from "@/lib/rm-issues";
+import { cronKeyOk } from "@/lib/cron-key";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,13 +9,11 @@ export const dynamic = "force-dynamic";
 // which the browser then reports as "Unexpected end of JSON input".
 export const maxDuration = 60;
 
-function authorized(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  const a = Buffer.from(given), b = Buffer.from(secret);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
+/** Vercel's own cron presents CRON_SECRET. The reports key in Vault opens it
+ *  too, so the pull can be run on demand from the database -- which is how
+ *  anything here finds out whether it is working, this machine not being able
+ *  to reach the site directly. */
+const authorized = (req: Request) => cronKeyOk(req, "report_key_ok");
 
 /**
  * The maintenance requests, fetched on a schedule.
@@ -53,7 +51,7 @@ function authorized(req: Request) {
  * in it costs is one request to Rent Manager.
  */
 export async function GET(req: Request) {
-  if (!authorized(req)) {
+  if (!(await authorized(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
