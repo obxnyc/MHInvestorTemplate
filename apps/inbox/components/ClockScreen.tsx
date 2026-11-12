@@ -59,11 +59,14 @@ type State = {
 
 /** How long to wait for a position before going without one. */
 const FIX_MS = 6_000;
-/** Longer at clock-in: this one decides which job the day is filed against
- *  and whether his lead is told he was somewhere else, so a cold GPS gets the
- *  time it needs. Six seconds is what left the owner's first clock-in with
- *  no position at all. */
-const CLOCK_IN_FIX_MS = 15_000;
+/** At clock-in, the most it may wait. "Guys could have to wait 15 seconds to
+ *  get clocked in? That is way too long -- should be right away." So the
+ *  phone starts finding itself the moment the clock screen opens (see the
+ *  warm-up effect), and the tap uses that. This is only the fallback for a
+ *  screen opened and tapped in the same breath. */
+const CLOCK_IN_FIX_MS = 5_000;
+/** A warm-up fix older than this is not "where you are now". */
+const WARM_FRESH_MS = 2 * 60_000;
 /** How often to send one while on the clock. Two minutes, at the owner's
  *  word: ten left a whole morning on a roof as five dots. Still only while
  *  on the clock -- the tracking belongs to the shift, not to the login. */
@@ -190,6 +193,23 @@ export default function ClockScreen({ name }: { name: string }) {
   const onRef = useRef(on);
   onRef.current = on;
 
+  /* THE WARM-UP. While the screen is open and he is off the clock, the phone
+     keeps its own position fresh so that Clock In is instant. It stays in
+     this ref: nothing is sent anywhere until he chooses to clock in, so this
+     is not tracking somebody who is not working -- it is the GPS being awake
+     when the button is pressed instead of starting cold. Stops when he is on
+     the clock (the pings take over) and when the screen closes. */
+  const warm = useRef<{ fix: Fix; at: number } | null>(null);
+  useEffect(() => {
+    if (on || typeof navigator === "undefined" || !navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      (p) => { const f = fixOf(p); if (f) warm.current = { fix: f, at: Date.now() }; },
+      () => { /* no permission yet: the tap will ask, and say so */ },
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 30_000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [on]);
+
   // The handset's own offset. The person reading this is the person whose
   // Tuesday it is; a server in UTC files Monday evening under Tuesday.
   const offset = useRef(0);
@@ -235,12 +255,17 @@ export default function ClockScreen({ name }: { name: string }) {
     return true;
   };
 
-  /* Step one: where are you. The clock does not start here. */
+  /* Step one: where are you. The clock does not start here.
+     Instant when the warm-up already has a fresh fix, which is the usual
+     case: the screen has been open for the second it takes to find the
+     button. Only a cold phone waits, and then for five seconds at most. */
   const startClockIn = async () => {
+    const w = warm.current;
+    if (w && Date.now() - w.at < WARM_FRESH_MS) { setProblem(null); setPick({ fix: w.fix }); return; }
     setBusy(true);
     setProblem(null);
     setFinding(true);
-    const fix = fixOf(await position(CLOCK_IN_FIX_MS));
+    const fix = fixOf(await position(CLOCK_IN_FIX_MS)) ?? warm.current?.fix ?? null;
     setFinding(false);
     setBusy(false);
     setPick({ fix });

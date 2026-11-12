@@ -153,6 +153,7 @@ export default function TimesheetBoard() {
         <h1>Timesheets</h1>
         <span className="tsrow">
           <a className="tslink" href="/pay">Friday pay</a>
+          <a className="tslink" href="/trail">Where they went</a>
           <a className="tslink" href="/crew">Crews &amp; texts</a>
         </span>
       </div>
@@ -194,7 +195,7 @@ export default function TimesheetBoard() {
             <ul className="tsruns">
               {data.live.map((l) => (
                 <li key={l.shiftId}>
-                  <span className="tsspan">{l.name}</span>
+                  <a className="tsspan tslink" href={`/trail?staff=${l.staffId}`}>{l.name}</a>
                   {l.abandoned
                     ? <span className="tsbadge asked">Never clocked out</span>
                     : <span className="tsbadge onclock">since {when(l.startedAt)}</span>}

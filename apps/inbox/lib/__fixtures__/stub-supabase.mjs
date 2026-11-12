@@ -99,18 +99,38 @@ const SHIFTS = [
     // The position columns 038 has. Without them every select that asks for
     // where somebody clocked in fails, and the office's live map reads empty.
     start_lat: 35.1, start_lng: -78.96, start_acc: 18,
+    end_lat: 35.1001, end_lng: -78.9601, end_acc: 20,
+    start_metres: 10, auto_clocked_out: false,
     shift_breaks: [{ started_at: iso(now - 5 * 3600e3),
                      ended_at: iso(now - 4.5 * 3600e3) }] },
   { id: "s2", staff_id: WHO, property_id: null, property_from: null,
     started_at: iso(now - 1.5 * 3600e3), ended_at: null, signed_off_at: null,
     start_fence: "unsure", end_fence: null, shift_breaks: [],
-    start_lat: 35.104, start_lng: -78.955, start_acc: 140 },
+    start_lat: 35.104, start_lng: -78.955, start_acc: 140,
+    end_lat: null, end_lng: null, end_acc: null, start_metres: null, auto_clocked_out: false },
+];
+
+/* A morning for the trail map: on site, a drive north, twenty-five minutes
+   at a store, back. Without positions the trail page has nothing to draw,
+   and "a map with no line" is not something a picture check can judge. */
+const minsAfter = (t0, m) => iso(t0 + m * 60e3);
+const T0 = now - 7 * 3600e3;
+const SHIFT_PINGS = [
+  ...[2, 6, 10, 14, 18, 22, 26, 30].map((m) => ({ shift_id: "s1", at: minsAfter(T0, m),
+    lat: 35.1 + (m % 4) * 0.00002, lng: -78.96, accuracy: 15, fence: "inside", metres: 5 })),
+  { shift_id: "s1", at: minsAfter(T0, 34), lat: 35.108, lng: -78.955, accuracy: 15, fence: "outside", metres: 900 },
+  { shift_id: "s1", at: minsAfter(T0, 37), lat: 35.117, lng: -78.951, accuracy: 15, fence: "outside", metres: 1900 },
+  ...[40, 45, 50, 55, 60, 65].map((m) => ({ shift_id: "s1", at: minsAfter(T0, m),
+    lat: 35.125, lng: -78.948 + (m % 2) * 0.0001, accuracy: 12, fence: "outside", metres: 2800 })),
+  { shift_id: "s1", at: minsAfter(T0, 70), lat: 35.112, lng: -78.957, accuracy: 15, fence: "outside", metres: 1400 },
+  { shift_id: "s1", at: minsAfter(T0, 75), lat: 35.1002, lng: -78.96, accuracy: 15, fence: "inside", metres: 20 },
 ];
 
 const TABLES = {
   staff: STAFF,
   properties: PROPERTIES,
   shifts: SHIFTS,
+  shift_pings: SHIFT_PINGS,
   clock_rules: [{ id: true, daily_cap: 10, break_after: 6, break_minutes: 30,
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
