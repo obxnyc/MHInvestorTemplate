@@ -1765,3 +1765,14 @@ uses the service role -- crew must not be able to write their own phone
 history -- and the clock route still writes shifts as the signed-in man,
 which `clock-screen-check` enforces; it caught the first version importing
 the admin client into the route.
+
+### The crew get the Android app from a plain link
+
+https://app.larabeehomesllc.com/downloads/larabee.apk -- the GitHub
+artifact needs a GitHub login the crew do not have, and this container
+cannot download artifacts either (the blob host is refused). So the Android
+workflow's last step commits the APK into `apps/inbox/public/downloads/`
+on main, and Vercel serves it. `.apk` is excluded from the proxy's matcher:
+a man installing it has no session, and the sign-in wall would hand his
+phone a login page. The owner has an iPhone, so the first real Android test
+is a crew member's phone.
