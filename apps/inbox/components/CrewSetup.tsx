@@ -13,6 +13,7 @@ type Person = {
   leadId: string | null; onClock: boolean; allReports: boolean;
   rateCents: number | null; method: string | null; handle: string | null;
   phone: string | null; textsTo: string | null; lang: "en" | "es"; push: boolean;
+  integrityAlerts: boolean;
 };
 type Settings = {
   enabled: boolean; tz: string; overtime: boolean; days: number[];
@@ -50,6 +51,7 @@ function PersonCard({ p, everyone, onSaved }: {
 }) {
   const [f, setF] = useState({
     leadId: p.leadId ?? "", onClock: p.onClock, allReports: p.allReports,
+    integrityAlerts: p.integrityAlerts,
     rate: p.rateCents === null ? "" : (p.rateCents / 100).toFixed(2),
     method: p.method ?? "", handle: p.handle ?? "", phone: p.phone ? pretty(p.phone) : "",
     lang: p.lang,
@@ -83,6 +85,13 @@ function PersonCard({ p, everyone, onSaved }: {
       <label className="crewtick">
         <input type="checkbox" checked={f.allReports} onChange={(e) => set("allReports", e.target.checked)} />
         <span>Gets the reports for every crew (office)</span>
+      </label>
+      <label className="crewtick">
+        <input type="checkbox" checked={f.integrityAlerts}
+               onChange={(e) => set("integrityAlerts", e.target.checked)} />
+        <span>Gets &ldquo;check this&rdquo; alerts the moment they happen: a clock-in far from
+          the job, with no location, on another man&rsquo;s phone or a new one, or a shift
+          nobody clocked out of (owner)</span>
       </label>
       <div className="crewgrid">
         <div className="tsfield">
@@ -292,7 +301,7 @@ export default function CrewSetup() {
       {/* --------------------------------------------------------- people */}
       <ul className="crewpeople">
         {order.map((p) => (
-          <PersonCard key={`${p.id}:${p.leadId}:${p.onClock}:${p.rateCents}:${p.method}:${p.lang}`}
+          <PersonCard key={`${p.id}:${p.leadId}:${p.onClock}:${p.rateCents}:${p.method}:${p.lang}:${p.integrityAlerts}`}
                       p={p} everyone={data.people} onSaved={load} />
         ))}
       </ul>

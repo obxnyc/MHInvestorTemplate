@@ -1743,3 +1743,25 @@ build is signed with `apps/mobile/android/app/pilot.keystore` so updates
 install over the old app; before a Play Store release, move to a release key
 in GitHub secrets (steps in the workflow's comments). The owner's
 instructions are in `apps/mobile/README.md`.
+
+### "Check this" alerts go to the owner, not the crew lead
+
+"Jose would benefit from his guys getting more hours" -- so a check Jose
+controls is not a check. `lib/integrity.ts` decides what is worth a look; it
+is sent AS IT HAPPENS, by `lib/alert-owner.ts`, to whoever is ticked for
+integrity alerts on Crews & texts (`crew_setup.integrity_alerts`, 056) --
+Cade Larabee from 12 November 2026. Text, or app notification when the
+number cannot be texted; claimed in the ledger first, keyed per event per
+person, so each goes once and there is a record of what he was told.
+
+Flagged: a clock-in far from the job, with no location (with or without
+photos), on a phone another crew member has used in the last 30 days (the
+buddy case, named), or on a phone new to this man; and a shift the clock had
+to close. The lead's report still carries the off-site / no-location flags.
+
+**Whose phone** is `lib/phones.ts`: an httpOnly random id per phone, and
+`staff_devices` records every man who clocks in on it. That module alone
+uses the service role -- crew must not be able to write their own phone
+history -- and the clock route still writes shifts as the signed-in man,
+which `clock-screen-check` enforces; it caught the first version importing
+the admin client into the route.
