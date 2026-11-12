@@ -21,6 +21,7 @@ type Data = {
   people: { id: string; name: string }[];
   day?: string; shifts?: Shift[];
   points?: TrailPoint[]; stops?: TrailStop[]; sites?: TrailSite[]; metres?: number;
+  jobs?: TrailSite[];
   error?: string;
 };
 
@@ -112,12 +113,28 @@ export default function TrailBoard() {
           </div>
           {data.shifts.length ? (
             <>
-              <TrailMap points={pts} stops={data.stops ?? []} sites={data.sites ?? []} />
-              <p className="tsnote">
-                {pings
-                  ? `${pings} positions recorded. Arrows show the way they went; amber circles are places they stayed 8 minutes or more.`
-                  : "No positions were recorded between clock-in and clock-out. The phone only sends them while the clock screen is open — the installed app will send them all day."}
-              </p>
+              <TrailMap points={pts} stops={data.stops ?? []} sites={data.sites ?? []}
+                        jobs={data.jobs ?? []}
+                        live={day === today && data.shifts.some((s) => !s.endedAt)} />
+              {pts.length ? (
+                <p className="tsnote">
+                  {pts.length} positions, each with its time. Arrows show the way they went;
+                  amber circles are places they stayed 8 minutes or more. Zoom in to see
+                  every time.
+                </p>
+              ) : (
+                <p className="tsnudge loud">
+                  The phone sent no position at all this day, so the map shows the job they
+                  chose{data.jobs?.length ? "" : " (it has no map pin)"} — not where they were.
+                </p>
+              )}
+              {pts.length && !pings ? (
+                <p className="tsnote">
+                  Only clock-in and clock-out positions: in between, the phone sends its
+                  position only while the clock screen is open. The installed app sends it
+                  every two minutes all day.
+                </p>
+              ) : null}
               <ul className="tsruns">
                 {events.map((e, i) => (
                   <li key={i}>

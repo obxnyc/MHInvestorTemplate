@@ -3492,3 +3492,10 @@ a.metric:hover{border-color:var(--accent)}
   background:var(--card);color:var(--ink);border:2px solid var(--hair)}
 .trailend.start{border-color:var(--tn-ink)}
 .trailend.finish{border-color:var(--crit)}
+/* The job he clocked in at: named, and the thing the eye lands on first. */
+.trailjob{padding:.15rem .45rem;border-radius:6px;font-size:.74rem;font-weight:800;white-space:nowrap;
+  background:var(--dark);color:var(--dark-ink)}
+/* Other job sites near the route: present, and quieter. */
+.trailsite{padding:.05rem .35rem;border-radius:5px;font-size:.66rem;font-weight:700;white-space:nowrap;
+  background:var(--card);color:var(--muted);border:1px solid var(--hair)}
+.trailend.now{border-color:var(--accent);color:var(--accent-ink)}

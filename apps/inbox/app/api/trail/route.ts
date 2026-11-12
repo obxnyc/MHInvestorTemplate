@@ -78,17 +78,34 @@ export async function GET(req: Request) {
     radius: p.fence_m ? Number(p.fence_m) : defaultRadius(p.kind as string | null),
   }));
   const names = new Map(sites.map((s) => [s.id, s.name]));
+  const byId = new Map(sites.map((s) => [s.id, s]));
+  // The jobs he clocked in at, with where they are, so the map can always
+  // show and centre on them -- even on a day with no positions at all,
+  // which is the day a map of every grey square in the county says nothing.
+  const jobs = [...new Set(shifts.map((s) => s.property_id).filter(Boolean).map(String))]
+    .map((id) => byId.get(id)).filter((s): s is Site => !!s)
+    .map((s) => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng }));
+  // Unpinned jobs have a name but nowhere to draw them; said in the list.
+  const unpinned = [...new Set(shifts.map((s) => s.property_id).filter(Boolean).map(String))]
+    .filter((id) => !byId.has(id));
+  const nameAny = unpinned.length
+    ? new Map(((await db.from("properties").select("id, name").in("id", unpinned)).data ?? [])
+        .map((p) => [String(p.id), String(p.name)]))
+    : new Map<string, string>();
 
   return NextResponse.json({
     people,
     day,
     shifts: shifts.map((s) => ({
       id: String(s.id), startedAt: String(s.started_at), endedAt: (s.ended_at as string | null) ?? null,
-      site: s.property_id ? names.get(String(s.property_id)) ?? "A job" : null,
+      site: s.property_id
+        ? names.get(String(s.property_id)) ?? nameAny.get(String(s.property_id)) ?? "A job"
+        : null,
       offSite: s.start_fence === "outside", metres: num(s.start_metres),
       noFix: s.start_lat === null, autoOut: !!s.auto_clocked_out,
     })),
     ...trail(points, sites),
     sites,
+    jobs,
   });
 }
