@@ -1105,6 +1105,20 @@ real kinds would have fallen to a default wrong for all three. The harness
 reads the kinds out of `property.ts` and checks the two lists against each
 other rather than trusting either.
 
+**A guard that stopped being awaited.** `authorized` was a plain boolean in
+four cron routes and became a promise when the rule moved into
+`lib/cron-key.ts`. `if (!authorized(req))` still compiles -- a promise is an
+object, an object is truthy, `!` of it is `false` -- so every one of those
+routes went from refusing strangers to admitting everybody. Green types,
+unchanged reading, open door. `cron-key-check.mjs` asks it of EVERY call
+site rather than of the four that exist today, because the next route
+written is the one that gets it wrong.
+
+**`timingSafeEqual` throws on a length mismatch.** The `a.length ===
+b.length` in front of it is not an optimisation. Without it a key of the
+wrong length is a 500 where a 401 belongs, and a 500 on an authorization
+path reads as the app being broken rather than as the caller being refused.
+
 ### What running 038 found that reading it could not
 
 A **GRANT to a role that does not exist is an error, not a no-op** -- the
@@ -1603,6 +1617,36 @@ Supabase connector --
 -- then read the answer a second later from `net._http_response` by the id
 it returned, and compare `commit` to `git log origin/main -1`. The same
 trick does a dry run of a cron route with its real key and real data.
+
+### And so can the whole setup check
+
+Whether the Anthropic key in a build is accepted, whether Twilio points at
+this deployment, whether email is arriving -- all of it could only be read
+by a person signing in, opening https://app.larabeehomesllc.com/setup and
+reading a line back. "Did the redeploy take" was somebody else's afternoon
+every single time, and the owner was right to be short about it: **do not
+make him do anything that can be done from here.**
+
+`/api/setup` takes the reports key as well as an admin session, so --
+
+    select net.http_get(
+      'https://app.larabeehomesllc.com/api/setup',
+      headers := jsonb_build_object(
+        'Authorization', 'Bearer ' || (select decrypted_secret
+          from vault.decrypted_secrets where name = 'reports_cron_key')));
+
+-- and read `net._http_response` by the returned id a few seconds later. It
+makes real calls to Anthropic, Twilio and Postmark, so give it longer than
+whoami. The key is read and sent inside the database and never passes
+through a file, a terminal or a chat window.
+
+**A machine is not given the Visibility checks.** Those ask what THAT PERSON
+can see. Answered as the service role, which sees everything, they all pass
+and say nothing -- the same narrower-question-answered-confidently shape as
+`described` keyed on rows and the fence keyed on one number.
+
+The four cron routes take it too (`autoclose`, `maintenance`, `delinquency`,
+`clock-texts`), so any of them can be dry-run from here.
 
 ### Crew could never have a PIN
 
