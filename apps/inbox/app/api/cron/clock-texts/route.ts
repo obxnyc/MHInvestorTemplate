@@ -81,7 +81,7 @@ export async function GET(req: Request) {
     // A day and a half back covers "today" in any US zone; the plan keeps
     // only the shifts that started on the local day.
     db.from("shifts")
-      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, start_fence, auto_clocked_out, start_metres, start_lat, properties(name), shift_breaks(started_at, ended_at)")
+      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, start_fence, auto_clocked_out, start_metres, start_lat, start_photos, properties(name), shift_breaks(started_at, ended_at)")
       .gte("started_at", new Date(now.getTime() - 36 * 3_600_000).toISOString()),
     db.from("clock_texts_sent").select("key").like("key", `%:${day}`),
   ]);
@@ -98,6 +98,7 @@ export async function GET(req: Request) {
       startMetres: s.start_metres === null ? null : Number(s.start_metres),
       // Known: a clock-in either carried a position or it did not.
       startFix: s.start_lat !== null,
+      startPhotos: Array.isArray(s.start_photos) ? s.start_photos.length : 0,
       startedAt: String(s.started_at),
       endedAt: (s.ended_at as string | null) ?? null,
       signedOffAt: (s.signed_off_at as string | null) ?? null,

@@ -1,3 +1,4 @@
 
 # Transpiled siblings written by the lib/__fixtures__ harnesses.
 *.gen.mjs
+.claude/worktrees/

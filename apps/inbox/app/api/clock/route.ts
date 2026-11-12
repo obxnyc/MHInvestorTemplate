@@ -3,6 +3,7 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { readFix, whichSite, defaultRadius, type Fence, type Fix } from "@/lib/fence";
 import { worked, nudges, week, weekStart, type Shift, type Rules, RULES } from "@/lib/shift";
 import { check, type Place } from "@/lib/clockin";
+import { checkPhotos } from "@/lib/clock-photos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -196,6 +197,18 @@ export async function POST(req: Request) {
        says so. The fix is recorded, never enforced: refusing a clock-in
        leaves somebody who worked a day with no record of it, which is the
        worse failure by a long way. */
+    /* NO POSITION, THEN PHOTOS. A clock-in the phone cannot place needs a
+       selfie (who) and a photo of the job (where), both taken in the app in
+       the last fifteen minutes on this man's own account -- see
+       lib/clock-photos.ts. Never a refusal of the hours: the camera always
+       works, so this is a step to take, not a door that can stay shut. */
+    let photos: string[] | null = null;
+    if (!fix) {
+      const ok = checkPhotos(body.photos, me.id, Date.now());
+      if (!ok.ok) return NextResponse.json({ error: ok.why, needPhotos: true }, { status: 400 });
+      photos = [ok.face, ok.site];
+    }
+
     const chosenId = String(body.propertyId ?? "") || null;
     const chosen = chosenId ? (await places(db)).find((p) => p.id === chosenId) ?? null : null;
     if (chosenId && !chosen) {
@@ -223,6 +236,7 @@ export async function POST(req: Request) {
       start_acc: fix?.accuracy ?? null,
       start_fence: startFence,
       start_metres: verdict && "metres" in verdict ? Math.round(verdict.metres) : null,
+      start_photos: photos,
     }).select("id").single();
 
     if (error) {

@@ -1696,3 +1696,50 @@ drawn from the web app only has points while the clock screen was open.
 The tiles are unreachable from this machine, so a picture of the trail here
 needs the style answered locally (an empty background) or the map never
 loads and draws nothing -- which looks exactly like a trail with no points.
+
+### The installed app: where it stands
+
+Crew phones: 20 Android, 10 iPhone (owner, 12 November 2026).
+
+Apple Developer Program enrollment was submitted on 12 November 2026 under
+**Hudson Yards LLC**, not Larabee Homes LLC -- the owner's choice, so that
+is the name Apple shows as the seller on TestFlight and the App Store. An
+app can be transferred to another developer account later if that matters.
+Enrollment was "being processed" at the time; Apple can take a few days and
+sometimes rings to verify the business.
+
+Android needs no store to start: an APK the crew install from a link.
+
+### No position at clock-in: two photos, taken now
+
+A clock-in the phone cannot place needs a selfie (who) and a photo of the
+job (where), and the server refuses it without them (`lib/clock-photos.ts`,
+055). The photos are uploaded by `/api/clock/photo` into the private
+`attachments` bucket at `clock/<staff id>/<server ms>-<face|site>.<ext>` --
+the time is the SERVER's, when it arrived -- and the clock-in accepts only
+the man's own paths from the last fifteen minutes. That is what stops a
+buddy's upload or yesterday's photo; each case has its own check.
+
+The screen opens the camera with `capture` (front for the selfie, back for
+the job), so the library is not offered. A browser can be talked out of
+`capture` by somebody determined; the installed app is where camera-only can
+be enforced. Office sees both photos on the trail list for that clock-in.
+
+`.tsfield input{width:100%}` outranks one class: a hidden file input was
+390px wide and pushed the clock screen sideways. `.visuallyhidden` is all
+!important for that reason. The phone harness could not see it, because the
+panel only exists after Clock In has been pressed with no location.
+
+### The Android app
+
+`apps/mobile`: Capacitor 7, a thin shell around
+https://app.larabeehomesllc.com/clock with `@capacitor-community/background-geolocation`.
+`apps/inbox/lib/native-location.ts` is the bridge, wired into the clock
+screen's ping effect: inside the app the plugin sends a position every two
+minutes, locked or not; in a browser nothing changes. Built by GitHub
+Actions (`.github/workflows/android.yml`) -- this container cannot reach
+dl.google.com, so there is no Android SDK here and no local build. Every
+build is signed with `apps/mobile/android/app/pilot.keystore` so updates
+install over the old app; before a Play Store release, move to a release key
+in GitHub secrets (steps in the workflow's comments). The owner's
+instructions are in `apps/mobile/README.md`.

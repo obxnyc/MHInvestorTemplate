@@ -100,11 +100,13 @@ export type DayShift = Shift & {
   /** False when the phone gave no position at all at clock-in. Undefined is
    *  "not known", which reports nothing -- only a known absence is a flag. */
   startFix?: boolean;
+  /** Photos taken at a clock-in with no position (055). */
+  startPhotos?: number;
 };
 
 /** The flag after a clock-in line: how far off site, or no position at all. */
 function clockInFlag(sh: DayShift, w: (typeof W)[Lang]): string {
-  if (sh.startFix === false) return w.noFix;
+  if (sh.startFix === false) return sh.startPhotos ? w.noFixPhotos : w.noFix;
   if (sh.startFence === "outside") {
     return sh.startMetres !== null && sh.startMetres !== undefined
       ? w.offSiteBy(howFar(sh.startMetres)) : w.offSite;
@@ -242,6 +244,7 @@ const W = {
     offSite: " (off site)",
     offSiteBy: (far: string) => ` (off site, ${far} away)`,
     noFix: " (no location)",
+    noFixPhotos: " (no location, photos taken)",
     noFixes: (k: number) => `${k} clock-in${k === 1 ? "" : "s"} with no location`,
     mReport: (t: string) => `Clock-in report ${t}`,
     clockedIn: (k: number) => `Clocked in (${k}):`,
@@ -281,6 +284,7 @@ const W = {
     offSite: " (fuera del sitio)",
     offSiteBy: (far: string) => ` (fuera del sitio, a ${far})`,
     noFix: " (sin ubicación)",
+    noFixPhotos: " (sin ubicación, con fotos)",
     noFixes: (k: number) => `${k} entrada${k === 1 ? "" : "s"} sin ubicación`,
     mReport: (t: string) => `Reporte de entrada ${t}`,
     clockedIn: (k: number) => `Marcaron entrada (${k}):`,

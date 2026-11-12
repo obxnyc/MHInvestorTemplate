@@ -282,7 +282,12 @@ const flagged = [
 const flag845 = to(plan(new Date(et(8, 45)), S, people, flagged, new Set()), "lead_morning", JOSE)?.body ?? "";
 t("on site: no flag", () => /• Juan Ruiz – Lady Viola 3124, 7:50 AM\n/.test(flag845 + "\n"));
 t("off site says how far", () => flag845.includes("Pedro Gil – Lady Viola 3124, 7:55 AM (off site, 4.2 mi away)"));
-t("no position says so", () => flag845.includes("Tony Vega – Lady Viola 3124, 8:00 AM (no location)"));
+t("no position says so", () => flag845.includes("Tony Vega – Lady Viola 3124, 8:00 AM (no location)\n"));
+t("no position WITH photos says there are photos to look at", () => {
+  const withPh = flagged.map((x) => x.id === "f3" ? { ...x, startPhotos: 2 } : x);
+  const b = to(plan(new Date(et(8, 45)), S, people, withPh, new Set()), "lead_morning", JOSE)?.body ?? "";
+  return b.includes("Tony Vega – Lady Viola 3124, 8:00 AM (no location, photos taken)");
+});
 t("not knowing is not a flag (an old shift with no startFix)",
   () => !(to(run(8, 45), "lead_morning", JOSE)?.body ?? "").includes("no location"));
 const flagRecap = to(plan(new Date(et(21)), S, people,
