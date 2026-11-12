@@ -128,7 +128,7 @@ import { say, LANGS, LANG_NAME, type Key } from "@/lib/say";
 import { useLang } from "@/components/useLang";
 import PinChoose from "@/components/PinChoose";
 import { suggest, check, howFar, type Place } from "@/lib/clockin";
-import { isNativeApp, startShiftTracking, postPing } from "@/lib/native-location";
+import { isNativeApp, nativePlatform, startShiftTracking, postPing } from "@/lib/native-location";
 import type { Fix } from "@/lib/fence";
 
 type Taken = { path: string; preview: string };
@@ -234,7 +234,8 @@ export default function ClockScreen({ name }: { name: string }) {
      cannot know, and a first render that differs between the two is a
      hydration mismatch React resolves by throwing the page away. */
   const [native, setNative] = useState(false);
-  useEffect(() => { setNative(isNativeApp()); }, []);
+  const [platform, setPlatform] = useState<"android" | "ios" | null>(null);
+  useEffect(() => { setNative(isNativeApp()); setPlatform(nativePlatform()); }, []);
   const [asking, setAsking] = useState(false);
   /* Reaching the office from the clock. Four separate pieces of state and
      not one "status" string, because a failed send and an unsent one are
@@ -611,9 +612,7 @@ export default function ClockScreen({ name }: { name: string }) {
             followed assumes the worse answer, and they would be right to. */}
         {on && locationDenied ? (
           <p className="tsnudge loud" role="alert">
-            Location is off for the Larabee app, so your trail is not being recorded.
-            Open your phone&rsquo;s Settings, then Apps, Larabee, Permissions, Location,
-            and choose Allow all the time (or While using the app).
+            {s(platform === "ios" ? "appLocationOffIos" : "appLocationOffAndroid")}
           </p>
         ) : null}
         {on ? (
