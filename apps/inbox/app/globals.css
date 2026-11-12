@@ -3482,3 +3482,13 @@ a.metric:hover{border-color:var(--accent)}
 /* The week grid in a box of its own that scrolls sideways on the smallest
    phones: eight columns of hours do not fit in 288px and should not try to. */
 .tsscroll{overflow-x:auto;max-width:100%}
+
+/* A day's trail. Taller than the live map: this one is read closely. */
+.trailmap{width:100%;height:24rem;border-radius:12px;overflow:hidden;border:1px solid var(--hair)}
+.trailstop{min-width:2.4rem;padding:.15rem .4rem;border-radius:999px;font-size:.72rem;font-weight:800;
+  text-align:center;background:var(--warn-soft);color:var(--warn);border:2px solid var(--warn);
+  white-space:nowrap}
+.trailend{padding:.15rem .45rem;border-radius:6px;font-size:.72rem;font-weight:800;white-space:nowrap;
+  background:var(--card);color:var(--ink);border:2px solid var(--hair)}
+.trailend.start{border-color:var(--tn-ink)}
+.trailend.finish{border-color:var(--crit)}

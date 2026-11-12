@@ -56,6 +56,8 @@ const SIGNED_IN = [
   // Crews, rates and the clock texts; and Friday pay. Set up from a phone
   // in a truck as often as at a desk.
   ["desk", "/crew"], ["desk", "/pay"],
+  // The day's trail, with a route on it: the stand-in has a morning of pings.
+  ["desk", "/trail?staff=11111111-1111-1111-1111-111111111111"],
 ];
 // A phone, a small phone, and a phone held sideways.
 const SIZES = [[390, 844], [320, 568], [844, 390]];

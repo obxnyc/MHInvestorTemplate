@@ -1668,3 +1668,31 @@ plainly five miles away. Far is: even the most generous reading of the fix
 -- metres minus its own accuracy -- is outside the site's radius.
 
 Suggesting a site needs a pin on it. On 11 November 2026 two of 114 had one.
+
+### Clock-in is instant; the GPS is already awake
+
+"Guys could have to wait 15 seconds to get clocked in? Should be right
+away." The clock screen now runs `watchPosition` while it is open and he is
+off the clock, holding the newest fix in a ref -- nothing is sent anywhere
+until he clocks in, so it is not tracking somebody off the clock. Clock In
+uses that fix if it is under two minutes old; only a screen opened and
+tapped in the same breath waits, and then five seconds at most.
+
+### Where they went: the trail
+
+`/trail` (office and admin) draws one person's day: clock-in, every ping,
+clock-out, as a line with arrows -- a MapLibre symbol layer placed ALONG
+the line, so MapLibre turns each arrow to face the way he went and nothing
+here does that arithmetic. `lib/trail.ts` finds the STOPS: eight minutes or
+more within 120m, and says whether each was a job site. It does not judge;
+"25 min, not a job site" next to a Lowe's on the basemap is the owner's
+call.
+
+A fix vaguer than 250m is drawn but never starts or ends a stop -- a cold
+start a kilometre wide would otherwise split a morning on site in two.
+
+Nothing ages pings out; the owner wants about three weeks back. A trail
+drawn from the web app only has points while the clock screen was open.
+The tiles are unreachable from this machine, so a picture of the trail here
+needs the style answered locally (an empty background) or the map never
+loads and draws nothing -- which looks exactly like a trail with no points.
