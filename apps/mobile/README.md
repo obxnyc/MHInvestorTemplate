@@ -34,5 +34,6 @@ five minutes.
    **Allow all the time** if it is offered. If it is not, choose **While
    using the app** — never **Only this time** and never **Don't allow**.
 
-If an update will not install ("App not installed"), uninstall the old Larabee
-app first, then install the new file.
+An update installs over the old app — every build is signed with the same
+key. If one ever says "App not installed", uninstall the old Larabee app, then
+install the new file.

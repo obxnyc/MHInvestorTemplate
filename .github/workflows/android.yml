@@ -50,10 +50,9 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # A debug APK is signed with the build machine's throwaway debug key.
-      # It installs fine with "install unknown apps", but each run's key can
-      # differ, so a phone with an older copy may need to uninstall it before
-      # installing a new one.
+      # Signed with apps/mobile/android/app/pilot.keystore (see build.gradle),
+      # the same key every run, so an update installs over the old app. It
+      # installs with "install unknown apps".
       #
       # To switch to a release-signed build later:
       #   1. Make a keystore once:  keytool -genkeypair -v -keystore larabee.jks

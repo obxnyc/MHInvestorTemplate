@@ -3,6 +3,8 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { trail, type Point, type Site } from "@/lib/trail";
 import { defaultRadius } from "@/lib/fence";
 import { isField } from "@/lib/roles";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { signMedia } from "@/lib/media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +46,7 @@ export async function GET(req: Request) {
 
   const [shiftsRes, siteRes] = await Promise.all([
     db.from("shifts")
-      .select("id, started_at, ended_at, property_id, start_lat, start_lng, start_acc, end_lat, end_lng, end_acc, start_fence, start_metres, auto_clocked_out")
+      .select("id, started_at, ended_at, property_id, start_lat, start_lng, start_acc, end_lat, end_lng, end_acc, start_fence, start_metres, auto_clocked_out, start_photos")
       .eq("staff_id", staffId).gte("started_at", from).lt("started_at", to)
       .order("started_at"),
     db.from("properties").select("id, name, kind, lat, lng, fence_m").not("lat", "is", null),
@@ -78,6 +80,10 @@ export async function GET(req: Request) {
     radius: p.fence_m ? Number(p.fence_m) : defaultRadius(p.kind as string | null),
   }));
   const names = new Map(sites.map((s) => [s.id, s.name]));
+  // Clock-in photos, as links that stop working in ten minutes: a selfie is
+  // somebody's face, and a link to it should not outlive the look.
+  const photoPaths = shifts.flatMap((s) => (Array.isArray(s.start_photos) ? s.start_photos : []).map(String));
+  const signed = await signMedia(supabaseAdmin(), photoPaths, 600);
   const byId = new Map(sites.map((s) => [s.id, s]));
   // The jobs he clocked in at, with where they are, so the map can always
   // show and centre on them -- even on a day with no positions at all,
@@ -103,6 +109,9 @@ export async function GET(req: Request) {
         : null,
       offSite: s.start_fence === "outside", metres: num(s.start_metres),
       noFix: s.start_lat === null, autoOut: !!s.auto_clocked_out,
+      photos: (Array.isArray(s.start_photos) ? s.start_photos : []).map(String)
+        .map((p) => ({ kind: /-face\./.test(p) ? "face" : "site", url: signed.get(p) ?? null,
+                       at: new Date(Number(p.split("/").pop()!.split("-")[0])).toISOString() })),
     })),
     ...trail(points, sites),
     sites,

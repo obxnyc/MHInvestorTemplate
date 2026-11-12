@@ -128,7 +128,59 @@ import { say, LANGS, LANG_NAME, type Key } from "@/lib/say";
 import { useLang } from "@/components/useLang";
 import PinChoose from "@/components/PinChoose";
 import { suggest, check, howFar, type Place } from "@/lib/clockin";
+import { isNativeApp, startShiftTracking, postPing } from "@/lib/native-location";
 import type { Fix } from "@/lib/fence";
+
+type Taken = { path: string; preview: string };
+
+/**
+ * One photo, taken NOW with the phone's camera.
+ *
+ * `capture` opens the camera directly -- front for the selfie, back for the
+ * job -- with no library to pick from, so an old photo or a screenshot sent
+ * by somebody else is not on offer. The upload is stamped with the SERVER's
+ * time, and the clock-in only takes this man's own uploads from the last
+ * fifteen minutes. A browser can be talked out of `capture` by someone
+ * determined; the installed app is where camera-only can be enforced.
+ */
+function PhotoStep({ kind, label, how, taken, s, onTaken, onProblem }: {
+  kind: "face" | "site"; label: string; how: string; taken?: Taken;
+  s: (k: Key) => string;
+  onTaken: (t: Taken) => void; onProblem: (p: string | null) => void;
+}) {
+  const [sending, setSending] = useState(false);
+  const id = `photo-${kind}`;
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    setSending(true);
+    onProblem(null);
+    const body = new FormData();
+    body.append("photo", file);
+    body.append("kind", kind);
+    const res = await fetch("/api/clock/photo", { method: "POST", body }).catch(() => null);
+    const out = await res?.json().catch(() => ({})) ?? {};
+    setSending(false);
+    // Nothing shows as taken until the server has it.
+    if (!res?.ok || !out.path) { onProblem(out.error ?? s("didNotSend")); return; }
+    onTaken({ path: out.path, preview: URL.createObjectURL(file) });
+  };
+  return (
+    <div className="tsfield photostep">
+      <label htmlFor={id}>{label}</label>
+      <p className="tsnote">{how}</p>
+      {taken ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className="photothumb" src={taken.preview} alt={label} />
+      ) : null}
+      <label className={taken ? "tsminor photobtn" : "tsact go photobtn"} htmlFor={id}>
+        {sending ? s("uploading") : taken ? s("retake") : s("openCamera")}
+      </label>
+      <input id={id} type="file" accept="image/*" capture={kind === "face" ? "user" : "environment"}
+             className="visuallyhidden" disabled={sending}
+             onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }} />
+    </div>
+  );
+}
 
 /** Every job, for the one that is not near: a list of a hundred-odd does not
  *  fit as buttons. Choosing one goes through the same "are you sure?". */
@@ -171,6 +223,18 @@ export default function ClockScreen({ name }: { name: string }) {
     confirm?: { place: Place; far: string };
   } | null>(null);
   const [showLast, setShowLast] = useState(false);
+  /* The installed app was refused location, or it was switched off mid-
+     shift. Said on screen, because a trail that silently stops is the thing
+     the owner was trying to get away from. */
+  const [locationDenied, setLocationDenied] = useState(false);
+  /* The two photos for a clock-in with no position, once uploaded: the
+     server's path for each, and a preview of what was taken. */
+  const [photos, setPhotos] = useState<{ face?: Taken; site?: Taken }>({});
+  /* Inside the installed app? Decided after the page loads: the server
+     cannot know, and a first render that differs between the two is a
+     hydration mismatch React resolves by throwing the page away. */
+  const [native, setNative] = useState(false);
+  useEffect(() => { setNative(isNativeApp()); }, []);
   const [asking, setAsking] = useState(false);
   /* Reaching the office from the clock. Four separate pieces of state and
      not one "status" string, because a failed send and an unsent one are
@@ -281,13 +345,29 @@ export default function ClockScreen({ name }: { name: string }) {
     }
     // Step three: the clock. The pick panel goes only once the server has
     // taken it -- a refused clock-in must leave the choice on screen.
-    if (await act("in", { fix: pick.fix, propertyId: place.id })) setPick(null);
+    const sent = pick.fix ? {} : { photos: [photos.face?.path, photos.site?.path].filter(Boolean) };
+    if (await act("in", { fix: pick.fix, propertyId: place.id, ...sent })) {
+      setPick(null);
+      setPhotos({});
+    }
   };
 
   // The trail belongs to the shift. It starts when the shift does and stops
   // when it does, and the panel below says which it is doing.
   useEffect(() => {
     if (!on) return;
+    // INSIDE THE INSTALLED APP the phone's own location service does this,
+    // every two minutes, with the screen locked and another app in front --
+    // which is the whole reason the app exists. See lib/native-location.ts.
+    if (isNativeApp()) {
+      let alive = true;
+      let stop: (() => void) | null = null;
+      setLocationDenied(false);
+      startShiftTracking((f) => { void postPing(f); }, { onDenied: () => setLocationDenied(true) })
+        .then((s) => { if (alive) stop = s; else s(); })
+        .catch((e: Error) => { if (e.message === "location-denied") setLocationDenied(true); });
+      return () => { alive = false; stop?.(); };
+    }
     let alive = true;
     const send = async () => {
       const p = fixOf(await position());
@@ -408,6 +488,10 @@ export default function ClockScreen({ name }: { name: string }) {
             );
           }
           if (!pick.fix) {
+            /* No position: try again, or prove it with two photos taken
+               here and now -- a selfie (who) and the job (where). The job
+               list unlocks once both are up. See lib/clock-photos.ts. */
+            const both = !!(photos.face && photos.site);
             return (
               <div className="tsform">
                 <p className="tsnudge loud">{s("noLocation")}</p>
@@ -415,11 +499,25 @@ export default function ClockScreen({ name }: { name: string }) {
                 <button className="tsact go" disabled={busy} onClick={startClockIn}>
                   {busy ? s("checkingLocation") : s("tryAgain")}
                 </button>
-                <p className="tsnote">{s("noLocationWhy")}</p>
-                <JobPicker places={state.places} busy={busy} label={s("clockInNoLocation")}
-                           placeholder={s("selectProperty")}
-                           onPick={(p) => chooseJob(p)} />
-                <button className="tsminor" disabled={busy} onClick={() => setPick(null)}>{s("cancel")}</button>
+                <p className="tsnote">{s("photosInstead")}</p>
+                <PhotoStep kind="face" label={s("takeSelfie")} how={s("takeSelfieHow")}
+                           taken={photos.face} s={s}
+                           onTaken={(p) => setPhotos((x) => ({ ...x, face: p }))}
+                           onProblem={setProblem} />
+                <PhotoStep kind="site" label={s("takeSitePhoto")} how={s("takeSitePhotoHow")}
+                           taken={photos.site} s={s}
+                           onTaken={(p) => setPhotos((x) => ({ ...x, site: p }))}
+                           onProblem={setProblem} />
+                {both ? (
+                  <>
+                    <p className="tsnote">{s("noLocationWhy")}</p>
+                    <JobPicker places={state.places} busy={busy} label={s("thenPickJob")}
+                               placeholder={s("selectProperty")}
+                               onPick={(p) => chooseJob(p)} />
+                  </>
+                ) : null}
+                <button className="tsminor" disabled={busy}
+                        onClick={() => { setPick(null); setPhotos({}); }}>{s("cancel")}</button>
               </div>
             );
           }
@@ -511,12 +609,18 @@ export default function ClockScreen({ name }: { name: string }) {
 
         {/* Said out loud. Somebody who cannot tell whether they are being
             followed assumes the worse answer, and they would be right to. */}
+        {on && locationDenied ? (
+          <p className="tsnudge loud" role="alert">
+            Location is off for the Larabee app, so your trail is not being recorded.
+            Open your phone&rsquo;s Settings, then Apps, Larabee, Permissions, Location,
+            and choose Allow all the time (or While using the app).
+          </p>
+        ) : null}
         {on ? (
           <p className="tstrail">
-            Your location is recorded about every {Math.round(PING_MS / 60_000)} minutes
-            while you are on the clock and this screen is open. Your hours count
-            either way: locking your phone or using another app does not stop
-            the clock, only the location.
+            {native
+              ? `Your location is recorded every ${Math.round(PING_MS / 60_000)} minutes while you are on the clock, even with your phone locked. It stops when you clock out.`
+              : `Your location is recorded about every ${Math.round(PING_MS / 60_000)} minutes while you are on the clock and this screen is open. Your hours count either way: locking your phone or using another app does not stop the clock, only the location.`}
           </p>
         ) : null}
       </section>

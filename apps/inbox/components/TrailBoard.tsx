@@ -16,7 +16,8 @@ const TrailMap = dynamic(() => import("./TrailMap"), { ssr: false });
  */
 
 type Shift = { id: string; startedAt: string; endedAt: string | null; site: string | null;
-               offSite: boolean; metres: number | null; noFix: boolean; autoOut: boolean };
+               offSite: boolean; metres: number | null; noFix: boolean; autoOut: boolean;
+               photos?: { kind: "face" | "site"; url: string | null; at: string }[] };
 type Data = {
   people: { id: string; name: string }[];
   day?: string; shifts?: Shift[];
@@ -149,6 +150,17 @@ export default function TrailBoard() {
                         Clocked in at {e.s.site ?? "no job chosen"}
                         {e.s.noFix ? " — no location" : e.s.offSite
                           ? ` — off site${e.s.metres !== null ? `, ${miles(e.s.metres)} away` : ""}` : ""}
+                        {e.s.photos?.length ? (
+                          <span className="trailphotos">
+                            {e.s.photos.map((ph, k) => ph.url ? (
+                              <a key={k} href={ph.url} target="_blank" rel="noreferrer">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={ph.url} alt={ph.kind === "face" ? "Selfie" : "The job"} />
+                                <span>{ph.kind === "face" ? "Selfie" : "The job"} · {time(ph.at)}</span>
+                              </a>
+                            ) : <span key={k}>{ph.kind === "face" ? "Selfie" : "The job"} (could not load)</span>)}
+                          </span>
+                        ) : null}
                       </span>
                     ) : (
                       <span className="tsplace">

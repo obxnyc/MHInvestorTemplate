@@ -3499,3 +3499,31 @@ a.metric:hover{border-color:var(--accent)}
 .trailsite{padding:.05rem .35rem;border-radius:5px;font-size:.66rem;font-weight:700;white-space:nowrap;
   background:var(--card);color:var(--muted);border:1px solid var(--hair)}
 .trailend.now{border-color:var(--accent);color:var(--accent-ink)}
+
+/* Clock-in photos. The file input itself is hidden -- it is ugly and tiny on
+   every phone -- and the big label is the thing a thumb presses. */
+/* Every property !important: `.tsfield input{width:100%;min-height:3rem}`
+   outranks a single class, and an invisible input 390px wide pushed the
+   whole clock screen sideways on a phone. */
+.visuallyhidden{position:absolute!important;width:1px!important;height:1px!important;
+  min-width:0!important;min-height:0!important;padding:0!important;margin:-1px!important;
+  overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;border:0!important}
+.photostep{gap:.4rem}
+.photobtn{display:flex;align-items:center;justify-content:center;text-align:center;
+  text-transform:none;letter-spacing:normal}
+.photothumb{width:100%;max-height:14rem;object-fit:cover;border-radius:10px;border:1px solid var(--hair)}
+/* The label IS the button here, and `.tsfield label` (small, grey, capitals)
+   would otherwise win: grey words on a dark button. Stated, not inherited. */
+.tsfield label.photobtn{font-size:1rem;font-weight:700;min-height:3.25rem;cursor:pointer;
+  text-transform:none;letter-spacing:normal}
+.tsfield label.photobtn.tsact{color:var(--dark-ink)}
+.tsfield label.photobtn.tsminor{color:var(--ink)}
+/* And on the clock's own coloured card, the card's button colours win -- a
+   white button with dark words, a glass one with white words. */
+.tscard.today .tsfield label.photobtn.tsact{background:#FFFFFF;color:#0F1729}
+.tscard.today .tsfield label.photobtn.tsminor{color:#FFFFFF}
+/* Clock-in photos in the day's list: what was sent, and when it arrived. */
+.trailphotos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;margin-top:.4rem;width:100%}
+.trailphotos a{display:flex;flex-direction:column;gap:.2rem;text-decoration:none;color:var(--ink);
+  font-size:.75rem;font-weight:700}
+.trailphotos img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;border:1px solid var(--hair)}

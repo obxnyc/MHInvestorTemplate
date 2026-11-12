@@ -16,7 +16,25 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // ONE key for every pilot build. A debug APK is otherwise signed with the
+    // build machine's throwaway key, which is new on every GitHub run -- and
+    // Android refuses to install an update signed with a different key, so
+    // every update would mean uninstalling the app first. This key lives in
+    // the (private) repo because it signs a pilot sideload, not a store
+    // release; before the Play Store, move to the release key in GitHub
+    // secrets described in .github/workflows/android.yml.
+    signingConfigs {
+        debug {
+            storeFile file("pilot.keystore")
+            storePassword "android"
+            keyAlias "pilot"
+            keyPassword "android"
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
