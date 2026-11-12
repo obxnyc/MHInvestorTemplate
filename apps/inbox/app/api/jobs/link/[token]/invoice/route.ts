@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { BUCKET, MAX_KEEP_BYTES, keepableExtension, safeName } from "@/lib/media";
-import { parseMoney, money, recipients } from "@/lib/invoices";
+import { parseMoney, money } from "@/lib/invoices";
+import { mailList } from "@/lib/mail-list";
 import { sendEmail } from "@/lib/notify";
 
 export const runtime = "nodejs";
@@ -124,7 +125,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     ? [unit.properties?.name, unit.label].filter(Boolean).join(" · ")
     : "address not set";
 
-  const to = recipients(process.env.BOOKKEEPER_EMAIL);
+  /* A list that could not be read must not look like a list of nobody: the
+     invoice is already saved and the vendor is already told it was, so a
+     failure here is logged and the send is skipped rather than the row being
+     reported as emailed. */
+  let to: string[] = [];
+  try {
+    ({ to } = await mailList(db, "invoices", process.env.BOOKKEEPER_EMAIL));
+  } catch (e) {
+    console.error("invoice saved but the recipient list could not be read",
+      { id: row.id, detail: (e as Error).message });
+  }
   if (to.length) {
     const lines = [
       `${vendor.full_name ?? "A vendor"} submitted an invoice.`,
@@ -153,7 +164,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     await db.from("vendor_invoices")
       .update({ emailed_at: new Date().toISOString() }).eq("id", row.id);
   } else {
-    console.warn("invoice submitted but BOOKKEEPER_EMAIL is not set", { id: row.id });
+    console.warn("invoice submitted but nobody is on the invoices list",
+      { id: row.id });
   }
 
   return NextResponse.json({ ok: true, id: row.id, amount: money(amount), emailed: to.length });

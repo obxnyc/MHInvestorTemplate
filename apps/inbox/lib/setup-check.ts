@@ -23,7 +23,7 @@
 import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { recipients } from "./invoices";
+import { mailList } from "./mail-list";
 
 type Level = "good" | "bad" | "warn";
 export type Check = { name: string; level: Level; detail: string; fix?: string };
@@ -46,7 +46,7 @@ export async function runSetupChecks(
     ...(await guardAsync("Database", databaseChecks)),
     ...(await guardAsync("Migrations", migrationChecks)),
     ...(await guardAsync("Email intake", intakeChecks)),
-    ...guard("Bookkeeper", bookkeeperCheck),
+    ...(await guardAsync("Bookkeeper", bookkeeperCheck)),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
 }
@@ -664,26 +664,44 @@ function buildCheck(): Check {
  *  Worth its own line because the failure is silent and expensive: invoices
  *  keep arriving, the record is perfect, and nobody is told. The vendor sees
  *  "the office has it" and is right; the bookkeeper simply never hears. */
-function bookkeeperCheck(): Check[] {
-  const to = recipients(process.env.BOOKKEEPER_EMAIL);
+async function bookkeeperCheck(): Promise<Check[]> {
+  const { to, from, waiting } =
+    await mailList(supabaseAdmin(), "invoices", process.env.BOOKKEEPER_EMAIL);
+
+  const later = waiting
+    ? ` ${waiting} more ${waiting === 1 ? "is" : "are"} on the list but not`
+      + " active today — either starting later or taken off."
+    : "";
+
   if (to.length) {
     return [{
       name: "Invoices reach the bookkeeper", level: "good",
+      /* WHERE the list came from, not merely that there is one. The two look
+         identical on a screen and are not the same claim: a list from the
+         table is changed with an insert, and a list from the environment
+         needs a dashboard and a redeploy. Same shape as `fenceFrom`. */
       detail: `Every invoice a vendor submits is emailed to ${to.join(", ")} as it`
-        + " arrives, and so is every correction, naming what it replaced and why.",
+        + " arrives, and so is every correction, naming what it replaced and why."
+        + (from === "table"
+          ? " The list is rows in report_recipients, so adding or removing"
+            + " somebody is a change to the data and needs no deployment."
+          : " These come from the BOOKKEEPER_EMAIL setting, which needs a"
+            + " redeploy to change. Putting them in report_recipients instead"
+            + " makes it an ordinary edit.")
+        + later,
     }];
   }
+
   return [{
     name: "Nobody is told when an invoice arrives",
     level: "warn",
-    detail: "BOOKKEEPER_EMAIL is not set. Vendor invoices are still recorded"
-      + " and still cannot be edited — nothing is lost — but no email goes"
-      + " out, so the first anybody hears of a bill is when somebody opens"
-      + " the job.",
-    fix: "Add BOOKKEEPER_EMAIL to the hosting dashboard with the address that"
-      + " should receive them — several, separated by commas, if more than one"
-      + " person should — then redeploy. POSTMARK_SERVER_TOKEN has to be set as"
-      + " well, since it is what actually sends.",
+    detail: "Nobody is on the invoices list. Vendor invoices are still"
+      + " recorded and still cannot be edited — nothing is lost — but no"
+      + " email goes out, so the first anybody hears of a bill is when"
+      + " somebody opens the job." + later,
+    fix: "Add a row to report_recipients for each person, with report set to"
+      + " 'invoices'. No deployment is needed. POSTMARK_SERVER_TOKEN has to"
+      + " be set as well, since it is what actually sends.",
   }];
 }
 
