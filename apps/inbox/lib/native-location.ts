@@ -1,5 +1,6 @@
 /**
- * Location from the installed Android app, while somebody is on the clock.
+ * Location from the installed app (Android and iPhone), while somebody is on
+ * the clock.
  *
  * A web page gets no position once the phone is locked or another app is in
  * front -- no setting changes that. The installed app (apps/mobile) is a thin
@@ -51,6 +52,7 @@ type HttpPlugin = {
 };
 type Cap = {
   isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
   Plugins?: Record<string, unknown>;
 };
 
@@ -71,6 +73,17 @@ export function isNativeApp(): boolean {
     return cap()?.isNativePlatform?.() === true;
   } catch {
     return false;
+  }
+}
+
+/** "android", "ios", or null outside the app. */
+export function nativePlatform(): "android" | "ios" | null {
+  if (!isNativeApp()) return null;
+  try {
+    const p = cap()?.getPlatform?.();
+    return p === "android" || p === "ios" ? p : null;
+  } catch {
+    return null;
   }
 }
 
@@ -210,14 +223,19 @@ export function startShiftTracking(
 }
 
 /**
- * POSTs a fix to /api/clock/ping. Inside the app it goes through Capacitor's
+ * POSTs a fix to /api/clock/ping. On ANDROID it goes through Capacitor's
  * native HTTP, because Android throttles requests made by a WebView that has
  * been in the background for a few minutes; the native request carries the
- * same sign-in cookie (Capacitor shares the WebView's cookie store). In a
- * browser it is an ordinary fetch.
+ * same sign-in cookie (Capacitor's Android cookie manager IS the WebView's).
+ *
+ * On iPHONE it is an ordinary fetch, on purpose. iOS does not throttle the
+ * WebView while the app holds a background-location session, and the sign-in
+ * cookie lives in WKWebView's own cookie store -- which native HTTP on iOS
+ * does not read, so a native request there would arrive signed out and every
+ * ping would be refused, silently, all day.
  */
 export async function postPing(fix: NativeFix): Promise<boolean> {
-  const http = isNativeApp() ? plugin<HttpPlugin>("CapacitorHttp") : null;
+  const http = nativePlatform() === "android" ? plugin<HttpPlugin>("CapacitorHttp") : null;
   try {
     if (http && typeof window !== "undefined") {
       const r = await http.request({

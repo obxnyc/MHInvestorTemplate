@@ -1820,3 +1820,20 @@ on main, and Vercel serves it. `.apk` is excluded from the proxy's matcher:
 a man installing it has no session, and the sign-in wall would hand his
 phone a login page. The owner has an iPhone, so the first real Android test
 is a crew member's phone.
+
+### The iPhone app is the same shell, sent through TestFlight
+
+`apps/mobile/ios` is Capacitor's iOS project around the same
+https://app.larabeehomesllc.com/clock, built and uploaded by
+`.github/workflows/ios.yml` on a macOS runner -- no Mac anywhere else. Signing
+is cloud-managed by an App Store Connect API key (Admin), so the only things to
+keep are four GitHub secrets; until they exist each run compiles unsigned and
+says "Not sent to TestFlight" at the top, because a skip must not read as a
+ship. A monthly run keeps a build inside TestFlight's 90-day life. The owner's
+one-time Apple steps are in `apps/mobile/README.md`.
+
+**On iPhone the ping goes by fetch, not CapacitorHttp.** The sign-in cookie is
+in WKWebView's own store, which native HTTP on iOS does not read, so a native
+ping would arrive signed out and be refused all day without a sound. Android is
+the other way round (its WebView is throttled in the background and its native
+HTTP shares the WebView's cookies). `native-location.test.mjs` holds both.

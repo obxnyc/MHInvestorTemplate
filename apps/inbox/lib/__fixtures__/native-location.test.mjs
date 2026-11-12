@@ -23,7 +23,7 @@ const js = ts.transpileModule(readFileSync(src, "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const M = await import("data:text/javascript," + encodeURIComponent(js));
-const { makeThrottle, toFix, isNativeApp, startShiftTracking, PING_EVERY_MS } = M;
+const { makeThrottle, toFix, isNativeApp, startShiftTracking, postPing, nativePlatform, PING_EVERY_MS } = M;
 
 const checks = [];
 const t = async (name, ok) => {
@@ -158,6 +158,34 @@ await t("outside the app: rejects not-native and starts nothing", async () => {
   await tick();
   await t("a refusal after that is reported through onDenied", () => denied === 1);
   await t("and stops the watcher", () => s.removed.join() === "w1");
+}
+
+/* ---------------------------------------------------------- postPing */
+// On iPhone the sign-in cookie is in WKWebView's store and native HTTP does
+// not send it, so the ping must go by fetch there. On Android, native HTTP,
+// because the WebView is throttled in the background.
+{
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { sent.push(["fetch", String(url)]); return { ok: true }; };
+  const http = { request: async (o) => { sent.push(["native", o.url]); return { status: 200 }; } };
+  const fix = { lat: 35, lng: -78.9, accuracy: 10 };
+  const as = (platform) => setWin({
+    location: { href: "https://app.larabeehomesllc.com/clock" },
+    Capacitor: { isNativePlatform: () => true, getPlatform: () => platform, Plugins: { CapacitorHttp: http } },
+  });
+
+  as("android"); sent.length = 0; await postPing(fix);
+  await t("android: the ping goes by native HTTP", () => sent.length === 1 && sent[0][0] === "native"
+    && sent[0][1] === "https://app.larabeehomesllc.com/api/clock/ping");
+  as("ios"); sent.length = 0; await postPing(fix);
+  await t("iphone: the ping goes by fetch, never native HTTP", () => sent.length === 1 && sent[0][0] === "fetch");
+  setWin({ location: { href: "https://x/clock" }, Capacitor: { isNativePlatform: () => false, Plugins: { CapacitorHttp: http } } });
+  sent.length = 0; await postPing(fix);
+  await t("a browser: fetch", () => sent.length === 1 && sent[0][0] === "fetch");
+  as("ios");
+  await t("nativePlatform names the phone", () => nativePlatform() === "ios");
+  globalThis.fetch = realFetch;
 }
 
 const bad = checks.filter(([, ok]) => !ok);
