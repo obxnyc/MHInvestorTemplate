@@ -1696,3 +1696,16 @@ drawn from the web app only has points while the clock screen was open.
 The tiles are unreachable from this machine, so a picture of the trail here
 needs the style answered locally (an empty background) or the map never
 loads and draws nothing -- which looks exactly like a trail with no points.
+
+### The installed app: where it stands
+
+Crew phones: 20 Android, 10 iPhone (owner, 12 November 2026).
+
+Apple Developer Program enrollment was submitted on 12 November 2026 under
+**Hudson Yards LLC**, not Larabee Homes LLC -- the owner's choice, so that
+is the name Apple shows as the seller on TestFlight and the App Store. An
+app can be transferred to another developer account later if that matters.
+Enrollment was "being processed" at the time; Apple can take a few days and
+sometimes rings to verify the business.
+
+Android needs no store to start: an APK the crew install from a link.
