@@ -1,0 +1,76 @@
+name: Android
+
+# Builds the crew clock's Android app (apps/mobile) into an APK the owner can
+# download from this run's Artifacts and send to the crew. See
+# apps/mobile/README.md for what to do with it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      # Capacitor 7's Android project compiles with Java 21
+      # (android/app/capacitor.build.gradle sets VERSION_21), so Java 17
+      # would fail at compile time.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      # Copies capacitor.config.json and the plugin list into the Android
+      # project. Those generated files are gitignored, so this step is not
+      # optional.
+      - run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      # A debug APK is signed with the build machine's throwaway debug key.
+      # It installs fine with "install unknown apps", but each run's key can
+      # differ, so a phone with an older copy may need to uninstall it before
+      # installing a new one.
+      #
+      # To switch to a release-signed build later:
+      #   1. Make a keystore once:  keytool -genkeypair -v -keystore larabee.jks
+      #        -alias larabee -keyalg RSA -keysize 2048 -validity 10000
+      #   2. Store it in GitHub (Settings -> Secrets and variables -> Actions):
+      #        ANDROID_KEYSTORE_BASE64  (base64 of larabee.jks)
+      #        ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+      #   3. Add a step that decodes the keystore to a file, e.g.
+      #        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/larabee.jks
+      #   4. In android/app/build.gradle add signingConfigs.release reading
+      #        those values from System.getenv(...) and set
+      #        buildTypes.release.signingConfig signingConfigs.release
+      #   5. Run ./gradlew assembleRelease and upload
+      #        android/app/build/outputs/apk/release/app-release.apk
+      # Keep the keystore safe: every future update must be signed with it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: larabee-android
+          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

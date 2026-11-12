@@ -123,6 +123,25 @@ export function intakeLines(v: Verdict): string[] {
   return [v.headline, "", v.detail];
 }
 
+/** Which path an inbound message arrived by, from the id it carries.
+ *
+ * THE IDS BELOW ARE REAL, read out of the database rather than
+ * imagined, which is the whole reason this function exists:
+ *
+ *   rm:issue:310                            the hourly API read
+ *   (null)                                  a text to the shared line
+ *   c6c580be-d5f1-4883-94d7-91d5a023cb5a    an email, via Postmark
+ *
+ * The first rule here asked whether the id contained an `@`, because
+ * mail carries an RFC Message-ID. Postmark does not pass that through.
+ * So email counted zero while email was working, and the morning report
+ * would have shouted "not arriving" every day for ever.
+ */
+export function arrivedBy(externalId: string | null): "pull" | "text" | "email" {
+  if (externalId === null) return "text";
+  return externalId.startsWith("rm:") ? "pull" : "email";
+}
+
 /* ------------------------------------------------------------ reading it */
 
 /**
@@ -134,9 +153,26 @@ export function intakeLines(v: Verdict): string[] {
  * maintenance-intake key and the API pull writes the same one. It is a
  * statement about what the thread is ABOUT, not about how it got here.
  *
- * What tells them apart is the id each path stamps on the message: the
- * pull writes `rm:issue:<n>`, and mail carries its own Message-ID,
- * which always has an `@` in it and never starts `rm:`.
+ * What tells them apart is the id each path stamps on the message.
+ *
+ * AND THE FIRST VERSION OF THAT RULE WAS WRONG, in the one direction
+ * that matters. It looked for an `@`, on the reasoning that mail
+ * carries an RFC Message-ID. Postmark does not pass that through: the
+ * id on the two emails that have actually arrived is a plain UUID,
+ * `c6c580be-d5f1-4883-94d7-91d5a023cb5a`. So the check would have gone
+ * on reporting "nothing has arrived by email" every morning for ever,
+ * with the forward working perfectly -- crying wolf, which this file's
+ * own comment calls worse than no check at all.
+ *
+ * Written from imagination and never held against a real row. The real
+ * rows say: the pull writes `rm:issue:<n>`, a text writes nothing, and
+ * EVERYTHING ELSE came in through the mail webhook. So the rule is by
+ * exclusion of the two paths we can name, not by recognising a shape
+ * nobody checked.
+ *
+ * `channel` cannot do it either, and that is worth knowing: the same
+ * email lands as `email` when it joins an existing thread and as
+ * `zego` when it opens one, because two different code paths insert it.
  */
 export async function readArrivals(
   db: { from: (t: string) => any }, days = 7,
@@ -152,13 +188,15 @@ export async function readArrivals(
   };
 
   const byPull = await count((q) => q.like("external_id", "rm:issue:%"));
+  /* Not null, and not the pull's. Everything that reaches this
+     application any other way comes through the mail webhook. */
   const byEmail = await count((q) =>
-    q.like("external_id", "%@%").not("external_id", "like", "rm:%"));
+    q.not("external_id", "is", null).not("external_id", "like", "rm:%"));
   const byText = await count((q) => q.is("external_id", null));
 
   const { data: last } = await db.from("messages")
     .select("created_at").eq("direction", "inbound")
-    .like("external_id", "%@%").not("external_id", "like", "rm:%")
+    .not("external_id", "is", null).not("external_id", "like", "rm:%")
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
   return {

@@ -18,6 +18,46 @@ Tenant: Doe, Jane
 Number: (555) 555-0100`,
 };
 
+/**
+ * THE SAME NOTIFICATION, AFTER A MAIL CLIENT HAS BEEN AT IT.
+ *
+ * Rent Manager writes the tenant's number as a link, and every client
+ * that turns HTML into text leaves the href behind in angle brackets.
+ * This is the real shape, off the first TWA notification that ever
+ * reached the application:
+ *
+ *     Number: 2527221728 <(252)%20722-1728>
+ *
+ * Twenty-two digits once they are counted, which is not a phone
+ * number -- so the value was refused and a tenant who HAD given us her
+ * number arrived with none.
+ *
+ * The forwarded header block is kept too, because that is what a
+ * forward actually looks like and the routing has to survive it.
+ */
+export const RENT_MANAGER_FORWARDED = {
+  from: "larabeehomesllc@gmail.com",
+  to: "4e069f4c@inbound.postmarkapp.com",
+  subject: "Fwd: New Issue Submitted from TWA: 1140 Northside #46, 1140 Northside Rd, Lot #45",
+  messageId: "<rm-forwarded-1@mail.gmail.com>",
+  text: `---------- Forwarded message ---------
+From: Rent Manager Event Notifier <donotreply@rentmanager.com>
+Date: Mon, Nov 9, 2026 at 9:41 PM
+Subject: New Issue Submitted from TWA: 1140 Northside #46, 1140 Northside
+Rd, Lot #45
+To: <larabeehomesllc@gmail.com>
+
+
+Tenant WebAccess
+The following issue was submitted via TWA:
+Issue Title: Multiple
+Description: The stove eyes cut randomly.
+Assigned To:
+
+Tenant: Doe, Jane
+Number: 5555550100 <(555)%20555-0100>`,
+};
+
 export const VOICEMAIL = {
   from: "noreply@netdialtone.com",
   to: "info@larabeehomesllc.com",
