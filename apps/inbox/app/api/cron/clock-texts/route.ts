@@ -6,6 +6,8 @@ import { pushToStaff } from "@/lib/push";
 import { autoOuts, autoOutText, dueKinds, localOf, plan, type DayShift } from "@/lib/clock-texts";
 import { worked } from "@/lib/shift";
 import { loadSetup, loadTextSettings, asPerson } from "@/lib/crew-data";
+import { alertOwners } from "@/lib/alert-owner";
+import { forgotText } from "@/lib/integrity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +69,21 @@ export async function GET(req: Request) {
   // the shift the clock has just closed rather than one still running.
   const closed = await closeForgotten(db, settings, now);
   if (closed.length && settings.enabled) await tellThem(db, closed, settings, req);
+  // And the owner, as it happens: a shift the clock had to close is a day
+  // somebody should look at, and the crew lead is not the one to rely on.
+  // Only shifts that ended in the last day -- a shift closed weeks late is a
+  // flag on Friday pay, not news.
+  if (closed.length) {
+    const names = new Map((await loadSetup()).map((p) => [p.id, p.name]));
+    for (const c of closed) {
+      if (Date.now() - Date.parse(c.endedAt) > 24 * 3_600_000) continue;
+      const link = `${base(req)}/trail?staff=${c.staffId}`
+        + `&day=${localOf(new Date(c.endedAt), settings.tz).day}`;
+      const when = new Date(c.endedAt).toLocaleTimeString("en-US",
+        { timeZone: settings.tz, hour: "numeric", minute: "2-digit" });
+      await alertOwners(`out:${c.shiftId}`, forgotText(names.get(c.staffId) ?? "Somebody", when, link), link);
+    }
+  }
 
   if (!settings.enabled) return NextResponse.json({ ok: true, off: true, closed: closed.length });
 

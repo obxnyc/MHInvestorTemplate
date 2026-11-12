@@ -4,6 +4,9 @@ import { readFix, whichSite, defaultRadius, type Fence, type Fix } from "@/lib/f
 import { worked, nudges, week, weekStart, type Shift, type Rules, RULES } from "@/lib/shift";
 import { check, type Place } from "@/lib/clockin";
 import { checkPhotos } from "@/lib/clock-photos";
+import { alertText } from "@/lib/integrity";
+import { alertOwners } from "@/lib/alert-owner";
+import { deviceOf, phoneFacts, DEVICE_COOKIE } from "@/lib/phones";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -174,6 +177,18 @@ export async function GET(req: Request) {
     await state(db, me.id, Number.isFinite(offset) ? offset : 0));
 }
 
+/* Whose phone: see lib/phones.ts, which alone touches the register. */
+const clockTimeEastern = (d: Date) =>
+  d.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+
+/** Where the owner goes to look: the man's trail for today, on this host. */
+function trailLink(req: Request, staffId: string): string {
+  const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "app.larabeehomesllc.com")
+    .split(",")[0].trim();
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  return `https://${host}/trail?staff=${staffId}&day=${day}`;
+}
+
 export async function POST(req: Request) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "sign in" }, { status: 401 });
@@ -250,7 +265,31 @@ export async function POST(req: Request) {
       }, { status: already ? 409 : 500 });
     }
 
-    return NextResponse.json({ ok: true, shiftId: data!.id, ...await state(db, me.id, offset) });
+    /* WHOSE PHONE, and tell the owner when something looks wrong. After the
+       insert, never before: the hours are on record whatever this finds. */
+    const device = deviceOf(req);
+    const facts = await phoneFacts(device.id, me.id, req.headers.get("user-agent") ?? "");
+    // As the signed-in man, like every other write to his shift here.
+    await db.from("shifts").update({ start_device: device.id }).eq("id", data!.id);
+    const chosenName = chosen?.name
+      ?? (on ? on.fence.name : null);
+    const say = alertText({
+      name: me.full_name ?? "Somebody", site: chosenName,
+      farMetres: verdict?.kind === "far" ? verdict.metres : null,
+      noFix: !fix, photos: photos?.length ?? 0,
+      phoneUsedBy: facts.usedBy, newPhone: facts.newPhone,
+    }, clockTimeEastern(new Date()), trailLink(req, me.id));
+    if (say) await alertOwners(`in:${data!.id}`, say, trailLink(req, me.id));
+
+    const res = NextResponse.json({ ok: true, shiftId: data!.id, ...await state(db, me.id, offset) });
+    if (device.fresh) {
+      // The phone's id. httpOnly: the page never reads it and nothing in the
+      // browser can change it; it only ever comes back to this server.
+      res.cookies.set(DEVICE_COOKIE, device.id, {
+        httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 400,
+      });
+    }
+    return res;
   }
 
   if (action === "out") {
