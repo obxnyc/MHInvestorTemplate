@@ -7,6 +7,15 @@ is clocked in, even with the phone locked in his pocket. A notification saying
 
 ## Getting the app file
 
+**The easy way:** send the crew this link. On an Android phone it downloads
+the app; after that, the steps under "What a crew member taps" below.
+
+https://app.larabeehomesllc.com/downloads/larabee.apk
+
+Every new build replaces that file, so the link always gives the newest app.
+
+**The long way**, if that link ever does not work:
+
 1. Open https://github.com/obxnyc/MHInvestorTemplate/actions/workflows/android.yml
 2. Click the top run in the list (the newest one with a green tick).
 3. Scroll to the bottom of that page, to **Artifacts**, and click

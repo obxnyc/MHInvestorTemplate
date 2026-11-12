@@ -12,6 +12,10 @@ on:
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
+# Needed to publish the APK to the website (see the last step).
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -20,6 +24,9 @@ jobs:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the publish step at the end rebases onto main.
+          fetch-depth: 0
 
       # Capacitor 7's Android project compiles with Java 21
       # (android/app/capacitor.build.gradle sets VERSION_21), so Java 17
@@ -73,3 +80,22 @@ jobs:
           name: larabee-android
           path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # PUBLISH IT where a crew member can tap it: the app's own site, at
+      #   https://app.larabeehomesllc.com/downloads/larabee.apk
+      # The artifact above needs a GitHub login, which the crew do not have.
+      # Committing into apps/inbox/public puts it on the site with the next
+      # Vercel build. It does not re-trigger this workflow: that only runs
+      # on changes under apps/mobile.
+      - name: Publish the APK to the website
+        working-directory: .
+        run: |
+          mkdir -p apps/inbox/public/downloads
+          cp apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk apps/inbox/public/downloads/larabee.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/inbox/public/downloads/larabee.apk
+          if git diff --cached --quiet; then echo "APK unchanged"; exit 0; fi
+          git commit -m "Android app: publish build ${GITHUB_RUN_NUMBER} for download"
+          git pull --rebase origin main
+          git push origin HEAD:main
