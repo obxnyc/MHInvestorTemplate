@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { cronKeyOk } from "@/lib/cron-key";
 import { sendSms } from "@/lib/notify";
 import { pushToStaff } from "@/lib/push";
 import { autoOuts, autoOutText, dueKinds, localOf, plan, type DayShift } from "@/lib/clock-texts";
@@ -31,17 +31,7 @@ export const maxDuration = 60;
  * sixty-second ceiling is not hypothetical.
  */
 
-async function authorized(req: Request): Promise<boolean> {
-  const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  if (!given) return false;
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const a = Buffer.from(given), b = Buffer.from(secret);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  const { data } = await supabaseAdmin().rpc("clock_cron_ok", { p_token: given });
-  return data === true;
-}
+const authorized = (req: Request) => cronKeyOk(req, "clock_cron_ok");
 
 /** The address in the link. The host the scheduler called is the live site;
  *  PUBLIC_BASE_URL is the fallback, not the first choice, because a stale
