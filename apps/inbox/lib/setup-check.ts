@@ -24,6 +24,7 @@ import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mailList } from "./mail-list";
+import { postmarkChecks } from "./postmark-health";
 
 type Level = "good" | "bad" | "warn";
 export type Check = { name: string; level: Level; detail: string; fix?: string };
@@ -43,6 +44,8 @@ export async function runSetupChecks(
     ...(await guardAsync("Twilio", () => twilioChecks(origin))),
     ...(await guardAsync("Anthropic", anthropicChecks)),
     ...(await guardAsync("Delivery", deliveryChecks)),
+    ...(await guardAsync("Postmark", postmarkChecks)),
+    ...(await guardAsync("The morning report", reportChecks)),
     ...(await guardAsync("Database", databaseChecks)),
     ...(await guardAsync("Migrations", migrationChecks)),
     ...(await guardAsync("Email intake", intakeChecks)),
@@ -384,6 +387,60 @@ async function deliveryChecks(): Promise<Check[]> {
     fix: "Twilio Console → Monitor → Logs → Messaging, find one of them and look"
       + " at the delivery-callback attempts. A 403 there means the signature check"
       + " is rejecting it; a 404 or a redirect means the URL points somewhere else.",
+  }];
+}
+
+/**
+ * Did the morning report actually go out?
+ *
+ * The configuration check above asks whether sending COULD work. This asks
+ * whether it DID, which is a different question and the one that found the
+ * missing token: `report_runs` had two rows, both `ok = false`, both saying
+ * why, for eleven days before anybody looked.
+ *
+ * Reading the record beats reading the settings. A token that is present and
+ * correct and a report that still is not arriving is a real state, and only
+ * this half can see it.
+ */
+async function reportChecks(): Promise<Check[]> {
+  const { data, error } = await supabaseAdmin().from("report_runs")
+    .select("day, ok, detail, sent_to")
+    .order("started_at", { ascending: false }).limit(5);
+
+  if (error) {
+    return [{ name: "The morning report", level: "warn",
+      detail: `Its record could not be read: ${error.message}` }];
+  }
+
+  const runs = data ?? [];
+  if (runs.length === 0) {
+    return [{ name: "The morning report has never run", level: "warn",
+      detail: "report_runs is empty. The schedule lives in the database"
+        + " (migration 051) and calls the route at 14:00 and 15:00 UTC; if"
+        + " nothing is recorded, pg_cron is not firing or cannot reach the"
+        + " site.",
+      fix: "select * from cron.job — both delinquency rows should be active." }];
+  }
+
+  const failed = runs.filter((r) => r.ok !== true);
+  if (failed.length === 0) {
+    const last = runs[0]!;
+    return [{ name: "The morning report is going out", level: "good",
+      detail: `The last ${runs.length} run${runs.length === 1 ? "" : "s"} sent,`
+        + ` most recently on ${last.day} to`
+        + ` ${(last.sent_to ?? []).length} ${(last.sent_to ?? []).length === 1 ? "person" : "people"}.` }];
+  }
+
+  return [{
+    name: "The morning report is not reaching anybody", level: "bad",
+    /* The database's own sentence, not a guess about it. The reason the
+       report did not send is already written down at the moment it failed;
+       re-deriving it here is how a diagnosis goes stale. */
+    detail: `${failed.length} of the last ${runs.length} runs did not send.`
+      + ` The most recent said: ${failed[0]!.detail ?? "(nothing recorded)"}`,
+    fix: "The sentence above is the database's own record of the failure at"
+      + " the moment it happened. Fix what it names, then wait for the next"
+      + " 10am or call the route with ?force=1.",
   }];
 }
 
