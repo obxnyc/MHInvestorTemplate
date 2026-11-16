@@ -265,12 +265,7 @@ export default function DistributionsBoard() {
                       return (
                         <button key={s.id} role="row" className={`distrow${openId === s.id ? " sel" : ""}${needsLook(s) ? " warn" : ""}`}
                           onClick={() => setOpenId(s.id)}>
-                          <span className="distname"><strong>{s.payee}</strong><small>{placeOf(s.title, s.payee, s.lines)}{(() => {
-                            // Only when it really shares an email: a payee whose entity is
-                            // spelled differently but owns nothing else goes out alone.
-                            const n = together(s).length - 1;
-                            return n > 0 ? ` · in one email with ${n} other${n === 1 ? "" : "s"} (${s.sendsAs})` : "";
-                          })()}</small></span>
+                          <span className="distname"><strong>{s.payee}</strong><small>{placeOf(s.title, s.payee, s.lines)} · {s.email || "no email yet"}</small></span>
                           <span className={`num big${s.owedCents < 0 ? " distneg" : ""}`}>{money(s.owedCents)}</span>
                           <span className="num muted">{s.versus.lastCents === null ? "—" : usd(s.versus.lastCents)}</span>
                           <span className={`num${diff !== null && diff < 0 ? " distneg" : diff ? " distpos" : " muted"}`}>
