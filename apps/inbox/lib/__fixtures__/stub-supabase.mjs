@@ -408,6 +408,51 @@ const TABLES = {
       reasked_at: null },
   ],
   notes: [], teams: [], markets: [],
+  /* Owner distributions: one month, three groups, and one of each state the
+     screen has to show -- a statement that needs a look (title and lines
+     disagree), one with nothing to pay, one with no email, one paid, one
+     planned, one ordinary. Made-up names; the real ones are not fixtures. */
+  ...(() => {
+    const month = `${new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 7)}-01`;
+    const L = (lot, rent, loan = -47449) => [
+      { label: `Monthly Rent - Lot ${lot}`, cents: rent, date: "2026-11-01", merchant: "Zego", category: "Rent" },
+      { label: `Mortgage - Lot ${lot}`, cents: loan, date: "2026-11-14", merchant: "LH LLC", category: "Mortgage" },
+      { label: `Lot Rent - Lot ${lot}`, cents: -50000, date: "2026-11-14", merchant: "LH LLC", category: "Rent" },
+    ];
+    const payees = [
+      ["dp1", "Harbor Point Holdings", "harbor@example.com"],
+      ["dp2", "Wren Family Trust", "wren@example.com"],
+      ["dp3", "Oakmont Ventures LLC — Cross Creek", null],
+      ["dp4", "Juniper Lane Partners", "juniper@example.com"],
+      ["dp5", "Tidewater Homes LLC", "tide@example.com"],
+      ["dp6", "Bellamy & Sons — 12 Bay St", "bellamy@example.com"],
+    ].map(([id, name, emails]) => ({ id, name, emails, settle_days: 2, owner_id: null, pay_note: null, sheet_id: null, active: true, created_at: month }));
+    const st = (id, payee, group, title, lines, prev, paid, extra = {}) => ({
+      id, run_id: "dr1", payee_id: payee, owner_id: null, lines, note: null, hold: false,
+      emailed_at: null, emailed_to: null, email_detail: null, updated_at: month, updated_by: null,
+      title, previous_owed_cents: prev, prior_paid_cents: paid, prior_paid_on: "2026-10-14",
+      deposits_cents: 310000, stated_net_cents: null, stated_owed_cents: null, owed_note: null,
+      source: { group, blank: [], extra: [] }, ...extra,
+    });
+    return {
+      distribution_runs: [{ id: "dr1", month, daily_cap_cents: 2500000, start_on: null, note: null, created_at: month, created_by: null }],
+      distribution_payees: payees,
+      distribution_statements: [
+        st("ds1", "dp1", "Corporate", "Harbor Point Holdings - 1140 Northside Rd, Lots #2, #4", [...L(2, 155000), ...L(4, 156500)], 211051, 211051),
+        st("ds2", "dp2", "Corporate", "Wren Family Trust - 1148 Northside Rd, Lots #10, #25", [...L(10, 155000), ...L(16, 155000),
+          { label: "Supplies - Lot 10", cents: -417660, date: "2026-11-04", merchant: "BDC", category: "Maintenance" }], 270945, 270945),
+        st("ds3", "dp3", "Cross Creek", "Oakmont Ventures LLC - The Retreat at Cross Creek, Lots #3117, #3119", [...L(3117, 125000, -34122), ...L(3119, 125000, -34122)], 0, 0),
+        st("ds4", "dp4", "Individuals", "Juniper Lane Partners - 1142 Northside Rd, Lots #15", L(15, 155000), 52551, 52551),
+        st("ds5", "dp5", "Individuals", "Tidewater Homes LLC - 1140 Northside Rd, Lots #20, #21, #28", [...L(20, 155000), ...L(21, 155000), ...L(28, 158000)], 281985, 242871),
+        st("ds6", "dp6", "Individuals", "12 Bay St (Dutch doors)", [{ label: "Rent", cents: 169500, date: "2026-11-01", merchant: "Zego" },
+          { label: "Property Management Fees", cents: -16950, category: "Management" }], 152550, 152550),
+      ],
+      distribution_payments: [
+        { id: "pm1", statement_id: "ds4", send_on: "2026-11-16", amount_cents: 52551, paid_at: "2026-11-16T15:00:00Z", paid_by: null, confirmation: "WF55120", created_at: month },
+        { id: "pm2", statement_id: "ds1", send_on: "2026-11-17", amount_cents: 211051, paid_at: null, paid_by: null, confirmation: null, created_at: month },
+      ],
+    };
+  })(),
 };
 
 /* The seed, kept, so a run can put the tables back.
@@ -593,6 +638,13 @@ createServer((req, res) => {
           const empty = got === null || got === undefined;
           return isNull ? empty : !empty;
         });
+        continue;
+      }
+      /* `in.(a,b)`, which `.in()` sends. Ignored, every row matched. */
+      const inList = /^in\.\((.*)\)$/.exec(v);
+      if (inList) {
+        const set = new Set(inList[1].split(",").map((x) => x.replace(/^"|"$/g, "")));
+        rows = rows.filter((r) => set.has(String(r[k])));
         continue;
       }
       const m = /^eq\.(.*)$/.exec(v);
