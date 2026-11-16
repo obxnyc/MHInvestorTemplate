@@ -1930,6 +1930,16 @@ years) with Year to date / a whole year / From–To. A range is
 per house (`summarize`). Paid out is what was PAID, never the months' "owed"
 added together -- that would count every carried balance twice.
 
+**Nothing goes to an owner unchecked without saying so** (066,
+`distribution_statements.checked_at/by`). Mark checked is per statement; saving
+the statement or the owner's details takes it off again. The send dialog lists
+every statement in that email with a tick each, and names any OTHER email the
+same inbox gets this month. If any are unticked the only button is "Send anyway,
+unchecked", and the server refuses an entity with an unchecked statement
+unless `sendUnchecked` is sent. Send-all leaves out every owner with one
+unchecked statement -- sending only the checked half would email an owner part
+of their month and look complete.
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not

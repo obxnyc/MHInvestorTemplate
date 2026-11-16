@@ -148,6 +148,7 @@ export async function build(month: string) {
         return versusLast(owedCents(lines, carry), { sentCents: sent, sentOn: on, lines: last?.lines ?? null }, lines);
       })(),
       note: (s.note as string | null) ?? "", hold: !!s.hold,
+      checkedAt: (s.checked_at as string | null) ?? null, checkedById: (s.checked_by as string | null) ?? null, checkedBy: null as string | null,
       emailedAt: (s.emailed_at as string | null) ?? null, emailedTo: (s.emailed_to as string | null) ?? null,
       emailDetail: (s.email_detail as string | null) ?? null,
       payments: mine,
@@ -155,6 +156,14 @@ export async function build(month: string) {
       plannedCents: mine.reduce((a, p) => a + p.cents, 0),
     };
   }).sort((a, b) => a.payee.localeCompare(b.payee));
+
+  // Who checked each statement, by name.
+  const checkers = [...new Set(statements.map((s) => s.checkedById).filter((x): x is string => !!x))];
+  if (checkers.length) {
+    const names = Object.fromEntries(((await db.from("staff").select("id, full_name").in("id", checkers)).data ?? [])
+      .map((x) => [String(x.id), String(x.full_name ?? "")]));
+    for (const s of statements) s.checkedBy = s.checkedById ? names[s.checkedById] ?? "" : null;
+  }
 
   // Everything Rent Manager does not have yet, and which of it has been entered.
   const rec = await db.from("distribution_recorded").select("key, recorded_at, recorded_by").eq("run_id", run.id);

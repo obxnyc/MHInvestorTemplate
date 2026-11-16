@@ -3798,3 +3798,14 @@ button.edrow.dbo:hover{background:var(--sunk)}
   .distsumrow .num::before{content:attr(data-k);color:var(--muted);font-size:.72rem;margin-right:.3rem}
 }
 @media (min-width:641px){.mpickpop{left:auto;right:0}}
+
+/* The send dialog's checklist (066): every statement in the email, ticked by a person. */
+.edchecks{border:1px solid var(--hair);border-radius:10px;padding:.5rem .7rem;margin:.8rem 0 .4rem;display:grid;gap:.3rem;min-width:0}
+.edchecks legend{font-size:.8rem;font-weight:700;color:var(--muted);padding:0 .3rem}
+.edcheckrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:.6rem;align-items:baseline;cursor:pointer;color:var(--ink)}
+.edcheckrow input{width:auto}
+.edcheckrow small{color:var(--muted)}
+.edcheckrow.todo small{color:var(--warn)}
+.edcheckrow .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.edsameinbox{margin:.4rem 0}
+.btn.edchecked{border-color:var(--tn);background:var(--tn-soft);color:var(--tn-ink);font-weight:700}
