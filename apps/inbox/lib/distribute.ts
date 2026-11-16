@@ -11,9 +11,36 @@
 /** One row of a statement. Positive is money to the owner (rent), negative
  *  is a cost (lot rent, loan, a repair). Date, merchant and category are
  *  shown when the sheet had them. */
-export type Line = { label: string; cents: number; date?: string; merchant?: string; category?: string };
+export type Line = {
+  label: string; cents: number; date?: string; merchant?: string; category?: string;
+  /** A markup on this cost, in percent. Applies only to a cost (cents < 0). */
+  markupPct?: number;
+  /** What Alex's sheet said, when the amount has been changed here. */
+  sheetCents?: number;
+};
 
-export const netCents = (lines: Line[]) => lines.reduce((s, l) => s + (Number(l.cents) || 0), 0);
+/** The markup on one line, in cents (negative, like the cost it is on). */
+export const markupCents = (l: Line) =>
+  l.cents < 0 && (l.markupPct ?? 0) > 0 ? -Math.round((-l.cents * (l.markupPct as number)) / 100) : 0;
+
+/** A line as it counts: its amount plus any markup on it. */
+export const lineTotal = (l: Line) => (Number(l.cents) || 0) + markupCents(l);
+
+export const netCents = (lines: Line[]) => lines.reduce((s, l) => s + lineTotal(l), 0);
+
+/** Alex's figures alone: his amounts, no markups, none of our own lines. */
+export const sheetNetCents = (lines: Line[]) =>
+  lines.filter((l) => !OUR_CATEGORIES.includes(l.category ?? "")).reduce((s, l) => s + (l.sheetCents ?? l.cents), 0);
+
+/**
+ * Costs a blanket markup applies to: repairs, materials, labor, cleaning,
+ * utilities -- the things we buy or do for the owner. Not the fixed monthly
+ * charges (loan, lot rent, consultant and management fees, insurance,
+ * warranty), which are an agreed price, and not our own lines.
+ */
+export const FIXED = /mortgage|loan|lot rent|lots rent|lot fee|consult|management|insurance|warranty/i;
+export const markupable = (l: Line) =>
+  l.cents < 0 && !FIXED.test(`${l.label} ${l.category ?? ""}`) && !OUR_CATEGORIES.includes(l.category ?? "");
 
 export const usd = (c: number) =>
   (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -289,7 +316,7 @@ export function checks(title: string | null | undefined, lines: Line[], c: Carry
   const out: string[] = [];
   const net = netCents(lines);
   const owed = owedCents(lines, c);
-  const sheetNet = netCents(lines.filter((l) => !ours(l)));
+  const sheetNet = sheetNetCents(lines);
   const added = net - sheetNet;
   if (c.statedNetCents != null && c.statedNetCents !== sheetNet) {
     out.push(`The lines add up to ${money(sheetNet)} but the sheet's Monthly Net Cashflow says ${money(c.statedNetCents)}.`);
@@ -346,7 +373,7 @@ export const readDate = (s?: string): Date | null => {
   }
   return null;
 };
-const shortDate = (s?: string) => {
+export const shortDate = (s?: string) => {
   if (!s) return "";
   const d = readDate(s);
   return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
@@ -375,7 +402,10 @@ function section(s: StatementInput, boxed: boolean, entityName?: string): string
   const row = (l: Line) => `<tr>
       <td style="${cell};color:#6B7280;white-space:nowrap">${esc(shortDate(l.date))}</td>
       <td style="${cell};color:#1F2937">${esc(l.label)}${l.merchant ? `<div style="color:#6B7280;font-size:12px">${esc(l.merchant)}</div>` : ""}</td>
-      <td style="${num};color:${l.cents < 0 ? "#9B2C2C" : "#1F2937"}">${money(l.cents)}</td></tr>`;
+      <td style="${num};color:${l.cents < 0 ? "#9B2C2C" : "#1F2937"}">${money(l.cents)}</td></tr>${markupCents(l) ? `<tr>
+      <td style="${cell}"></td>
+      <td style="${cell};color:#6B7280;padding-left:18px">Markup ${l.markupPct}%</td>
+      <td style="${num};color:#9B2C2C">${money(markupCents(l))}</td></tr>` : ""}`;
   const table = (name: string, rows: Line[]) => rows.length ? `
     <p style="${CAP}">${name}</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">
@@ -471,7 +501,8 @@ function sectionText(s: StatementInput, many: boolean): string[] {
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
   const pad = (l: string, a: string) => `${l}${" ".repeat(Math.max(2, 56 - l.length - a.length))}${a}`;
   const block = (name: string, rows: Line[]) => rows.length
-    ? [name, ...rows.map((l) => pad(`${shortDate(l.date) ? `${shortDate(l.date)}  ` : ""}${l.label}`, money(l.cents))), pad("Subtotal", money(netCents(rows))), ""]
+    ? [name, ...rows.flatMap((l) => [pad(`${shortDate(l.date) ? `${shortDate(l.date)}  ` : ""}${l.label}`, money(l.cents)),
+        ...(markupCents(l) ? [pad(`    Markup ${l.markupPct}%`, money(markupCents(l)))] : [])]), pad("Subtotal", money(netCents(rows))), ""]
     : [];
   return [
     ...(many ? ["=".repeat(56), placeOf(s.title, s.payee, s.lines), "=".repeat(56)] : [s.payee, placeOf(s.title, s.payee, s.lines)]),

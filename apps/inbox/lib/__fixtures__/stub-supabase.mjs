@@ -446,7 +446,9 @@ const TABLES = {
           [...L(3117, 125000, -34122), ...L(3119, 125000, -34122)].filter((l) => l.cents < 0), 0, 0),
         st("ds4", "dp4", "Individuals", "Juniper Lane Partners - 1142 Northside Rd, Lots #15", L(15, 155000), 52551, 52551),
         st("ds5", "dp5", "Individuals", "Tidewater Homes LLC - 1140 Northside Rd, Lots #20, #21, #28", [...L(20, 155000), ...L(21, 155000), ...L(28, 158000)], 281985, 242871),
-        st("ds6", "dp6", "Individuals", "12 Bay St (Dutch doors)", [{ label: "Rent", cents: 169500, date: "2026-11-01", merchant: "Zego" },
+        st("ds6", "dp6", "Individuals", "12 Bay St (Dutch doors)", [{ label: "Rent", cents: 169500, date: "46033", merchant: "Zego" },
+          { label: "Supplies", cents: -2917, date: "September 28, 2026", merchant: "Lowes" },
+          { label: "Quarterly Pest Control", cents: -8500, date: "09-11-2026", merchant: "Allegiant Pest Control" },
           { label: "Property Management Fees", cents: -16950, category: "Management" }], 152550, 152550),
       ],
       distribution_payments: [
