@@ -1837,3 +1837,25 @@ in WKWebView's own store, which native HTTP on iOS does not read, so a native
 ping would arrive signed out and be refused all day without a sound. Android is
 the other way round (its WebView is throttled in the background and its native
 HTTP shares the WebView's cookies). `native-location.test.mjs` holds both.
+
+### Owner distributions
+
+https://app.larabeehomesllc.com/distributions -- the monthly statement per
+investor (normally the 15th), emailed from the app as "<Month Year> Owner
+Distribution", and paid through Wells Fargo Business Bill Pay, which allows
+$25,000 a day. The breakdown comes from Alex Prieto's email to
+cade@larabeehomesllc.com; paste it in from Excel. Bill Pay has no API, so the
+screen plans which owner is paid on which bank day (slowest bank first, whole
+payments where they fit, nothing over the limit) and records each one paid
+with its confirmation number. Paid payments keep their day when re-planned.
+The sender's own address is the Reply-To and gets a Bcc of every statement
+(`DISTRIBUTIONS_REPLY_TO`, `DISTRIBUTIONS_BCC`, `DISTRIBUTIONS_FROM` override).
+A statement once emailed is locked: what was sent is the record. 057 applied
+11/16/2026 through the connector.
+
+**Never email anybody on the owner's behalf** -- not owners, not a summary to
+Cade -- until he says the system is bullet-proof (16 November 2026). The
+distribution screen sends only when a person presses Send; Claude does not
+press it, draft in Gmail, or schedule anything that sends. Alex Prieto's
+sheets contain mistakes; the screen's against-last-month line and checks are
+there so a person catches them before money moves.

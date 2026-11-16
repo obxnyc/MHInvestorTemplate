@@ -3527,3 +3527,41 @@ a.metric:hover{border-color:var(--accent)}
 .trailphotos a{display:flex;flex-direction:column;gap:.2rem;text-decoration:none;color:var(--ink);
   font-size:.75rem;font-weight:700}
 .trailphotos img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;border:1px solid var(--hair)}
+
+/* Owner distributions. */
+.distwrap .tscard{display:flex;flex-direction:column;gap:.7rem;margin-bottom:.9rem}
+.disttotals{display:grid;grid-template-columns:repeat(auto-fit,minmax(7rem,1fr));gap:.5rem;margin:0}
+.disttotals div{background:var(--sunk);border-radius:10px;padding:.55rem .7rem;min-width:0}
+.disttotals dt{font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.disttotals dd{margin:.15rem 0 0;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink);
+  overflow-wrap:anywhere}
+.distowner{text-transform:none !important;letter-spacing:0 !important;font-size:1rem !important;color:var(--ink)}
+.diststmt.held{opacity:.7}
+.distowned,.distplanform{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:.6rem}
+.distlines{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
+.distlines li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,8rem) auto;gap:.35rem;align-items:center}
+.distlines input{min-width:0;width:100%;font:inherit;padding:.45rem .55rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);color:var(--ink)}
+.distlines input:nth-child(2){text-align:right;font-variant-numeric:tabular-nums}
+.distlines input.neg{color:var(--crit)}
+.distday{border-top:1px solid var(--hair);padding-top:.6rem}
+.distdayhead{display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;color:var(--ink)}
+.distdayhead .over{color:var(--crit)}
+.distpays{list-style:none;margin:.4rem 0 0;padding:0;display:grid;gap:.45rem}
+.distpays li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .6rem;align-items:center;
+  padding:.5rem .6rem;border-radius:10px;background:var(--sunk);color:var(--ink)}
+.distpays li.paid{opacity:.65}
+.distwho{display:flex;flex-direction:column;min-width:0}
+.distmark,.distpaid{grid-column:1/-1;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.distmark input{flex:1;min-width:0;font:inherit;padding:.4rem .55rem;border:1px solid var(--hair);
+  border-radius:8px;background:var(--card);color:var(--ink)}
+.distpaid{color:var(--tn-ink);font-weight:700;font-size:.85rem}
+.distpreview{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;flex-direction:column;
+  padding:1rem;gap:.5rem}
+.distpreviewbar{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;
+  background:var(--card);color:var(--ink);border-radius:10px;padding:.5rem .75rem;font-size:.9rem}
+.distpreview iframe{flex:1;width:100%;border:0;border-radius:10px;background:#F3F4F6}
+.distneg{color:var(--crit)}
+.distvs{display:flex;flex-wrap:wrap;gap:.3rem 1rem;align-items:baseline;margin:0;padding:.5rem .65rem;
+  border-radius:10px;background:var(--sunk);color:var(--ink);font-variant-numeric:tabular-nums}
+.distvs.loud{background:var(--warn-soft)}
