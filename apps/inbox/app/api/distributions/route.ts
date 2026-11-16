@@ -37,6 +37,7 @@ const cleanLines = (raw: unknown): Line[] =>
       ...(Number(l?.markupPct) > 0 && Number(l?.markupPct) <= 100 ? { markupPct: Math.round(Number(l.markupPct) * 100) / 100 } : {}),
       ...(Number.isFinite(Number(l?.sheetCents)) && l?.sheetCents !== null && l?.sheetCents !== undefined
         ? { sheetCents: Math.round(Number(l.sheetCents)) } : {}),
+      ...(l?.sheetLabel ? { sheetLabel: String(l.sheetLabel).trim().slice(0, 200) } : {}),
       ...(l?.removed === true ? { removed: true } : {}),
     }))
     .filter((l) => l.label && Number.isFinite(l.cents) && Math.abs(l.cents) < 1e10);
