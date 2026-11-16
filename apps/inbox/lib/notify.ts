@@ -52,6 +52,7 @@ export async function sendEmail(to: string, subject: string, text: string) {
  */
 export async function sendEmailChecked(
   to: string[], subject: string, text: string, html?: string,
+  opts: { from?: string; replyTo?: string; bcc?: string } = {},
 ): Promise<{ ok: boolean; detail: string }> {
   const token = process.env.POSTMARK_SERVER_TOKEN;
   if (!token) return { ok: false, detail: "POSTMARK_SERVER_TOKEN is not set, so nothing can be emailed." };
@@ -65,9 +66,11 @@ export async function sendEmailChecked(
         "X-Postmark-Server-Token": token,
       },
       body: JSON.stringify({
-        From: process.env.POSTMARK_FROM ?? "leasing@larabeehomesllc.com",
+        From: opts.from || (process.env.POSTMARK_FROM ?? "leasing@larabeehomesllc.com"),
         To: to.join(", "), Subject: subject, TextBody: text,
         ...(html ? { HtmlBody: html } : {}),
+        ...(opts.replyTo ? { ReplyTo: opts.replyTo } : {}),
+        ...(opts.bcc ? { Bcc: opts.bcc } : {}),
         MessageStream: "outbound",
       }),
       signal: AbortSignal.timeout(15_000),

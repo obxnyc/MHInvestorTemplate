@@ -40,6 +40,7 @@ export default function AppHeader(
         ["/timesheets", "Timesheets"],
         // Everybody's wage: only the two roles the page itself lets in.
         ...(isDesk(role) ? [["/pay", "Pay"] as [string, string]] : []),
+        ...(isDesk(role) ? [["/distributions", "Distributions"] as [string, string]] : []),
         ["/settings", "Settings"],
       ];
 
