@@ -316,6 +316,19 @@ t("the email says what we hold, deposits and reserves, even when nothing", () =>
   return /Held for you/.test(h) && /Security deposits/.test(h) && /of \$2,000\.00 required/.test(h);
 });
 
+/* taking a line off */
+const off = [{ label: "Rent - Lot 9", cents: 155000 }, { label: "Supplies - Lot 9", cents: -60547, removed: true, markupPct: 15 },
+  { label: "Mortgage - Lot 9", cents: -47449 }];
+t("a line taken off does not count, nor does its markup", () => D.netCents(off) === 155000 - 47449);
+t("Alex's figure still includes it, and the difference is said", () =>
+  D.sheetNetCents(off) === 155000 - 60547 - 47449
+  && D.checks(null, off, { statedNetCents: 155000 - 60547 - 47449, reserveHeldCents: 1 }).some((x) => /\$605\.47 of adjustments/.test(x))
+  && !D.checks(null, off, { statedNetCents: 155000 - 60547 - 47449, reserveHeldCents: 1 }).some((x) => /Monthly Net Cashflow says/.test(x)));
+t("the owner's email never shows it", () => !D.statementHtml({ month: "2026-11-01", payee: "X", lines: off }).includes("Supplies - Lot 9"));
+t("a home whose only rent line was taken off is topped up in full", () =>
+  D.withGuarantee([{ label: "Rent - Lot 9", cents: 155000, removed: true }, { label: "Mortgage - Lot 9", cents: -47449 }], 125000)
+    .filter((l) => l.category === "Guaranteed rent").map((l) => l.cents).join() === "125000");
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);
