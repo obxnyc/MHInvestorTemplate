@@ -29,6 +29,7 @@ type Statement = {
   guaranteedCents: number | null; vacant: number[];
   startsOn: string | null; notStarted: boolean;
   emailedAt: string | null; emailedTo: string | null; emailDetail: string | null;
+  checkedAt: string | null; checkedBy: string | null;
   payments: Pay[]; paidCents: number; plannedCents: number;
 };
 type Payee = { id: string; name: string; emails: string; settleDays: number; active: boolean };
@@ -161,7 +162,13 @@ export default function DistributionsBoard() {
   // A test statement goes to whoever is testing and nowhere else: never in
   // the totals, the payment plan or the send-everything button.
   const isTest = (s: Statement) => s.source?.group === "Test";
-  const ready = statements.filter((s) => !isTest(s) && !s.notStarted && !s.emailedAt && !s.hold && s.lines.length && s.email);
+  const sendable = statements.filter((s) => !isTest(s) && !s.notStarted && !s.emailedAt && !s.hold && s.lines.length && s.email);
+  /* Send-all sends an owner only when EVERY statement in their email is
+     checked. Sending just the checked ones would email an owner part of
+     their month and look complete. */
+  const waitingOwners = new Set(sendable.filter((s) => !s.checkedAt).map((s) => s.sendsAs));
+  const ready = sendable.filter((s) => !waitingOwners.has(s.sendsAs));
+  const waiting = sendable.filter((s) => waitingOwners.has(s.sendsAs));
   // One email per owning entity: the statements that travel together.
   const emailsOut = useMemo(() => {
     const m = new Map<string, Statement[]>();
@@ -217,6 +224,7 @@ export default function DistributionsBoard() {
     ["pay", "To pay", (s) => s.owedCents > 0 && !s.hold],
     ["none", "Nothing to pay", (s) => s.owedCents <= 0],
     ["noemail", "No email", (s) => !s.email],
+    ["unchecked", "Not checked", (s) => !s.emailedAt && !s.notStarted && !s.hold && !isTest(s) && s.lines.length > 0 && !s.checkedAt],
     ["paid", "Paid", (s) => s.paidCents > 0],
   ];
   const fn = FILTERS.find((f) => f[0] === filter)?.[2] ?? (() => true);
@@ -235,6 +243,7 @@ export default function DistributionsBoard() {
     if (!s.email) out.push(["muted", "No email"]);
     if (!s.notStarted && reserveShortCents(s) !== null) out.push(["warn", "Reserves not met"]);
     if (s.emailedAt) out.push(["ok", "Emailed"]);
+    else if (s.checkedAt) out.push(["ok", "Checked"]);
     if (s.paidCents > 0) out.push(["ok", s.paidCents >= s.owedCents ? "Paid" : "Part paid"]);
     else if (s.plannedCents > 0) out.push(["plan", `Pay ${day(s.payments[0].sendOn)}`]);
     return out;
@@ -426,11 +435,19 @@ export default function DistributionsBoard() {
                     onBlur={() => ccAll !== (data.ccAll ?? "") && act({ action: "cc-all", cc: ccAll }, "Saved.")} />
                 </div>
               )}
-              {!confirmSend ? (
+              {!confirmSend ? (<>
+                {waiting.length ? (
+                  <p className="tsalert">
+                    {waitingOwners.size} owner{waitingOwners.size === 1 ? " is" : "s are"} not in this send because a statement in their email has not been checked:{" "}
+                    {[...waitingOwners].sort().map((o, i) => <span key={o}>{i ? ", " : ""}<button className="tslink distinline"
+                      onClick={() => { setTab("list"); setOpenId(waiting.find((x) => x.sendsAs === o && !x.checkedAt)!.id); }}>{o}</button></span>)}.
+                    Open each, look it over, and press Mark checked.
+                  </p>
+                ) : null}
                 <button className="tsact" disabled={busy || !ready.length} onClick={() => setConfirmSend(true)}>
                   Send {emailsOut.length} email{emailsOut.length === 1 ? "" : "s"}&hellip;
                 </button>
-              ) : (
+              </>) : (
                 <>
                   <ul className="distsendlist">
                     {emailsOut.map(([entity, list]) => (
@@ -578,7 +595,7 @@ export default function DistributionsBoard() {
               <button className="btn" onClick={() => setOpenId(null)}>Close</button>
             </div>
             <StatementCard key={open.id} s={open} busy={busy} act={act} onPreview={() => setPreview(open)}
-              others={together(open).filter((x) => x.id !== open.id)} onOpen={setOpenId} sendSet={emailSet(open)} ccAll={data.ccAll ?? ""} />
+              others={together(open).filter((x) => x.id !== open.id)} onOpen={setOpenId} sendSet={emailSet(open)} ccAll={data.ccAll ?? ""} all={statements} />
           </aside>
         </>
       ) : null}
@@ -604,11 +621,11 @@ export default function DistributionsBoard() {
   );
 }
 
-function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll }: {
+function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll, all }: {
   s: Statement; busy: boolean;
   act: (b: Record<string, unknown>, done?: string) => Promise<unknown>;
   onPreview: () => void;
-  others: Statement[]; onOpen: (id: string) => void; sendSet: Statement[]; ccAll: string;
+  others: Statement[]; onOpen: (id: string) => void; sendSet: Statement[]; ccAll: string; all: Statement[];
 }) {
   /* One row per line, edited in place. Amounts are typed as they read --
      a cost of 29.17 is typed 29.17 in the Expenses section, not -29.17 --
@@ -635,6 +652,8 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
   const [bulk, setBulk] = useState("15");
   const [starts, setStarts] = useState(s.startsOn ? s.startsOn.slice(0, 7) : "");
   const [sending, setSending] = useState(false);
+  // In the send dialog: which statements in this email the sender has ticked as checked.
+  const [ticks, setTicks] = useState<Set<string>>(new Set());
   const [sentSaid, setSentSaid] = useState<string | null>(null);
   // This owner's email: this statement and any of the same entity not yet sent.
   const sendWith = sendSet;
@@ -947,28 +966,65 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
                 <p className="tsnote">A line needs a description and an amount before this can be sent.</p>
                 <div className="tsrow"><button className="btn" onClick={() => setSending(false)}>OK</button></div>
               </>);
+              /* Everything this email holds, ticked or not, and anything else the
+                 same inbox gets this month -- so an owner with two statements, or two
+                 emails, never gets one that nobody has looked at. */
+              const allTicked = sendWith.every((x) => ticks.has(x.id));
+              const notTicked = sendWith.filter((x) => !ticks.has(x.id));
+              const sameInbox = all.filter((x) => !sendWith.some((y) => y.id === x.id) && !x.emailedAt && !x.notStarted && x.lines.length
+                && x.email.split(/[,;\s]+/).some((e) => to.includes(e.toLowerCase())));
+              const tick = (id: string, on: boolean) => setTicks((t) => { const n = new Set(t); if (on) n.add(id); else n.delete(id); return n; });
+              const go = async (anyway: boolean) => {
+                if (payeeDirty && !(await savePayee())) { setSending(false); setSentSaid("Not sent: the owner details could not be saved, so nothing was emailed."); return; }
+                if (linesDirty) {
+                  const okSave = await act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents });
+                  if (!okSave) { setSending(false); setSentSaid("Not sent: your changes could not be saved, so nothing was emailed."); return; }
+                }
+                // Saving took this statement's check off; the tick in this dialog puts it back.
+                const toCheck = sendWith.filter((x) => ticks.has(x.id) && (!x.checkedAt || dirty)).map((x) => x.id);
+                if (toCheck.length && !(await act({ action: "check", statementIds: toCheck, checked: true }))) {
+                  setSending(false); setSentSaid("Not sent: the checks could not be saved, so nothing was emailed."); return;
+                }
+                const j = await act({ action: "send", statementIds: sendWith.map((x) => x.id), sendUnchecked: anyway }) as { sent?: { payee: string; ok: boolean; detail: string }[] } | null;
+                setSending(false);
+                setSentSaid(j?.sent ? j.sent.map((x) => x.ok ? `Sent to ${to.join(", ")}.` : `Not sent: ${x.detail}`).join(" ") : "Not sent.");
+              };
               return (<>
                 <h3>Send this email now?</h3>
                 <dl className="edmodaldl">
                   <dt>To</dt><dd>{to.join(", ")}</dd>
                   {copied.length ? <><dt>Copy</dt><dd>{copied.join(", ")}</dd></> : null}
                   <dt>Owner</dt><dd>{s.sendsAs}</dd>
-                  <dt>Statements</dt><dd>{sendWith.map((x) => placeOf(x.title, x.payee, x.lines)).join(" · ")}</dd>
                   <dt>Distribution</dt><dd>{usd(totalPaid)}</dd>
                 </dl>
+                <fieldset className="edchecks">
+                  <legend>{sendWith.length > 1 ? `All ${sendWith.length} statements in this email` : "The statement in this email"}: tick each one you have checked</legend>
+                  {sendWith.map((x) => (
+                    <label key={x.id} className={`edcheckrow${ticks.has(x.id) ? "" : " todo"}`}>
+                      <input type="checkbox" checked={ticks.has(x.id)} onChange={(e) => tick(x.id, e.target.checked)} />
+                      <span>{placeOf(x.title, x.payee, x.lines)}{x.id === s.id ? <small> · this one</small> : null}
+                        {x.checkedAt && !(x.id === s.id && dirty) ? <small> · checked{x.checkedBy ? ` by ${x.checkedBy}` : ""}</small>
+                          : ticks.has(x.id) ? <small> · ticked now</small>
+                          : x.id === s.id && dirty ? <small> · changed since it was checked</small> : <small> · not checked yet</small>}</span>
+                      <span className="num">{usd(Math.max(0, x.id === s.id ? owed : x.owedCents))}</span>
+                      {x.id !== s.id ? <button className="tslink distinline" onClick={() => { setSending(false); onOpen(x.id); }}>Open</button> : <span />}
+                    </label>
+                  ))}
+                </fieldset>
+                {sameInbox.length ? (
+                  <p className="tsalert edsameinbox">
+                    {to.length > 1 ? "These addresses" : "This address"} also get{to.length > 1 ? "" : "s"} {sameInbox.length === 1 ? "another email" : `${sameInbox.length} other statements`} this month, sent separately:{" "}
+                    {sameInbox.map((x, i) => <span key={x.id}>{i ? "; " : ""}<button className="tslink distinline" onClick={() => { setSending(false); onOpen(x.id); }}>
+                      {x.sendsAs} · {placeOf(x.title, x.payee, x.lines)}</button>{x.checkedAt ? " (checked)" : " (not checked)"}</span>)}.
+                  </p>
+                ) : null}
+                {!allTicked ? <p className="tsalert">{notTicked.length === sendWith.length && sendWith.length === 1 ? "This statement has not been checked." : `${notTicked.length} of ${sendWith.length} statements in this email ${notTicked.length === 1 ? "has" : "have"} not been checked: ${notTicked.map((x) => placeOf(x.title, x.payee, x.lines)).join(", ")}.`}</p> : null}
                 <p className="tsnote">Only this owner{copied.length ? " and the copies above are" : " is"} emailed; you get a copy. Once sent, {sendWith.length > 1 ? "these statements are" : "this statement is"} locked as the record.
                   {dirty ? " Your unsaved changes are saved first." : ""}</p>
                 <div className="tsrow">
-                  <button className="btn pri" disabled={busy} onClick={async () => {
-                    if (payeeDirty && !(await savePayee())) { setSending(false); setSentSaid("Not sent: the owner details could not be saved, so nothing was emailed."); return; }
-                    if (linesDirty) {
-                      const okSave = await act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents });
-                      if (!okSave) { setSending(false); setSentSaid("Not sent: your changes could not be saved, so nothing was emailed."); return; }
-                    }
-                    const j = await act({ action: "send", statementIds: sendWith.map((x) => x.id) }) as { sent?: { payee: string; ok: boolean; detail: string }[] } | null;
-                    setSending(false);
-                    setSentSaid(j?.sent ? j.sent.map((x) => x.ok ? `Sent to ${to.join(", ")}.` : `Not sent: ${x.detail}`).join(" ") : "Not sent.");
-                  }}>{busy ? "Sending…" : dirty ? "Save and send" : "Yes, send it"}</button>
+                  {allTicked
+                    ? <button className="btn pri" disabled={busy} onClick={() => go(false)}>{busy ? "Sending…" : dirty ? "Save and send" : "Yes, send it"}</button>
+                    : <button className="btn danger" disabled={busy} onClick={() => go(true)}>{busy ? "Sending…" : "Send anyway, unchecked"}</button>}
                   <button className="btn" disabled={busy} onClick={() => setSending(false)}>Cancel</button>
                 </div>
               </>);
@@ -980,7 +1036,10 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
       <footer className="edfoot">
         {sentSaid ? <span className={`tsnote edsentsaid${/^Sent/.test(sentSaid) ? " ok" : " distneg"}`} role="status">{sentSaid}</span>
           : bad ? <span className="tsnote distneg">A line needs a description and an amount like 1,250.00; a markup is 0 to 100.</span>
-          : dirty ? <span className="tsnote">Changes not saved yet.</span> : <span className="tsnote">All saved.</span>}
+          : dirty ? <span className="tsnote">Changes not saved yet.{s.checkedAt ? " Saving takes the check off: it was a check of the statement before these changes." : ""}</span>
+          : s.emailedAt ? <span className="tsnote">All saved.</span>
+          : s.checkedAt ? <span className="tsnote">All saved. Checked{s.checkedBy ? ` by ${s.checkedBy}` : ""} {new Date(s.checkedAt).toLocaleDateString()}.</span>
+          : <span className="tsnote">All saved. Not checked yet.</span>}
         {!s.emailedAt ? (
           <>
             <button className="btn" disabled={!dirty || busy} onClick={() => {
@@ -997,7 +1056,18 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
         ) : null}
         <button className="btn" onClick={onPreview} disabled={dirty}>Preview email</button>
         {!s.emailedAt ? (
-          <button className="btn pri" disabled={busy} onClick={() => { setSentSaid(null); setSending(true); }}>Email this owner&hellip;</button>
+          <button className={`btn${s.checkedAt && !dirty ? " edchecked" : ""}`} disabled={busy || dirty || (linesDirty && bad)}
+            title={dirty ? "Save first: a check is of the statement as saved." : undefined}
+            onClick={() => act({ action: "check", statementId: s.id, checked: !s.checkedAt })}>
+            {s.checkedAt ? "✓ Checked" : "Mark checked"}
+          </button>
+        ) : null}
+        {!s.emailedAt ? (
+          <button className="btn pri" disabled={busy} onClick={() => {
+            setSentSaid(null);
+            setTicks(new Set(sendWith.filter((x) => x.checkedAt && !(x.id === s.id && dirty)).map((x) => x.id)));
+            setSending(true);
+          }}>Email this owner&hellip;</button>
         ) : null}
         {!s.emailedAt ? (
           <button className="btn" disabled={busy} onClick={() => act({ action: "save", statementId: s.id, hold: !s.hold })}>

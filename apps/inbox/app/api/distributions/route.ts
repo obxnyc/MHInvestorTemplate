@@ -84,6 +84,8 @@ export async function POST(req: Request) {
         return fail("This statement has been emailed or paid. What was sent is the record.");
       }
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: me!.id };
+      // A changed statement is not the one that was checked.
+      if (["lines", "depositsCents", "note"].some((k) => k in b)) { patch.checked_at = null; patch.checked_by = null; }
       // Top-ups are worked out on every read, never stored before sending.
       if ("lines" in b) patch.lines = cleanLines(b.lines).filter((l) => l.category !== "Guaranteed rent");
       if ("depositsCents" in b) {
@@ -116,6 +118,20 @@ export async function POST(req: Request) {
           ...("reserveRequiredCents" in b ? { reserve_required_cents: b.reserveRequiredCents === null || b.reserveRequiredCents === "" || !(Number(b.reserveRequiredCents) >= 0) ? null : Math.round(Number(b.reserveRequiredCents)) } : {}) })
         .eq("id", String(b.payeeId));
       if (error) return fail(error.message, 500);
+      // Reserves, the rent agreement and the addresses are all on the statement
+      // the owner gets, so a change to them unchecks every unsent one of theirs.
+      await db.from("distribution_statements").update({ checked_at: null, checked_by: null })
+        .eq("payee_id", String(b.payeeId)).is("emailed_at", null);
+      break;
+    }
+
+    case "check": {
+      const ids: string[] = Array.isArray(b.statementIds) ? b.statementIds.map(String) : [String(b.statementId ?? "")].filter(Boolean);
+      if (!ids.length) return fail("Which statements?");
+      const { error } = await db.from("distribution_statements")
+        .update(b.checked === false ? { checked_at: null, checked_by: null } : { checked_at: new Date().toISOString(), checked_by: me!.id })
+        .in("id", ids);
+      if (error) return fail(/checked_/.test(error.message) ? "Migration 066 has not been run yet." : error.message, 500);
       break;
     }
 
@@ -235,6 +251,15 @@ export async function POST(req: Request) {
         groups.set(s.sendsAs, [...(groups.get(s.sendsAs) ?? []), s]);
       }
       for (const [entity, list] of groups) {
+        /* Nobody's statement goes out unchecked unless the person sending
+           said, on the screen, to send it anyway. One unchecked statement
+           holds back the whole email, because the email is all of them. */
+        const unchecked = list.filter((s) => !s.checkedAt);
+        if (unchecked.length && !b.sendUnchecked) {
+          for (const s of list) results.push({ payee: s.payee, ok: false,
+            detail: `not sent: ${unchecked.length === list.length ? "not checked yet" : `${unchecked.map((x) => x.title || x.payee).join(", ")} not checked yet`}` });
+          continue;
+        }
         const to = [...new Set(list.flatMap((s) => emails(s.email)).map((e) => e.toLowerCase()))];
         // Copied: the owner's own (an accountant) and the bookkeeper on every one -- never twice, never someone already in To.
         const cc = [...new Set([...list.flatMap((s) => emails(s.cc)), ...emails(now.ccAll)].map((e) => e.toLowerCase()))].filter((e) => !to.includes(e));
