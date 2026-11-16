@@ -3725,3 +3725,5 @@ button.distwho:focus-visible{outline:2px solid var(--accent)}
 @media (max-width:44rem){
   .edrow{grid-template-columns:minmax(0,1fr) 4.5rem minmax(0,1fr) 2.4rem}
 }
+.edsend{border:2px solid var(--accent);border-radius:12px;padding:.8rem;background:var(--card);color:var(--ink);display:grid;gap:.4rem}
+.edsend p{margin:0}
