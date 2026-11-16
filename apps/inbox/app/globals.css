@@ -3653,3 +3653,5 @@ button.distwho:focus-visible{outline:2px solid var(--accent)}
 .distentity{grid-column:1/-1}
 .tslink.distinline{min-height:0;padding:0 .15rem;font:inherit;text-decoration:underline}
 .distsendlist small{color:var(--muted)}
+.distadjust{border:1px solid var(--hair);border-radius:12px;padding:.7rem .8rem;display:grid;gap:.55rem}
+.distadjust .tscardhead{margin:0}

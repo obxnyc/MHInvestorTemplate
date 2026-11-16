@@ -45,6 +45,9 @@ Gmail, Google Sheets and Supabase connectors. Supabase project
    - the payee is the sheet's own name for itself -- the "Owed to <name>" label,
      else the row-1 title before " - ". Upsert `distribution_payees(name)`; set
      `sheet_id` if empty. Keep `emails` and `settle_days` already there.
+   - the statement's `title` is the PLACE, never the workbook: a Dutch-doors
+     tab is titled by its address ("223 Cisco"). Dutch Doors is the
+     management company's workbook, not a property.
    - upsert `distribution_statements` on (run_id, payee_id) with
      `lines` = expenses and revenue as `[{label: Description, cents, date,
      merchant, category}]` (expenses negative, revenue positive, skip blank
@@ -53,9 +56,15 @@ Gmail, Google Sheets and Supabase connectors. Supabase project
      `stated_net_cents` (Monthly Net Cashflow), `stated_owed_cents` (Owed to),
      `owed_note`, `source` = `{"sheet": id, "tab": name, "group": ...,
      "extra_blocks": [...], "blank_lines": [...]}`.
-5. Payees with no email: take the To/Cc of the most recent sent
+5. Payees with `guaranteed_rent_cents` set are paid for an empty home as if
+   it were let: for every lot with costs and no rent, add a line
+   `Guaranteed rent - Lot N (vacant)` at that amount, category
+   "Guaranteed rent" (the screen's "Pay N empty homes as rented" does the
+   same). The screen checks Alex's figures without those lines and says how
+   much was added.
+6. Payees with no email: take the To/Cc of the most recent sent
    "<Month> Owner Distribution" email whose body starts with that title.
-6. Do not email anyone, Cade included, until he says the system can send on
+7. Do not email anyone, Cade included, until he says the system can send on
    his behalf (16 November 2026: "until we have a bullet proof system i dont
    want you sending emails on my behalf yet"). The summary lives on
    https://app.larabeehomesllc.com/distributions -- the checks and the

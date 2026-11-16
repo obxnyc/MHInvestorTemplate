@@ -3,7 +3,7 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmailChecked } from "@/lib/notify";
 import {
-  netCents, owedCents, checks, versusLast, planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, entityOf,
+  netCents, owedCents, checks, versusLast, vacantLots, planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, entityOf,
   addBankDays, bankDayFrom, type Line, type Carry,
 } from "@/lib/distribute";
 
@@ -55,6 +55,7 @@ async function build(month: string) {
     id: String(p.id), name: String(p.name), emails: (p.emails as string | null) ?? "",
     settleDays: Number(p.settle_days ?? 2), active: !!p.active, sheetId: (p.sheet_id as string | null) ?? null,
     entity: (p.entity as string | null) ?? "",
+    guaranteedCents: p.guaranteed_rent_cents == null ? null : Number(p.guaranteed_rent_cents),
   }));
   const run = runRes.data;
   if (!run) return { month, run: null, payees, statements: [] };
@@ -103,6 +104,7 @@ async function build(month: string) {
     return {
       id: String(s.id), payeeId: String(s.payee_id), payee: payee?.name ?? "(payee missing)",
       email: payee?.emails ?? "", settleDays: payee?.settleDays ?? 2, entity: payee?.entity ?? "",
+      guaranteedCents: payee?.guaranteedCents ?? null, vacant: vacantLots(lines),
       sendsAs: entityOf({ entity: payee?.entity, payee: payee?.name ?? "" }),
       title: (s.title as string | null) ?? "", ...carry, owedNote: (s.owed_note as string | null) ?? "",
       source: s.source ?? null,
@@ -216,8 +218,28 @@ export async function POST(req: Request) {
       if (!(settle >= 0 && settle <= 30)) return fail("Bank days must be between 0 and 30.");
       const { error } = await db.from("distribution_payees")
         .update({ emails: list.join(", ") || null, settle_days: settle,
-          ...("entity" in b ? { entity: String(b.entity ?? "").trim().slice(0, 120) || null } : {}) })
+          ...("entity" in b ? { entity: String(b.entity ?? "").trim().slice(0, 120) || null } : {}),
+          ...("guaranteedCents" in b ? { guaranteed_rent_cents: Number(b.guaranteedCents) > 0 ? Math.round(Number(b.guaranteedCents)) : null } : {}) })
         .eq("id", String(b.payeeId));
+      if (error) return fail(error.message, 500);
+      break;
+    }
+
+    case "guarantee": {
+      /* Pay the empty homes as if let, at the payee's agreed rent. Worked out
+         here from the saved lines and the saved rate -- never from numbers
+         the page sent -- and refused on a statement already sent or paid. */
+      const now = await build(month);
+      const st = (now.statements ?? []).find((x) => x.id === String(b.statementId));
+      if (!st) return fail("No such statement.");
+      if (st.emailedAt || st.paidCents) return fail("This statement has been emailed or paid. What was sent is the record.");
+      if (!st.guaranteedCents) return fail("Set the rent this owner is paid for an empty home first.");
+      if (!st.vacant.length) return fail("No empty homes on this statement.");
+      const lines = [...st.lines, ...st.vacant.map((lot) => ({
+        label: `Guaranteed rent - Lot ${lot} (vacant)`, cents: st.guaranteedCents!, category: "Guaranteed rent",
+      }))];
+      const { error } = await db.from("distribution_statements")
+        .update({ lines, updated_at: new Date().toISOString(), updated_by: me!.id }).eq("id", st.id);
       if (error) return fail(error.message, 500);
       break;
     }

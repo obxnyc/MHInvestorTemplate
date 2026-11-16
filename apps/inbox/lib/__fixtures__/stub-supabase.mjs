@@ -426,7 +426,7 @@ const TABLES = {
       ["dp4", "Juniper Lane Partners", "juniper@example.com"],
       ["dp5", "Tidewater Homes LLC", "tide@example.com"],
       ["dp6", "Bellamy & Sons — 12 Bay St", "bellamy@example.com"],
-    ].map(([id, name, emails]) => ({ id, name, emails, entity: ["dp4", "dp6"].includes(id) ? "Juniper Lane Partners" : null, settle_days: 2, owner_id: null, pay_note: null, sheet_id: null, active: true, created_at: month }));
+    ].map(([id, name, emails]) => ({ id, name, emails, entity: ["dp4", "dp6"].includes(id) ? "Juniper Lane Partners" : null, guaranteed_rent_cents: id === "dp3" ? 125000 : null, settle_days: 2, owner_id: null, pay_note: null, sheet_id: null, active: true, created_at: month }));
     const st = (id, payee, group, title, lines, prev, paid, extra = {}) => ({
       id, run_id: "dr1", payee_id: payee, owner_id: null, lines, note: null, hold: false,
       emailed_at: null, emailed_to: null, email_detail: null, updated_at: month, updated_by: null,
@@ -441,7 +441,9 @@ const TABLES = {
         st("ds1", "dp1", "Corporate", "Harbor Point Holdings - 1140 Northside Rd, Lots #2, #4", [...L(2, 155000), ...L(4, 156500)], 211051, 211051),
         st("ds2", "dp2", "Corporate", "Wren Family Trust - 1148 Northside Rd, Lots #10, #25", [...L(10, 155000), ...L(16, 155000),
           { label: "Supplies - Lot 10", cents: -417660, date: "2026-11-04", merchant: "BDC", category: "Maintenance" }], 270945, 270945),
-        st("ds3", "dp3", "Cross Creek", "Oakmont Ventures LLC - The Retreat at Cross Creek, Lots #3117, #3119", [...L(3117, 125000, -34122), ...L(3119, 125000, -34122)], 0, 0),
+        // Two homes with costs and no rent: the "pay as if rented" case.
+        st("ds3", "dp3", "Cross Creek", "Oakmont Ventures LLC - The Retreat at Cross Creek, Lots #3117, #3119",
+          [...L(3117, 125000, -34122), ...L(3119, 125000, -34122)].filter((l) => l.cents < 0), 0, 0),
         st("ds4", "dp4", "Individuals", "Juniper Lane Partners - 1142 Northside Rd, Lots #15", L(15, 155000), 52551, 52551),
         st("ds5", "dp5", "Individuals", "Tidewater Homes LLC - 1140 Northside Rd, Lots #20, #21, #28", [...L(20, 155000), ...L(21, 155000), ...L(28, 158000)], 281985, 242871),
         st("ds6", "dp6", "Individuals", "12 Bay St (Dutch doors)", [{ label: "Rent", cents: 169500, date: "2026-11-01", merchant: "Zego" },

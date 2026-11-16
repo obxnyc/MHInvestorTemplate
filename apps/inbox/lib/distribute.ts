@@ -239,21 +239,63 @@ export const owedCents = (lines: Line[], c: Carry = {}) =>
 
 /** Lot numbers mentioned in a piece of text: "Lots #13, #32" / "Lot 13". */
 export const lotsIn = (s: string) =>
-  [...String(s ?? "").matchAll(/(?:lots?\s*#?\s*|#\s*)(\d{1,3})\b/gi)].map((m) => Number(m[1]));
+  // Four digits: Cross Creek's lots are its house numbers (3117). At three, every
+  // Cross Creek lot read as no lot at all and the title-vs-lines check was blind there.
+  [...String(s ?? "").matchAll(/(?:lots?\s*#?\s*|#\s*)(\d{1,4})\b/gi)].map((m) => Number(m[1]));
 
 /**
  * The things worth a look before a statement goes out. Each is said as a
  * sentence because each is a decision somebody makes, not an error the app
  * can fix: the sheet is the accountant's, and a statement is somebody's money.
  */
+/**
+ * The short name of the place a statement is for -- "1140 Northside Rd",
+ * "The Retreat at Cross Creek", "223 Cisco" -- with how many homes.
+ *
+ * The sheets title a statement "Conor Dolan - The Retreat at Cross Creek,
+ * Lady Cheryl Dr, Lots #3117, #3119, #3121, #3123": the owner's name is
+ * already at the top of the email and every lot is itemized below, so the
+ * heading only has to say WHERE. Never the name of a spreadsheet: "Dutch
+ * doors" is the management company's workbook, not a property.
+ */
+export function placeOf(title: string | null | undefined, payee: string, lines: Line[] = []): string {
+  let t = String(title || payee).replace(/\s*\(dutch doors\)\s*/i, " ").trim();
+  const dash = t.indexOf(" - ");
+  if (dash > 0) t = t.slice(dash + 3);
+  t = t.split(/,\s*lots?\b/i)[0].split(",")[0].trim() || t;
+  const lots = new Set(lotsIn(title ?? "").length ? lotsIn(title ?? "") : lines.flatMap((l) => lotsIn(l.label)));
+  if (lots.size === 1 && !/\blot\b/i.test(t)) return `${t}, Lot ${[...lots][0]}`;
+  if (lots.size > 1) return `${t} · ${lots.size} homes`;
+  return t;
+}
+
+/** Categories that are ours, not the sheet's: they move the total on purpose,
+ *  so the sheet's own figure is compared without them. */
+export const OUR_CATEGORIES = ["Guaranteed rent", "Adjustment"];
+const ours = (l: Line) => OUR_CATEGORIES.includes(l.category ?? "");
+
+/**
+ * Homes with costs this month and no rent: a loan, a lot rent or a fee was
+ * charged for the lot and nothing came in for it. The owners on a guaranteed
+ * arrangement are paid for these as if they were let.
+ */
+export function vacantLots(lines: Line[]): number[] {
+  const rentLots = new Set(lines.filter((l) => l.cents > 0).flatMap((l) => lotsIn(l.label)));
+  const costLots = new Set(lines.filter((l) => l.cents < 0).flatMap((l) => lotsIn(l.label)));
+  return [...costLots].filter((n) => !rentLots.has(n)).sort((a, b) => a - b);
+}
+
 export function checks(title: string | null | undefined, lines: Line[], c: Carry = {}): string[] {
   const out: string[] = [];
   const net = netCents(lines);
   const owed = owedCents(lines, c);
-  if (c.statedNetCents != null && c.statedNetCents !== net) {
-    out.push(`The lines add up to ${money(net)} but the sheet's Monthly Net Cashflow says ${money(c.statedNetCents)}.`);
+  const sheetNet = netCents(lines.filter((l) => !ours(l)));
+  const added = net - sheetNet;
+  if (c.statedNetCents != null && c.statedNetCents !== sheetNet) {
+    out.push(`The lines add up to ${money(sheetNet)} but the sheet's Monthly Net Cashflow says ${money(c.statedNetCents)}.`);
   }
-  if (c.statedOwedCents != null && c.statedOwedCents !== owed) {
+  if (added) out.push(`Includes ${money(added)} of adjustments made here, not on Alex's sheet.`);
+  if (c.statedOwedCents != null && c.statedOwedCents !== owed - added) {
     out.push(`Net plus last month's balance comes to ${money(owed)} but the sheet's Owed line says ${money(c.statedOwedCents)}.`);
   }
   if (c.previousOwedCents != null && c.priorPaidCents != null && c.previousOwedCents !== c.priorPaidCents) {
@@ -315,12 +357,15 @@ export type StatementInput = Carry & {
   payments?: { sendOn: string; cents: number; arrivesOn?: string }[];
 };
 
+/** The company mark, served by the live site. An email cannot carry a file
+ *  path, and a mail client will not load a data: URI in most inboxes. */
+export const LOGO = "https://app.larabeehomesllc.com/icon-192.png";
 const F = "font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif";
 const CAP = "margin:22px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6B7280;font-weight:700";
 
 /** One property's P&L, as a block. The accountant's layout -- revenue,
  *  expenses, then the balance -- because that is what owners are used to. */
-function section(s: StatementInput, boxed: boolean): string {
+function section(s: StatementInput, boxed: boolean, entityName?: string): string {
   const net = netCents(s.lines);
   const owed = owedCents(s.lines, s);
   const costs = s.lines.filter((l) => l.cents < 0);
@@ -347,11 +392,10 @@ function section(s: StatementInput, boxed: boolean): string {
   // out which block is which; alone, the payee is.
   const head = boxed
     ? `<div style="background:#F3F4F6;margin:-18px -18px 0;padding:14px 18px;border-radius:10px 10px 0 0;border-bottom:1px solid #E6E8EC">
-         <div style="font-size:16px;font-weight:800;color:#111827">${esc(s.title || s.payee)}</div>
-         ${s.title ? `<div style="color:#6B7280;font-size:12px;margin-top:2px">${esc(s.payee)}</div>` : ""}
+         <div style="font-size:16px;font-weight:800;color:#111827">${esc(placeOf(s.title, s.payee, s.lines))}</div>
        </div>`
-    : `<div style="font-size:19px;font-weight:700;color:#111827">${esc(s.payee)}</div>
-       ${s.title ? `<div style="color:#6B7280;font-size:13px;margin-top:3px">${esc(s.title)}</div>` : ""}`;
+    : `<div style="font-size:19px;font-weight:700;color:#111827">${esc(entityName ?? s.payee)}</div>
+       <div style="color:#6B7280;font-size:13px;margin-top:3px">${esc(placeOf(s.title, s.payee, s.lines))}</div>`;
   const body = `${head}
     ${table("Revenue", income)}
     ${table("Expenses", costs)}
@@ -360,7 +404,7 @@ function section(s: StatementInput, boxed: boolean): string {
       ${carried ? sum(`Carried from last month${s.priorPaidOn ? ` (${esc(money(s.previousOwedCents ?? 0))} owed, ${esc(money(s.priorPaidCents ?? 0))} paid ${esc(shortDate(s.priorPaidOn))})` : ""}`, carried) : ""}
       ${sum(owed < 0 ? "Balance" : "Distribution owed to you", owed, true)}
     </table>
-    ${owed < 0 ? `<p style="margin:10px 0 0;color:#374151;line-height:1.6">Expenses this month exceeded revenue, so there is no distribution on this property this month.</p>` : ""}
+    ${owed < 0 ? `<p style="margin:10px 0 0;color:#374151;line-height:1.6">This month's expenses on this property were ${usd(-owed)} more than its income, so there is no distribution for it this month.</p>` : ""}
     ${pays.length ? `
     <p style="${CAP}">Payment</p>
     <p style="margin:0;color:#374151;line-height:1.6">${pays.map((p) =>
@@ -386,11 +430,11 @@ export function ownerEmailHtml(month: string, entity: string, list: StatementInp
   const total = list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0);
   const summary = many ? `
     <div style="font-size:19px;font-weight:700;color:#111827">${esc(entity)}</div>
-    <p style="margin:4px 0 0;color:#6B7280;font-size:13px">${list.length} properties this month, each with its own statement below.</p>
+    <p style="margin:4px 0 0;color:#6B7280;font-size:13px">${list.length} statements this month, each itemized below.</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;border-collapse:collapse;font-size:14px">
       ${list.map((s) => { const o = owedCents(s.lines, s); return `<tr>
-        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;color:#1F2937">${esc(s.title || s.payee)}</td>
-        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:${o < 0 ? "#9B2C2C" : "#1F2937"}">${o < 0 ? `${money(o)} <span style="color:#6B7280">(nothing paid)</span>` : money(o)}</td></tr>`; }).join("")}
+        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;color:#1F2937">${esc(placeOf(s.title, s.payee, s.lines))}</td>
+        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:#1F2937">${o < 0 ? `<span style="color:#6B7280">No distribution</span>` : money(o)}</td></tr>`; }).join("")}
       <tr><td style="padding:10px 0 0;font-weight:800;color:#111827">Total distribution</td>
         <td style="padding:10px 0 0;text-align:right;font-weight:800;font-size:18px;color:#111827;font-variant-numeric:tabular-nums;white-space:nowrap">${usd(total)}</td></tr>
     </table>` : "";
@@ -398,13 +442,18 @@ export function ownerEmailHtml(month: string, entity: string, list: StatementInp
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:24px 12px">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#FFFFFF;border-radius:12px;overflow:hidden;${F};font-size:15px">
-  <tr><td style="background:#1F3554;padding:22px 28px;color:#FFFFFF">
-    <div style="font-size:20px;font-weight:800;letter-spacing:-.01em">Larabee Homes</div>
-    <div style="font-size:13px;opacity:.85;margin-top:2px">Owner Distribution &middot; ${esc(monthLabel(month))}</div>
+  <tr><td style="padding:22px 28px 18px;border-bottom:4px solid #1F3554">
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+      <td style="padding-right:12px;vertical-align:middle"><img src="${LOGO}" width="48" height="48" alt="Larabee Homes" style="display:block;border:0"></td>
+      <td style="vertical-align:middle">
+        <div style="font-size:20px;font-weight:800;letter-spacing:-.01em;color:#1F3554">Larabee Homes</div>
+        <div style="font-size:13px;color:#6B7280;margin-top:2px">Owner Distribution &middot; ${esc(monthLabel(month))}</div>
+      </td>
+    </tr></table>
   </td></tr>
   <tr><td style="padding:24px 28px 8px">
     ${summary}
-    ${list.map((s) => section(s, many)).join("")}
+    ${list.map((s) => section(s, many, entity)).join("")}
   </td></tr>
   <tr><td style="padding:20px 28px 26px;color:#6B7280;font-size:12px;line-height:1.6;border-top:1px solid #E6E8EC">
     Questions about this statement? Reply to this email.<br>Larabee Homes LLC
@@ -425,7 +474,7 @@ function sectionText(s: StatementInput, many: boolean): string[] {
     ? [name, ...rows.map((l) => pad(`${shortDate(l.date) ? `${shortDate(l.date)}  ` : ""}${l.label}`, money(l.cents))), pad("Subtotal", money(netCents(rows))), ""]
     : [];
   return [
-    ...(many ? ["=".repeat(56), s.title || s.payee, ...(s.title ? [s.payee] : []), "=".repeat(56)] : [s.payee, ...(s.title ? [s.title] : [])]),
+    ...(many ? ["=".repeat(56), placeOf(s.title, s.payee, s.lines), "=".repeat(56)] : [s.payee, placeOf(s.title, s.payee, s.lines)]),
     ``,
     ...block("REVENUE", s.lines.filter((l) => l.cents >= 0)),
     ...block("EXPENSES", s.lines.filter((l) => l.cents < 0)),
@@ -445,7 +494,7 @@ export function ownerEmailText(month: string, entity: string, list: StatementInp
   const pad = (l: string, a: string) => `${l}${" ".repeat(Math.max(2, 56 - l.length - a.length))}${a}`;
   return [
     `Larabee Homes -- Owner Distribution, ${monthLabel(month)}`,
-    ...(many ? [entity, ``, ...list.map((s) => pad(s.title || s.payee, money(owedCents(s.lines, s)))),
+    ...(many ? [entity, ``, ...list.map((s) => { const o = owedCents(s.lines, s); return pad(placeOf(s.title, s.payee, s.lines), o < 0 ? "No distribution" : money(o)); }),
       pad("Total distribution", usd(list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0))), ``] : [``]),
     ...list.flatMap((s) => sectionText(s, many)),
     `Questions about this statement? Reply to this email.`, `Larabee Homes LLC`,

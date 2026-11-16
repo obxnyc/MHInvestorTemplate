@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  owedCents, checks, parseMoney, ownerEmailHtml, subjectFor, monthLabel, usd, type Line, type StatementInput,
+  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, subjectFor, monthLabel, usd, type Line, type StatementInput,
 } from "@/lib/distribute";
 
 /**
@@ -25,6 +25,7 @@ type Statement = {
   versus: { lastCents: number | null; lastOn: string | null; diffCents: number | null; loud: boolean; says: string[] };
   source: { group?: string } | null;
   entity: string; sendsAs: string;
+  guaranteedCents: number | null; vacant: number[];
   emailedAt: string | null; emailedTo: string | null; emailDetail: string | null;
   payments: Pay[]; paidCents: number; plannedCents: number;
 };
@@ -264,7 +265,7 @@ export default function DistributionsBoard() {
                       return (
                         <button key={s.id} role="row" className={`distrow${openId === s.id ? " sel" : ""}${needsLook(s) ? " warn" : ""}`}
                           onClick={() => setOpenId(s.id)}>
-                          <span className="distname"><strong>{s.payee}</strong>{s.title && s.title !== s.payee ? <small>{s.title}</small> : null}</span>
+                          <span className="distname"><strong>{s.payee}</strong><small>{placeOf(s.title, s.payee, s.lines)}{s.sendsAs !== s.payee ? ` · emailed with ${s.sendsAs}` : ""}</small></span>
                           <span className={`num big${s.owedCents < 0 ? " distneg" : ""}`}>{money(s.owedCents)}</span>
                           <span className="num muted">{s.versus.lastCents === null ? "—" : usd(s.versus.lastCents)}</span>
                           <span className={`num${diff !== null && diff < 0 ? " distneg" : diff ? " distpos" : " muted"}`}>
@@ -481,9 +482,11 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const [email, setEmail] = useState(s.email);
   const [settle, setSettle] = useState(String(s.settleDays));
   const [entity, setEntity] = useState(s.entity);
+  const [guar, setGuar] = useState(s.guaranteedCents ? centsText(s.guaranteedCents) : "");
   const [open, setOpen] = useState(false);
   useEffect(() => { setRows(toRows(s.lines)); setNote(s.note); }, [s.lines, s.note]);
-  useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); setEntity(s.entity); }, [s.email, s.settleDays, s.entity]);
+  useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); setEntity(s.entity);
+    setGuar(s.guaranteedCents ? centsText(s.guaranteedCents) : ""); }, [s.email, s.settleDays, s.entity, s.guaranteedCents]);
 
   const parsed = rows.map((r) => ({ ...r, label: r.label.trim(), cents: parseMoney(r.amount) }));
   const bad = parsed.some((p) => (p.label || p.cents !== null) && (p.cents === null || !p.label));
@@ -492,7 +495,9 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const locked = !!s.emailedAt || s.paidCents > 0;
   const owed = dirty ? owedCents(lines, s) : s.owedCents;
   const said = dirty ? checks(s.title, lines, s) : s.checks;
-  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity });
+  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity,
+    guaranteedCents: parseMoney(guar) ?? 0 });
+  const guarCents = parseMoney(guar);
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
 
   return (
@@ -501,7 +506,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
         <h2 className="distowner">{s.payee}</h2>
         <span className={`tsnum${owed < 0 ? " distneg" : ""}`}>{money(owed)}</span>
       </div>
-      {s.title ? <p className="tsnote">{s.title}</p> : null}
+      <p className="tsnote">{placeOf(s.title, s.payee, s.lines)}</p>
       <p className="tsnote">
         {lines.length} lines · net {money(lines.reduce((a, l) => a + l.cents, 0))}
         {carried ? ` · ${money(carried)} carried from last month` : ""}
@@ -543,15 +548,45 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
       </div>
       <p className="tsnote">
         {others.length ? <>Goes in one email with{" "}
-          {others.map((o, i) => <span key={o.id}>{i ? ", " : ""}<button className="tslink distinline" onClick={() => onOpen(o.id)}>{o.title || o.payee}</button></span>)}.
+          {others.map((o, i) => <span key={o.id}>{i ? ", " : ""}<button className="tslink distinline" onClick={() => onOpen(o.id)}>{placeOf(o.title, o.payee, o.lines)}</button></span>)}.
           {" "}Statements with the same owning entity are sent together, a block each.</>
           : <>Sent on its own. Give another statement the same owning entity to send them together.</>}
       </p>
 
+      <div className="distadjust">
+        <div className="tscardhead"><h2>Adjustments</h2></div>
+        <div className="tsfield">
+          <label htmlFor={`gr-${s.id}`}>Pays empty homes as if rented, at ($ per home)</label>
+          <input id={`gr-${s.id}`} inputMode="decimal" value={guar} placeholder="Leave empty if no such agreement"
+            onChange={(e) => setGuar(e.target.value)}
+            onBlur={() => (parseMoney(guar) ?? 0) !== (s.guaranteedCents ?? 0) && savePayee()} />
+        </div>
+        {s.vacant.length ? (
+          <p className="tsnote">
+            {s.vacant.length === 1 ? "Lot" : "Lots"} {s.vacant.join(", ")} {s.vacant.length === 1 ? "has" : "have"} costs this month and no rent.
+            {!s.guaranteedCents ? " If this owner is paid as if rented, put the rent above and save." : ""}
+          </p>
+        ) : null}
+        <div className="tsrow">
+          {s.vacant.length && s.guaranteedCents && !locked ? (
+            <button className="tsminor" disabled={busy}
+              onClick={() => act({ action: "guarantee", statementId: s.id }, `${s.payee}: ${s.vacant.length} empty home${s.vacant.length === 1 ? "" : "s"} paid as if rented.`)}>
+              Pay {s.vacant.length} empty home{s.vacant.length === 1 ? "" : "s"} as rented ({s.vacant.length} × {usd(s.guaranteedCents)})
+            </button>
+          ) : null}
+          {!locked ? (
+            <button className="tsminor" onClick={() => {
+              if (!open) setOpen(true);
+              setRows([...rows, { label: "", amount: "", category: "Adjustment" }]);
+            }}>Add an adjustment</button>
+          ) : null}
+          {!locked ? (
+            <button className="tsminor" onClick={() => setOpen(!open)}>{open ? "Done changing lines" : "Change the lines"}</button>
+          ) : null}
+        </div>
+        {guarCents !== null && guarCents > 0 && guarCents < 100 ? <p className="tsalert">That is under a dollar; amounts are in dollars, like 1250.00.</p> : null}
+      </div>
       {!open ? <StatementLines lines={s.lines} /> : null}
-      {!locked ? (
-        <button className="tslink" onClick={() => setOpen(!open)}>{open ? "Done editing" : "Edit lines"}</button>
-      ) : null}
       {open ? (
         <>
           <ul className="distlines">
@@ -567,7 +602,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
               </li>
             ))}
           </ul>
-          {!locked ? <button className="tslink" onClick={() => setRows([...rows, { label: "", amount: "" }])}>+ Add a line</button> : null}
+          {!locked ? <button className="tslink" onClick={() => setRows([...rows, { label: "", amount: "", category: "Adjustment" }])}>+ Add an adjustment line</button> : null}
         </>
       ) : null}
       <div className="tsfield">

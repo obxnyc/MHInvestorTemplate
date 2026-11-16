@@ -197,16 +197,19 @@ const shb1148 = { month: "2026-11-01", payee: "SHB Investments", title: "SHB Inv
 const shbCC = { month: "2026-11-01", payee: "SHB Investments LLC — Cross Creek", title: "SHB Investments LLC - The Retreat at Cross Creek, Lots #3102",
   lines: [{ label: "Rent - Lot 3102", cents: 125000 }, { label: "Mortgage - Lot 3102", cents: -34122 }] };
 const both = D.ownerEmailHtml("2026-11-01", "SHB Investments LLC", [shb1148, shbCC]);
-t("a combined email heads each block with its property", () =>
-  both.includes("1148 Northside Rd, Lots #10, #14") && both.includes("The Retreat at Cross Creek, Lots #3102"));
+t("a combined email heads each block with its place, not the sheet's long title", () =>
+  both.includes("1148 Northside Rd · 2 homes") && both.includes("The Retreat at Cross Creek, Lot 3102")
+  && !both.includes("Lots #10, #14"));
 // The total is what is PAID: a property that came out negative pays nothing
-// and must not be netted against the other. -2,621.60 + 908.78 would be
+// and must not be netted against the other. -2,626.60 + 908.78 would be
 // negative; the right total is 908.78.
 // Read the figure ON the total line: $908.78 is also Cross Creek's own row,
 // so a check that only asks whether it appears passes on the fault.
 const totalLine = (h) => (h.split("Total distribution")[1] ?? "").replace(/<[^>]+>/g, " ").match(/-?\$[\d,]+\.\d\d/)?.[0];
 t("the total counts only what is paid, not a negative property against a positive one", () => totalLine(both) === "$908.78");
-t("a negative property says nothing is paid on it", () => /nothing paid/.test(both));
+t("a negative property says there is no distribution for it, and by how much", () =>
+  /No distribution/.test(both) && /\$2,626\.60 more than its income/.test(both));
+t("the email carries the logo", () => both.includes(D.LOGO) && /<img/.test(both));
 t("one statement alone has no summary", () => !/Total distribution/.test(D.statementHtml(shbCC)));
 const txt = D.ownerEmailText("2026-11-01", "SHB Investments LLC", [shb1148, shbCC]);
 t("the plain-text version has both blocks", () => txt.includes("1148 Northside") && txt.includes("Cross Creek") && txt.includes("$908.78"));
@@ -219,6 +222,25 @@ t("dates in the sheet's several spellings are read", () =>
   && D.readDate("September 28, 2026").getUTCDate() === 28 && D.readDate("09-11-2026").getUTCMonth() === 8);
 t("a spreadsheet serial is not read as a date, and is said", () =>
   D.readDate("46033") === null && D.checks(null, [{ label: "Rent", cents: 154000, date: "46033" }]).some((x) => /"46033" on Rent/.test(x)));
+
+/* the short place name */
+t("an owner's name and the lot list come off the heading", () =>
+  D.placeOf("Conor Dolan - The Retreat at Cross Creek, Lady Cheryl Dr, Lots #3117, #3119, #3121, #3123", "x") === "The Retreat at Cross Creek · 4 homes");
+t("a spreadsheet's name is never a property", () => D.placeOf("223 Cisco (Dutch doors)", "Conor Dolan — 223 Cisco") === "223 Cisco");
+t("one lot says which", () => D.placeOf("Shannon Dist - 1142 Northside Rd, Lots #20", "x") === "1142 Northside Rd, Lot 20");
+
+/* paying as if rented */
+const vac = [
+  { label: "Mortgage - Lot 3117", cents: -34122 }, { label: "Lot Rent - Lot 3117", cents: -37500 },
+  { label: "Mortgage - Lot 3119", cents: -34122 }, { label: "Rent - Lot 3119", cents: 125000 },
+];
+t("a home with costs and no rent is vacant; one with rent is not", () => D.vacantLots(vac).join() === "3117");
+const guaranteed = [...vac, { label: "Guaranteed rent - Lot 3117", cents: 125000, category: "Guaranteed rent" }];
+t("guaranteed rent is not counted against the sheet's own figure", () =>
+  !D.checks(null, guaranteed, { statedNetCents: D.netCents(vac) }).some((x) => /Monthly Net Cashflow says/.test(x)));
+t("but it is said, with the amount", () =>
+  D.checks(null, guaranteed, { statedNetCents: D.netCents(vac) }).some((x) => /\$1,250\.00 of adjustments made here/.test(x)));
+t("and a vacant home that is paid for is no longer vacant", () => D.vacantLots(guaranteed).length === 0);
 
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
