@@ -1115,7 +1115,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
       <footer className="edfoot">
         {sentSaid ? <span className={`tsnote edsentsaid${/^Sent/.test(sentSaid) ? " ok" : " distneg"}`} role="status">{sentSaid}</span>
           : bad ? <span className="tsnote distneg">A line needs a description and an amount like 1,250.00; a markup is 0 to 100.</span>
-          : dirty ? <span className="tsnote">Changes not saved yet.{s.checkedAt ? " Saving takes the check off: it was a check of the statement before these changes." : ""}</span>
+          : dirty ? <span className="tsnote">Changes not saved yet. Save them first, then Mark checked when it is final.{s.checkedAt ? " Saving takes the current check off." : ""}</span>
           : s.emailedAt ? <span className="tsnote">All saved.</span>
           : s.checkedAt ? <span className="tsnote">All saved. Checked{s.checkedBy ? ` by ${s.checkedBy}` : ""} {new Date(s.checkedAt).toLocaleDateString()}.</span>
           : <span className="tsnote">All saved. Not checked yet.</span>}
@@ -1135,18 +1135,13 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
         ) : null}
         <button className="btn" onClick={onPreview} disabled={dirty}>Preview email</button>
         {!s.emailedAt ? (
-          <button className={`btn${s.checkedAt && !dirty ? " edchecked" : ""}`} disabled={busy || (linesDirty && bad)}
-            onClick={async () => {
-              /* With unsaved changes this saves them first and then checks the
-                 statement as saved -- greyed out, it read as "it will not let
-                 me check it", when all it wanted was a Save first. */
-              if (dirty) {
-                if (payeeDirty && !(await savePayee())) return;
-                if (linesDirty && !(await act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents }))) return;
-                await act({ action: "check", statementId: s.id, checked: true }, `${s.payee} saved and checked.`);
-              } else act({ action: "check", statementId: s.id, checked: !s.checkedAt });
-            }}>
-            {dirty ? "Save and mark checked" : s.checkedAt ? "✓ Checked" : "Mark checked"}
+          /* Checking is its own press, separate from saving: a statement is saved
+             many times while it is being worked on and checked once, when it is
+             final. With unsaved changes it waits for a Save, and the line beside
+             the buttons says so. */
+          <button className={`btn${s.checkedAt && !dirty ? " edchecked" : ""}`} disabled={busy || dirty}
+            onClick={() => act({ action: "check", statementId: s.id, checked: !s.checkedAt })}>
+            {s.checkedAt && !dirty ? "✓ Checked" : "Mark checked"}
           </button>
         ) : null}
         {!s.emailedAt ? (
