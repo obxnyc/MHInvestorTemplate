@@ -51,7 +51,12 @@
       "Glob",
       "Grep",
       "mcp__Vercel__list_deployments",
-      "mcp__Vercel__get_deployment"
+      "mcp__Vercel__get_deployment",
+      "mcp__Gmail__create_draft",
+      "mcp__Gmail__list_drafts",
+      "mcp__Gmail__get_draft",
+      "mcp__Gmail__search_threads",
+      "mcp__Gmail__get_thread"
     ]
   }
 }
