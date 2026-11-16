@@ -715,3 +715,101 @@ export function markupLine(on: Line, percent: number): Line | null {
     category: "Adjustment",
   };
 }
+
+/* --------------------------------- what Rent Manager does not know yet */
+
+/** One difference between this screen and Rent Manager, for somebody to
+ *  enter there. `cents` is its effect on what the owner is paid: a charge
+ *  added is negative, a cost deleted is positive. A payment is the amount
+ *  sent, positive, and is an owner distribution to record, not an effect. */
+export type Change = {
+  key: string;
+  kind: "added" | "deleted" | "amount" | "markup" | "topup" | "paid";
+  label: string; date?: string; cents: number; detail: string;
+};
+
+const KIND_SAYS: Record<Change["kind"], string> = {
+  added: "Added here", deleted: "Deleted here", amount: "Amount changed",
+  markup: "Markup", topup: "Rent agreement top-up", paid: "Distribution paid",
+};
+export const changeKindSays = (k: Change["kind"]) => KIND_SAYS[k];
+
+/**
+ * Everything on one statement that Rent Manager does not have: the lines
+ * changed here and the payments sent. The key is the change itself, so the
+ * tick for "Labor $180" does not carry over to "Labor $240" -- changing a
+ * change after it was entered is a new thing to enter.
+ *
+ * A description changed with nothing else is not here: it moves no money.
+ */
+export function changesOf(
+  statementId: string, lines: Line[],
+  payments: { id: string; cents: number; paidAt: string | null; sendOn: string; confirmation?: string | null }[] = [],
+): Change[] {
+  const out: Change[] = [];
+  const key = (kind: string, l: Line, cents: number) => `${statementId}|${kind}|${l.sheetLabel ?? l.label}|${l.date ?? ""}|${cents}`;
+  for (const l of lines) {
+    const ours = OUR_CATEGORIES.includes(l.category ?? "");
+    if (l.removed) {
+      if (ours) continue;
+      const was = l.sheetCents ?? l.cents;
+      out.push({ key: key("deleted", l, was), kind: "deleted", label: l.sheetLabel ?? l.label, date: l.date, cents: -was,
+        detail: `${usd(Math.abs(was))} ${was < 0 ? "cost" : "income"} on Alex's sheet, taken off` });
+      continue;
+    }
+    if (l.category === "Guaranteed rent") {
+      out.push({ key: key("topup", l, l.cents), kind: "topup", label: l.label, date: l.date, cents: l.cents, detail: "Paid to the agreed rent" });
+      continue;
+    }
+    if (l.category === "Adjustment") {
+      const t = lineTotal(l);
+      out.push({ key: key("added", l, t), kind: "added", label: l.label, date: l.date, cents: t,
+        detail: `${t < 0 ? "Charge" : "Credit"}${markupCents(l) ? `, incl. ${usd(-markupCents(l))} markup` : ""}` });
+      continue;
+    }
+    if (l.sheetCents !== undefined && l.sheetCents !== l.cents) {
+      const d = l.cents - l.sheetCents;
+      out.push({ key: key("amount", l, l.cents), kind: "amount", label: l.label, date: l.date, cents: d,
+        detail: `Alex ${usd(Math.abs(l.sheetCents))}, now ${usd(Math.abs(l.cents))}` });
+    }
+    const m = markupCents(l);
+    if (m) out.push({ key: key(`markup${l.markupPct}`, l, m), kind: "markup", label: l.label, date: l.date, cents: m,
+      detail: `${l.markupPct}% on ${usd(Math.abs(l.cents))}` });
+  }
+  for (const p of payments) {
+    if (!p.paidAt) continue;
+    out.push({ key: `${statementId}|paid|${p.id}|${p.cents}`, kind: "paid", label: "Owner distribution", date: p.sendOn,
+      cents: p.cents, detail: p.confirmation ? `Bill Pay, confirmation ${p.confirmation}` : "Bill Pay, no confirmation number" });
+  }
+  return out;
+}
+
+/**
+ * Last month as this screen left it, against this month's sheet. Alex's
+ * "Previous Distribution Owed" is last month's owed as Rent Manager has it,
+ * and "Distributions Paid" is what Rent Manager says went out -- so if
+ * anything changed here and was never entered there, it shows up as a
+ * difference in one of the two. This is the net under the ticks: a change
+ * nobody remembered to record cannot last more than one month.
+ *
+ * Nothing is said when either side is unknown; an unknown is not a match
+ * and not a mismatch.
+ */
+export function reconcile(
+  last: { owedCents: number | null; paidCents: number | null; unrecorded: number; month: string },
+  now: Carry,
+): string[] {
+  const out: string[] = [];
+  const m = monthLabel(last.month);
+  if (last.owedCents !== null && now.previousOwedCents != null && last.owedCents !== now.previousOwedCents) {
+    const d = now.previousOwedCents - last.owedCents;
+    out.push(`${m} came to ${usd(last.owedCents)} owed here; this sheet carries forward ${usd(now.previousOwedCents)}, ${usd(Math.abs(d))} ${d > 0 ? "more" : "less"}. Something changed here in ${m} that Rent Manager does not have, or Rent Manager changed afterwards.`);
+  }
+  if (last.paidCents !== null && now.priorPaidCents != null && last.paidCents !== now.priorPaidCents) {
+    out.push(`${usd(last.paidCents)} was paid here in ${m}; this sheet says ${usd(now.priorPaidCents)} was paid.`);
+  }
+  if (last.unrecorded > 0) {
+    out.push(`${last.unrecorded} change${last.unrecorded === 1 ? "" : "s"} from ${m} not ticked as entered in Rent Manager.`);
+  }
+  return out;
+}

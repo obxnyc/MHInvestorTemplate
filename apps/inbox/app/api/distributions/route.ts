@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmailChecked } from "@/lib/notify";
 import {
   netCents, owedCents, checks, versusLast, vacantLots, withGuarantee, planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, entityOf,
-  addBankDays, bankDayFrom, type Line, type Carry,
+  addBankDays, bankDayFrom, changesOf, reconcile, type Line, type Carry,
 } from "@/lib/distribute";
 
 export const runtime = "nodejs";
@@ -52,6 +52,10 @@ async function build(month: string) {
     db.from("distribution_runs").select("*").eq("month", `${month}-01`).maybeSingle(),
     db.from("distribution_payees").select("*").order("name"),
   ]);
+  // 065: who else gets a copy, and what has been entered in Rent Manager.
+  // Missing until 065 is run; everything else works without them.
+  const settings = await db.from("distribution_settings").select("cc_all").maybeSingle();
+  const ccAll = settings.error ? null : ((settings.data?.cc_all as string | null) ?? "");
   if (runRes.error || payeesRes.error) {
     const msg = (runRes.error ?? payeesRes.error)!.message;
     return { month, migrationMissing: /distribution_|does not exist/.test(msg), error: msg };
@@ -64,27 +68,40 @@ async function build(month: string) {
     reserveHeldCents: p.reserve_held_cents == null ? null : Number(p.reserve_held_cents),
     reserveRequiredCents: p.reserve_required_cents == null ? null : Number(p.reserve_required_cents),
     startsOn: (p.starts_on as string | null) ?? null,
+    cc: (p.cc_emails as string | null) ?? "",
   }));
   const run = runRes.data;
-  if (!run) return { month, run: null, payees, statements: [] };
+  if (!run) return { month, run: null, payees, statements: [], ccAll, changes: [] };
 
   const stRes = await db.from("distribution_statements").select("*").eq("run_id", run.id);
+  const byPayee = Object.fromEntries(payees.map((p) => [p.id, p]));
+  const byPayeeId = (id: string) => byPayee[id];
 
   // Last month, from our own record when it is here: what was actually
   // paid, and the lines it was paid on. Otherwise the sheet's own
   // "Distributions Paid" is the best there is.
   const lastRun = await db.from("distribution_runs").select("id").eq("month", `${prevMonth(month)}-01`).maybeSingle();
-  const lastBy: Record<string, { lines: Line[]; sentCents: number | null; sentOn: string | null }> = {};
+  const lastBy: Record<string, { lines: Line[]; sentCents: number | null; sentOn: string | null; owedCents: number | null; unrecorded: number }> = {};
   if (lastRun.data) {
-    const ls = (await db.from("distribution_statements").select("id, payee_id, lines").eq("run_id", lastRun.data.id)).data ?? [];
-    const lp = ls.length ? (await db.from("distribution_payments").select("statement_id, amount_cents, paid_at, send_on")
+    const ls = (await db.from("distribution_statements").select("*").eq("run_id", lastRun.data.id)).data ?? [];
+    const lp = ls.length ? (await db.from("distribution_payments").select("id, statement_id, amount_cents, paid_at, send_on, confirmation")
       .in("statement_id", ls.map((x) => x.id)).not("paid_at", "is", null)).data ?? [] : [];
+    const lastRec = await db.from("distribution_recorded").select("key").eq("run_id", lastRun.data.id);
+    const lastDone = new Set((lastRec.data ?? []).map((r) => String(r.key)));
     for (const x of ls) {
       const paid = lp.filter((p) => p.statement_id === x.id);
+      const pay = byPayeeId(String(x.payee_id));
+      const lines = x.emailed_at ? cleanLines(x.lines) : withGuarantee(cleanLines(x.lines), pay?.guaranteedCents);
+      const carry: Carry = { previousOwedCents: n(x.previous_owed_cents), priorPaidCents: n(x.prior_paid_cents) };
+      const changes = changesOf(String(x.id), lines, paid.map((p) => ({ id: String(p.id), cents: Number(p.amount_cents),
+        paidAt: String(p.paid_at), sendOn: String(p.send_on), confirmation: (p.confirmation as string | null) ?? null })));
       lastBy[String(x.payee_id)] = {
-        lines: cleanLines(x.lines),
+        lines,
         sentCents: paid.length ? paid.reduce((a, p) => a + Number(p.amount_cents), 0) : null,
         sentOn: paid.length ? String(paid.map((p) => p.send_on).sort().pop()) : null,
+        // A statement with no lines was never worked out here, so there is nothing to compare.
+        owedCents: lines.length ? owedCents(lines, carry) : null,
+        unrecorded: lastRec.error ? 0 : changes.filter((c) => !lastDone.has(c.key)).length,
       };
     }
   }
@@ -92,7 +109,6 @@ async function build(month: string) {
   const payRes = ids.length
     ? await db.from("distribution_payments").select("*").in("statement_id", ids).order("send_on")
     : { data: [] as Record<string, unknown>[] };
-  const byPayee = Object.fromEntries(payees.map((p) => [p.id, p]));
   const pays = (payRes.data ?? []).map((p) => ({
     id: String(p.id), statementId: String(p.statement_id), sendOn: String(p.send_on),
     cents: Number(p.amount_cents), paidAt: (p.paid_at as string | null) ?? null,
@@ -116,7 +132,7 @@ async function build(month: string) {
       .map((p) => ({ ...p, arrivesOn: addBankDays(p.sendOn, payee?.settleDays ?? 2) }));
     return {
       id: String(s.id), payeeId: String(s.payee_id), payee: payee?.name ?? "(payee missing)",
-      email: payee?.emails ?? "", settleDays: payee?.settleDays ?? 2, entity: payee?.entity ?? "",
+      email: payee?.emails ?? "", cc: payee?.cc ?? "", settleDays: payee?.settleDays ?? 2, entity: payee?.entity ?? "",
       guaranteedCents: payee?.guaranteedCents ?? null, vacant: vacantLots(lines),
       // Distributions not started yet this month: kept on screen, never sent, owed or planned.
       startsOn: payee?.startsOn ?? null, notStarted: !!payee?.startsOn && payee.startsOn > `${month}-01`,
@@ -126,6 +142,9 @@ async function build(month: string) {
       lines, netCents: netCents(lines), owedCents: owedCents(lines, carry),
       checks: [
         ...checks(s.title as string | null, lines, carry),
+        // Last month as this screen left it, against what Rent Manager now says about it.
+        ...(lastBy[String(s.payee_id)] ? reconcile({ month: `${prevMonth(month)}-01`, owedCents: lastBy[String(s.payee_id)].owedCents,
+          paidCents: lastBy[String(s.payee_id)].sentCents, unrecorded: lastBy[String(s.payee_id)].unrecorded }, carry) : []),
         // What the read-in could not turn into a line is said, not dropped.
         ...(((s.source as { blank?: string[] } | null)?.blank ?? []).length
           ? [`The sheet left ${(s.source as { blank: string[] }).blank.length} amount(s) blank, so they are not on this statement: ${(s.source as { blank: string[] }).blank.slice(0, 3).join("; ")}${(s.source as { blank: string[] }).blank.length > 3 ? "…" : ""}.`] : []),
@@ -147,11 +166,23 @@ async function build(month: string) {
     };
   }).sort((a, b) => a.payee.localeCompare(b.payee));
 
+  // Everything Rent Manager does not have yet, and which of it has been entered.
+  const rec = await db.from("distribution_recorded").select("key, recorded_at, recorded_by").eq("run_id", run.id);
+  const who = rec.data?.length
+    ? Object.fromEntries(((await db.from("staff").select("id, full_name").in("id", [...new Set(rec.data.map((r) => r.recorded_by).filter(Boolean))])).data ?? [])
+      .map((x) => [String(x.id), String(x.full_name ?? "")]))
+    : {};
+  const done = new Map((rec.data ?? []).map((r) => [String(r.key), { at: String(r.recorded_at), by: who[String(r.recorded_by)] ?? "" }]));
+  const changes = rec.error ? null : statements.flatMap((s) => changesOf(s.id, s.lines, s.payments).map((c) => ({
+    ...c, statementId: s.id, payee: s.payee, title: s.title,
+    recordedAt: done.get(c.key)?.at ?? null, recordedBy: done.get(c.key)?.by ?? null,
+  })));
+
   return {
     month,
     run: { id: String(run.id), capCents: Number(run.daily_cap_cents), startOn: (run.start_on as string | null) ?? null,
       perPaymentCents: Number(run.per_payment_cap_cents ?? 500000) },
-    payees, statements,
+    payees, statements, ccAll, changes,
   };
 }
 
@@ -235,10 +266,14 @@ export async function POST(req: Request) {
       const list = emails(b.email);
       const bad = list.filter((e) => !okEmail(e));
       if (bad.length) return fail(`That is not an email address: ${bad.join(", ")}`);
+      const ccList = emails(b.cc);
+      const badCc = ccList.filter((e) => !okEmail(e));
+      if (badCc.length) return fail(`That is not an email address: ${badCc.join(", ")}`);
       const settle = Math.round(Number(b.settleDays));
       if (!(settle >= 0 && settle <= 30)) return fail("Bank days must be between 0 and 30.");
       const { error } = await db.from("distribution_payees")
         .update({ emails: list.join(", ") || null, settle_days: settle,
+          ...("cc" in b ? { cc_emails: ccList.join(", ") || null } : {}),
           ...("entity" in b ? { entity: String(b.entity ?? "").trim().slice(0, 120) || null } : {}),
           ...("guaranteedCents" in b ? { guaranteed_rent_cents: Number(b.guaranteedCents) > 0 ? Math.round(Number(b.guaranteedCents)) : null } : {}),
           ...("reserveHeldCents" in b ? { reserve_held_cents: b.reserveHeldCents === null || b.reserveHeldCents === "" || !(Number(b.reserveHeldCents) >= 0) ? null : Math.round(Number(b.reserveHeldCents)) } : {}),
@@ -312,6 +347,38 @@ export async function POST(req: Request) {
       break;
     }
 
+    case "cc-all": {
+      const list = emails(b.cc);
+      const bad = list.filter((e) => !okEmail(e));
+      if (bad.length) return fail(`That is not an email address: ${bad.join(", ")}`);
+      const { error } = await db.from("distribution_settings").upsert({ id: true, cc_all: list.join(", ") || null });
+      if (error) return fail(/distribution_settings/.test(error.message) ? "Migration 065 has not been run yet." : error.message, 500);
+      break;
+    }
+
+    case "record": {
+      /* Ticked when somebody has entered the change in Rent Manager. Only a
+         change that is on the list now can be ticked, so a stale screen
+         cannot tick something that has since been changed again. */
+      const id = await runId();
+      if (!id) return fail("Start the month first.");
+      const keys: string[] = Array.isArray(b.keys) ? b.keys.map(String) : [];
+      if (!keys.length) return fail("Which changes?");
+      if (b.recorded) {
+        const now = await build(month);
+        const live = new Set((now.changes ?? []).map((c) => c.key));
+        const stale = keys.filter((k) => !live.has(k));
+        if (stale.length) return fail("That changed since the screen was loaded. Look at it again before ticking it.");
+        const { error } = await db.from("distribution_recorded")
+          .upsert(keys.map((key) => ({ run_id: id, key, recorded_by: me!.id, recorded_at: new Date().toISOString() })), { onConflict: "run_id,key", ignoreDuplicates: true });
+        if (error) return fail(/distribution_recorded/.test(error.message) ? "Migration 065 has not been run yet." : error.message, 500);
+      } else {
+        const { error } = await db.from("distribution_recorded").delete().eq("run_id", id).in("key", keys);
+        if (error) return fail(error.message, 500);
+      }
+      break;
+    }
+
     case "send": {
       /* ONE EMAIL PER OWNING ENTITY. Every statement of an entity that is
          asked for goes in one email, a block each; two entities are two
@@ -334,6 +401,8 @@ export async function POST(req: Request) {
       }
       for (const [entity, list] of groups) {
         const to = [...new Set(list.flatMap((s) => emails(s.email)).map((e) => e.toLowerCase()))];
+        // Copied: the owner's own (an accountant) and the bookkeeper on every one -- never twice, never someone already in To.
+        const cc = [...new Set([...list.flatMap((s) => emails(s.cc)), ...emails(now.ccAll)].map((e) => e.toLowerCase()))].filter((e) => !to.includes(e));
         if (!to.length) { for (const s of list) results.push({ payee: s.payee, ok: false, detail: "no email address on file" }); continue; }
         const inputs = list.map((s) => ({ month: `${month}-01`, payee: s.payee, title: s.title, lines: s.lines, note: s.note, payments: s.payments,
           previousOwedCents: s.previousOwedCents, priorPaidCents: s.priorPaidCents, priorPaidOn: s.priorPaidOn, depositsCents: s.depositsCents,
@@ -347,11 +416,12 @@ export async function POST(req: Request) {
           from: process.env.DISTRIBUTIONS_FROM || sender || undefined,
           replyTo: process.env.DISTRIBUTIONS_REPLY_TO || sender,
           bcc: process.env.DISTRIBUTIONS_BCC || sender,
+          cc,
         });
         // What was sent is the record: the lines as emailed, top-ups included.
         for (const s of list) {
           await db.from("distribution_statements").update({
-            ...(r.ok ? { emailed_at: new Date().toISOString(), emailed_to: to.join(", "), lines: s.lines } : {}),
+            ...(r.ok ? { emailed_at: new Date().toISOString(), emailed_to: to.join(", ") + (cc.length ? `; cc ${cc.join(", ")}` : ""), lines: s.lines } : {}),
             email_detail: r.detail,
           }).eq("id", s.id);
         }

@@ -349,6 +349,56 @@ t("an owner under $5,000 is one payment", () => forOwner(wf, "habb").length === 
 // so the cap is what is doing the splitting, not the daily limit.
 t("without the cap, RNMK is one payment", () => forOwner(D.planPayments(many, 2500000, "2026-11-16"), "rnmk").length === 1);
 
+/* what Rent Manager does not know yet */
+{
+  const lines = [
+    { label: "Monthly Rent - Lot 10", cents: 155000, date: "11/1/2026" },
+    { label: "Supplies - Lot 10", cents: -4000, removed: true },                        // a cost deleted: owner +$40
+    { label: "Plumbing - Lot 10", cents: -30000, sheetCents: -20000 },                 // raised from $200 to $300: owner -$100
+    { label: "Water heater - Lot 16", cents: -50000, markupPct: 15 },                  // 15% markup: owner -$75
+    { label: "Trip fee - Lot 16", cents: -2500, category: "Adjustment", markupPct: 10 }, // added with its own markup: -$27.50 in one
+    { label: "Guaranteed rent - Lot 16", cents: 10200, category: "Guaranteed rent" },
+    { label: "Mortgage - Lot 10", cents: -47449, sheetLabel: "Mortgage" },              // renamed only: moves no money
+    { label: "Mistake", cents: -999, category: "Adjustment", removed: true },           // ours, taken off: never in RM
+  ];
+  const pays = [{ id: "p1", cents: 500000, paidAt: "2026-11-17", sendOn: "2026-11-17", confirmation: "WF1" },
+                { id: "p2", cents: 220408, paidAt: null, sendOn: "2026-11-18" }];
+  const ch = D.changesOf("st", lines, pays);
+  const of = (k) => ch.filter((c) => c.kind === k);
+  t("a deleted sheet line raises the payout by what Alex had", () => of("deleted").length === 1 && of("deleted")[0].cents === 4000);
+  t("a changed amount is the difference, not the new amount", () => of("amount")[0].cents === -10000);
+  t("a markup on a sheet line is its own change", () => of("markup").length === 1 && of("markup")[0].cents === -7500);
+  t("a charge added here carries its markup inside it, not as a second change", () => of("added").length === 1 && of("added")[0].cents === -2750);
+  t("a rent-agreement top-up is listed", () => of("topup")[0].cents === 10200);
+  t("a rename alone is not something to record", () => !ch.some((c) => c.label.startsWith("Mortgage")));
+  t("a line we added and took off again is not listed", () => !ch.some((c) => c.label === "Mistake"));
+  t("only a payment marked paid is listed", () => of("paid").length === 1 && of("paid")[0].cents === 500000);
+  t("every change has its own key", () => new Set(ch.map((c) => c.key)).size === ch.length);
+  // Changing a change after it was ticked is a new thing to enter.
+  const again = D.changesOf("st", lines.map((l) => (l.label === "Plumbing - Lot 10" ? { ...l, cents: -35000 } : l)), pays);
+  t("changing an amount again gives it a new key", () =>
+    !again.some((c) => c.key === of("amount")[0].key) && again.filter((c) => c.kind !== "amount").every((c) => ch.some((x) => x.key === c.key)));
+  // The key must follow the change, not where the line sits on the list.
+  t("reordering lines keeps every key", () => {
+    const k2 = new Set(D.changesOf("st", [...lines].reverse(), pays).map((c) => c.key));
+    return ch.every((c) => k2.has(c.key));
+  });
+}
+
+/* next month's sheet against this month as it was left here */
+{
+  const R = (last, now) => D.reconcile({ month: "2026-11-01", unrecorded: 0, ...last }, now);
+  t("matching carry and payment says nothing", () => R({ owedCents: 220408, paidCents: 220408 }, { previousOwedCents: 220408, priorPaidCents: 220408 }).length === 0);
+  t("a $180 charge Rent Manager never got is found", () => {
+    const said = R({ owedCents: 220408 - 18000, paidCents: 202408 }, { previousOwedCents: 220408, priorPaidCents: 202408 });
+    return said.length === 1 && /\$180\.00 more/.test(said[0]);
+  });
+  t("a payment that differs from the sheet is found", () => R({ owedCents: 100, paidCents: 720408 }, { previousOwedCents: 100, priorPaidCents: 600000 }).some((x) => /\$7,204\.08 was paid here/.test(x)));
+  t("an unknown is not a mismatch", () => R({ owedCents: null, paidCents: null }, { previousOwedCents: 5, priorPaidCents: 5 }).length === 0
+    && R({ owedCents: 5, paidCents: 5 }, {}).length === 0);
+  t("unticked changes from last month are said", () => /2 changes from November 2026/.test(D.reconcile({ month: "2026-11-01", owedCents: null, paidCents: null, unrecorded: 2 }, {})[0]));
+}
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);

@@ -455,6 +455,8 @@ const TABLES = {
         { id: "pm1", statement_id: "ds4", send_on: "2026-11-16", amount_cents: 52551, paid_at: "2026-11-16T15:00:00Z", paid_by: null, confirmation: "WF55120", created_at: month },
         { id: "pm2", statement_id: "ds1", send_on: "2026-11-17", amount_cents: 211051, paid_at: null, paid_by: null, confirmation: null, created_at: month },
       ],
+      distribution_settings: [{ id: true, cc_all: "books@larabeehomesllc.com" }],
+      distribution_recorded: [],
     };
   })(),
 };
@@ -571,7 +573,20 @@ createServer((req, res) => {
           message: `relation "public.${table}" does not exist`,
           hint: null, details: null });
       }
-      TABLES[table] = TABLES[table].concat(made);
+      /* An upsert replaces (or, with ignore-duplicates, skips) the row its
+         on_conflict columns name -- appending it made a second settings row,
+         and `maybeSingle` on two rows is an error the real database never gives. */
+      const onc = url.searchParams.get("on_conflict");
+      if (onc) {
+        const cols = onc.split(",");
+        const ignore = /ignore-duplicates/.test(req.headers.prefer ?? "");
+        const same = (x, y) => cols.every((c) => String(x[c]) === String(y[c]));
+        for (const row of made) {
+          const at = TABLES[table].findIndex((x) => same(x, row));
+          if (at < 0) TABLES[table].push(row);
+          else if (!ignore) TABLES[table][at] = { ...TABLES[table][at], ...row };
+        }
+      } else TABLES[table] = TABLES[table].concat(made);
       const accept = req.headers.accept ?? "";
       return send(201, accept.includes("vnd.pgrst.object") ? made[0] : made);
     });
