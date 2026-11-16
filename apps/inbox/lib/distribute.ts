@@ -126,14 +126,35 @@ export type Planned = { id: string; sendOn: string; cents: number; arrivesOn: st
  */
 export function planPayments(
   owed: Owed[], capCents: number, startOn: string, taken: Record<string, number> = {},
+  maxPerPaymentCents: number = Infinity,
 ): Planned[] {
   if (!(capCents > 0)) throw new Error("the daily limit must be more than nothing");
+  if (!(maxPerPaymentCents > 0)) throw new Error("the most per payment must be more than nothing");
   const used: Record<string, number> = { ...taken };
   const room = (d: string) => capCents - (used[d] ?? 0);
   const out: Planned[] = [];
   const first = bankDayFrom(startOn);
   const order = owed.filter((o) => o.cents > 0)
     .sort((a, b) => b.settleDays - a.settleDays || b.cents - a.cents || a.name.localeCompare(b.name));
+
+  /* A cap on each payment (Wells Fargo Bill Pay: $5,000) is a second limit
+     beside the daily one. An owner owed more is paid in pieces of the cap and
+     a remainder -- $17,204.08 is 5,000 + 5,000 + 5,000 + 2,204.08 -- each a
+     whole payment on the first bank day with room for it, so no day goes
+     over its limit and no payment over its own. */
+  if (maxPerPaymentCents < capCents) {
+    for (const o of order) {
+      const pieces: number[] = [];
+      for (let left = o.cents; left > 0; left -= Math.min(left, maxPerPaymentCents)) pieces.push(Math.min(left, maxPerPaymentCents));
+      for (const piece of pieces) {
+        let d = first;
+        for (let i = 0; i < 400 && room(d) < piece; i++) d = addBankDays(d, 1);
+        used[d] = (used[d] ?? 0) + piece;
+        out.push({ id: o.id, sendOn: d, cents: piece, arrivesOn: addBankDays(d, o.settleDays) });
+      }
+    }
+    return out.sort((a, b) => a.sendOn.localeCompare(b.sendOn));
+  }
 
   for (const o of order) {
     let left = o.cents;

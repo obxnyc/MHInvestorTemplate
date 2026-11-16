@@ -3735,3 +3735,12 @@ button.distwho:focus-visible{outline:2px solid var(--accent)}
 .edmodaldl dt{color:var(--muted);font-weight:700}
 .edmodaldl dd{margin:0;overflow-wrap:anywhere}
 .edsentsaid.ok{color:var(--tn-ink);font-weight:700}
+.distbyowner{border:1px solid var(--hair);border-radius:12px;overflow:hidden;margin:.6rem 0;background:var(--card)}
+.distbyowner .tscardhead{padding:.6rem .8rem;margin:0}
+.edrow.dbo{grid-template-columns:minmax(0,1.6fr) repeat(4,minmax(0,1fr));width:100%;border-left:0;border-right:0;border-bottom:0;
+  background:var(--card);color:var(--ink);font:inherit;text-align:left}
+button.edrow.dbo{cursor:pointer}
+button.edrow.dbo:hover{background:var(--sunk)}
+.edrow.dbo.done{opacity:.6}
+.edrow.dbo .num small{color:var(--muted);font-size:.72rem}
+@media (max-width:44rem){.edrow.dbo{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.edrow.dbo>span:first-child{grid-column:1/-1}}

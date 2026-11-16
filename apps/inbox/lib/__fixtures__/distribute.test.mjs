@@ -329,6 +329,26 @@ t("a home whose only rent line was taken off is topped up in full", () =>
   D.withGuarantee([{ label: "Rent - Lot 9", cents: 155000, removed: true }, { label: "Mortgage - Lot 9", cents: -47449 }], 125000)
     .filter((l) => l.category === "Guaranteed rent").map((l) => l.cents).join() === "125000");
 
+/* Wells Fargo: $5,000 a payment, $25,000 a day */
+const many = [
+  { id: "rnmk", name: "RNMK Homes", cents: 1720408, settleDays: 2 },
+  { id: "habb", name: "Habberstad Norse", cents: 488780, settleDays: 2 },
+  { id: "meg", name: "Meg Larabee", cents: 483400, settleDays: 2 },
+  { id: "jack", name: "Jack Curran", cents: 321099, settleDays: 2 },
+  { id: "eli", name: "Eli Wacht", cents: 105102, settleDays: 2 },
+];
+const wf = D.planPayments(many, 2500000, "2026-11-16", {}, 500000);
+t("no payment is over $5,000", () => wf.every((p) => p.cents <= 500000));
+t("no day is over $25,000", () => Object.values(byDay(wf)).every((c) => c <= 2500000));
+t("everybody is paid exactly what is owed", () => many.every((o) => sum(forOwner(wf, o.id).map((p) => p.cents)) === o.cents));
+t("RNMK's $17,204.08 is three of $5,000 and $2,204.08", () =>
+  forOwner(wf, "rnmk").map((p) => p.cents).sort((a, b) => b - a).join() === "500000,500000,500000,220408");
+// An owner under the cap is still one payment: the cap must not chop it.
+t("an owner under $5,000 is one payment", () => forOwner(wf, "habb").length === 1 && forOwner(wf, "eli").length === 1);
+// Without the per-payment cap the same money is fewer, bigger payments --
+// so the cap is what is doing the splitting, not the daily limit.
+t("without the cap, RNMK is one payment", () => forOwner(D.planPayments(many, 2500000, "2026-11-16"), "rnmk").length === 1);
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);

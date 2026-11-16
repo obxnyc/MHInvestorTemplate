@@ -148,7 +148,8 @@ async function build(month: string) {
 
   return {
     month,
-    run: { id: String(run.id), capCents: Number(run.daily_cap_cents), startOn: (run.start_on as string | null) ?? null },
+    run: { id: String(run.id), capCents: Number(run.daily_cap_cents), startOn: (run.start_on as string | null) ?? null,
+      perPaymentCents: Number(run.per_payment_cap_cents ?? 500000) },
     payees, statements,
   };
 }
@@ -275,10 +276,12 @@ export async function POST(req: Request) {
       const id = await runId();
       if (!id) return fail("Start the month first.");
       const cap = Math.round(Number(b.capCents ?? 2_500_000));
+      const per = Math.round(Number(b.perPaymentCents ?? 500_000));
+      if (!(per >= 100)) return fail("The most per payment has to be a real amount.");
       if (!(cap >= 100)) return fail("The daily limit has to be a real amount.");
       const start = /^\d{4}-\d{2}-\d{2}$/.test(String(b.startOn)) ? String(b.startOn) : todayNY();
       const startOn = start < todayNY() ? todayNY() : start;
-      await db.from("distribution_runs").update({ daily_cap_cents: cap, start_on: startOn }).eq("id", id);
+      await db.from("distribution_runs").update({ daily_cap_cents: cap, per_payment_cap_cents: per, start_on: startOn }).eq("id", id);
 
       const now = await build(month);
       // Unpaid planned payments are thrown away and planned again; paid ones
@@ -289,7 +292,7 @@ export async function POST(req: Request) {
       for (const s of now.statements ?? []) for (const p of s.payments) if (p.paidAt) taken[p.sendOn] = (taken[p.sendOn] ?? 0) + p.cents;
       const owed = (now.statements ?? []).filter((s) => !s.hold && !s.notStarted && (s.source as { group?: string } | null)?.group !== "Test")
         .map((s) => ({ id: s.id, name: s.payee, settleDays: s.settleDays, cents: s.owedCents - s.paidCents }));
-      const plan = planPayments(owed, cap, bankDayFrom(startOn), taken);
+      const plan = planPayments(owed, cap, bankDayFrom(startOn), taken, per);
       if (plan.length) {
         const { error } = await db.from("distribution_payments")
           .insert(plan.map((p) => ({ statement_id: p.id, send_on: p.sendOn, amount_cents: p.cents })));
