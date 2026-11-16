@@ -3,7 +3,7 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmailChecked } from "@/lib/notify";
 import {
-  netCents, owedCents, checks, planPayments, readPaste, statementHtml, statementText, subjectFor,
+  netCents, owedCents, checks, versusLast, planPayments, readPaste, statementHtml, statementText, subjectFor,
   addBankDays, bankDayFrom, type Line, type Carry,
 } from "@/lib/distribute";
 
@@ -59,6 +59,25 @@ async function build(month: string) {
   if (!run) return { month, run: null, payees, statements: [] };
 
   const stRes = await db.from("distribution_statements").select("*").eq("run_id", run.id);
+
+  // Last month, from our own record when it is here: what was actually
+  // paid, and the lines it was paid on. Otherwise the sheet's own
+  // "Distributions Paid" is the best there is.
+  const lastRun = await db.from("distribution_runs").select("id").eq("month", `${prevMonth(month)}-01`).maybeSingle();
+  const lastBy: Record<string, { lines: Line[]; sentCents: number | null; sentOn: string | null }> = {};
+  if (lastRun.data) {
+    const ls = (await db.from("distribution_statements").select("id, payee_id, lines").eq("run_id", lastRun.data.id)).data ?? [];
+    const lp = ls.length ? (await db.from("distribution_payments").select("statement_id, amount_cents, paid_at, send_on")
+      .in("statement_id", ls.map((x) => x.id)).not("paid_at", "is", null)).data ?? [] : [];
+    for (const x of ls) {
+      const paid = lp.filter((p) => p.statement_id === x.id);
+      lastBy[String(x.payee_id)] = {
+        lines: cleanLines(x.lines),
+        sentCents: paid.length ? paid.reduce((a, p) => a + Number(p.amount_cents), 0) : null,
+        sentOn: paid.length ? String(paid.map((p) => p.send_on).sort().pop()) : null,
+      };
+    }
+  }
   const ids = (stRes.data ?? []).map((s) => s.id);
   const payRes = ids.length
     ? await db.from("distribution_payments").select("*").in("statement_id", ids).order("send_on")
@@ -86,7 +105,20 @@ async function build(month: string) {
       title: (s.title as string | null) ?? "", ...carry, owedNote: (s.owed_note as string | null) ?? "",
       source: s.source ?? null,
       lines, netCents: netCents(lines), owedCents: owedCents(lines, carry),
-      checks: checks(s.title as string | null, lines, carry),
+      checks: [
+        ...checks(s.title as string | null, lines, carry),
+        // What the read-in could not turn into a line is said, not dropped.
+        ...(((s.source as { blank?: string[] } | null)?.blank ?? []).length
+          ? [`The sheet left ${(s.source as { blank: string[] }).blank.length} amount(s) blank, so they are not on this statement: ${(s.source as { blank: string[] }).blank.slice(0, 3).join("; ")}${(s.source as { blank: string[] }).blank.length > 3 ? "…" : ""}.`] : []),
+        ...(((s.source as { extra?: string[] } | null)?.extra ?? []).length
+          ? [`The sheet has another section below this one (${(s.source as { extra: string[] }).extra.join(", ")}) that is not on this statement.`] : []),
+      ],
+      versus: (() => {
+        const last = lastBy[String(s.payee_id)];
+        const sent = last?.sentCents ?? carry.priorPaidCents ?? null;
+        const on = last?.sentCents != null ? last.sentOn : carry.priorPaidOn ?? null;
+        return versusLast(owedCents(lines, carry), { sentCents: sent, sentOn: on, lines: last?.lines ?? null }, lines);
+      })(),
       note: (s.note as string | null) ?? "", hold: !!s.hold,
       emailedAt: (s.emailed_at as string | null) ?? null, emailedTo: (s.emailed_to as string | null) ?? null,
       emailDetail: (s.email_detail as string | null) ?? null,

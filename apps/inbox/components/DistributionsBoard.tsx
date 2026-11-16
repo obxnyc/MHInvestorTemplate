@@ -22,6 +22,7 @@ type Statement = {
   title: string; previousOwedCents: number | null; priorPaidCents: number | null; priorPaidOn: string | null;
   depositsCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
   lines: Line[]; netCents: number; owedCents: number; checks: string[]; note: string; hold: boolean;
+  versus: { lastCents: number | null; lastOn: string | null; diffCents: number | null; loud: boolean; says: string[] };
   emailedAt: string | null; emailedTo: string | null; emailDetail: string | null;
   payments: Pay[]; paidCents: number; plannedCents: number;
 };
@@ -92,7 +93,8 @@ export default function DistributionsBoard() {
   const statements = data?.statements ?? [];
   const ready = statements.filter((s) => !s.emailedAt && !s.hold && s.lines.length && s.email);
   const totalNet = statements.filter((s) => !s.hold && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
-  const flagged = statements.filter((s) => s.checks.some((c) => !/carries into this month/.test(c))).length;
+  const flagged = statements.filter((s) => s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c))).length;
+  const lastTotal = statements.reduce((a, s) => a + Math.max(0, s.versus.lastCents ?? 0), 0);
   const paidTotal = statements.reduce((a, s) => a + s.paidCents, 0);
   const days = useMemo(() => {
     const m: Record<string, { pay: Pay; s: Statement }[]> = {};
@@ -143,6 +145,7 @@ export default function DistributionsBoard() {
             </div>
             <dl className="disttotals">
               <div><dt>To pay</dt><dd>{usd(totalNet)}</dd></div>
+              <div><dt>Last month</dt><dd>{usd(lastTotal)}</dd></div>
               <div><dt>Paid</dt><dd>{usd(paidTotal)}</dd></div>
               <div><dt>Emailed</dt><dd>{statements.filter((s) => s.emailedAt).length} of {statements.length}</dd></div>
             </dl>
@@ -210,7 +213,7 @@ export default function DistributionsBoard() {
             ) : (
               <>
                 <p className="tsnudge loud">
-                  Send to: {ready.map((s) => `${s.payee} (${money(s.owedCents)})`).join(" · ")}
+                  Send to: {ready.map((s) => `${s.payee} (${money(s.owedCents)}${s.versus.lastCents !== null ? `, last month ${money(s.versus.lastCents)}` : ""})`).join(" · ")}
                 </p>
                 <div className="tsrow">
                   <button className="tsact" disabled={busy} onClick={async () => {
@@ -269,7 +272,7 @@ export default function DistributionsBoard() {
                       <li key={pay.id} className={pay.paidAt ? "paid" : ""}>
                         <span className="distwho">
                           <strong>{s.payee}</strong>
-                          <span className="muted">arrives by {day(pay.arrivesOn)}{s.plannedCents > 0 && s.payments.length > 1 ? ` · part of ${usd(s.plannedCents)}` : ""}</span>
+                          <span className={`muted${s.versus.loud ? " distneg" : ""}`}>{s.versus.lastCents !== null ? `last month ${usd(s.versus.lastCents)} · ` : ""}{s.versus.loud ? "check the statement · " : ""}arrives by {day(pay.arrivesOn)}{s.plannedCents > 0 && s.payments.length > 1 ? ` · part of ${usd(s.plannedCents)}` : ""}</span>
                         </span>
                         <span className="payamt">{usd(pay.cents)}</span>
                         {pay.paidAt ? (
@@ -351,6 +354,15 @@ function StatementCard({ s, busy, act, onPreview }: {
         {carried ? ` · ${money(carried)} carried from last month` : ""}
         {s.owedNote ? ` · sheet says “${s.owedNote}”` : ""}
       </p>
+      <p className={`distvs${s.versus.loud ? " loud" : ""}`}>
+        <span>This month <strong>{money(owed)}</strong></span>
+        <span>Last month {s.versus.lastCents === null ? "—" : <strong>{money(s.versus.lastCents)}</strong>}
+          {s.versus.lastOn ? <span className="muted"> sent {s.versus.lastOn}</span> : null}</span>
+        {s.versus.diffCents !== null ? (
+          <span className={s.versus.diffCents < 0 ? "distneg" : ""}>{s.versus.diffCents >= 0 ? "+" : "−"}{usd(Math.abs(owed - (s.versus.lastCents ?? 0)))}</span>
+        ) : null}
+      </p>
+      {s.versus.says.map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
       {said.map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
       <p className="tsnote">
         {s.emailedAt ? `Emailed ${new Date(s.emailedAt).toLocaleDateString()} to ${s.emailedTo}.`

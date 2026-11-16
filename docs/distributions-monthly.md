@@ -55,10 +55,11 @@ Gmail, Google Sheets and Supabase connectors. Supabase project
      "extra_blocks": [...], "blank_lines": [...]}`.
 5. Payees with no email: take the To/Cc of the most recent sent
    "<Month> Owner Distribution" email whose body starts with that title.
-6. Email Cade (cade@larabeehomesllc.com) a short summary: how many statements,
-   the total to pay, and every statement whose checks say something (the
-   screen computes them; the same rules are in `apps/inbox/lib/distribute.ts`
-   `checks`), with the link https://app.larabeehomesllc.com/distributions
+6. Do not email anyone, Cade included, until he says the system can send on
+   his behalf (16 November 2026: "until we have a bullet proof system i dont
+   want you sending emails on my behalf yet"). The summary lives on
+   https://app.larabeehomesllc.com/distributions -- the checks and the
+   against-last-month line are on every statement there.
 
 Nothing is emailed to an owner and nothing is paid by the read-in. Sending is
 a button on the screen, pressed by a person.

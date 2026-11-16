@@ -159,6 +159,38 @@ const jackHtml = D.statementHtml({ month: "2026-11-01", payee: "Jack Curran", li
 t("the statement shows the carried balance and the owed total", () =>
   jackHtml.includes("$391.14") && jackHtml.includes("$3,210.99"));
 
+/* against last month's */
+t("an ordinary month is quiet", () => {
+  const v = D.versusLast(221844, { sentCents: 229844 }, []);
+  return !v.loud && v.diffCents === -8000 && v.says.length === 0;
+});
+// SHB: $2,709.45 sent in October, -$2,059.65 this month.
+t("a big drop is loud and says by how much", () => {
+  const v = D.versusLast(-205965, { sentCents: 270945 }, []);
+  return v.loud && /Down \$4,769\.10/.test(v.says[0]);
+});
+// $300 on $10,000 is 3%: over $250, under 20%. Either rule alone would fire.
+t("$300 on a $10,000 owner is not loud", () => !D.versusLast(1030000, { sentCents: 1000000 }, []).loud);
+// $200 on $400 is 50%: over 20%, under $250.
+t("$200 on a $400 owner is not loud", () => !D.versusLast(20000, { sentCents: 40000 }, []).loud);
+const octLines = [
+  { label: "Monthly Rent - Lot 13", cents: 155000 }, { label: "Monthly Rent - Lot 32", cents: 155000 },
+  { label: "Mortgage - Lot 13", cents: -42539 }, { label: "Mortgage - Lot 32", cents: -42539 },
+];
+const novLines = [
+  { label: "Monthly Rent - Lot 13", cents: 155000 }, { label: "Monthly Rent - Lot 33", cents: 158000 },
+  { label: "Mortgage - Lot 13", cents: -42539 }, { label: "Mortgage - Lot 13", cents: -42539 },
+];
+const v = D.versusLast(200000, { sentCents: 220000, lines: octLines }, novLines);
+t("a lot that stopped paying rent is said", () => v.says.some((x) => /No rent line this month for lot 32/.test(x)));
+t("a lot that started paying rent is said", () => v.says.some((x) => /A rent line for lot 33/.test(x)));
+t("a lot that lost its loan line is said", () => v.says.some((x) => /No loan line this month for lot 32/.test(x)));
+t("the same line twice is said", () => v.says.some((x) => /appears 2 times/.test(x)));
+t("anything said makes it loud even when the total barely moved", () => v.loud);
+t("a changed rent is said", () =>
+  D.versusLast(0, { sentCents: 0, lines: [{ label: "Monthly Rent - Lot 17", cents: 155000 }] },
+    [{ label: "Monthly Rent - Lot 17", cents: 158000 }]).says.some((x) => /Lot 17 rent is \$1,580\.00; it was \$1,550\.00/.test(x)));
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);

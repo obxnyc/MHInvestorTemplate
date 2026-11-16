@@ -383,3 +383,67 @@ export function statementText(s: StatementInput): string {
     ``, `Questions about this statement? Reply to this email.`, `Larabee Homes LLC`,
   ].join("\n");
 }
+
+/* --------------------------------------------- against last month's */
+
+export type Versus = {
+  lastCents: number | null;      // what was sent last month
+  lastOn: string | null;
+  diffCents: number | null;
+  loud: boolean;                 // a swing big enough to look at before paying
+  says: string[];                // why, one sentence each
+};
+
+const lotOf = (label: string) => lotsIn(label)[0] ?? null;
+const kindOf = (l: Line) => {
+  const s = `${l.category ?? ""} ${l.label}`.toLowerCase();
+  if (/monthly rent|^rent\b|\brent - lot/.test(s) && l.cents > 0) return "rent";
+  if (/mortgage|loan/.test(s)) return "loan";
+  if (/consult/.test(s)) return "consultant fee";
+  if (/lot rent|lots rent/.test(s)) return "lot rent";
+  return "other";
+};
+
+/**
+ * This month's payment beside last month's, because the breakdown is typed
+ * by a person and a typo in it is somebody paid wrong.
+ *
+ * A swing is loud when it is both more than $250 and more than 20% of last
+ * month's -- either alone fires on ordinary months (a $90 pest call on a
+ * $400 owner, a 5% move on a $10,000 one). When last month's lines are on
+ * file, it also says which lots stopped or started paying rent, which lots
+ * gained or lost their loan or lot-rent line, and any one-off costs.
+ */
+export function versusLast(
+  thisCents: number,
+  last: { sentCents: number | null; sentOn?: string | null; lines?: Line[] | null },
+  lines: Line[],
+): Versus {
+  const says: string[] = [];
+  const lastCents = last.sentCents;
+  const diff = lastCents === null ? null : thisCents - lastCents;
+  const loud = diff !== null && Math.abs(diff) > 25000 && Math.abs(diff) > Math.abs(lastCents ?? 0) * 0.2;
+  if (lastCents !== null && diff !== null && loud) {
+    says.push(`${diff > 0 ? "Up" : "Down"} ${usd(Math.abs(diff))} on last month's ${usd(lastCents)}.`);
+  }
+  if (last.lines?.length) {
+    const lotsBy = (ls: Line[], k: string) => new Set(ls.filter((l) => kindOf(l) === k).map((l) => lotOf(l.label)).filter((x): x is number => x !== null));
+    for (const k of ["rent", "loan", "lot rent", "consultant fee"]) {
+      const before = lotsBy(last.lines, k), now = lotsBy(lines, k);
+      const gone = [...before].filter((x) => !now.has(x)).sort((a, b) => a - b);
+      const added = [...now].filter((x) => !before.has(x)).sort((a, b) => a - b);
+      if (gone.length) says.push(`No ${k} line this month for lot${gone.length > 1 ? "s" : ""} ${gone.join(", ")}, which had one last month.`);
+      if (added.length) says.push(`A ${k} line for lot${added.length > 1 ? "s" : ""} ${added.join(", ")} that was not there last month.`);
+    }
+    const rentNow = lines.filter((l) => kindOf(l) === "rent");
+    for (const l of rentNow) {
+      const lot = lotOf(l.label);
+      const was = last.lines.find((x) => kindOf(x) === "rent" && lotOf(x.label) === lot);
+      if (was && was.cents !== l.cents) says.push(`Lot ${lot} rent is ${usd(l.cents)}; it was ${usd(was.cents)} last month.`);
+    }
+    const dup = new Map<string, number>();
+    for (const l of lines) { const k = `${l.label.trim().toLowerCase()}|${l.cents}`; dup.set(k, (dup.get(k) ?? 0) + 1); }
+    for (const [k, c] of dup) if (c > 1) says.push(`"${k.split("|")[0]}" appears ${c} times for the same amount.`);
+  }
+  return { lastCents, lastOn: last.sentOn ?? null, diffCents: diff, loud: loud || says.length > 0, says };
+}
