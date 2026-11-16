@@ -242,6 +242,17 @@ t("but it is said, with the amount", () =>
   D.checks(null, guaranteed, { statedNetCents: D.netCents(vac) }).some((x) => /\$1,250\.00 of adjustments made here/.test(x)));
 t("and a vacant home that is paid for is no longer vacant", () => D.vacantLots(guaranteed).length === 0);
 
+/* our own charges */
+const lab = D.laborLine(1.5, 6500, "fixed leak", 13);
+t("labor is hours times rate, charged as a cost", () => lab.cents === -9750 && /1\.5 hrs @ \$65\.00\/hr - fixed leak - Lot 13/.test(lab.label));
+t("no hours or no rate is no line", () => D.laborLine(0, 6500, "x") === null && D.laborLine(2, 0, "x") === null);
+const mk = D.markupLine({ label: "Supplies - Lot 10", cents: -417660 }, 15);
+t("a markup is a percent of the cost, and names it", () => mk.cents === -62649 && /Markup 15% on Supplies - Lot 10/.test(mk.label));
+t("rent cannot be marked up", () => D.markupLine({ label: "Rent", cents: 155000 }, 15) === null);
+t("our charges are adjustments, so Alex's figures are still checked without them", () =>
+  lab.category === "Adjustment" && mk.category === "Adjustment"
+  && D.checks(null, [{ label: "Rent", cents: 155000 }, lab], { statedNetCents: 155000 }).some((x) => /-\$97\.50 of adjustments/.test(x)));
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);

@@ -569,3 +569,33 @@ export function versusLast(
   }
   return { lastCents, lastOn: last.sentOn ?? null, diffCents: diff, loud: loud || says.length > 0, says };
 }
+
+/* ------------------------------------------------ our own charges */
+
+/**
+ * Our time on an owner's property: hours at a rate, charged to the owner.
+ * Rounded to the cent once, on the total -- 1.5 h at $65 is $97.50, not two
+ * roundings of half an hour.
+ */
+export function laborLine(hours: number, rateCents: number, what: string, lot?: number | null): Line | null {
+  if (!(hours > 0) || !(rateCents > 0)) return null;
+  const h = Math.round(hours * 100) / 100;
+  const doing = what.trim();
+  return {
+    label: `Labor - ${h} hr${h === 1 ? "" : "s"} @ ${usd(rateCents)}/hr${doing ? ` - ${doing}` : ""}${lot ? ` - Lot ${lot}` : ""}`,
+    cents: -Math.round(h * rateCents),
+    category: "Adjustment",
+  };
+}
+
+/** A markup on a cost already on the statement, named after it so the owner
+ *  can see what it is a markup ON. Only a cost can be marked up. */
+export function markupLine(on: Line, percent: number): Line | null {
+  if (!(on.cents < 0) || !(percent > 0) || percent > 100) return null;
+  const pct = Math.round(percent * 100) / 100;
+  return {
+    label: `Markup ${pct}% on ${on.label}`,
+    cents: -Math.round((-on.cents * pct) / 100),
+    category: "Adjustment",
+  };
+}
