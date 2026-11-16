@@ -1893,6 +1893,26 @@ pieces of the cap plus a remainder -- RNMK's $17,204.08 is 5,000 + 5,000 +
 labelled "payment 2 of 4"; the Pay tab's By owner list says owed, planned,
 paid and still to pay for everyone. An owner under the cap stays one payment.
 
+**Nothing paid out may differ quietly from Rent Manager** (065). Every change
+made on a statement -- a line added, deleted, re-priced or marked up, a
+rent-agreement top-up -- and every payment marked paid is on the **To record**
+tab until somebody ticks it as entered in Rent Manager (`changesOf`; the key is
+the change itself, so changing it again unticks it). And next month's sheet is
+checked against this month as it was left here (`reconcile`): Alex's "Previous
+Distribution Owed" is last month's owed (confirmed on the November data), so a
+change Rent Manager never got shows as a difference on that owner's statement.
+A description changed on its own moves no money and is not listed.
+
+Copies: `distribution_payees.cc_emails` per owner (an accountant) and
+`distribution_settings.cc_all` on every statement -- alex@larabeehomesllc.com,
+the bookkeeper, from 16 November 2026. Cc, not Bcc.
+
+Reserves (checked 16 November 2026, every November sheet and the sent mail):
+no reserve BALANCE is recorded anywhere for any owner. The six Dutch-doors
+properties carry a $2,000 "Reserves requirement" line that is never subtracted;
+Andrew Habberstad's contract has a $2,500 holdback cap. Reserves live on the
+payee, so they carry from month to month until someone changes them.
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not

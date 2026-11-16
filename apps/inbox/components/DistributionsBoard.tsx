@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, type Line, type StatementInput,
+  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
 } from "@/lib/distribute";
 
 /**
@@ -18,7 +18,7 @@ import {
 
 type Pay = { id: string; sendOn: string; cents: number; arrivesOn: string; paidAt: string | null; confirmation: string | null };
 type Statement = {
-  id: string; payeeId: string; payee: string; email: string; settleDays: number;
+  id: string; payeeId: string; payee: string; email: string; cc: string; settleDays: number;
   title: string; previousOwedCents: number | null; priorPaidCents: number | null; priorPaidOn: string | null;
   depositsCents: number | null; reserveHeldCents: number | null; reserveRequiredCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
   lines: Line[]; netCents: number; owedCents: number; checks: string[]; note: string; hold: boolean;
@@ -35,6 +35,9 @@ type Data = {
   month: string; error?: string; migrationMissing?: boolean;
   run?: { id: string; capCents: number; startOn: string | null; perPaymentCents: number } | null;
   payees?: Payee[]; statements?: Statement[];
+  /** null: migration 065 has not been run. */
+  ccAll?: string | null;
+  changes?: (Change & { statementId: string; payee: string; title: string; recordedAt: string | null; recordedBy: string | null })[] | null;
   pasted?: { payees: number; unmatched: string[]; skippedSent: number };
   sent?: { payee: string; ok: boolean; detail: string }[];
 };
@@ -124,7 +127,18 @@ export default function DistributionsBoard() {
   useEffect(() => { setData(null); load(); }, [load]);
 
   // Nothing on screen changes until the server says it took it.
-  const act = async (body: Record<string, unknown>, done?: string) => {
+  /* One write at a time, in the order asked. Leaving a box saves it, and
+     the button pressed to leave it then landed on a control disabled by that
+     save -- "Save changes" right after typing a copy address did nothing.
+     Queued instead of refused, so the press counts; in order, so an older
+     answer never lands on top of a newer one. */
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const act = (body: Record<string, unknown>, done?: string) => {
+    const run = queue.current.then(() => actNow(body, done), () => actNow(body, done));
+    queue.current = run;
+    return run;
+  };
+  const actNow = async (body: Record<string, unknown>, done?: string) => {
     setBusy(true); setProblem(null); setSaid(null);
     try {
       const r = await fetch("/api/distributions", {
@@ -164,6 +178,10 @@ export default function DistributionsBoard() {
     reserveHeldCents: x.reserveHeldCents, reserveRequiredCents: x.reserveRequiredCents,
   });
   const totalNet = statements.filter((s) => !isTest(s) && !s.hold && !s.notStarted && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
+  const changes = data?.changes ?? [];
+  const unrecorded = changes.filter((c) => !c.recordedAt).length;
+  const [ccAll, setCcAll] = useState("");
+  useEffect(() => { setCcAll(data?.ccAll ?? ""); }, [data?.ccAll]);
   const flagged = statements.filter((s) => !s.notStarted && (s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c)))).length;
   const lastTotal = statements.reduce((a, s) => a + Math.max(0, s.versus.lastCents ?? 0), 0);
   const paidTotal = statements.reduce((a, s) => a + s.paidCents, 0);
@@ -256,6 +274,7 @@ export default function DistributionsBoard() {
 
           <nav className="disttabs" role="tablist">
             {([["list", `Statements (${statements.length})`], ["pay", `Pay${days.length ? ` (${days.length} day${days.length === 1 ? "" : "s"})` : ""}`],
+               ["record", `To record${unrecorded ? ` (${unrecorded})` : ""}`],
                ["email", "Email"], ["add", "Add or paste"]] as [string, string][]).map(([k, l]) => (
               <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
             ))}
@@ -341,6 +360,49 @@ export default function DistributionsBoard() {
             </section>
           ) : null}
 
+          {tab === "record" ? (
+            <section className="tscard">
+              <div className="tscardhead">
+                <h2>To record in Rent Manager</h2>
+                <span className="tsnum">{changes.length ? (unrecorded ? `${unrecorded} of ${changes.length} not entered` : "All entered") : ""}</span>
+              </div>
+              {data.changes === null ? <p className="tsalert">Migration 065 has not been run, so this list cannot be kept yet.</p> : !changes.length ? (
+                <p className="tsnote">Nothing this month differs from Rent Manager yet. Anything changed on a statement, and every payment marked paid, appears here.</p>
+              ) : (
+                <>
+                  <p className="tsnote">
+                    Everything changed here this month that Rent Manager does not have, and every payment sent. Tick each one once it is
+                    entered there. Changing a line again after it was ticked puts it back on the list. Next month&rsquo;s sheet is checked
+                    against this month as it was left here, so anything missed shows up on that owner&rsquo;s statement.
+                  </p>
+                  <div className="tsrow">
+                    <button className="btn" onClick={async () => {
+                      const rows = [["Owner", "Property", "Date", "What", "Change", "Effect on payout", "Detail"],
+                        ...changes.filter((c) => !c.recordedAt).map((c) => [c.payee, c.title, c.date ?? "", c.label, changeKindSays(c.kind),
+                          (c.cents / 100).toFixed(2), c.detail])];
+                      try { await navigator.clipboard.writeText(rows.map((r) => r.join("\t")).join("\n")); setSaid("Copied. It pastes into Excel as a table."); }
+                      catch { setProblem("This browser would not copy. Select the table and copy it instead."); }
+                    }} disabled={!unrecorded}>Copy what is not entered</button>
+                  </div>
+                  <div className="distrecord">
+                    {changes.map((c) => (
+                      <label key={c.key} className={`distrecrow${c.recordedAt ? " done" : ""}`}>
+                        <input type="checkbox" checked={!!c.recordedAt} disabled={busy}
+                          onChange={(e) => act({ action: "record", keys: [c.key], recorded: e.target.checked })} />
+                        <span className="distrecwhat">
+                          <strong>{c.payee}</strong> <small>{placeOf(c.title, c.payee, [])}</small>
+                          <span>{changeKindSays(c.kind)}: {c.label}{c.date ? ` · ${shortDay(c.date)}` : ""}</span>
+                          <small>{c.detail}{c.recordedAt ? ` · entered${c.recordedBy ? ` by ${c.recordedBy}` : ""} ${new Date(c.recordedAt).toLocaleDateString()}` : ""}</small>
+                        </span>
+                        <span className={`num${c.kind !== "paid" && c.cents < 0 ? " distneg" : ""}`}>{c.kind === "paid" ? usd(c.cents) : money(c.cents)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
+
           {tab === "email" ? (
             <section className="tscard">
               <div className="tscardhead">
@@ -353,6 +415,14 @@ export default function DistributionsBoard() {
                 copy of every one, and replies come to you. A statement on hold, with no lines, or with no email
                 address is not sent.
               </p>
+              {data.ccAll === null ? <p className="tsalert">Migration 065 has not been run, so copies cannot be set yet.</p> : (
+                <div className="tsfield">
+                  <label htmlFor="ccall">Copy on every statement (your bookkeeper)</label>
+                  <input id="ccall" type="text" inputMode="email" value={ccAll} placeholder="name@larabeehomesllc.com"
+                    onChange={(e) => setCcAll(e.target.value)}
+                    onBlur={() => ccAll !== (data.ccAll ?? "") && act({ action: "cc-all", cc: ccAll }, "Saved.")} />
+                </div>
+              )}
               {!confirmSend ? (
                 <button className="tsact" disabled={busy || !ready.length} onClick={() => setConfirmSend(true)}>
                   Send {emailsOut.length} email{emailsOut.length === 1 ? "" : "s"}&hellip;
@@ -364,7 +434,10 @@ export default function DistributionsBoard() {
                       <li key={entity}>
                         <span><strong>{entity}</strong>{list.length > 1 ? <small> · {list.length} properties in one email</small> : null}</span>
                         <span className="num">{usd(list.reduce((a, x) => a + Math.max(0, x.owedCents), 0))}</span>
-                        <span className="muted">{[...new Set(list.map((x) => x.email))].join(", ")}</span>
+                        <span className="muted">{[...new Set(list.map((x) => x.email))].join(", ")}{(() => {
+                          const c = [...new Set([...list.flatMap((x) => x.cc.split(/[,;\s]+/)), ...ccAll.split(/[,;\s]+/)].filter(Boolean).map((e) => e.toLowerCase()))];
+                          return c.length ? ` · copy ${c.join(", ")}` : "";
+                        })()}</span>
                       </li>
                     ))}
                   </ul>
@@ -502,7 +575,7 @@ export default function DistributionsBoard() {
               <button className="btn" onClick={() => setOpenId(null)}>Close</button>
             </div>
             <StatementCard key={open.id} s={open} busy={busy} act={act} onPreview={() => setPreview(open)}
-              others={together(open).filter((x) => x.id !== open.id)} onOpen={setOpenId} sendSet={emailSet(open)} />
+              others={together(open).filter((x) => x.id !== open.id)} onOpen={setOpenId} sendSet={emailSet(open)} ccAll={data.ccAll ?? ""} />
           </aside>
         </>
       ) : null}
@@ -528,11 +601,11 @@ export default function DistributionsBoard() {
   );
 }
 
-function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
+function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll }: {
   s: Statement; busy: boolean;
   act: (b: Record<string, unknown>, done?: string) => Promise<unknown>;
   onPreview: () => void;
-  others: Statement[]; onOpen: (id: string) => void; sendSet: Statement[];
+  others: Statement[]; onOpen: (id: string) => void; sendSet: Statement[]; ccAll: string;
 }) {
   /* One row per line, edited in place. Amounts are typed as they read --
      a cost of 29.17 is typed 29.17 in the Expenses section, not -29.17 --
@@ -552,6 +625,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
   const [rows, setRows] = useState<Row[]>(() => toRows(own(s.lines)));
   const [note, setNote] = useState(s.note);
   const [email, setEmail] = useState(s.email);
+  const [cc, setCc] = useState(s.cc);
   const [settle, setSettle] = useState(String(s.settleDays));
   const [entity, setEntity] = useState(s.entity);
   const [guar, setGuar] = useState(s.guaranteedCents ? centsText(s.guaranteedCents) : "");
@@ -577,6 +651,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
   useEffect(() => { setRows(toRows(own(s.lines))); setNote(s.note); setDeposit(s.depositsCents === null ? "" : centsText(s.depositsCents)); }, [savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setResHeld(s.reserveHeldCents === null ? "" : centsText(s.reserveHeldCents));
     setResNeed(s.reserveRequiredCents === null ? "" : centsText(s.reserveRequiredCents)); }, [s.reserveHeldCents, s.reserveRequiredCents]);
+  useEffect(() => { setCc(s.cc); }, [s.cc]);
   useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); setEntity(s.entity);
     setGuar(s.guaranteedCents ? centsText(s.guaranteedCents) : ""); }, [s.email, s.settleDays, s.entity, s.guaranteedCents]);
 
@@ -614,7 +689,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
   const held = { reserveHeldCents: resHeld.trim() === "" ? null : parseMoney(resHeld), reserveRequiredCents: resNeed.trim() === "" ? null : parseMoney(resNeed) };
   const owed = owedCents(lines, s);
   const said = checks(s.title, lines, { ...s, ...held, depositsCents: depositCents });
-  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity, startsOn: starts,
+  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, cc, settleDays: Number(settle), entity, startsOn: starts,
     guaranteedCents: guarCents, reserveHeldCents: held.reserveHeldCents, reserveRequiredCents: held.reserveRequiredCents });
   const set = (i: number, patch: Partial<Row>) => setRows(rows.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
@@ -650,7 +725,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
                 <span className="eddate">{shortDate(r.date)}</span>
                 {!locked && !r.removed
                   ? <span className="edlabel">
-                      <input aria-label={`Description${r.origLabel ? ` for ${r.origLabel}` : ""}`} value={r.label}
+                      <input aria-label={`Description${r.origLabel ? ` for ${r.origLabel}` : ""}`} value={r.label} spellCheck lang="en-US" autoCorrect="on"
                         placeholder="What it is for" onChange={(e) => set(i, { label: e.target.value })}
                         className={r.origLabel !== undefined && r.label.trim() !== r.origLabel ? "changed" : ""} />
                       {r.merchant ? <small>{r.merchant}</small> : null}
@@ -764,7 +839,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
               {homes.map((n) => <option key={n} value={n}>Lot {n}</option>)}
             </select></div>
           <div className="tsfield distwide"><label htmlFor={`wt-${s.id}`}>What it was for</label>
-            <input id={`wt-${s.id}`} value={what} onChange={(e) => setWhat(e.target.value)} /></div>
+            <input id={`wt-${s.id}`} spellCheck lang="en-US" value={what} onChange={(e) => setWhat(e.target.value)} /></div>
           <div className="tsrow distwide">
             <span className="tsnote distdraft">{laborDraft ? <>Adds <strong>{laborDraft.label}</strong> &nbsp;{money(laborDraft.cents)}</> : "Type the hours and the rate."}</span>
             <button className="tsact" disabled={!laborDraft} onClick={() => {
@@ -797,16 +872,21 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
 
       <div className="tsfield">
         <label htmlFor={`nt-${s.id}`}>Note on the statement (optional)</label>
-        <textarea id={`nt-${s.id}`} rows={2} value={note} disabled={!!s.emailedAt} onChange={(e) => setNote(e.target.value)} />
+        <textarea id={`nt-${s.id}`} rows={2} spellCheck lang="en-US" value={note} disabled={!!s.emailedAt} onChange={(e) => setNote(e.target.value)} />
       </div>
 
       <details className="eddetails">
-        <summary>Owner details: email, bank days, entity</summary>
+        <summary>Owner details: email, copies, bank days, entity</summary>
         <div className="distowned">
           <div className="tsfield">
             <label htmlFor={`em-${s.id}`}>Statement email</label>
             <input id={`em-${s.id}`} type="text" inputMode="email" value={email}
               onChange={(e) => setEmail(e.target.value)} onBlur={() => email !== s.email && savePayee()} />
+          </div>
+          <div className="tsfield">
+            <label htmlFor={`cc-${s.id}`}>Also copy (their accountant, etc.)</label>
+            <input id={`cc-${s.id}`} type="text" inputMode="email" value={cc} placeholder="name@example.com, another@example.com"
+              onChange={(e) => setCc(e.target.value)} onBlur={() => cc !== s.cc && savePayee()} />
           </div>
           <div className="tsfield">
             <label htmlFor={`sd-${s.id}`}>Bank days to arrive</label>
@@ -838,6 +918,8 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
           <div className="edmodal" role="alertdialog" aria-modal="true" aria-label="Email this owner" onClick={(e) => e.stopPropagation()}>
             {(() => {
               const to = [...new Set(sendWith.flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))];
+              const copied = [...new Set([...sendWith.flatMap((x) => (x.id === s.id ? cc : x.cc).split(/[,;\s]+/)), ...ccAll.split(/[,;\s]+/)]
+                .filter(Boolean).map((e) => e.toLowerCase()))].filter((e) => !to.includes(e));
               const totalPaid = sendWith.reduce((a, x) => a + Math.max(0, x.id === s.id ? owed : x.owedCents), 0);
               if (!sendWith.length) return (<>
                 <h3>Nothing to send</h3>
@@ -858,11 +940,12 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
                 <h3>Send this email now?</h3>
                 <dl className="edmodaldl">
                   <dt>To</dt><dd>{to.join(", ")}</dd>
+                  {copied.length ? <><dt>Copy</dt><dd>{copied.join(", ")}</dd></> : null}
                   <dt>Owner</dt><dd>{s.sendsAs}</dd>
                   <dt>Statements</dt><dd>{sendWith.map((x) => placeOf(x.title, x.payee, x.lines)).join(" · ")}</dd>
                   <dt>Distribution</dt><dd>{usd(totalPaid)}</dd>
                 </dl>
-                <p className="tsnote">Only this owner is emailed; you get a copy. Once sent, {sendWith.length > 1 ? "these statements are" : "this statement is"} locked as the record.
+                <p className="tsnote">Only this owner{copied.length ? " and the copies above are" : " is"} emailed; you get a copy. Once sent, {sendWith.length > 1 ? "these statements are" : "this statement is"} locked as the record.
                   {dirty ? " Your unsaved changes are saved first." : ""}</p>
                 <div className="tsrow">
                   <button className="btn pri" disabled={busy} onClick={async () => {
@@ -889,7 +972,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
         {!s.emailedAt ? (
           <>
             <button className="btn" disabled={!dirty || busy} onClick={() => { setRows(toRows(own(s.lines))); setNote(s.note); setDeposit(s.depositsCents === null ? "" : centsText(s.depositsCents)); }}>Discard</button>
-            <button className="btn pri" disabled={busy || bad || !dirty}
+            <button className="btn pri" disabled={bad || !dirty}
               onClick={() => act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents }, `${s.payee} saved.`)}>
               Save changes
             </button>
