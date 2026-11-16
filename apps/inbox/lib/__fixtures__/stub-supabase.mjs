@@ -426,7 +426,7 @@ const TABLES = {
       ["dp4", "Juniper Lane Partners", "juniper@example.com"],
       ["dp5", "Tidewater Homes LLC", "tide@example.com"],
       ["dp6", "Bellamy & Sons — 12 Bay St", "bellamy@example.com"],
-    ].map(([id, name, emails]) => ({ id, name, emails, settle_days: 2, owner_id: null, pay_note: null, sheet_id: null, active: true, created_at: month }));
+    ].map(([id, name, emails]) => ({ id, name, emails, entity: ["dp4", "dp6"].includes(id) ? "Juniper Lane Partners" : null, settle_days: 2, owner_id: null, pay_note: null, sheet_id: null, active: true, created_at: month }));
     const st = (id, payee, group, title, lines, prev, paid, extra = {}) => ({
       id, run_id: "dr1", payee_id: payee, owner_id: null, lines, note: null, hold: false,
       emailed_at: null, emailed_to: null, email_detail: null, updated_at: month, updated_by: null,

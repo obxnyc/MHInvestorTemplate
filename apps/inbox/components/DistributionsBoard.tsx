@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  owedCents, checks, parseMoney, statementHtml, subjectFor, monthLabel, usd, type Line,
+  owedCents, checks, parseMoney, ownerEmailHtml, subjectFor, monthLabel, usd, type Line, type StatementInput,
 } from "@/lib/distribute";
 
 /**
@@ -24,6 +24,7 @@ type Statement = {
   lines: Line[]; netCents: number; owedCents: number; checks: string[]; note: string; hold: boolean;
   versus: { lastCents: number | null; lastOn: string | null; diffCents: number | null; loud: boolean; says: string[] };
   source: { group?: string } | null;
+  entity: string; sendsAs: string;
   emailedAt: string | null; emailedTo: string | null; emailDetail: string | null;
   payments: Pay[]; paidCents: number; plannedCents: number;
 };
@@ -139,6 +140,17 @@ export default function DistributionsBoard() {
 
   const statements = data?.statements ?? [];
   const ready = statements.filter((s) => !s.emailedAt && !s.hold && s.lines.length && s.email);
+  // One email per owning entity: the statements that travel together.
+  const emailsOut = useMemo(() => {
+    const m = new Map<string, Statement[]>();
+    for (const s of ready) m.set(s.sendsAs, [...(m.get(s.sendsAs) ?? []), s]);
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [ready]);
+  const together = (s: Statement) => statements.filter((x) => x.sendsAs === s.sendsAs);
+  const asInput = (x: Statement): StatementInput => ({
+    month: `${month}-01`, payee: x.payee, title: x.title, lines: x.lines, note: x.note, payments: x.payments,
+    previousOwedCents: x.previousOwedCents, priorPaidCents: x.priorPaidCents, priorPaidOn: x.priorPaidOn, depositsCents: x.depositsCents,
+  });
   const totalNet = statements.filter((s) => !s.hold && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
   const flagged = statements.filter((s) => s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c))).length;
   const lastTotal = statements.reduce((a, s) => a + Math.max(0, s.versus.lastCents ?? 0), 0);
@@ -309,21 +321,28 @@ export default function DistributionsBoard() {
             <section className="tscard">
               <div className="tscardhead">
                 <h2>Email the statements</h2>
-                <span className="tsnum">{ready.length} ready</span>
+                <span className="tsnum">{emailsOut.length} email{emailsOut.length === 1 ? "" : "s"} · {ready.length} statements</span>
               </div>
               <p className="tsnote">
-                Nothing is emailed until you press the button below. Each payee gets their own email,
-                &ldquo;{subjectFor(`${month}-01`)}&rdquo;; you get a copy of every one, and replies come to you.
-                A statement on hold, with no lines, or with no email address is not sent.
+                Nothing is emailed until you press the button below. One email per owning entity,
+                &ldquo;{subjectFor(`${month}-01`)}&rdquo;, with each of its properties in its own block; you get a
+                copy of every one, and replies come to you. A statement on hold, with no lines, or with no email
+                address is not sent.
               </p>
               {!confirmSend ? (
                 <button className="tsact" disabled={busy || !ready.length} onClick={() => setConfirmSend(true)}>
-                  Email {ready.length} statement{ready.length === 1 ? "" : "s"}&hellip;
+                  Send {emailsOut.length} email{emailsOut.length === 1 ? "" : "s"}&hellip;
                 </button>
               ) : (
                 <>
                   <ul className="distsendlist">
-                    {ready.map((s) => <li key={s.id}><span>{s.payee}</span><span className="num">{money(s.owedCents)}</span><span className="muted">{s.email}</span></li>)}
+                    {emailsOut.map(([entity, list]) => (
+                      <li key={entity}>
+                        <span><strong>{entity}</strong>{list.length > 1 ? <small> · {list.length} properties in one email</small> : null}</span>
+                        <span className="num">{usd(list.reduce((a, x) => a + Math.max(0, x.owedCents), 0))}</span>
+                        <span className="muted">{[...new Set(list.map((x) => x.email))].join(", ")}</span>
+                      </li>
+                    ))}
                   </ul>
                   <div className="tsrow">
                     <button className="tsact" disabled={busy} onClick={async () => {
@@ -335,7 +354,7 @@ export default function DistributionsBoard() {
                         setSaid(`${ok} emailed.`);
                         if (bad.length) setProblem(bad.map((x) => `${x.payee}: ${x.detail}`).join(" · "));
                       }
-                    }}>Yes, send these {ready.length}</button>
+                    }}>Yes, send these {emailsOut.length}</button>
                     <button className="tsminor" onClick={() => setConfirmSend(false)}>Not yet</button>
                   </div>
                 </>
@@ -429,7 +448,8 @@ export default function DistributionsBoard() {
               <span className="muted">{shown.findIndex((x) => x.id === open.id) + 1} of {shown.length}</span>
               <button className="btn" onClick={() => setOpenId(null)}>Close</button>
             </div>
-            <StatementCard key={open.id} s={open} busy={busy} act={act} onPreview={() => setPreview(open)} />
+            <StatementCard key={open.id} s={open} busy={busy} act={act} onPreview={() => setPreview(open)}
+              others={together(open).filter((x) => x.id !== open.id)} onOpen={setOpenId} />
           </aside>
         </>
       ) : null}
@@ -437,24 +457,22 @@ export default function DistributionsBoard() {
       {preview ? (
         <div className="distpreview" role="dialog" aria-label={`Statement for ${preview.payee}`}>
           <div className="distpreviewbar">
-            <span><strong>{subjectFor(`${month}-01`)}</strong> &middot; to {preview.email || "no address yet"}</span>
+            <span><strong>{subjectFor(`${month}-01`)}</strong> &middot; {preview.sendsAs} &middot; to {[...new Set(together(preview).map((x) => x.email).filter(Boolean))].join(", ") || "no address yet"}</span>
             <button className="btn" onClick={() => setPreview(null)}>Close</button>
           </div>
-          <iframe title="Statement preview" sandbox="" srcDoc={statementHtml({
-            month: `${month}-01`, payee: preview.payee, title: preview.title, lines: preview.lines,
-            note: preview.note, payments: preview.payments, previousOwedCents: preview.previousOwedCents,
-            priorPaidCents: preview.priorPaidCents, priorPaidOn: preview.priorPaidOn, depositsCents: preview.depositsCents,
-          })} />
+          <iframe title="Statement preview" sandbox="" srcDoc={ownerEmailHtml(`${month}-01`, preview.sendsAs,
+            together(preview).filter((x) => !x.hold && x.lines.length).map(asInput))} />
         </div>
       ) : null}
     </main>
   );
 }
 
-function StatementCard({ s, busy, act, onPreview }: {
+function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   s: Statement; busy: boolean;
   act: (b: Record<string, unknown>, done?: string) => Promise<unknown>;
   onPreview: () => void;
+  others: Statement[]; onOpen: (id: string) => void;
 }) {
   type Row = { label: string; amount: string; date?: string; merchant?: string; category?: string };
   const toRows = (ls: Line[]): Row[] => ls.map((l) => ({ ...l, amount: centsText(l.cents) }));
@@ -462,9 +480,10 @@ function StatementCard({ s, busy, act, onPreview }: {
   const [note, setNote] = useState(s.note);
   const [email, setEmail] = useState(s.email);
   const [settle, setSettle] = useState(String(s.settleDays));
+  const [entity, setEntity] = useState(s.entity);
   const [open, setOpen] = useState(false);
   useEffect(() => { setRows(toRows(s.lines)); setNote(s.note); }, [s.lines, s.note]);
-  useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); }, [s.email, s.settleDays]);
+  useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); setEntity(s.entity); }, [s.email, s.settleDays, s.entity]);
 
   const parsed = rows.map((r) => ({ ...r, label: r.label.trim(), cents: parseMoney(r.amount) }));
   const bad = parsed.some((p) => (p.label || p.cents !== null) && (p.cents === null || !p.label));
@@ -473,7 +492,7 @@ function StatementCard({ s, busy, act, onPreview }: {
   const locked = !!s.emailedAt || s.paidCents > 0;
   const owed = dirty ? owedCents(lines, s) : s.owedCents;
   const said = dirty ? checks(s.title, lines, s) : s.checks;
-  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle) });
+  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity });
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
 
   return (
@@ -516,7 +535,18 @@ function StatementCard({ s, busy, act, onPreview }: {
           <input id={`sd-${s.id}`} inputMode="numeric" value={settle} onChange={(e) => setSettle(e.target.value)}
             onBlur={() => settle !== String(s.settleDays) && savePayee()} />
         </div>
+        <div className="tsfield distentity">
+          <label htmlFor={`en-${s.id}`}>Owning entity</label>
+          <input id={`en-${s.id}`} value={entity} placeholder={s.payee}
+            onChange={(e) => setEntity(e.target.value)} onBlur={() => entity !== s.entity && savePayee()} />
+        </div>
       </div>
+      <p className="tsnote">
+        {others.length ? <>Goes in one email with{" "}
+          {others.map((o, i) => <span key={o.id}>{i ? ", " : ""}<button className="tslink distinline" onClick={() => onOpen(o.id)}>{o.title || o.payee}</button></span>)}.
+          {" "}Statements with the same owning entity are sent together, a block each.</>
+          : <>Sent on its own. Give another statement the same owning entity to send them together.</>}
+      </p>
 
       {!open ? <StatementLines lines={s.lines} /> : null}
       {!locked ? (

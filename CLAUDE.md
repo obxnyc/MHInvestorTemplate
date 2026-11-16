@@ -1853,6 +1853,15 @@ The sender's own address is the Reply-To and gets a Bcc of every statement
 A statement once emailed is locked: what was sent is the record. 057 applied
 11/16/2026 through the connector.
 
+**One email per owning ENTITY, not per address and not per person** (060,
+`distribution_payees.entity`). SHB's 1148 and Cross Creek statements go in one
+email, a block each with the property as its heading and a summary on top.
+Gabriel Moskow owns Elizabeth City Property LLC (Lot 1 and 125 Franklin -- one
+email) and 105 Twiddy LLC (another email, same address); Matt Glebus owns
+Beaga LLC (513 Madrin and 412 Bank) and Rentham LLC, separately. Two entities
+in one inbox stay two emails. The summary total counts only what is paid: a
+property that came out negative pays nothing and is not netted off another.
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not

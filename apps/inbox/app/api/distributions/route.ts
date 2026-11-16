@@ -3,7 +3,7 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmailChecked } from "@/lib/notify";
 import {
-  netCents, owedCents, checks, versusLast, planPayments, readPaste, statementHtml, statementText, subjectFor,
+  netCents, owedCents, checks, versusLast, planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, entityOf,
   addBankDays, bankDayFrom, type Line, type Carry,
 } from "@/lib/distribute";
 
@@ -54,6 +54,7 @@ async function build(month: string) {
   const payees = (payeesRes.data ?? []).map((p) => ({
     id: String(p.id), name: String(p.name), emails: (p.emails as string | null) ?? "",
     settleDays: Number(p.settle_days ?? 2), active: !!p.active, sheetId: (p.sheet_id as string | null) ?? null,
+    entity: (p.entity as string | null) ?? "",
   }));
   const run = runRes.data;
   if (!run) return { month, run: null, payees, statements: [] };
@@ -101,7 +102,8 @@ async function build(month: string) {
       .map((p) => ({ ...p, arrivesOn: addBankDays(p.sendOn, payee?.settleDays ?? 2) }));
     return {
       id: String(s.id), payeeId: String(s.payee_id), payee: payee?.name ?? "(payee missing)",
-      email: payee?.emails ?? "", settleDays: payee?.settleDays ?? 2,
+      email: payee?.emails ?? "", settleDays: payee?.settleDays ?? 2, entity: payee?.entity ?? "",
+      sendsAs: entityOf({ entity: payee?.entity, payee: payee?.name ?? "" }),
       title: (s.title as string | null) ?? "", ...carry, owedNote: (s.owed_note as string | null) ?? "",
       source: s.source ?? null,
       lines, netCents: netCents(lines), owedCents: owedCents(lines, carry),
@@ -213,7 +215,9 @@ export async function POST(req: Request) {
       const settle = Math.round(Number(b.settleDays));
       if (!(settle >= 0 && settle <= 30)) return fail("Bank days must be between 0 and 30.");
       const { error } = await db.from("distribution_payees")
-        .update({ emails: list.join(", ") || null, settle_days: settle }).eq("id", String(b.payeeId));
+        .update({ emails: list.join(", ") || null, settle_days: settle,
+          ...("entity" in b ? { entity: String(b.entity ?? "").trim().slice(0, 120) || null } : {}) })
+        .eq("id", String(b.payeeId));
       if (error) return fail(error.message, 500);
       break;
     }
@@ -280,20 +284,29 @@ export async function POST(req: Request) {
     }
 
     case "send": {
+      /* ONE EMAIL PER OWNING ENTITY. Every statement of an entity that is
+         asked for goes in one email, a block each; two entities are two
+         emails even at the same address. The grouping is the payee's entity,
+         never the address -- see migration 060. */
       const ids: string[] = Array.isArray(b.statementIds) ? b.statementIds.map(String) : [];
       if (!ids.length) return fail("Which statements?");
       const now = await build(month);
       const { data: { user } } = await (await supabaseServer()).auth.getUser();
       const sender = user?.email ?? undefined;
       const results: { payee: string; ok: boolean; detail: string }[] = [];
-      for (const s of (now.statements ?? []).filter((x) => ids.includes(x.id))) {
+      const asked = (now.statements ?? []).filter((x) => ids.includes(x.id));
+      const groups = new Map<string, typeof asked>();
+      for (const s of asked) {
         if (s.emailedAt && !b.resend) { results.push({ payee: s.payee, ok: false, detail: "already emailed" }); continue; }
-        const to = emails(s.email);
-        if (!to.length) { results.push({ payee: s.payee, ok: false, detail: "no email address on file" }); continue; }
         if (!s.lines.length) { results.push({ payee: s.payee, ok: false, detail: "the statement has no lines" }); continue; }
-        const input = { month: `${month}-01`, payee: s.payee, title: s.title, lines: s.lines, note: s.note, payments: s.payments,
-          previousOwedCents: s.previousOwedCents, priorPaidCents: s.priorPaidCents, priorPaidOn: s.priorPaidOn, depositsCents: s.depositsCents };
-        const r = await sendEmailChecked(to, subjectFor(`${month}-01`), statementText(input), statementHtml(input), {
+        groups.set(s.sendsAs, [...(groups.get(s.sendsAs) ?? []), s]);
+      }
+      for (const [entity, list] of groups) {
+        const to = [...new Set(list.flatMap((s) => emails(s.email)).map((e) => e.toLowerCase()))];
+        if (!to.length) { for (const s of list) results.push({ payee: s.payee, ok: false, detail: "no email address on file" }); continue; }
+        const inputs = list.map((s) => ({ month: `${month}-01`, payee: s.payee, title: s.title, lines: s.lines, note: s.note, payments: s.payments,
+          previousOwedCents: s.previousOwedCents, priorPaidCents: s.priorPaidCents, priorPaidOn: s.priorPaidOn, depositsCents: s.depositsCents }));
+        const r = await sendEmailChecked(to, subjectFor(`${month}-01`), ownerEmailText(`${month}-01`, entity, inputs), ownerEmailHtml(`${month}-01`, entity, inputs), {
           from: process.env.DISTRIBUTIONS_FROM || undefined,
           replyTo: process.env.DISTRIBUTIONS_REPLY_TO || sender,
           bcc: process.env.DISTRIBUTIONS_BCC || sender,
@@ -301,8 +314,8 @@ export async function POST(req: Request) {
         await db.from("distribution_statements").update({
           ...(r.ok ? { emailed_at: new Date().toISOString(), emailed_to: to.join(", ") } : {}),
           email_detail: r.detail,
-        }).eq("id", s.id);
-        results.push({ payee: s.payee, ...r });
+        }).in("id", list.map((s) => s.id));
+        results.push({ payee: list.length > 1 ? `${entity} (${list.length} properties)` : list[0].payee, ...r });
       }
       return NextResponse.json({ ...(await build(month)), sent: results });
     }
