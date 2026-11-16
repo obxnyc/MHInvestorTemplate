@@ -3711,3 +3711,7 @@ button.distwho:focus-visible{outline:2px solid var(--accent)}
   .edrow{grid-template-columns:minmax(0,1fr) 4.5rem minmax(0,1fr) 2rem}
 }
 .edfoot .btn:disabled{opacity:.35;cursor:default}
+.edheld{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:.6rem;padding:.7rem;
+  border:1px solid var(--hair);border-radius:12px;background:var(--card)}
+.edheldnote{grid-column:1/-1;margin:0}
+.edheld{align-items:end}

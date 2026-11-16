@@ -133,7 +133,7 @@ const jack = [
   ...[14, 15, 16, 17, 19].map((n) => ({ label: `Lots rent - Jack Curran - Lot ${n}`, cents: -50000 })),
   ...[155000, 155000, 155000, 158000, 156500].map((c, i) => ({ label: `Monthly Rent - Lot ${[14, 15, 16, 17, 19][i]}`, cents: c })),
 ];
-const jackCarry = { previousOwedCents: 281985, priorPaidCents: 242871, statedNetCents: 281985, statedOwedCents: 321099 };
+const jackCarry = { previousOwedCents: 281985, priorPaidCents: 242871, statedNetCents: 281985, statedOwedCents: 321099, reserveHeldCents: 100000 };
 t("net is revenue less expenses", () => D.netCents(jack) === 281985);
 // With last month fully paid, owed and net are the same number and a rule
 // that ignored the carry would pass. Jack was short-paid $391.14.
@@ -275,6 +275,45 @@ t("a blanket markup takes repairs, not the loan, lot rent or fees", () =>
 t("the email shows the markup under its line", () => {
   const h = D.statementHtml({ month: "2026-11-01", payee: "X", lines: marked });
   return /Markup 15%/.test(h) && h.includes("-$4.38");
+});
+
+/* the rent agreement -- Ben Jackson, November, as Alex's sheet has it */
+const ben = [
+  { label: "Monthly Rent - Lot 3104", cents: 114800, category: "Rent" },
+  { label: "Mortgage - Lot 3104 Lady Viola Dr", cents: -34122 },
+  { label: "Consultant Fee - Lot 3104 Lady Viola Dr", cents: -4500 },
+  { label: "Lot Rent - Benjamin Jackson - Lot 3104 Lady Viola Dr", cents: -37500 },
+];
+const benG = D.withGuarantee(ben, 125000);
+// The case the first version missed: a home WITH a tenant paying under the
+// agreement. Filling only empty homes added nothing here.
+t("a tenant paying under the agreement is topped up to it", () =>
+  benG.filter((l) => l.category === "Guaranteed rent").map((l) => l.cents).join() === "10200"
+  && D.netCents(benG) === 38678 + 10200);
+const twoEmpty = [{ label: "Mortgage - Lot 3117", cents: -34122 }, { label: "Mortgage - Lot 3119", cents: -34122 },
+  { label: "Rent - Lot 3121", cents: 130000 }];
+t("an empty home gets the whole agreed rent; one paying more gets nothing", () =>
+  D.withGuarantee(twoEmpty, 125000).filter((l) => l.category === "Guaranteed rent").map((l) => `${l.label}=${l.cents}`).join()
+  === "Guaranteed rent - Lot 3117 (vacant)=125000,Guaranteed rent - Lot 3119 (vacant)=125000");
+t("applying it twice is the same as once", () => JSON.stringify(D.withGuarantee(benG, 125000)) === JSON.stringify(benG));
+t("a changed rent changes the top-up, never leaving the old one", () =>
+  D.withGuarantee([{ ...ben[0], cents: 120000 }, ...ben.slice(1), ...benG.slice(4)], 125000)
+    .filter((l) => l.category === "Guaranteed rent").map((l) => l.cents).join() === "5000");
+t("no agreement takes any top-up back off", () => D.withGuarantee(benG, null).length === ben.length);
+t("a credit we added is not counted as rent", () =>
+  D.withGuarantee([...ben, { label: "Credit - Lot 3104", cents: 20000, category: "Adjustment" }], 125000)
+    .filter((l) => l.category === "Guaranteed rent").map((l) => l.cents).join() === "10200");
+
+/* reserves */
+t("no reserves held is not met, even with no requirement on file", () =>
+  D.checks(null, ben, { reserveHeldCents: null }).some((x) => /Reserves not met: we hold no reserves/.test(x)));
+t("short of the requirement is not met, and says by how much it is held", () =>
+  D.checks(null, ben, { reserveHeldCents: 50000, reserveRequiredCents: 200000 }).some((x) => /hold \$500\.00 of the \$2,000\.00/.test(x)));
+t("at or over the requirement is met", () =>
+  !D.checks(null, ben, { reserveHeldCents: 200000, reserveRequiredCents: 200000 }).some((x) => /Reserves not met/.test(x)));
+t("the email says what we hold, deposits and reserves, even when nothing", () => {
+  const h = D.statementHtml({ month: "2026-11-01", payee: "Benjamin Jackson", lines: benG, depositsCents: 0, reserveHeldCents: 0, reserveRequiredCents: 200000 });
+  return /Held for you/.test(h) && /Security deposits/.test(h) && /of \$2,000\.00 required/.test(h);
 });
 
 const failed = checks.filter(([, ok]) => !ok);
