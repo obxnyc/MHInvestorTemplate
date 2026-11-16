@@ -191,6 +191,35 @@ t("a changed rent is said", () =>
   D.versusLast(0, { sentCents: 0, lines: [{ label: "Monthly Rent - Lot 17", cents: 155000 }] },
     [{ label: "Monthly Rent - Lot 17", cents: 158000 }]).says.some((x) => /Lot 17 rent is \$1,580\.00; it was \$1,550\.00/.test(x)));
 
+/* one email per entity */
+const shb1148 = { month: "2026-11-01", payee: "SHB Investments", title: "SHB Investments - 1148 Northside Rd, Lots #10, #14",
+  lines: [{ label: "Monthly Rent - Lot 10", cents: 155000 }, { label: "Supplies - Lot 10", cents: -417660 }] };
+const shbCC = { month: "2026-11-01", payee: "SHB Investments LLC — Cross Creek", title: "SHB Investments LLC - The Retreat at Cross Creek, Lots #3102",
+  lines: [{ label: "Rent - Lot 3102", cents: 125000 }, { label: "Mortgage - Lot 3102", cents: -34122 }] };
+const both = D.ownerEmailHtml("2026-11-01", "SHB Investments LLC", [shb1148, shbCC]);
+t("a combined email heads each block with its property", () =>
+  both.includes("1148 Northside Rd, Lots #10, #14") && both.includes("The Retreat at Cross Creek, Lots #3102"));
+// The total is what is PAID: a property that came out negative pays nothing
+// and must not be netted against the other. -2,621.60 + 908.78 would be
+// negative; the right total is 908.78.
+// Read the figure ON the total line: $908.78 is also Cross Creek's own row,
+// so a check that only asks whether it appears passes on the fault.
+const totalLine = (h) => (h.split("Total distribution")[1] ?? "").replace(/<[^>]+>/g, " ").match(/-?\$[\d,]+\.\d\d/)?.[0];
+t("the total counts only what is paid, not a negative property against a positive one", () => totalLine(both) === "$908.78");
+t("a negative property says nothing is paid on it", () => /nothing paid/.test(both));
+t("one statement alone has no summary", () => !/Total distribution/.test(D.statementHtml(shbCC)));
+const txt = D.ownerEmailText("2026-11-01", "SHB Investments LLC", [shb1148, shbCC]);
+t("the plain-text version has both blocks", () => txt.includes("1148 Northside") && txt.includes("Cross Creek") && txt.includes("$908.78"));
+t("an entity set groups; an empty one is the payee alone", () =>
+  D.entityOf({ entity: "Beaga LLC", payee: "Beaga LLC — 412 Bank" }) === "Beaga LLC"
+  && D.entityOf({ entity: "  ", payee: "Rentham LLC — 800 cale" }) === "Rentham LLC — 800 cale");
+
+t("dates in the sheet's several spellings are read", () =>
+  ["2026-11-14", "11/1/2026", "09-11-2026", "September 28, 2026"].every((d) => D.readDate(d) !== null)
+  && D.readDate("September 28, 2026").getUTCDate() === 28 && D.readDate("09-11-2026").getUTCMonth() === 8);
+t("a spreadsheet serial is not read as a date, and is said", () =>
+  D.readDate("46033") === null && D.checks(null, [{ label: "Rent", cents: 154000, date: "46033" }]).some((x) => /"46033" on Rent/.test(x)));
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);

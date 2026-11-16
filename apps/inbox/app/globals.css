@@ -3650,3 +3650,6 @@ button.distwho:focus-visible{outline:2px solid var(--accent)}
 .distlinetable .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .distlinegroup th{text-align:left;padding:.8rem .3rem .3rem;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .distsub td{font-weight:800;border-bottom:2px solid var(--ink)}
+.distentity{grid-column:1/-1}
+.tslink.distinline{min-height:0;padding:0 .15rem;font:inherit;text-decoration:underline}
+.distsendlist small{color:var(--muted)}

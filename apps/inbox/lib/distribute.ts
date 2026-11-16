@@ -260,6 +260,10 @@ export function checks(title: string | null | undefined, lines: Line[], c: Carry
     out.push(`Last month ${money(c.previousOwedCents)} was owed and ${money(c.priorPaidCents)} was paid; the ${money(c.previousOwedCents - c.priorPaidCents)} difference carries into this month.`);
   }
   if (owed < 0) out.push(`Nothing to pay: the month comes out ${money(owed)}.`);
+  const notDates = lines.filter((l) => l.date && !readDate(l.date));
+  if (notDates.length) {
+    out.push(`${notDates.length === 1 ? "A line's date is" : `${notDates.length} lines' dates are`} not a date (${notDates.slice(0, 2).map((l) => `"${l.date}" on ${l.label}`).join(", ")}), so the statement shows no date for ${notDates.length === 1 ? "it" : "them"}.`);
+  }
   const said = new Set(lotsIn(title ?? ""));
   const used = new Set(lines.flatMap((l) => lotsIn(l.label)));
   if (said.size && used.size) {
@@ -285,12 +289,25 @@ const dayLabel = (s: string) =>
   at(s).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 
 /** "2026-11-14" or "11/1/2026" to "Nov 14"; anything else as written. */
+/** A date as the sheet wrote it -- "2026-11-14", "11/1/2026", "09-11-2026",
+ *  "September 28, 2026" -- as "Nov 14". Null when it is not a date at all
+ *  (a bare spreadsheet serial like "46033" is a number, and guessing which
+ *  day it meant is how a statement ends up dated wrong). */
+export const readDate = (s?: string): Date | null => {
+  const v = String(s ?? "").trim();
+  let m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12));
+  if ((m = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/))) return new Date(Date.UTC(+m[3], +m[1] - 1, +m[2], 12));
+  if ((m = v.match(/^([A-Za-z]+)\.? (\d{1,2}),? (\d{4})$/))) {
+    const t = Date.parse(`${m[1]} ${m[2]}, ${m[3]} 12:00 UTC`);
+    if (!Number.isNaN(t)) return new Date(t);
+  }
+  return null;
+};
 const shortDate = (s?: string) => {
   if (!s) return "";
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12))
-    : (m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)) ? new Date(Date.UTC(+m[3], +m[1] - 1, +m[2], 12)) : null;
-  return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : s;
+  const d = readDate(s);
+  return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
 };
 
 export type StatementInput = Carry & {
@@ -298,16 +315,16 @@ export type StatementInput = Carry & {
   payments?: { sendOn: string; cents: number; arrivesOn?: string }[];
 };
 
-/** Email-safe HTML: tables and inline styles, because mail clients ignore
- *  stylesheets. Laid out the way the accountant's sheet is -- expenses, then
- *  revenue, then the balance -- because that is what the owners are used to
- *  reading. Light ground on purpose: a statement is read and printed. */
-export function statementHtml(s: StatementInput): string {
+const F = "font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif";
+const CAP = "margin:22px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6B7280;font-weight:700";
+
+/** One property's P&L, as a block. The accountant's layout -- revenue,
+ *  expenses, then the balance -- because that is what owners are used to. */
+function section(s: StatementInput, boxed: boolean): string {
   const net = netCents(s.lines);
   const owed = owedCents(s.lines, s);
   const costs = s.lines.filter((l) => l.cents < 0);
   const income = s.lines.filter((l) => l.cents >= 0);
-  const F = "font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif";
   const cell = "padding:7px 6px;border-bottom:1px solid #E6E8EC;vertical-align:top";
   const num = `${cell};text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap`;
   const row = (l: Line) => `<tr>
@@ -315,7 +332,7 @@ export function statementHtml(s: StatementInput): string {
       <td style="${cell};color:#1F2937">${esc(l.label)}${l.merchant ? `<div style="color:#6B7280;font-size:12px">${esc(l.merchant)}</div>` : ""}</td>
       <td style="${num};color:${l.cents < 0 ? "#9B2C2C" : "#1F2937"}">${money(l.cents)}</td></tr>`;
   const table = (name: string, rows: Line[]) => rows.length ? `
-    <p style="margin:22px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6B7280;font-weight:700">${name}</p>
+    <p style="${CAP}">${name}</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">
       ${rows.map(row).join("")}
       <tr><td></td><td style="${cell};font-weight:700;color:#111827;border-bottom:0">Subtotal</td>
@@ -326,18 +343,16 @@ export function statementHtml(s: StatementInput): string {
       <td style="padding:6px 0;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:#111827;${strong ? "font-weight:800;font-size:18px" : ""}">${money(c)}</td></tr>`;
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
   const pays = (s.payments ?? []).filter((p) => p.cents > 0);
-
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#F3F4F6">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:24px 12px">
-<tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#FFFFFF;border-radius:12px;overflow:hidden;${F};font-size:15px">
-  <tr><td style="background:#1F3554;padding:22px 28px;color:#FFFFFF">
-    <div style="font-size:20px;font-weight:800;letter-spacing:-.01em">Larabee Homes</div>
-    <div style="font-size:13px;opacity:.85;margin-top:2px">Owner Distribution &middot; ${esc(monthLabel(s.month))}</div>
-  </td></tr>
-  <tr><td style="padding:24px 28px 8px">
-    <div style="font-size:19px;font-weight:700;color:#111827">${esc(s.payee)}</div>
-    ${s.title ? `<div style="color:#6B7280;font-size:13px;margin-top:3px">${esc(s.title)}</div>` : ""}
+  // In a combined email the PROPERTY is the heading, so nobody has to work
+  // out which block is which; alone, the payee is.
+  const head = boxed
+    ? `<div style="background:#F3F4F6;margin:-18px -18px 0;padding:14px 18px;border-radius:10px 10px 0 0;border-bottom:1px solid #E6E8EC">
+         <div style="font-size:16px;font-weight:800;color:#111827">${esc(s.title || s.payee)}</div>
+         ${s.title ? `<div style="color:#6B7280;font-size:12px;margin-top:2px">${esc(s.payee)}</div>` : ""}
+       </div>`
+    : `<div style="font-size:19px;font-weight:700;color:#111827">${esc(s.payee)}</div>
+       ${s.title ? `<div style="color:#6B7280;font-size:13px;margin-top:3px">${esc(s.title)}</div>` : ""}`;
+  const body = `${head}
     ${table("Revenue", income)}
     ${table("Expenses", costs)}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;border-top:2px solid #111827;border-collapse:collapse;font-size:14px">
@@ -345,13 +360,51 @@ export function statementHtml(s: StatementInput): string {
       ${carried ? sum(`Carried from last month${s.priorPaidOn ? ` (${esc(money(s.previousOwedCents ?? 0))} owed, ${esc(money(s.priorPaidCents ?? 0))} paid ${esc(shortDate(s.priorPaidOn))})` : ""}`, carried) : ""}
       ${sum(owed < 0 ? "Balance" : "Distribution owed to you", owed, true)}
     </table>
-    ${owed < 0 ? `<p style="margin:10px 0 0;color:#374151;line-height:1.6">Expenses this month exceeded revenue, so there is no distribution this month.</p>` : ""}
+    ${owed < 0 ? `<p style="margin:10px 0 0;color:#374151;line-height:1.6">Expenses this month exceeded revenue, so there is no distribution on this property this month.</p>` : ""}
     ${pays.length ? `
-    <p style="margin:22px 0 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6B7280;font-weight:700">Payment</p>
+    <p style="${CAP}">Payment</p>
     <p style="margin:0;color:#374151;line-height:1.6">${pays.map((p) =>
       `${usd(p.cents)} sent ${dayLabel(p.sendOn)}${p.arrivesOn ? `, expected by ${dayLabel(p.arrivesOn)}` : ""}`).join("<br>")}</p>` : ""}
     ${s.depositsCents ? `<p style="margin:18px 0 0;color:#6B7280;font-size:13px">Security deposits we hold on file: ${usd(s.depositsCents)}</p>` : ""}
-    ${s.note ? `<p style="margin:18px 0 0;color:#374151;line-height:1.6;white-space:pre-wrap">${esc(s.note)}</p>` : ""}
+    ${s.note ? `<p style="margin:18px 0 0;color:#374151;line-height:1.6;white-space:pre-wrap">${esc(s.note)}</p>` : ""}`;
+  return boxed
+    ? `<div style="border:1px solid #E6E8EC;border-radius:10px;padding:18px;margin-top:20px">${body}</div>`
+    : body;
+}
+
+/**
+ * The email one owning entity receives: every property it holds, each in its
+ * own block, with a summary on top when there is more than one. Two entities
+ * are two emails even at the same address -- that is decided by the caller,
+ * from the payee's entity, never from the address.
+ *
+ * Email-safe HTML: tables and inline styles, because mail clients ignore
+ * stylesheets. Light ground on purpose: a statement is read and printed.
+ */
+export function ownerEmailHtml(month: string, entity: string, list: StatementInput[]): string {
+  const many = list.length > 1;
+  const total = list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0);
+  const summary = many ? `
+    <div style="font-size:19px;font-weight:700;color:#111827">${esc(entity)}</div>
+    <p style="margin:4px 0 0;color:#6B7280;font-size:13px">${list.length} properties this month, each with its own statement below.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;border-collapse:collapse;font-size:14px">
+      ${list.map((s) => { const o = owedCents(s.lines, s); return `<tr>
+        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;color:#1F2937">${esc(s.title || s.payee)}</td>
+        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:${o < 0 ? "#9B2C2C" : "#1F2937"}">${o < 0 ? `${money(o)} <span style="color:#6B7280">(nothing paid)</span>` : money(o)}</td></tr>`; }).join("")}
+      <tr><td style="padding:10px 0 0;font-weight:800;color:#111827">Total distribution</td>
+        <td style="padding:10px 0 0;text-align:right;font-weight:800;font-size:18px;color:#111827;font-variant-numeric:tabular-nums;white-space:nowrap">${usd(total)}</td></tr>
+    </table>` : "";
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#F3F4F6">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:24px 12px">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#FFFFFF;border-radius:12px;overflow:hidden;${F};font-size:15px">
+  <tr><td style="background:#1F3554;padding:22px 28px;color:#FFFFFF">
+    <div style="font-size:20px;font-weight:800;letter-spacing:-.01em">Larabee Homes</div>
+    <div style="font-size:13px;opacity:.85;margin-top:2px">Owner Distribution &middot; ${esc(monthLabel(month))}</div>
+  </td></tr>
+  <tr><td style="padding:24px 28px 8px">
+    ${summary}
+    ${list.map((s) => section(s, many)).join("")}
   </td></tr>
   <tr><td style="padding:20px 28px 26px;color:#6B7280;font-size:12px;line-height:1.6;border-top:1px solid #E6E8EC">
     Questions about this statement? Reply to this email.<br>Larabee Homes LLC
@@ -360,7 +413,10 @@ export function statementHtml(s: StatementInput): string {
 </td></tr></table></body></html>`;
 }
 
-export function statementText(s: StatementInput): string {
+/** A single statement on its own. */
+export const statementHtml = (s: StatementInput) => ownerEmailHtml(s.month, s.payee, [s]);
+
+function sectionText(s: StatementInput, many: boolean): string[] {
   const net = netCents(s.lines);
   const owed = owedCents(s.lines, s);
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
@@ -369,8 +425,8 @@ export function statementText(s: StatementInput): string {
     ? [name, ...rows.map((l) => pad(`${shortDate(l.date) ? `${shortDate(l.date)}  ` : ""}${l.label}`, money(l.cents))), pad("Subtotal", money(netCents(rows))), ""]
     : [];
   return [
-    `Larabee Homes -- Owner Distribution, ${monthLabel(s.month)}`,
-    s.payee, ...(s.title ? [s.title] : []), ``,
+    ...(many ? ["=".repeat(56), s.title || s.payee, ...(s.title ? [s.payee] : []), "=".repeat(56)] : [s.payee, ...(s.title ? [s.title] : [])]),
+    ``,
     ...block("REVENUE", s.lines.filter((l) => l.cents >= 0)),
     ...block("EXPENSES", s.lines.filter((l) => l.cents < 0)),
     pad("Monthly net cashflow", money(net)),
@@ -380,9 +436,26 @@ export function statementText(s: StatementInput): string {
       `${usd(p.cents)} sent ${dayLabel(p.sendOn)}${p.arrivesOn ? `, expected by ${dayLabel(p.arrivesOn)}` : ""}`)] : []),
     ...(s.depositsCents ? ["", `Security deposits we hold on file: ${usd(s.depositsCents)}`] : []),
     ...(s.note ? ["", s.note] : []),
-    ``, `Questions about this statement? Reply to this email.`, `Larabee Homes LLC`,
+    ``,
+  ];
+}
+
+export function ownerEmailText(month: string, entity: string, list: StatementInput[]): string {
+  const many = list.length > 1;
+  const pad = (l: string, a: string) => `${l}${" ".repeat(Math.max(2, 56 - l.length - a.length))}${a}`;
+  return [
+    `Larabee Homes -- Owner Distribution, ${monthLabel(month)}`,
+    ...(many ? [entity, ``, ...list.map((s) => pad(s.title || s.payee, money(owedCents(s.lines, s)))),
+      pad("Total distribution", usd(list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0))), ``] : [``]),
+    ...list.flatMap((s) => sectionText(s, many)),
+    `Questions about this statement? Reply to this email.`, `Larabee Homes LLC`,
   ].join("\n");
 }
+
+export const statementText = (s: StatementInput) => ownerEmailText(s.month, s.payee, [s]);
+
+/** Which statements share one email: the payee's entity, or the payee alone. */
+export const entityOf = (p: { entity?: string | null; payee: string }) => (p.entity || "").trim() || p.payee;
 
 /* --------------------------------------------- against last month's */
 
