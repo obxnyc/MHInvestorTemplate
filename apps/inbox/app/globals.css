@@ -3727,3 +3727,11 @@ button.distwho:focus-visible{outline:2px solid var(--accent)}
 }
 .edsend{border:2px solid var(--accent);border-radius:12px;padding:.8rem;background:var(--card);color:var(--ink);display:grid;gap:.4rem}
 .edsend p{margin:0}
+.edmodalback{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:1rem}
+.edmodal{width:min(32rem,100%);background:var(--card);color:var(--ink);border-radius:14px;padding:1.1rem 1.2rem;
+  box-shadow:0 20px 50px rgba(0,0,0,.35);display:grid;gap:.7rem}
+.edmodal h3{margin:0;font-size:1.15rem}
+.edmodaldl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.3rem .8rem;margin:0;font-size:.92rem}
+.edmodaldl dt{color:var(--muted);font-weight:700}
+.edmodaldl dd{margin:0;overflow-wrap:anywhere}
+.edsentsaid.ok{color:var(--tn-ink);font-weight:700}
