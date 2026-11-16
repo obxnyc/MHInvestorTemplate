@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, subjectFor, monthLabel, usd, type Line, type StatementInput,
+  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, markupLine, lotsIn, subjectFor, monthLabel, usd, type Line, type StatementInput,
 } from "@/lib/distribute";
 
 /**
@@ -498,6 +498,25 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity,
     guaranteedCents: parseMoney(guar) ?? 0 });
   const guarCents = parseMoney(guar);
+  // Our own charges: our time at an hourly rate, and a markup on a cost.
+  const [charge, setCharge] = useState<"" | "labor" | "markup">("");
+  const [hours, setHours] = useState("");
+  const [rate, setRate] = useState(() => { try { return localStorage.getItem("dist-labor-rate") ?? ""; } catch { return ""; } });
+  const [what, setWhat] = useState("");
+  const [lot, setLot] = useState("");
+  const [onLine, setOnLine] = useState("");
+  const [pct, setPct] = useState("");
+  const homes = [...new Set(s.lines.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
+  const costs = s.lines.map((l, i) => ({ l, i })).filter(({ l }) => l.cents < 0 && l.category !== "Adjustment" && l.category !== "Guaranteed rent");
+  const draft = charge === "labor"
+    ? laborLine(Number(hours), parseMoney(rate) ?? 0, what, lot ? Number(lot) : null)
+    : charge === "markup" && onLine !== "" ? markupLine(s.lines[Number(onLine)], Number(pct)) : null;
+  const addCharge = async () => {
+    if (!draft) return;
+    if (charge === "labor") { try { localStorage.setItem("dist-labor-rate", rate); } catch { /* fine */ } }
+    const ok = await act({ action: "save", statementId: s.id, lines: [...s.lines, draft] }, `${s.payee}: ${draft.label} added.`);
+    if (ok) { setCharge(""); setHours(""); setWhat(""); setLot(""); setOnLine(""); setPct(""); }
+  };
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
 
   return (
@@ -574,16 +593,50 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
               Pay {s.vacant.length} empty home{s.vacant.length === 1 ? "" : "s"} as rented ({s.vacant.length} × {usd(s.guaranteedCents)})
             </button>
           ) : null}
+          {!locked ? <button className="tsminor" onClick={() => setCharge(charge === "labor" ? "" : "labor")}>Our labor</button> : null}
+          {!locked && costs.length ? <button className="tsminor" onClick={() => setCharge(charge === "markup" ? "" : "markup")}>Markup</button> : null}
           {!locked ? (
             <button className="tsminor" onClick={() => {
               if (!open) setOpen(true);
               setRows([...rows, { label: "", amount: "", category: "Adjustment" }]);
-            }}>Add an adjustment</button>
+            }}>Other adjustment</button>
           ) : null}
           {!locked ? (
             <button className="tsminor" onClick={() => setOpen(!open)}>{open ? "Done changing lines" : "Change the lines"}</button>
           ) : null}
         </div>
+        {charge === "labor" ? (
+          <div className="distcharge">
+            <div className="tsfield"><label htmlFor={`hr-${s.id}`}>Hours</label>
+              <input id={`hr-${s.id}`} inputMode="decimal" value={hours} placeholder="2" onChange={(e) => setHours(e.target.value)} /></div>
+            <div className="tsfield"><label htmlFor={`rt-${s.id}`}>Rate ($/hr)</label>
+              <input id={`rt-${s.id}`} inputMode="decimal" value={rate} placeholder="65.00" onChange={(e) => setRate(e.target.value)} /></div>
+            <div className="tsfield"><label htmlFor={`lt-${s.id}`}>Home</label>
+              <select id={`lt-${s.id}`} value={lot} onChange={(e) => setLot(e.target.value)}>
+                <option value="">Not one home</option>
+                {homes.map((n) => <option key={n} value={n}>Lot {n}</option>)}
+              </select></div>
+            <div className="tsfield distwide"><label htmlFor={`wt-${s.id}`}>What it was for</label>
+              <input id={`wt-${s.id}`} value={what} placeholder="Sent Jose to fix the water heater" onChange={(e) => setWhat(e.target.value)} /></div>
+          </div>
+        ) : null}
+        {charge === "markup" ? (
+          <div className="distcharge">
+            <div className="tsfield distwide"><label htmlFor={`on-${s.id}`}>Mark up which cost</label>
+              <select id={`on-${s.id}`} value={onLine} onChange={(e) => setOnLine(e.target.value)}>
+                <option value="">Choose a line&hellip;</option>
+                {costs.map(({ l, i }) => <option key={i} value={i}>{l.label} ({usd(-l.cents)})</option>)}
+              </select></div>
+            <div className="tsfield"><label htmlFor={`pc-${s.id}`}>Markup (%)</label>
+              <input id={`pc-${s.id}`} inputMode="decimal" value={pct} placeholder="15" onChange={(e) => setPct(e.target.value)} /></div>
+          </div>
+        ) : null}
+        {charge ? (
+          <div className="tsrow">
+            <span className="tsnote distdraft">{draft ? <>Adds <strong>{draft.label}</strong> &nbsp;{money(draft.cents)}</> : "Fill in the boxes to see the line."}</span>
+            <button className="tsact" disabled={busy || !draft} onClick={addCharge}>Add to statement</button>
+          </div>
+        ) : null}
         {guarCents !== null && guarCents > 0 && guarCents < 100 ? <p className="tsalert">That is under a dollar; amounts are in dollars, like 1250.00.</p> : null}
       </div>
       {!open ? <StatementLines lines={s.lines} /> : null}
