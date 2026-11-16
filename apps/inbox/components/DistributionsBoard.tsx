@@ -688,8 +688,16 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
   const topups = lines.filter((l) => l.category === "Guaranteed rent");
   const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null, sheetLabel: l.sheetLabel ?? null, removed: !!l.removed })));
   const depositCents = deposit.trim() === "" ? null : parseMoney(deposit);
-  const dirty = norm(ownLines) !== norm(own(s.lines)) || note !== s.note || depositCents !== s.depositsCents;
+  const linesDirty = norm(ownLines) !== norm(own(s.lines)) || note !== s.note || depositCents !== s.depositsCents;
   const held = { reserveHeldCents: resHeld.trim() === "" ? null : parseMoney(resHeld), reserveRequiredCents: resNeed.trim() === "" ? null : parseMoney(resNeed) };
+  /* The owner's own fields (reserves, the rent agreement, email, copies...)
+     save when the box is left. They count as unsaved until then, so the
+     button lights up while one is being typed -- with it dark, a reserve typed
+     in read as "it will not let me save", when it had saved already. */
+  const payeeDirty = email !== s.email || cc !== s.cc || settle !== String(s.settleDays) || entity !== s.entity
+    || (starts || null) !== (s.startsOn ? s.startsOn.slice(0, 7) : null) || (parseMoney(guar) ?? 0) !== (s.guaranteedCents ?? 0)
+    || held.reserveHeldCents !== s.reserveHeldCents || held.reserveRequiredCents !== s.reserveRequiredCents;
+  const dirty = linesDirty || payeeDirty;
   const owed = owedCents(lines, s);
   const said = checks(s.title, lines, { ...s, ...held, depositsCents: depositCents });
   const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, cc, settleDays: Number(settle), entity, startsOn: starts,
@@ -952,7 +960,8 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
                   {dirty ? " Your unsaved changes are saved first." : ""}</p>
                 <div className="tsrow">
                   <button className="btn pri" disabled={busy} onClick={async () => {
-                    if (dirty) {
+                    if (payeeDirty && !(await savePayee())) { setSending(false); setSentSaid("Not sent: the owner details could not be saved, so nothing was emailed."); return; }
+                    if (linesDirty) {
                       const okSave = await act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents });
                       if (!okSave) { setSending(false); setSentSaid("Not sent: your changes could not be saved, so nothing was emailed."); return; }
                     }
@@ -974,9 +983,14 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
           : dirty ? <span className="tsnote">Changes not saved yet.</span> : <span className="tsnote">All saved.</span>}
         {!s.emailedAt ? (
           <>
-            <button className="btn" disabled={!dirty || busy} onClick={() => { setRows(toRows(own(s.lines))); setNote(s.note); setDeposit(s.depositsCents === null ? "" : centsText(s.depositsCents)); }}>Discard</button>
-            <button className="btn pri" disabled={bad || !dirty}
-              onClick={() => act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents }, `${s.payee} saved.`)}>
+            <button className="btn" disabled={!dirty || busy} onClick={() => {
+              setRows(toRows(own(s.lines))); setNote(s.note); setDeposit(s.depositsCents === null ? "" : centsText(s.depositsCents));
+              setResHeld(s.reserveHeldCents === null ? "" : centsText(s.reserveHeldCents)); setResNeed(s.reserveRequiredCents === null ? "" : centsText(s.reserveRequiredCents));
+              setEmail(s.email); setCc(s.cc); setSettle(String(s.settleDays)); setEntity(s.entity);
+              setStarts(s.startsOn ? s.startsOn.slice(0, 7) : ""); setGuar(s.guaranteedCents ? centsText(s.guaranteedCents) : "");
+            }}>Discard</button>
+            <button className="btn pri" disabled={(linesDirty && bad) || !dirty}
+              onClick={() => { if (payeeDirty) savePayee(); if (linesDirty) act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents }, `${s.payee} saved.`); }}>
               Save changes
             </button>
           </>
