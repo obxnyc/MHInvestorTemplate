@@ -23,6 +23,7 @@ type Statement = {
   depositsCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
   lines: Line[]; netCents: number; owedCents: number; checks: string[]; note: string; hold: boolean;
   versus: { lastCents: number | null; lastOn: string | null; diffCents: number | null; loud: boolean; says: string[] };
+  source: { group?: string } | null;
   emailedAt: string | null; emailedTo: string | null; emailDetail: string | null;
   payments: Pay[]; paidCents: number; plannedCents: number;
 };
@@ -44,6 +45,39 @@ const shiftMonth = (m: string, n: number) => {
 const day = (s: string) => new Date(`${s}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 const money = (c: number) => (c < 0 ? `(${usd(-c)})` : usd(c));
 const centsText = (c: number) => (c / 100).toFixed(2);
+/** "2026-10-14" or "10/14/2026" to "Oct 14"; anything else as written. */
+const shortDay = (v: string) => {
+  let m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12))
+    : (m = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)) ? new Date(Date.UTC(+m[3], +m[1] - 1, +m[2], 12)) : null;
+  return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : v;
+};
+
+/** The lines as the owner will read them: revenue, then expenses, each with a subtotal. */
+function StatementLines({ lines }: { lines: Line[] }) {
+  const part = (name: string, ls: Line[]) => ls.length ? (
+    <>
+      <tr className="distlinegroup"><th colSpan={3}>{name}</th></tr>
+      {ls.map((l, i) => (
+        <tr key={i}>
+          <td className="muted">{l.date ? shortDay(l.date) : ""}</td>
+          <td>{l.label}{l.merchant ? <small> · {l.merchant}</small> : null}</td>
+          <td className={`num${l.cents < 0 ? " distneg" : ""}`}>{money(l.cents)}</td>
+        </tr>
+      ))}
+      <tr className="distsub"><td /><td>Subtotal</td><td className="num">{money(ls.reduce((a, l) => a + l.cents, 0))}</td></tr>
+    </>
+  ) : null;
+  if (!lines.length) return <p className="tsnote">No lines yet.</p>;
+  return (
+    <table className="distlinetable">
+      <tbody>
+        {part("Revenue", lines.filter((l) => l.cents >= 0))}
+        {part("Expenses", lines.filter((l) => l.cents < 0))}
+      </tbody>
+    </table>
+  );
+}
 
 export default function DistributionsBoard() {
   const [month, setMonth] = useState(thisMonth());
@@ -58,6 +92,19 @@ export default function DistributionsBoard() {
   const [conf, setConf] = useState<Record<string, string>>({});
   const [confirmSend, setConfirmSend] = useState(false);
   const [newPayee, setNewPayee] = useState("");
+  const [tab, setTab] = useState("list");
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+  // Esc closes whatever is open on top: the preview, then the statement.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (preview) setPreview(null); else setOpenId(null);
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [preview]);
 
   const load = useCallback(async () => {
     setProblem(null);
@@ -109,19 +156,44 @@ export default function DistributionsBoard() {
       : <p className="tsloading">Loading&hellip;</p>}</main>;
   }
 
+  const needsLook = (s: Statement) => s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c));
+  const groupOf = (s: Statement) => s.source?.group ?? "Other";
+  const FILTERS: [string, string, (s: Statement) => boolean][] = [
+    ["all", "All", () => true],
+    ["look", "Needs a look", needsLook],
+    ["pay", "To pay", (s) => s.owedCents > 0 && !s.hold],
+    ["none", "Nothing to pay", (s) => s.owedCents <= 0],
+    ["noemail", "No email", (s) => !s.email],
+    ["paid", "Paid", (s) => s.paidCents > 0],
+  ];
+  const fn = FILTERS.find((f) => f[0] === filter)?.[2] ?? (() => true);
+  const q = search.trim().toLowerCase();
+  const shown = statements.filter(fn).filter((s) => !q || `${s.payee} ${s.title}`.toLowerCase().includes(q));
+  const ORDER = ["Corporate", "Individuals", "Cross Creek"];
+  const groups = [...new Set(shown.map(groupOf))].sort((a, b) => ((ORDER.indexOf(a) + 1) || 99) - ((ORDER.indexOf(b) + 1) || 99));
+  const open = statements.find((s) => s.id === openId) ?? null;
+  const status = (s: Statement) => {
+    const out: [string, string][] = [];
+    if (s.hold) out.push(["hold", "On hold"]);
+    if (needsLook(s)) out.push(["warn", "Check"]);
+    if (s.owedCents <= 0) out.push(["muted", "Nothing to pay"]);
+    if (!s.email) out.push(["muted", "No email"]);
+    if (s.emailedAt) out.push(["ok", "Emailed"]);
+    if (s.paidCents > 0) out.push(["ok", s.paidCents >= s.owedCents ? "Paid" : "Part paid"]);
+    else if (s.plannedCents > 0) out.push(["plan", `Pay ${day(s.payments[0].sendOn)}`]);
+    return out;
+  };
+
   return (
     <main className="wrap crewwrap distwrap">
       <div className="tshead">
         <h1>Owner distributions</h1>
-        <span className="tsrow">
-          <button className="tslink" onClick={() => setMonth(shiftMonth(month, -1))}>&larr; Earlier</button>
-          <button className="tslink" onClick={() => setMonth(shiftMonth(month, 1))}>Later &rarr;</button>
+        <span className="distmonth">
+          <button className="tslink" aria-label="Earlier month" onClick={() => setMonth(shiftMonth(month, -1))}>&larr;</button>
+          <strong>{monthLabel(`${month}-01`)}</strong>
+          <button className="tslink" aria-label="Later month" onClick={() => setMonth(shiftMonth(month, 1))}>&rarr;</button>
         </span>
       </div>
-      <p className="leadsay">
-        {monthLabel(`${month}-01`)}. Each owner&rsquo;s statement, emailed from here as
-        &ldquo;{subjectFor(`${month}-01`)}&rdquo;, then paid through Wells Fargo Bill Pay under the daily limit.
-      </p>
 
       {problem ? <p className="tsalert" role="alert">{problem}</p> : null}
       {said ? <p className="tsdone" role="status">{said}</p> : null}
@@ -137,168 +209,230 @@ export default function DistributionsBoard() {
         </section>
       ) : (
         <>
-          {/* ---------------------------------------------------- totals */}
-          <section className="tscard">
-            <div className="tscardhead">
-              <h2>This month</h2>
-              <span className="tsnum">{statements.length} statements</span>
-            </div>
-            <dl className="disttotals">
-              <div><dt>To pay</dt><dd>{usd(totalNet)}</dd></div>
-              <div><dt>Last month</dt><dd>{usd(lastTotal)}</dd></div>
-              <div><dt>Paid</dt><dd>{usd(paidTotal)}</dd></div>
-              <div><dt>Emailed</dt><dd>{statements.filter((s) => s.emailedAt).length} of {statements.length}</dd></div>
-            </dl>
-            {flagged ? <p className="tsnudge loud">{flagged} statement{flagged === 1 ? " has" : "s have"} something worth a look before it goes. Each says what, in yellow.</p> : null}
-          </section>
+          <dl className="disttotals">
+            <div><dt>To pay</dt><dd>{usd(totalNet)}</dd></div>
+            <div><dt>Last month</dt><dd>{usd(lastTotal)}</dd></div>
+            <div><dt>Paid so far</dt><dd>{usd(paidTotal)}</dd></div>
+            <button className={`distlook${flagged ? " on" : ""}`} onClick={() => { setTab("list"); setFilter("look"); }}>
+              <dt>Needs a look</dt><dd>{flagged} of {statements.length}</dd>
+            </button>
+          </dl>
 
-          {/* ----------------------------------------------------- paste */}
-          <section className="tscard">
-            <div className="tscardhead"><h2>Paste lines by hand</h2></div>
-            <p className="tsnote">
-              Alex&rsquo;s sheets are read in for you each month. For anything else, copy rows out of a
-              spreadsheet and paste them here: a payee&rsquo;s name on its own row with their lines underneath
-              (label, then amount), or one row per line as payee, label, amount. Costs with a minus or in brackets.
-            </p>
-            <div className="tsfield">
-              <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={6}
-                placeholder={"SHB Investments\nRent collected\t9,900.00\nLot rent\t(4,125.00)\nManagement fee\t(495.00)\nNet owed\t5,280.00"} />
-            </div>
-            <button className="tsminor" disabled={busy || !paste.trim()} onClick={async () => {
-              const j = await act({ action: "paste", text: paste });
-              if (j?.pasted) {
-                setPaste("");
-                setSaid(`Read ${j.pasted.payees} statement${j.pasted.payees === 1 ? "" : "s"}.`
-                  + (j.pasted.skippedSent ? ` ${j.pasted.skippedSent} already emailed and left as sent.` : ""));
-              }
-            }}>Read it in</button>
-            {data.pasted?.unmatched.length ? (
-              <p className="tsnudge loud">Not matched to a payee, so not read: {data.pasted.unmatched.join(" · ")}</p>
-            ) : null}
-          </section>
+          <nav className="disttabs" role="tablist">
+            {([["list", `Statements (${statements.length})`], ["pay", `Pay${days.length ? ` (${days.length} day${days.length === 1 ? "" : "s"})` : ""}`],
+               ["email", "Email"], ["add", "Add or paste"]] as [string, string][]).map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
+            ))}
+          </nav>
 
-          {/* ------------------------------------------------ statements */}
-          {statements.map((s) => (
-            <StatementCard key={s.id} s={s} busy={busy} act={act} onPreview={() => setPreview(s)} />
-          ))}
+          {tab === "list" ? (
+            <>
+              <div className="distfilters">
+                {FILTERS.map(([k, l, f]) => (
+                  <button key={k} className={`chipf${filter === k ? " on" : ""}`} onClick={() => setFilter(k)}>
+                    {l} <span>{statements.filter(f).length}</span>
+                  </button>
+                ))}
+                <input className="distsearch" type="search" placeholder="Find an owner" value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
 
-          <section className="tscard">
-            <div className="tsfield">
-              <label htmlFor="addpayee">Add a statement for</label>
-              <input id="addpayee" list="payeelist" value={newPayee} placeholder="Name as it should appear on the statement"
-                onChange={(e) => setNewPayee(e.target.value)} />
-              <datalist id="payeelist">
-                {(data.payees ?? []).filter((p) => !statements.some((s) => s.payeeId === p.id)).map((p) => <option key={p.id} value={p.name} />)}
-              </datalist>
-            </div>
-            <button className="tsminor" disabled={busy || !newPayee.trim()}
-              onClick={async () => { if (await act({ action: "add-payee", name: newPayee.trim() })) setNewPayee(""); }}>Add</button>
-          </section>
-
-          {/* ---------------------------------------------------- email */}
-          <section className="tscard">
-            <div className="tscardhead">
-              <h2>Email the statements</h2>
-              <span className="tsnum">{ready.length} ready</span>
-            </div>
-            <p className="tsnote">
-              Each payee gets their own email, &ldquo;{subjectFor(`${month}-01`)}&rdquo;. You get a copy of
-              every one, and replies come to you. A statement on hold, with no lines, or with no email
-              address is not sent. Plan the payments first and each email says when the money was sent.
-            </p>
-            {!confirmSend ? (
-              <button className="tsact" disabled={busy || !ready.length} onClick={() => setConfirmSend(true)}>
-                Email {ready.length} statement{ready.length === 1 ? "" : "s"}
-              </button>
-            ) : (
-              <>
-                <p className="tsnudge loud">
-                  Send to: {ready.map((s) => `${s.payee} (${money(s.owedCents)}${s.versus.lastCents !== null ? `, last month ${money(s.versus.lastCents)}` : ""})`).join(" · ")}
-                </p>
-                <div className="tsrow">
-                  <button className="tsact" disabled={busy} onClick={async () => {
-                    setConfirmSend(false);
-                    const j = await act({ action: "send", statementIds: ready.map((s) => s.id) });
-                    if (j?.sent) {
-                      const ok = j.sent.filter((x) => x.ok).length;
-                      const bad = j.sent.filter((x) => !x.ok);
-                      setSaid(`${ok} emailed.`);
-                      if (bad.length) setProblem(bad.map((x) => `${x.payee}: ${x.detail}`).join(" · "));
-                    }
-                  }}>Yes, send them</button>
-                  <button className="tsminor" onClick={() => setConfirmSend(false)}>Not yet</button>
+              <div className="disttable" role="table">
+                <div className="distrow disthead" role="row">
+                  <span role="columnheader">Owner</span>
+                  <span role="columnheader" className="num">This month</span>
+                  <span role="columnheader" className="num">Last month</span>
+                  <span role="columnheader" className="num">Change</span>
+                  <span role="columnheader">Status</span>
                 </div>
-              </>
-            )}
-          </section>
-
-          {/* ------------------------------------------------- payments */}
-          <section className="tscard">
-            <div className="tscardhead">
-              <h2>Pay through Wells Fargo</h2>
-              <span className="tsnum">{usd(capCents)} a day</span>
-            </div>
-            <p className="tsnote">
-              The plan keeps each day under the limit, sends first to payees whose bank takes longest,
-              and keeps a payment whole unless it is bigger than a day allows. Paid payments stay put
-              when you plan again.
-            </p>
-            <div className="distplanform">
-              <div className="tsfield">
-                <label htmlFor="cap">Daily limit ($)</label>
-                <input id="cap" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} />
-              </div>
-              <div className="tsfield">
-                <label htmlFor="start">First day to send</label>
-                <input id="start" type="date" value={startOn || data.run.startOn || ""} onChange={(e) => setStartOn(e.target.value)} />
-              </div>
-            </div>
-            <button className="tsminor" disabled={busy} onClick={() => {
-              const c = parseMoney(cap);
-              if (!c || c <= 0) { setProblem("The daily limit has to be an amount."); return; }
-              act({ action: "plan", capCents: c, startOn: startOn || data.run?.startOn || "" }, "Planned.");
-            }}>{days.length ? "Plan again" : "Plan the payments"}</button>
-
-            {days.map(([d, rows]) => {
-              const total = rows.reduce((a, r) => a + r.pay.cents, 0);
-              return (
-                <div key={d} className="distday">
-                  <div className="distdayhead">
-                    <strong>{day(d)}</strong>
-                    <span className={`tsnum${total > capCents ? " over" : ""}`}>{usd(total)} of {usd(capCents)}</span>
+                {groups.map((g) => (
+                  <div key={g} role="rowgroup">
+                    <div className="distgroup">{g}</div>
+                    {shown.filter((s) => groupOf(s) === g).map((s) => {
+                      const diff = s.versus.lastCents === null ? null : s.owedCents - s.versus.lastCents;
+                      return (
+                        <button key={s.id} role="row" className={`distrow${openId === s.id ? " sel" : ""}${needsLook(s) ? " warn" : ""}`}
+                          onClick={() => setOpenId(s.id)}>
+                          <span className="distname"><strong>{s.payee}</strong>{s.title && s.title !== s.payee ? <small>{s.title}</small> : null}</span>
+                          <span className={`num big${s.owedCents < 0 ? " distneg" : ""}`}>{money(s.owedCents)}</span>
+                          <span className="num muted">{s.versus.lastCents === null ? "—" : usd(s.versus.lastCents)}</span>
+                          <span className={`num${diff !== null && diff < 0 ? " distneg" : diff ? " distpos" : " muted"}`}>
+                            {diff === null ? "—" : diff === 0 ? "same" : `${diff > 0 ? "+" : "−"}${usd(Math.abs(diff))}`}
+                          </span>
+                          <span className="diststatus">{status(s).map(([k, l]) => <i key={l} className={`dpill ${k}`}>{l}</i>)}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <ul className="distpays">
-                    {rows.map(({ pay, s }) => (
-                      <li key={pay.id} className={pay.paidAt ? "paid" : ""}>
-                        <span className="distwho">
-                          <strong>{s.payee}</strong>
-                          <span className={`muted${s.versus.loud ? " distneg" : ""}`}>{s.versus.lastCents !== null ? `last month ${usd(s.versus.lastCents)} · ` : ""}{s.versus.loud ? "check the statement · " : ""}arrives by {day(pay.arrivesOn)}{s.plannedCents > 0 && s.payments.length > 1 ? ` · part of ${usd(s.plannedCents)}` : ""}</span>
-                        </span>
-                        <span className="payamt">{usd(pay.cents)}</span>
-                        {pay.paidAt ? (
-                          <span className="distpaid">
-                            Paid{pay.confirmation ? ` · ${pay.confirmation}` : ""}
-                            <button className="tslink" disabled={busy} onClick={() => act({ action: "paid", paymentId: pay.id, undo: true })}>Undo</button>
-                          </span>
-                        ) : (
-                          <span className="distmark">
-                            <input aria-label={`Confirmation number for ${s.payee}`} placeholder="Confirmation #"
-                              value={conf[pay.id] ?? ""} onChange={(e) => setConf({ ...conf, [pay.id]: e.target.value })} />
-                            <button className="btn pri" disabled={busy}
-                              onClick={() => act({ action: "paid", paymentId: pay.id, confirmation: conf[pay.id] ?? "" }, `${s.payee}: ${usd(pay.cents)} marked paid.`)}>
-                              Paid
-                            </button>
-                          </span>
-                        )}
-                      </li>
-                    ))}
+                ))}
+                {!shown.length ? <p className="tsnote distempty">Nothing matches.</p> : null}
+              </div>
+            </>
+          ) : null}
+
+          {tab === "add" ? (
+            <section className="tscard">
+              <div className="tsfield">
+                <label htmlFor="addpayee">Add a statement for</label>
+                <input id="addpayee" list="payeelist" value={newPayee} placeholder="Name as it should appear on the statement"
+                  onChange={(e) => setNewPayee(e.target.value)} />
+                <datalist id="payeelist">
+                  {(data.payees ?? []).filter((p) => !statements.some((s) => s.payeeId === p.id)).map((p) => <option key={p.id} value={p.name} />)}
+                </datalist>
+              </div>
+              <button className="tsminor" disabled={busy || !newPayee.trim()}
+                onClick={async () => { if (await act({ action: "add-payee", name: newPayee.trim() })) setNewPayee(""); }}>Add</button>
+              <div className="tscardhead"><h2>Paste lines by hand</h2></div>
+              <p className="tsnote">
+                Alex&rsquo;s sheets are read in for you each month. For anything else, copy rows out of a
+                spreadsheet and paste them here: a payee&rsquo;s name on its own row with their lines underneath
+                (label, then amount), or one row per line as payee, label, amount. Costs with a minus or in brackets.
+              </p>
+              <div className="tsfield">
+                <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={6}
+                  placeholder={"SHB Investments\nRent collected\t9,900.00\nLot rent\t(4,125.00)"} />
+              </div>
+              <button className="tsminor" disabled={busy || !paste.trim()} onClick={async () => {
+                const j = await act({ action: "paste", text: paste });
+                if (j?.pasted) {
+                  setPaste("");
+                  setSaid(`Read ${j.pasted.payees} statement${j.pasted.payees === 1 ? "" : "s"}.`
+                    + (j.pasted.skippedSent ? ` ${j.pasted.skippedSent} already emailed and left as sent.` : ""));
+                }
+              }}>Read it in</button>
+              {data.pasted?.unmatched.length ? (
+                <p className="tsnudge loud">Not matched to a payee, so not read: {data.pasted.unmatched.join(" · ")}</p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {tab === "email" ? (
+            <section className="tscard">
+              <div className="tscardhead">
+                <h2>Email the statements</h2>
+                <span className="tsnum">{ready.length} ready</span>
+              </div>
+              <p className="tsnote">
+                Nothing is emailed until you press the button below. Each payee gets their own email,
+                &ldquo;{subjectFor(`${month}-01`)}&rdquo;; you get a copy of every one, and replies come to you.
+                A statement on hold, with no lines, or with no email address is not sent.
+              </p>
+              {!confirmSend ? (
+                <button className="tsact" disabled={busy || !ready.length} onClick={() => setConfirmSend(true)}>
+                  Email {ready.length} statement{ready.length === 1 ? "" : "s"}&hellip;
+                </button>
+              ) : (
+                <>
+                  <ul className="distsendlist">
+                    {ready.map((s) => <li key={s.id}><span>{s.payee}</span><span className="num">{money(s.owedCents)}</span><span className="muted">{s.email}</span></li>)}
                   </ul>
+                  <div className="tsrow">
+                    <button className="tsact" disabled={busy} onClick={async () => {
+                      setConfirmSend(false);
+                      const j = await act({ action: "send", statementIds: ready.map((s) => s.id) });
+                      if (j?.sent) {
+                        const ok = j.sent.filter((x) => x.ok).length;
+                        const bad = j.sent.filter((x) => !x.ok);
+                        setSaid(`${ok} emailed.`);
+                        if (bad.length) setProblem(bad.map((x) => `${x.payee}: ${x.detail}`).join(" · "));
+                      }
+                    }}>Yes, send these {ready.length}</button>
+                    <button className="tsminor" onClick={() => setConfirmSend(false)}>Not yet</button>
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
+
+          {tab === "pay" ? (
+            <section className="tscard">
+              <div className="tscardhead">
+                <h2>Pay through Wells Fargo</h2>
+                <span className="tsnum">{usd(capCents)} a day</span>
+              </div>
+              <div className="distplanform">
+                <div className="tsfield">
+                  <label htmlFor="cap">Daily limit ($)</label>
+                  <input id="cap" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} />
                 </div>
-              );
-            })}
-          </section>
+                <div className="tsfield">
+                  <label htmlFor="start">First day to send</label>
+                  <input id="start" type="date" value={startOn || data.run.startOn || ""} onChange={(e) => setStartOn(e.target.value)} />
+                </div>
+                <button className="tsact distplanbtn" disabled={busy} onClick={() => {
+                  const c = parseMoney(cap);
+                  if (!c || c <= 0) { setProblem("The daily limit has to be an amount."); return; }
+                  act({ action: "plan", capCents: c, startOn: startOn || data.run?.startOn || "" }, "Planned.");
+                }}>{days.length ? "Plan again" : "Plan the payments"}</button>
+              </div>
+              <p className="tsnote">
+                Slowest banks go first, a payment stays whole unless it is bigger than a day allows, and
+                anything already marked paid keeps its day. Statements on hold or with nothing to pay are left out.
+              </p>
+
+              <div className="distdays">
+                {days.map(([d, rows]) => {
+                  const total = rows.reduce((a, r) => a + r.pay.cents, 0);
+                  const done = rows.every((r) => r.pay.paidAt);
+                  return (
+                    <div key={d} className={`distday${done ? " done" : ""}`}>
+                      <div className="distdayhead">
+                        <strong>{day(d)}</strong>
+                        <span className={`tsnum${total > capCents ? " over" : ""}`}>{usd(total)} <span className="muted">of {usd(capCents)}</span></span>
+                      </div>
+                      <div className="distbar"><span style={{ width: `${Math.min(100, (total / capCents) * 100)}%` }} /></div>
+                      <ul className="distpays">
+                        {rows.map(({ pay, s }) => (
+                          <li key={pay.id} className={pay.paidAt ? "paid" : ""}>
+                            <button className="distwho" onClick={() => setOpenId(s.id)}>
+                              <strong>{s.payee}</strong>
+                              <span className={`muted${s.versus.loud ? " distneg" : ""}`}>
+                                {s.versus.loud ? "Check the statement · " : ""}{s.versus.lastCents !== null ? `last month ${usd(s.versus.lastCents)} · ` : ""}arrives {day(pay.arrivesOn)}
+                              </span>
+                            </button>
+                            <span className="payamt">{usd(pay.cents)}</span>
+                            {pay.paidAt ? (
+                              <span className="distpaid">
+                                Paid{pay.confirmation ? ` · #${pay.confirmation}` : ""}
+                                <button className="tslink" disabled={busy} onClick={() => act({ action: "paid", paymentId: pay.id, undo: true })}>Undo</button>
+                              </span>
+                            ) : (
+                              <span className="distmark">
+                                <input aria-label={`Confirmation number for ${s.payee}`} placeholder="Confirmation #"
+                                  value={conf[pay.id] ?? ""} onChange={(e) => setConf({ ...conf, [pay.id]: e.target.value })} />
+                                <button className="btn pri" disabled={busy}
+                                  onClick={() => act({ action: "paid", paymentId: pay.id, confirmation: conf[pay.id] ?? "" }, `${s.payee}: ${usd(pay.cents)} marked paid.`)}>
+                                  Mark paid
+                                </button>
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
         </>
       )}
+
+      {open ? (
+        <>
+          <div className="distscrim" onClick={() => setOpenId(null)} />
+          <aside className="distdrawer" role="dialog" aria-label={`Statement for ${open.payee}`}>
+            <div className="distdrawerbar">
+              <button className="tslink" aria-label="Previous statement" disabled={shown.findIndex((x) => x.id === open.id) <= 0}
+                onClick={() => { const i = shown.findIndex((x) => x.id === open.id); if (i > 0) setOpenId(shown[i - 1].id); }}>&uarr;</button>
+              <button className="tslink" aria-label="Next statement" disabled={shown.findIndex((x) => x.id === open.id) >= shown.length - 1}
+                onClick={() => { const i = shown.findIndex((x) => x.id === open.id); if (i >= 0 && i < shown.length - 1) setOpenId(shown[i + 1].id); }}>&darr;</button>
+              <span className="muted">{shown.findIndex((x) => x.id === open.id) + 1} of {shown.length}</span>
+              <button className="btn" onClick={() => setOpenId(null)}>Close</button>
+            </div>
+            <StatementCard key={open.id} s={open} busy={busy} act={act} onPreview={() => setPreview(open)} />
+          </aside>
+        </>
+      ) : null}
 
       {preview ? (
         <div className="distpreview" role="dialog" aria-label={`Statement for ${preview.payee}`}>
@@ -357,7 +491,7 @@ function StatementCard({ s, busy, act, onPreview }: {
       <p className={`distvs${s.versus.loud ? " loud" : ""}`}>
         <span>This month <strong>{money(owed)}</strong></span>
         <span>Last month {s.versus.lastCents === null ? "—" : <strong>{money(s.versus.lastCents)}</strong>}
-          {s.versus.lastOn ? <span className="muted"> sent {s.versus.lastOn}</span> : null}</span>
+          {s.versus.lastOn ? <span className="muted"> sent {shortDay(s.versus.lastOn)}</span> : null}</span>
         {s.versus.diffCents !== null ? (
           <span className={s.versus.diffCents < 0 ? "distneg" : ""}>{s.versus.diffCents >= 0 ? "+" : "−"}{usd(Math.abs(owed - (s.versus.lastCents ?? 0)))}</span>
         ) : null}
@@ -384,7 +518,10 @@ function StatementCard({ s, busy, act, onPreview }: {
         </div>
       </div>
 
-      <button className="tslink" onClick={() => setOpen(!open)}>{open ? "Hide the lines" : `Show the ${rows.length} lines`}</button>
+      {!open ? <StatementLines lines={s.lines} /> : null}
+      {!locked ? (
+        <button className="tslink" onClick={() => setOpen(!open)}>{open ? "Done editing" : "Edit lines"}</button>
+      ) : null}
       {open ? (
         <>
           <ul className="distlines">
