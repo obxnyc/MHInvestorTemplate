@@ -779,7 +779,12 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
   const guarCents = parseMoney(guar) ?? 0;
   const lines: Line[] = s.emailedAt ? s.lines : withGuarantee(ownLines, guarCents);
   const topups = lines.filter((l) => l.category === "Guaranteed rent");
-  const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null, sheetLabel: l.sheetLabel ?? null, removed: !!l.removed })));
+  /* Compared field by field in a fixed order. JSON.stringify follows the order
+     the keys were written in, and the server writes them in a different order
+     from this screen -- so a renamed line read as "not saved" forever after it
+     was saved, and Mark checked could never be pressed. */
+  const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => [l.label, l.cents, l.date ?? null, l.merchant ?? null, l.category ?? null,
+    l.markupPct ?? 0, l.sheetCents ?? null, l.sheetLabel ?? null, !!l.removed]));
   const depositCents = deposit.trim() === "" ? null : parseMoney(deposit);
   const linesDirty = norm(ownLines) !== norm(own(s.lines)) || note !== s.note || depositCents !== s.depositsCents;
   const held = { reserveHeldCents: resHeld.trim() === "" ? null : parseMoney(resHeld), reserveRequiredCents: resNeed.trim() === "" ? null : parseMoney(resNeed) };
@@ -1130,10 +1135,18 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
         ) : null}
         <button className="btn" onClick={onPreview} disabled={dirty}>Preview email</button>
         {!s.emailedAt ? (
-          <button className={`btn${s.checkedAt && !dirty ? " edchecked" : ""}`} disabled={busy || dirty || (linesDirty && bad)}
-            title={dirty ? "Save first: a check is of the statement as saved." : undefined}
-            onClick={() => act({ action: "check", statementId: s.id, checked: !s.checkedAt })}>
-            {s.checkedAt ? "✓ Checked" : "Mark checked"}
+          <button className={`btn${s.checkedAt && !dirty ? " edchecked" : ""}`} disabled={busy || (linesDirty && bad)}
+            onClick={async () => {
+              /* With unsaved changes this saves them first and then checks the
+                 statement as saved -- greyed out, it read as "it will not let
+                 me check it", when all it wanted was a Save first. */
+              if (dirty) {
+                if (payeeDirty && !(await savePayee())) return;
+                if (linesDirty && !(await act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents }))) return;
+                await act({ action: "check", statementId: s.id, checked: true }, `${s.payee} saved and checked.`);
+              } else act({ action: "check", statementId: s.id, checked: !s.checkedAt });
+            }}>
+            {dirty ? "Save and mark checked" : s.checkedAt ? "✓ Checked" : "Mark checked"}
           </button>
         ) : null}
         {!s.emailedAt ? (
