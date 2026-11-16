@@ -62,6 +62,7 @@ async function build(month: string) {
     guaranteedCents: p.guaranteed_rent_cents == null ? null : Number(p.guaranteed_rent_cents),
     reserveHeldCents: p.reserve_held_cents == null ? null : Number(p.reserve_held_cents),
     reserveRequiredCents: p.reserve_required_cents == null ? null : Number(p.reserve_required_cents),
+    startsOn: (p.starts_on as string | null) ?? null,
   }));
   const run = runRes.data;
   if (!run) return { month, run: null, payees, statements: [] };
@@ -116,6 +117,8 @@ async function build(month: string) {
       id: String(s.id), payeeId: String(s.payee_id), payee: payee?.name ?? "(payee missing)",
       email: payee?.emails ?? "", settleDays: payee?.settleDays ?? 2, entity: payee?.entity ?? "",
       guaranteedCents: payee?.guaranteedCents ?? null, vacant: vacantLots(lines),
+      // Distributions not started yet this month: kept on screen, never sent, owed or planned.
+      startsOn: payee?.startsOn ?? null, notStarted: !!payee?.startsOn && payee.startsOn > `${month}-01`,
       sendsAs: entityOf({ entity: payee?.entity, payee: payee?.name ?? "" }),
       title: (s.title as string | null) ?? "", ...carry, owedNote: (s.owed_note as string | null) ?? "",
       source: s.source ?? null,
@@ -237,6 +240,7 @@ export async function POST(req: Request) {
           ...("entity" in b ? { entity: String(b.entity ?? "").trim().slice(0, 120) || null } : {}),
           ...("guaranteedCents" in b ? { guaranteed_rent_cents: Number(b.guaranteedCents) > 0 ? Math.round(Number(b.guaranteedCents)) : null } : {}),
           ...("reserveHeldCents" in b ? { reserve_held_cents: b.reserveHeldCents === null || b.reserveHeldCents === "" || !(Number(b.reserveHeldCents) >= 0) ? null : Math.round(Number(b.reserveHeldCents)) } : {}),
+          ...("startsOn" in b ? { starts_on: /^\d{4}-\d{2}$/.test(String(b.startsOn)) ? `${b.startsOn}-01` : null } : {}),
           ...("reserveRequiredCents" in b ? { reserve_required_cents: b.reserveRequiredCents === null || b.reserveRequiredCents === "" || !(Number(b.reserveRequiredCents) >= 0) ? null : Math.round(Number(b.reserveRequiredCents)) } : {}) })
         .eq("id", String(b.payeeId));
       if (error) return fail(error.message, 500);
@@ -283,7 +287,7 @@ export async function POST(req: Request) {
       if (unpaid.length) await db.from("distribution_payments").delete().in("id", unpaid);
       const taken: Record<string, number> = {};
       for (const s of now.statements ?? []) for (const p of s.payments) if (p.paidAt) taken[p.sendOn] = (taken[p.sendOn] ?? 0) + p.cents;
-      const owed = (now.statements ?? []).filter((s) => !s.hold && (s.source as { group?: string } | null)?.group !== "Test")
+      const owed = (now.statements ?? []).filter((s) => !s.hold && !s.notStarted && (s.source as { group?: string } | null)?.group !== "Test")
         .map((s) => ({ id: s.id, name: s.payee, settleDays: s.settleDays, cents: s.owedCents - s.paidCents }));
       const plan = planPayments(owed, cap, bankDayFrom(startOn), taken);
       if (plan.length) {
@@ -321,6 +325,7 @@ export async function POST(req: Request) {
         if (s.emailedAt && !b.resend) { results.push({ payee: s.payee, ok: false, detail: "already emailed" }); continue; }
         if (!s.lines.length) { results.push({ payee: s.payee, ok: false, detail: "the statement has no lines" }); continue; }
         if (s.hold) { results.push({ payee: s.payee, ok: false, detail: "on hold, so not sent" }); continue; }
+        if (s.notStarted) { results.push({ payee: s.payee, ok: false, detail: `distributions start ${s.startsOn}, so not sent` }); continue; }
         groups.set(s.sendsAs, [...(groups.get(s.sendsAs) ?? []), s]);
       }
       for (const [entity, list] of groups) {
