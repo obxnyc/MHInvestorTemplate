@@ -192,6 +192,14 @@ export async function POST(req: Request) {
       break;
     }
 
+    case "unplan": {
+      // A planned payment nobody wants: taken off the plan. Only ever one not yet
+      // paid -- a paid payment is the record, and Undo is how that is corrected.
+      const { error } = await db.from("distribution_payments").delete().eq("id", String(b.paymentId)).is("paid_at", null);
+      if (error) return fail(error.message, 500);
+      break;
+    }
+
     case "paid": {
       const conf = String(b.confirmation ?? "").trim().slice(0, 80);
       /* A planned payment can be older than the statement it pays: Ridge Road

@@ -612,6 +612,10 @@ export default function DistributionsBoard() {
                                   onClick={() => act({ action: "paid", paymentId: pay.id, confirmation: conf[pay.id] ?? "" }, `${s.payee}: ${usd(pay.cents)} marked paid.`)}>
                                   Mark paid
                                 </button>
+                                <button className="tslink" disabled={busy} title="Take this off the plan. Nothing has been paid."
+                                  onClick={() => act({ action: "unplan", paymentId: pay.id }, `${s.payee}: the planned ${usd(pay.cents)} for ${day(pay.sendOn)} is off the plan.`)}>
+                                  Remove
+                                </button>
                               </span>
                             )}
                           </li>
