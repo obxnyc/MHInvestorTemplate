@@ -283,7 +283,7 @@ export async function POST(req: Request) {
       if (unpaid.length) await db.from("distribution_payments").delete().in("id", unpaid);
       const taken: Record<string, number> = {};
       for (const s of now.statements ?? []) for (const p of s.payments) if (p.paidAt) taken[p.sendOn] = (taken[p.sendOn] ?? 0) + p.cents;
-      const owed = (now.statements ?? []).filter((s) => !s.hold)
+      const owed = (now.statements ?? []).filter((s) => !s.hold && (s.source as { group?: string } | null)?.group !== "Test")
         .map((s) => ({ id: s.id, name: s.payee, settleDays: s.settleDays, cents: s.owedCents - s.paidCents }));
       const plan = planPayments(owed, cap, bankDayFrom(startOn), taken);
       if (plan.length) {
@@ -320,6 +320,7 @@ export async function POST(req: Request) {
       for (const s of asked) {
         if (s.emailedAt && !b.resend) { results.push({ payee: s.payee, ok: false, detail: "already emailed" }); continue; }
         if (!s.lines.length) { results.push({ payee: s.payee, ok: false, detail: "the statement has no lines" }); continue; }
+        if (s.hold) { results.push({ payee: s.payee, ok: false, detail: "on hold, so not sent" }); continue; }
         groups.set(s.sendsAs, [...(groups.get(s.sendsAs) ?? []), s]);
       }
       for (const [entity, list] of groups) {

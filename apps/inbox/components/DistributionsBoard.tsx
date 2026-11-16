@@ -140,7 +140,10 @@ export default function DistributionsBoard() {
   };
 
   const statements = data?.statements ?? [];
-  const ready = statements.filter((s) => !s.emailedAt && !s.hold && s.lines.length && s.email);
+  // A test statement goes to whoever is testing and nowhere else: never in
+  // the totals, the payment plan or the send-everything button.
+  const isTest = (s: Statement) => s.source?.group === "Test";
+  const ready = statements.filter((s) => !isTest(s) && !s.emailedAt && !s.hold && s.lines.length && s.email);
   // One email per owning entity: the statements that travel together.
   const emailsOut = useMemo(() => {
     const m = new Map<string, Statement[]>();
@@ -148,12 +151,17 @@ export default function DistributionsBoard() {
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [ready]);
   const together = (s: Statement) => statements.filter((x) => x.sendsAs === s.sendsAs);
+  /* WHAT GOES IN THIS OWNER'S EMAIL -- one answer, used by the preview AND by
+     the send. They were two answers once: the preview skipped held statements
+     and the send did not, so a held owner previewed as an empty email and
+     would have been sent a full one. */
+  const emailSet = (s: Statement) => together(s).filter((x) => !x.emailedAt && !x.hold && x.lines.length);
   const asInput = (x: Statement): StatementInput => ({
     month: `${month}-01`, payee: x.payee, title: x.title, lines: x.lines, note: x.note, payments: x.payments,
     previousOwedCents: x.previousOwedCents, priorPaidCents: x.priorPaidCents, priorPaidOn: x.priorPaidOn, depositsCents: x.depositsCents,
     reserveHeldCents: x.reserveHeldCents, reserveRequiredCents: x.reserveRequiredCents,
   });
-  const totalNet = statements.filter((s) => !s.hold && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
+  const totalNet = statements.filter((s) => !isTest(s) && !s.hold && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
   const flagged = statements.filter((s) => s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c))).length;
   const lastTotal = statements.reduce((a, s) => a + Math.max(0, s.versus.lastCents ?? 0), 0);
   const paidTotal = statements.reduce((a, s) => a + s.paidCents, 0);
@@ -188,6 +196,7 @@ export default function DistributionsBoard() {
   const open = statements.find((s) => s.id === openId) ?? null;
   const status = (s: Statement) => {
     const out: [string, string][] = [];
+    if (isTest(s)) out.push(["plan", "Test — only to you"]);
     if (s.hold) out.push(["hold", "On hold"]);
     if (needsLook(s)) out.push(["warn", "Check"]);
     if (s.owedCents <= 0) out.push(["muted", "Nothing to pay"]);
@@ -452,7 +461,7 @@ export default function DistributionsBoard() {
               <button className="btn" onClick={() => setOpenId(null)}>Close</button>
             </div>
             <StatementCard key={open.id} s={open} busy={busy} act={act} onPreview={() => setPreview(open)}
-              others={together(open).filter((x) => x.id !== open.id)} onOpen={setOpenId} />
+              others={together(open).filter((x) => x.id !== open.id)} onOpen={setOpenId} sendSet={emailSet(open)} />
           </aside>
         </>
       ) : null}
@@ -460,22 +469,29 @@ export default function DistributionsBoard() {
       {preview ? (
         <div className="distpreview" role="dialog" aria-label={`Statement for ${preview.payee}`}>
           <div className="distpreviewbar">
-            <span><strong>{subjectFor(`${month}-01`)}</strong> &middot; {preview.sendsAs} &middot; to {[...new Set(together(preview).map((x) => x.email).filter(Boolean))].join(", ") || "no address yet"}</span>
+            <span><strong>{subjectFor(`${month}-01`)}</strong> &middot; {preview.sendsAs} &middot; to {[...new Set(emailSet(preview).flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))].join(", ") || "no address yet"}</span>
             <button className="btn" onClick={() => setPreview(null)}>Close</button>
           </div>
-          <iframe title="Statement preview" sandbox="" srcDoc={ownerEmailHtml(`${month}-01`, preview.sendsAs,
-            together(preview).filter((x) => !x.hold && x.lines.length).map(asInput))} />
+          {emailSet(preview).length ? (
+            <iframe title="Statement preview" sandbox="" srcDoc={ownerEmailHtml(`${month}-01`, preview.sendsAs,
+              emailSet(preview).map(asInput))} />
+          ) : (
+            <div className="edmodal" style={{ margin: "2rem auto" }}>
+              <h3>Nothing would be sent</h3>
+              <p className="tsnote">{preview.hold ? "This statement is on hold, so it is left out of the email." : "Every statement for this owner has already been sent or has no lines."}</p>
+            </div>
+          )}
         </div>
       ) : null}
     </main>
   );
 }
 
-function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
+function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
   s: Statement; busy: boolean;
   act: (b: Record<string, unknown>, done?: string) => Promise<unknown>;
   onPreview: () => void;
-  others: Statement[]; onOpen: (id: string) => void;
+  others: Statement[]; onOpen: (id: string) => void; sendSet: Statement[];
 }) {
   /* One row per line, edited in place. Amounts are typed as they read --
      a cost of 29.17 is typed 29.17 in the Expenses section, not -29.17 --
@@ -500,7 +516,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const [sending, setSending] = useState(false);
   const [sentSaid, setSentSaid] = useState<string | null>(null);
   // This owner's email: this statement and any of the same entity not yet sent.
-  const sendWith = [s, ...others].filter((x) => !x.emailedAt && x.lines.length);
+  const sendWith = sendSet;
   const [labor, setLabor] = useState(false);
   const [hours, setHours] = useState("");
   const [rate, setRate] = useState(() => { try { return localStorage.getItem("dist-labor-rate") ?? ""; } catch { return ""; } });
@@ -760,6 +776,11 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
             {(() => {
               const to = [...new Set(sendWith.flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))];
               const totalPaid = sendWith.reduce((a, x) => a + Math.max(0, x.id === s.id ? owed : x.owedCents), 0);
+              if (!sendWith.length) return (<>
+                <h3>Nothing to send</h3>
+                <p className="tsnote">{s.hold ? "This statement is on hold. Take it off hold to send it." : "Every statement for this owner has already been sent."}</p>
+                <div className="tsrow"><button className="btn" onClick={() => setSending(false)}>OK</button></div>
+              </>);
               if (!to.length) return (<>
                 <h3>No email address</h3>
                 <p className="tsnote">There is no email address for {s.sendsAs}. Add one under Owner details, then try again.</p>
