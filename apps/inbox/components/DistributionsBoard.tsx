@@ -42,6 +42,7 @@ type Data = {
   changes?: (Change & { statementId: string; payee: string; title: string; recordedAt: string | null; recordedBy: string | null })[] | null;
   pasted?: { payees: number; unmatched: string[]; skippedSent: number };
   sent?: { payee: string; ok: boolean; detail: string }[];
+  said?: string;
 };
 
 const thisMonth = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 7);
@@ -99,6 +100,9 @@ export default function DistributionsBoard() {
   const [per, setPer] = useState("5000");
   const [startOn, setStartOn] = useState("");
   const [conf, setConf] = useState<Record<string, string>>({});
+  // Entering a payment made in Bill Pay: which owner's form is open, and what is typed in it.
+  const [entering, setEntering] = useState<string | null>(null);
+  const [entry, setEntry] = useState({ amount: "", on: "", conf: "" });
   const [confirmSend, setConfirmSend] = useState(false);
   const [newPayee, setNewPayee] = useState("");
   const [tab, setTab] = useState("list");
@@ -153,7 +157,7 @@ export default function DistributionsBoard() {
       try { j = JSON.parse(text); } catch { setProblem(`The server answered ${r.status} and not with data.`); return null; }
       if (!r.ok) { setProblem(j.error ?? `Refused (${r.status})`); return null; }
       setData(j);
-      if (done) setSaid(done);
+      if (done) setSaid(done); else if (j.said) setSaid(j.said);
       return j;
     } finally { setBusy(false); }
   };
@@ -206,6 +210,7 @@ export default function DistributionsBoard() {
     return ` · payment ${ordered.findIndex((x) => x.id === payId) + 1} of ${ordered.length}`;
   };
   // Everybody, and how much of what they are owed has been paid.
+  const perCents = (data?.run?.perPaymentCents ?? 500000);
   const byOwner = statements.filter((st) => st.payments.length || (!st.hold && !st.notStarted && st.owedCents > 0 && st.source?.group !== "Test"))
     .map((st) => ({ st, owed: Math.max(0, st.owedCents), planned: st.plannedCents, paid: st.paidCents }))
     .sort((a, b) => (a.paid >= a.owed ? 1 : 0) - (b.paid >= b.owed ? 1 : 0) || a.st.payee.localeCompare(b.st.payee));
@@ -520,15 +525,54 @@ export default function DistributionsBoard() {
                   {byOwner.map(({ st, owed, planned, paid }) => {
                     const left = owed - paid;
                     const off = planned !== owed;
+                    const open = entering === st.id;
+                    const made = st.payments.filter((x) => x.paidAt).sort((a, b) => a.sendOn.localeCompare(b.sendOn));
+                    const amt = parseMoney(entry.amount);
                     return (
-                      <button key={st.id} className={`edrow dbo${left <= 0 ? " done" : ""}`} onClick={() => setOpenId(st.id)}>
-                        <span className="distname"><strong>{st.payee}</strong>
-                          <small>{st.payments.length} payment{st.payments.length === 1 ? "" : "s"}{st.payments.length ? ` · ${st.payments.filter((x) => x.paidAt).length} paid` : ""}</small></span>
-                        <span className="num">{usd(owed)}</span>
-                        <span className={`num${off ? " distneg" : ""}`}>{usd(planned)}{off ? <small>{planned < owed ? "plan again" : "more than owed"}</small> : null}</span>
-                        <span className="num">{usd(paid)}</span>
-                        <span className={`num${left > 0 ? "" : " distpos"}`}><strong>{left > 0 ? usd(left) : "Paid in full"}</strong></span>
-                      </button>
+                      <div key={st.id} className={`dboitem${left <= 0 ? " done" : ""}${open ? " open" : ""}`}>
+                        <div className="edrow dbo">
+                          <span className="distname">
+                            <button className="tslink distinline" onClick={() => setOpenId(st.id)}><strong>{st.payee}</strong></button>
+                            <small>{made.length ? made.map((x) => `${usd(x.cents)} ${day(x.sendOn)}${x.confirmation ? ` #${x.confirmation}` : ""}`).join(" · ") : "Nothing paid yet"}</small>
+                          </span>
+                          <span className="num" data-k="Owed">{usd(owed)}</span>
+                          <span className={`num${off ? " distneg" : ""}`} data-k="Planned">{usd(planned)}{off ? <small>{planned < owed ? "plan again" : "more than owed"}</small> : null}</span>
+                          <span className="num" data-k="Paid">{usd(paid)}</span>
+                          <span className={`num${left > 0 ? "" : " distpos"}`} data-k="Left"><strong>{left > 0 ? usd(left) : left === 0 ? "Paid in full" : `${usd(-left)} over`}</strong></span>
+                        </div>
+                        {open ? (
+                          <div className="dboentry">
+                            <div className="tsfield"><label htmlFor={`ea-${st.id}`}>Amount paid ($)</label>
+                              <input id={`ea-${st.id}`} inputMode="decimal" autoFocus value={entry.amount} placeholder={left > 0 ? (Math.min(left, perCents) / 100).toFixed(2) : ""}
+                                onChange={(e) => setEntry({ ...entry, amount: e.target.value })} /></div>
+                            <div className="tsfield"><label htmlFor={`ed-${st.id}`}>Date it is paid</label>
+                              <input id={`ed-${st.id}`} type="date" value={entry.on} onChange={(e) => setEntry({ ...entry, on: e.target.value })} /></div>
+                            <div className="tsfield"><label htmlFor={`ec-${st.id}`}>Confirmation #</label>
+                              <input id={`ec-${st.id}`} value={entry.conf} onChange={(e) => setEntry({ ...entry, conf: e.target.value })} /></div>
+                            <div className="dboentrybtns">
+                              <button className="btn pri" disabled={busy || !amt || amt <= 0 || !entry.on}
+                                onClick={async () => { if (await act({ action: "enter-paid", statementId: st.id, cents: amt, sendOn: entry.on, confirmation: entry.conf })) setEntering(null); }}>Save payment</button>
+                              <button className="btn" onClick={() => setEntering(null)}>Cancel</button>
+                            </div>
+                            <p className="tsnote dboentrynote">
+                              {amt && amt > 0 ? <>After this, <strong>{owed - paid - amt > 0 ? `${usd(owed - paid - amt)} left` : owed - paid - amt === 0 ? "paid in full" : `${usd(paid + amt - owed)} more than owed`}</strong>.{amt > perCents ? ` Bill Pay allows ${usd(perCents)} a payment.` : ""} </> : null}
+                              {st.payments.some((x) => !x.paidAt) ? "Anything planned for this owner and not yet paid is taken off when you save; Plan again schedules what is left." : ""}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="dboactions">
+                            <button className="btn" onClick={() => { setEntering(st.id); setEntry({ amount: "", on: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }), conf: "" }); }}>
+                              Enter a payment
+                            </button>
+                            {made.length ? made.map((x) => (
+                              <button key={x.id} className="tslink" disabled={busy}
+                                onClick={() => window.confirm(`Take off the ${usd(x.cents)} payment on ${day(x.sendOn)}? It goes back to being planned, not paid.`) && act({ action: "paid", paymentId: x.id, undo: true }, "Taken off as paid.")}>
+                                Undo {usd(x.cents)} {day(x.sendOn)}
+                              </button>
+                            )) : null}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

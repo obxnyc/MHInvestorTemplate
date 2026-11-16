@@ -3809,3 +3809,20 @@ button.edrow.dbo:hover{background:var(--sunk)}
 .edcheckrow .num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .edsameinbox{margin:.4rem 0}
 .btn.edchecked{border-color:var(--tn);background:var(--tn-soft);color:var(--tn-ink);font-weight:700}
+
+/* Pay tab, by owner: a payment typed in as it was made in Bill Pay. */
+.dboitem{border-top:1px solid var(--hair)}
+.dboitem .edrow.dbo{border-top:0}
+.dboitem.done .edrow.dbo{opacity:.6}
+.dboitem.open{background:var(--sunk)}
+.dboactions{display:flex;flex-wrap:wrap;gap:.3rem .8rem;align-items:center;padding:0 .8rem .6rem}
+.dboactions .tslink{font-size:.8rem}
+.dboentry{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem .7rem;padding:.2rem .8rem .8rem;align-items:end}
+.dboentry .tsfield{margin:0;min-width:0}
+.dboentrybtns{grid-column:1/-1;display:flex;gap:.5rem;flex-wrap:wrap}
+.dboentrynote{grid-column:1/-1;margin:0}
+@media (max-width:44rem){
+  .dboentry{grid-template-columns:minmax(0,1fr)}
+  .edrow.dbo .num[data-k]::before{content:attr(data-k);color:var(--muted);font-size:.72rem;margin-right:.3rem;font-weight:400}
+}
+.edrow.dbo .distname{display:flex;flex-direction:column;align-items:flex-start;text-align:left;min-width:0}

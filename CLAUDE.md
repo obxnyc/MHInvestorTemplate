@@ -1940,6 +1940,13 @@ unless `sendUnchecked` is sent. Send-all leaves out every owner with one
 unchecked statement -- sending only the checked half would email an owner part
 of their month and look complete.
 
+**A payment made in Bill Pay is typed in as it was made** (Pay tab, By owner,
+Enter a payment: amount, the day it is paid, confirmation #) -- the
+`enter-paid` action, recorded paid at once, with "left" = owed minus paid.
+Entering one takes that owner's UNPAID planned payments off, because the plan
+was for a total that just changed and left in it would pay them twice; Plan
+again schedules what is left (it already plans owed minus paid).
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not
