@@ -1913,6 +1913,23 @@ properties carry a $2,000 "Reserves requirement" line that is never subtracted;
 Andrew Habberstad's contract has a $2,500 holdback cap. Reserves live on the
 payee, so they carry from month to month until someone changes them.
 
+**Test statements are never the record.** A test send records "Test sent …"
+in `email_detail` and leaves `emailed_at` empty, so a test stays editable and
+can be sent again. Everything else that freezes on send keys on `emailed_at`.
+
+**Download for Excel** in every owner email is
+`/api/distributions/excel?m=&s=&t=`, an HMAC over the month and exactly those
+statement ids (`lib/statement-link.ts`, keyed on DISTRIBUTIONS_LINK_SECRET or
+the service-role key). No sign-in -- the owner has no account -- and an edited
+id is refused. The workbook is written by `lib/xlsx.ts` (fflate, no xlsx
+library); money is a number with a currency format, not text.
+
+The month at the top is a picker (4×3 months, the year a button for 4×3
+years) with Year to date / a whole year / From–To. A range is
+`/api/distributions/summary`: every statement in it added up per property and
+per house (`summarize`). Paid out is what was PAID, never the months' "owed"
+added together -- that would count every carried balance twice.
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not

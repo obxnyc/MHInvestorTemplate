@@ -538,7 +538,7 @@ function section(full: StatementInput, boxed: boolean, entityName?: string): str
  * Email-safe HTML: tables and inline styles, because mail clients ignore
  * stylesheets. Light ground on purpose: a statement is read and printed.
  */
-export function ownerEmailHtml(month: string, entity: string, list: StatementInput[]): string {
+export function ownerEmailHtml(month: string, entity: string, list: StatementInput[], opts: { excelUrl?: string } = {}): string {
   const many = list.length > 1;
   const total = list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0);
   const summary = many ? `
@@ -569,6 +569,7 @@ export function ownerEmailHtml(month: string, entity: string, list: StatementInp
     ${list.map((s) => section(s, many, entity)).join("")}
   </td></tr>
   <tr><td style="padding:20px 28px 26px;color:#6B7280;font-size:12px;line-height:1.6;border-top:1px solid #E6E8EC">
+    ${opts.excelUrl ? `<a href="${esc(opts.excelUrl)}" style="display:inline-block;margin:0 0 12px;padding:9px 16px;border-radius:8px;background:#1F3554;color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none">Download for Excel</a><br>` : ""}
     Questions about this statement? Reply to this email.<br>Larabee Homes LLC
   </td></tr>
 </table>
@@ -605,7 +606,7 @@ function sectionText(full: StatementInput, many: boolean): string[] {
   ];
 }
 
-export function ownerEmailText(month: string, entity: string, list: StatementInput[]): string {
+export function ownerEmailText(month: string, entity: string, list: StatementInput[], opts: { excelUrl?: string } = {}): string {
   const many = list.length > 1;
   const pad = (l: string, a: string) => `${l}${" ".repeat(Math.max(2, 56 - l.length - a.length))}${a}`;
   return [
@@ -613,6 +614,7 @@ export function ownerEmailText(month: string, entity: string, list: StatementInp
     ...(many ? [entity, ``, ...list.map((s) => { const o = owedCents(s.lines, s); return pad(placeOf(s.title, s.payee, s.lines), o < 0 ? "No distribution" : money(o)); }),
       pad("Total distribution", usd(list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0))), ``] : [``]),
     ...list.flatMap((s) => sectionText(s, many)),
+    ...(opts.excelUrl ? [`Download for Excel: ${opts.excelUrl}`, ``] : []),
     `Questions about this statement? Reply to this email.`, `Larabee Homes LLC`,
   ].join("\n");
 }
@@ -812,4 +814,155 @@ export function reconcile(
     out.push(`${last.unrecorded} change${last.unrecorded === 1 ? "" : "s"} from ${m} not ticked as entered in Rent Manager.`);
   }
   return out;
+}
+
+/* ------------------------------------------------- for Excel */
+
+/** One cell of a spreadsheet row, as lib/xlsx.ts writes it. Money is dollars,
+ *  a real number, so it adds up in the owner's own spreadsheet. */
+export type XCell = string | number | null | { v: string | number | null; bold?: boolean; money?: boolean };
+const $ = (cents: number, bold = false): XCell => ({ v: Math.round(cents) / 100, money: true, bold });
+
+/** A statement as spreadsheet rows: the same lines, subtotals and totals as
+ *  the email, in the same order, and nothing the email does not show. */
+export function statementRows(full: StatementInput): XCell[][] {
+  const s = { ...full, lines: full.lines.filter((l) => !l.removed) };
+  const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
+  const owed = owedCents(s.lines, s);
+  const block = (name: string, rows: Line[]): XCell[][] => rows.length ? [
+    [{ v: name, bold: true }],
+    ...rows.flatMap((l): XCell[][] => [
+      [shortDate(l.date) || null, l.merchant ?? null, l.label, $(l.cents)],
+      ...(markupCents(l) ? [[null, null, `Markup ${l.markupPct}% on ${l.label}`, $(markupCents(l))] as XCell[]] : []),
+    ]),
+    [null, null, { v: "Subtotal", bold: true }, $(netCents(rows), true)],
+    [],
+  ] : [];
+  return [
+    [{ v: `Larabee Homes · Owner Distribution · ${monthLabel(s.month)}`, bold: true }],
+    [s.payee], [placeOf(s.title, s.payee, s.lines)], [],
+    [{ v: "Date", bold: true }, { v: "Paid to / from", bold: true }, { v: "Description", bold: true }, { v: "Amount", bold: true }],
+    ...block("Revenue", s.lines.filter((l) => l.cents >= 0)),
+    ...block("Expenses", s.lines.filter((l) => l.cents < 0)),
+    [null, null, { v: "Monthly net cashflow", bold: true }, $(netCents(s.lines), true)],
+    ...(carried ? [[null, null, "Carried from last month", $(carried)] as XCell[]] : []),
+    [null, null, { v: owed < 0 ? "Balance" : "Distribution", bold: true }, $(owed, true)],
+    ...((s.payments ?? []).length ? [[] as XCell[], [{ v: "Payments", bold: true }] as XCell[],
+      ...s.payments!.map((p): XCell[] => [shortDate(p.sendOn) || p.sendOn, "Wells Fargo Bill Pay", "Sent", $(p.cents)])] : []),
+    [], [{ v: "Held for you", bold: true }],
+    [null, null, "Security deposits", $(s.depositsCents ?? 0)],
+    [null, null, `Reserves${s.reserveRequiredCents ? ` (${usd(s.reserveRequiredCents)} required)` : ""}`, $(s.reserveHeldCents ?? 0)],
+    ...(s.note ? [[] as XCell[], [s.note] as XCell[]] : []),
+  ];
+}
+
+/** The summary sheet at the front of a workbook with more than one property. */
+export function summaryRows(month: string, entity: string, list: StatementInput[]): XCell[][] {
+  return [
+    [{ v: `Larabee Homes · Owner Distribution · ${monthLabel(month)}`, bold: true }], [entity], [],
+    [{ v: "Property", bold: true }, { v: "Distribution", bold: true }],
+    ...list.map((s): XCell[] => { const o = owedCents(s.lines, s); return [placeOf(s.title, s.payee, s.lines), o < 0 ? "No distribution" : $(o)]; }),
+    [{ v: "Total distribution", bold: true }, $(list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0), true)],
+  ];
+}
+
+/* ------------------------------------------- across several months */
+
+export type SummaryIn = {
+  month: string; // YYYY-MM
+  statements: { payeeId: string; payee: string; entity?: string; title: string; lines: Line[]; paidCents: number;
+    notStarted?: boolean; source?: { group?: string } | null }[];
+};
+export type LotTotals = { lot: number | null; revenueCents: number; expenseCents: number; netCents: number };
+export type SummaryRow = {
+  payeeId: string; payee: string; owner: string; place: string; months: string[];
+  revenueCents: number; expenseCents: number; netCents: number; paidCents: number; lots: LotTotals[];
+};
+
+/**
+ * Every statement in a range of months, added up per property and, inside
+ * it, per house. Money is what the statements say -- removed lines are not
+ * counted and markups are -- so a year's summary is the twelve statements
+ * the owner was sent, added together, not a fresh reading of anything.
+ *
+ * What was PAID is summed separately from the cashflow: carried balances
+ * mean one month's distribution is not that month's cashflow, and adding up
+ * twelve "owed" figures would count every carry twice.
+ *
+ * A line that names no lot goes under the property, not a guessed house.
+ * Test statements and months before an owner's distributions start are left
+ * out, the same as they are left out of every total on the screen.
+ */
+export function summarize(months: SummaryIn[]): SummaryRow[] {
+  const by = new Map<string, SummaryRow & { lotMap: Map<number | null, LotTotals> }>();
+  for (const m of months) {
+    for (const s of m.statements) {
+      if (s.source?.group === "Test" || s.notStarted) continue;
+      const lines = s.lines.filter((l) => !l.removed);
+      if (!lines.length && !s.paidCents) continue;
+      let r = by.get(s.payeeId);
+      if (!r) {
+        r = { payeeId: s.payeeId, payee: s.payee, owner: entityOf({ entity: s.entity, payee: s.payee }),
+          place: placeOf(s.title, s.payee, lines), months: [], revenueCents: 0, expenseCents: 0, netCents: 0, paidCents: 0, lots: [],
+          lotMap: new Map() };
+        by.set(s.payeeId, r);
+      }
+      r.months.push(m.month);
+      r.paidCents += s.paidCents;
+      for (const l of lines) {
+        const t = lineTotal(l);
+        if (t >= 0) r.revenueCents += t; else r.expenseCents += t;
+        r.netCents += t;
+        const lot = lotsIn(l.label)[0] ?? null;
+        const lt = r.lotMap.get(lot) ?? { lot, revenueCents: 0, expenseCents: 0, netCents: 0 };
+        if (t >= 0) lt.revenueCents += t; else lt.expenseCents += t;
+        lt.netCents += t;
+        r.lotMap.set(lot, lt);
+      }
+    }
+  }
+  return [...by.values()].map(({ lotMap, ...r }) => ({
+    ...r, months: [...new Set(r.months)].sort(),
+    lots: [...lotMap.values()].sort((a, b) => (a.lot ?? Infinity) - (b.lot ?? Infinity)),
+  })).sort((a, b) => a.owner.localeCompare(b.owner) || a.place.localeCompare(b.place));
+}
+
+/** "Year to date 2026", "2025", "Jan–Mar 2026", "Nov 2025 – Feb 2026". */
+export function rangeLabel(from: string, to: string, today: string): string {
+  const [fy, fm] = from.split("-").map(Number), [ty, tm] = to.split("-").map(Number);
+  const mon = (m: number) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1];
+  if (from === to) return monthLabel(`${from}-01`);
+  if (fy === ty && fm === 1 && tm === 12) return String(fy);
+  if (fy === ty && fm === 1 && to === today.slice(0, 7)) return `Year to date ${fy}`;
+  if (fy === ty) return `${mon(fm)}–${mon(tm)} ${fy}`;
+  return `${mon(fm)} ${fy} – ${mon(tm)} ${ty}`;
+}
+
+/** Every month from one to the other, both included. */
+export function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let [y, m] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  while ((y < ty || (y === ty && m <= tm)) && out.length < 120) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+/** The summary as spreadsheet rows: one row per property, its houses under it. */
+export function summaryRangeRows(label: string, rows: SummaryRow[]): XCell[][] {
+  const head: XCell[] = ["Owner", "Property", "House", "Months", "Revenue", "Expenses", "Net cashflow", "Paid out"].map((v) => ({ v, bold: true }));
+  const total = rows.reduce((a, r) => ({ rev: a.rev + r.revenueCents, exp: a.exp + r.expenseCents, net: a.net + r.netCents, paid: a.paid + r.paidCents }),
+    { rev: 0, exp: 0, net: 0, paid: 0 });
+  return [
+    [{ v: `Larabee Homes · Owner distributions · ${label}`, bold: true }], [], head,
+    ...rows.flatMap((r): XCell[][] => [
+      [{ v: r.owner, bold: true }, { v: r.place, bold: true }, null, r.months.length, $(r.revenueCents, true), $(r.expenseCents, true), $(r.netCents, true), $(r.paidCents, true)],
+      ...(r.lots.length > 1 || r.lots[0]?.lot != null ? r.lots.map((l): XCell[] =>
+        [null, null, l.lot === null ? "Property-wide" : `Lot ${l.lot}`, null, $(l.revenueCents), $(l.expenseCents), $(l.netCents), null]) : []),
+    ]),
+    [],
+    [{ v: "Total", bold: true }, null, null, null, $(total.rev, true), $(total.exp, true), $(total.net, true), $(total.paid, true)],
+  ];
 }

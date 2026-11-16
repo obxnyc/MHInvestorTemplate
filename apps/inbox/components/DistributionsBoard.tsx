@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MonthPicker, RangeSummary, type Range } from "@/components/DistributionsRange";
 import {
-  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
+  rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
 } from "@/lib/distribute";
 
 /**
@@ -100,6 +101,7 @@ export default function DistributionsBoard() {
   const [confirmSend, setConfirmSend] = useState(false);
   const [newPayee, setNewPayee] = useState("");
   const [tab, setTab] = useState("list");
+  const [range, setRange] = useState<Range | null>(null);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -243,16 +245,17 @@ export default function DistributionsBoard() {
       <div className="tshead">
         <h1>Owner distributions</h1>
         <span className="distmonth">
-          <button className="tslink" aria-label="Earlier month" onClick={() => setMonth(shiftMonth(month, -1))}>&larr;</button>
-          <strong>{monthLabel(`${month}-01`)}</strong>
-          <button className="tslink" aria-label="Later month" onClick={() => setMonth(shiftMonth(month, 1))}>&rarr;</button>
+          {range ? null : <button className="tslink" aria-label="Earlier month" onClick={() => setMonth(shiftMonth(month, -1))}>&larr;</button>}
+          <MonthPicker month={month} range={range} onMonth={(m) => { setRange(null); setMonth(m); }} onRange={setRange}
+            label={range ? rangeLabel(range.from, range.to, thisMonth() + "-01") : monthLabel(`${month}-01`)} />
+          {range ? null : <button className="tslink" aria-label="Later month" onClick={() => setMonth(shiftMonth(month, 1))}>&rarr;</button>}
         </span>
       </div>
 
       {problem ? <p className="tsalert" role="alert">{problem}</p> : null}
       {said ? <p className="tsdone" role="status">{said}</p> : null}
 
-      {data.migrationMissing ? (
+      {range ? <RangeSummary range={range} onBack={() => setRange(null)} /> : data.migrationMissing ? (
         <p className="tsalert">Migration 057 has not been run, so distributions cannot be saved yet.</p>
       ) : !data.run ? (
         <section className="tscard">
