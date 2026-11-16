@@ -755,27 +755,52 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
       </details>
 
       {sending ? (
-        <div className="edsend" role="dialog" aria-label="Email this owner">
-          <p><strong>Email {s.sendsAs} now?</strong></p>
-          <p className="tsnote">
-            To {[...new Set(sendWith.flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))].join(", ")}{sendWith.length > 1 ? `, with ${sendWith.length} statements in one email` : ""}:
-            {" "}{sendWith.map((x) => placeOf(x.title, x.payee, x.lines)).join(" · ")}.
-            Only this owner is emailed. You get a copy, and the statement{sendWith.length > 1 ? "s are" : " is"} locked once sent.
-          </p>
-          <div className="tsrow">
-            <button className="btn pri" disabled={busy} onClick={async () => {
-              const j = await act({ action: "send", statementIds: sendWith.map((x) => x.id) }) as { sent?: { payee: string; ok: boolean; detail: string }[] } | null;
-              setSending(false);
-              setSentSaid(j?.sent ? j.sent.map((x) => `${x.payee}: ${x.ok ? "sent" : x.detail}`).join(" · ") : "Not sent.");
-            }}>Send it</button>
-            <button className="btn" onClick={() => setSending(false)}>Cancel</button>
+        <div className="edmodalback" onClick={() => !busy && setSending(false)}>
+          <div className="edmodal" role="alertdialog" aria-modal="true" aria-label="Email this owner" onClick={(e) => e.stopPropagation()}>
+            {(() => {
+              const to = [...new Set(sendWith.flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))];
+              const totalPaid = sendWith.reduce((a, x) => a + Math.max(0, x.id === s.id ? owed : x.owedCents), 0);
+              if (!to.length) return (<>
+                <h3>No email address</h3>
+                <p className="tsnote">There is no email address for {s.sendsAs}. Add one under Owner details, then try again.</p>
+                <div className="tsrow"><button className="btn" onClick={() => setSending(false)}>OK</button></div>
+              </>);
+              if (bad) return (<>
+                <h3>Fix the statement first</h3>
+                <p className="tsnote">A line needs a description and an amount before this can be sent.</p>
+                <div className="tsrow"><button className="btn" onClick={() => setSending(false)}>OK</button></div>
+              </>);
+              return (<>
+                <h3>Send this email now?</h3>
+                <dl className="edmodaldl">
+                  <dt>To</dt><dd>{to.join(", ")}</dd>
+                  <dt>Owner</dt><dd>{s.sendsAs}</dd>
+                  <dt>Statements</dt><dd>{sendWith.map((x) => placeOf(x.title, x.payee, x.lines)).join(" · ")}</dd>
+                  <dt>Distribution</dt><dd>{usd(totalPaid)}</dd>
+                </dl>
+                <p className="tsnote">Only this owner is emailed; you get a copy. Once sent, {sendWith.length > 1 ? "these statements are" : "this statement is"} locked as the record.
+                  {dirty ? " Your unsaved changes are saved first." : ""}</p>
+                <div className="tsrow">
+                  <button className="btn pri" disabled={busy} onClick={async () => {
+                    if (dirty) {
+                      const okSave = await act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents });
+                      if (!okSave) { setSending(false); setSentSaid("Not sent: your changes could not be saved, so nothing was emailed."); return; }
+                    }
+                    const j = await act({ action: "send", statementIds: sendWith.map((x) => x.id) }) as { sent?: { payee: string; ok: boolean; detail: string }[] } | null;
+                    setSending(false);
+                    setSentSaid(j?.sent ? j.sent.map((x) => x.ok ? `Sent to ${to.join(", ")}.` : `Not sent: ${x.detail}`).join(" ") : "Not sent.");
+                  }}>{busy ? "Sending…" : dirty ? "Save and send" : "Yes, send it"}</button>
+                  <button className="btn" disabled={busy} onClick={() => setSending(false)}>Cancel</button>
+                </div>
+              </>);
+            })()}
           </div>
         </div>
       ) : null}
-      {sentSaid ? <p className="tsnudge">{sentSaid}</p> : null}
 
       <footer className="edfoot">
-        {bad ? <span className="tsnote distneg">A line needs a description and an amount like 1,250.00; a markup is 0 to 100.</span>
+        {sentSaid ? <span className={`tsnote edsentsaid${/^Sent/.test(sentSaid) ? " ok" : " distneg"}`} role="status">{sentSaid}</span>
+          : bad ? <span className="tsnote distneg">A line needs a description and an amount like 1,250.00; a markup is 0 to 100.</span>
           : dirty ? <span className="tsnote">Changes not saved yet.</span> : <span className="tsnote">All saved.</span>}
         {!s.emailedAt ? (
           <>
@@ -787,8 +812,8 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
           </>
         ) : null}
         <button className="btn" onClick={onPreview} disabled={dirty}>Preview email</button>
-        {!s.emailedAt && s.email && !dirty ? (
-          <button className="btn" disabled={busy} onClick={() => setSending(true)}>Email this owner&hellip;</button>
+        {!s.emailedAt ? (
+          <button className="btn pri" disabled={busy} onClick={() => { setSentSaid(null); setSending(true); }}>Email this owner&hellip;</button>
         ) : null}
         {!s.emailedAt ? (
           <button className="btn" disabled={busy} onClick={() => act({ action: "save", statementId: s.id, hold: !s.hold })}>
