@@ -26,6 +26,7 @@ type Statement = {
   source: { group?: string } | null;
   entity: string; sendsAs: string;
   guaranteedCents: number | null; vacant: number[];
+  startsOn: string | null; notStarted: boolean;
   emailedAt: string | null; emailedTo: string | null; emailDetail: string | null;
   payments: Pay[]; paidCents: number; plannedCents: number;
 };
@@ -143,7 +144,7 @@ export default function DistributionsBoard() {
   // A test statement goes to whoever is testing and nowhere else: never in
   // the totals, the payment plan or the send-everything button.
   const isTest = (s: Statement) => s.source?.group === "Test";
-  const ready = statements.filter((s) => !isTest(s) && !s.emailedAt && !s.hold && s.lines.length && s.email);
+  const ready = statements.filter((s) => !isTest(s) && !s.notStarted && !s.emailedAt && !s.hold && s.lines.length && s.email);
   // One email per owning entity: the statements that travel together.
   const emailsOut = useMemo(() => {
     const m = new Map<string, Statement[]>();
@@ -155,14 +156,14 @@ export default function DistributionsBoard() {
      the send. They were two answers once: the preview skipped held statements
      and the send did not, so a held owner previewed as an empty email and
      would have been sent a full one. */
-  const emailSet = (s: Statement) => together(s).filter((x) => !x.emailedAt && !x.hold && x.lines.length);
+  const emailSet = (s: Statement) => together(s).filter((x) => !x.emailedAt && !x.hold && !x.notStarted && x.lines.length);
   const asInput = (x: Statement): StatementInput => ({
     month: `${month}-01`, payee: x.payee, title: x.title, lines: x.lines, note: x.note, payments: x.payments,
     previousOwedCents: x.previousOwedCents, priorPaidCents: x.priorPaidCents, priorPaidOn: x.priorPaidOn, depositsCents: x.depositsCents,
     reserveHeldCents: x.reserveHeldCents, reserveRequiredCents: x.reserveRequiredCents,
   });
-  const totalNet = statements.filter((s) => !isTest(s) && !s.hold && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
-  const flagged = statements.filter((s) => s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c))).length;
+  const totalNet = statements.filter((s) => !isTest(s) && !s.hold && !s.notStarted && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
+  const flagged = statements.filter((s) => !s.notStarted && (s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c)))).length;
   const lastTotal = statements.reduce((a, s) => a + Math.max(0, s.versus.lastCents ?? 0), 0);
   const paidTotal = statements.reduce((a, s) => a + s.paidCents, 0);
   const days = useMemo(() => {
@@ -178,7 +179,7 @@ export default function DistributionsBoard() {
       : <p className="tsloading">Loading&hellip;</p>}</main>;
   }
 
-  const needsLook = (s: Statement) => s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c));
+  const needsLook = (s: Statement) => !s.notStarted && (s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c)));
   const groupOf = (s: Statement) => s.source?.group ?? "Other";
   const FILTERS: [string, string, (s: Statement) => boolean][] = [
     ["all", "All", () => true],
@@ -197,11 +198,12 @@ export default function DistributionsBoard() {
   const status = (s: Statement) => {
     const out: [string, string][] = [];
     if (isTest(s)) out.push(["plan", "Test — only to you"]);
+    if (s.notStarted && s.startsOn) out.push(["hold", `Starts ${monthLabel(s.startsOn)}`]);
     if (s.hold) out.push(["hold", "On hold"]);
     if (needsLook(s)) out.push(["warn", "Check"]);
     if (s.owedCents <= 0) out.push(["muted", "Nothing to pay"]);
     if (!s.email) out.push(["muted", "No email"]);
-    if (reserveShortCents(s) !== null) out.push(["warn", "Reserves not met"]);
+    if (!s.notStarted && reserveShortCents(s) !== null) out.push(["warn", "Reserves not met"]);
     if (s.emailedAt) out.push(["ok", "Emailed"]);
     if (s.paidCents > 0) out.push(["ok", s.paidCents >= s.owedCents ? "Paid" : "Part paid"]);
     else if (s.plannedCents > 0) out.push(["plan", `Pay ${day(s.payments[0].sendOn)}`]);
@@ -478,7 +480,7 @@ export default function DistributionsBoard() {
           ) : (
             <div className="edmodal" style={{ margin: "2rem auto" }}>
               <h3>Nothing would be sent</h3>
-              <p className="tsnote">{preview.hold ? "This statement is on hold, so it is left out of the email." : "Every statement for this owner has already been sent or has no lines."}</p>
+              <p className="tsnote">{preview.notStarted && preview.startsOn ? `Distributions on this property start ${monthLabel(preview.startsOn)}, so it is not in this month's email.` : preview.hold ? "This statement is on hold, so it is left out of the email." : "Every statement for this owner has already been sent or has no lines."}</p>
             </div>
           )}
         </div>
@@ -513,6 +515,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
   const [entity, setEntity] = useState(s.entity);
   const [guar, setGuar] = useState(s.guaranteedCents ? centsText(s.guaranteedCents) : "");
   const [bulk, setBulk] = useState("15");
+  const [starts, setStarts] = useState(s.startsOn ? s.startsOn.slice(0, 7) : "");
   const [sending, setSending] = useState(false);
   const [sentSaid, setSentSaid] = useState<string | null>(null);
   // This owner's email: this statement and any of the same entity not yet sent.
@@ -567,7 +570,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
   const held = { reserveHeldCents: resHeld.trim() === "" ? null : parseMoney(resHeld), reserveRequiredCents: resNeed.trim() === "" ? null : parseMoney(resNeed) };
   const owed = owedCents(lines, s);
   const said = checks(s.title, lines, { ...s, ...held, depositsCents: depositCents });
-  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity,
+  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity, startsOn: starts,
     guaranteedCents: guarCents, reserveHeldCents: held.reserveHeldCents, reserveRequiredCents: held.reserveRequiredCents });
   const set = (i: number, patch: Partial<Row>) => setRows(rows.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
@@ -647,7 +650,9 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
         </div>
       </header>
 
-      {[...s.versus.says, ...said].map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
+      {s.notStarted && s.startsOn ? (
+        <p className="tsnudge">Distributions on this property start {monthLabel(s.startsOn)}. This month&rsquo;s statement is kept here for the record and is not emailed, owed or paid.</p>
+      ) : [...s.versus.says, ...said].map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
 
       <div className="edheld">
         <div className="tsfield">
@@ -756,6 +761,11 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
               onBlur={() => settle !== String(s.settleDays) && savePayee()} />
           </div>
           <div className="tsfield">
+            <label htmlFor={`st-${s.id}`}>Distributions start (blank = already started)</label>
+            <input id={`st-${s.id}`} type="month" value={starts} onChange={(e) => setStarts(e.target.value)}
+              onBlur={() => (starts || null) !== (s.startsOn ? s.startsOn.slice(0, 7) : null) && savePayee()} />
+          </div>
+          <div className="tsfield">
             <label htmlFor={`en-${s.id}`}>Owning entity (same entity = one email; blank = sent on its own)</label>
             <input id={`en-${s.id}`} value={entity}
               onChange={(e) => setEntity(e.target.value)} onBlur={() => entity !== s.entity && savePayee()} />
@@ -778,7 +788,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
               const totalPaid = sendWith.reduce((a, x) => a + Math.max(0, x.id === s.id ? owed : x.owedCents), 0);
               if (!sendWith.length) return (<>
                 <h3>Nothing to send</h3>
-                <p className="tsnote">{s.hold ? "This statement is on hold. Take it off hold to send it." : "Every statement for this owner has already been sent."}</p>
+                <p className="tsnote">{s.notStarted && s.startsOn ? `Distributions on this property start ${monthLabel(s.startsOn)}, so there is no statement to send yet.` : s.hold ? "This statement is on hold. Take it off hold to send it." : "Every statement for this owner has already been sent."}</p>
                 <div className="tsrow"><button className="btn" onClick={() => setSending(false)}>OK</button></div>
               </>);
               if (!to.length) return (<>

@@ -43,6 +43,10 @@ the sheet's own wording. Settled with the owner on 16 November 2026:
 - The RNMK sheet has a second block, **Pines MHP** (30 homes), below the
   Northside one. It is its own statement, "RNMK Homes — Pines MHP", with
   entity RNMK Homes so both go in one email.
+- Distributions start when the homes are ready, not when they are bought:
+  `distribution_payees.starts_on` (063). Conor Dolan's four Cross Creek homes
+  start December 2026. Before that month the statement is read in and kept,
+  but never emailed, owed or planned.
 - A rent agreement is a floor (see `withGuarantee`): actual rents unless the
   owner has an agreement; with one, every home is paid at least the agreed
   rent. Benjamin Jackson (Cross Creek) has one at $1,250; nobody else yet.
