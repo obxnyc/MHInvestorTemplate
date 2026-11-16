@@ -539,12 +539,14 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
      and the section says which way it goes. `orig` is Alex's amount for a
      line that came from his sheet, so a changed amount keeps what he said. */
   type Row = { label: string; amount: string; side: "in" | "out"; pct: string;
-               date?: string; merchant?: string; category?: string; orig?: number; sheet?: number; removed?: boolean };
+               date?: string; merchant?: string; category?: string; orig?: number; sheet?: number; removed?: boolean;
+               origLabel?: string };
   const isOurs = (c?: string) => c === "Adjustment" || c === "Guaranteed rent";
   const toRows = (ls: Line[]): Row[] => ls.map((l) => ({
     label: l.label, amount: centsText(Math.abs(l.cents)), side: l.cents < 0 ? "out" : "in",
     pct: l.markupPct ? String(l.markupPct) : "", date: l.date, merchant: l.merchant, category: l.category,
     orig: isOurs(l.category) ? undefined : (l.sheetCents ?? l.cents), sheet: l.sheetCents, removed: l.removed,
+    origLabel: isOurs(l.category) ? undefined : (l.sheetLabel ?? l.label),
   }));
   const own = (ls: Line[]) => ls.filter((l) => l.category !== "Guaranteed rent");
   const [rows, setRows] = useState<Row[]>(() => toRows(own(s.lines)));
@@ -589,8 +591,11 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
     const cents = r.side === "out" ? -abs : abs;
     const p = Number(r.pct);
     const sheetCents = r.orig !== undefined && cents !== r.orig ? r.orig : undefined;
+    const label = r.label.trim();
+    const sheetLabel = r.origLabel !== undefined && label !== r.origLabel ? r.origLabel : undefined;
     return {
-      label: r.label.trim(), cents,
+      label, cents,
+      ...(sheetLabel !== undefined ? { sheetLabel } : {}),
       ...(r.date ? { date: r.date } : {}), ...(r.merchant ? { merchant: r.merchant } : {}), ...(r.category ? { category: r.category } : {}),
       ...(r.side === "out" && p > 0 ? { markupPct: Math.round(p * 100) / 100 } : {}),
       ...(sheetCents !== undefined ? { sheetCents } : {}),
@@ -603,7 +608,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
   const guarCents = parseMoney(guar) ?? 0;
   const lines: Line[] = s.emailedAt ? s.lines : withGuarantee(ownLines, guarCents);
   const topups = lines.filter((l) => l.category === "Guaranteed rent");
-  const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null, removed: !!l.removed })));
+  const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null, sheetLabel: l.sheetLabel ?? null, removed: !!l.removed })));
   const depositCents = deposit.trim() === "" ? null : parseMoney(deposit);
   const dirty = norm(ownLines) !== norm(own(s.lines)) || note !== s.note || depositCents !== s.depositsCents;
   const held = { reserveHeldCents: resHeld.trim() === "" ? null : parseMoney(resHeld), reserveRequiredCents: resNeed.trim() === "" ? null : parseMoney(resNeed) };
@@ -643,8 +648,17 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet }: {
             <div key={i} className={`edrow${rowBad(r) ? " bad" : ""}${isOurs(r.category) ? " ours" : ""}${r.removed ? " removed" : ""}`}>
               <span className="eddesc">
                 <span className="eddate">{shortDate(r.date)}</span>
-                {isOurs(r.category) && !locked
-                  ? <input aria-label="Description" value={r.label} placeholder="What it is for" onChange={(e) => set(i, { label: e.target.value })} />
+                {!locked && !r.removed
+                  ? <span className="edlabel">
+                      <input aria-label={`Description${r.origLabel ? ` for ${r.origLabel}` : ""}`} value={r.label}
+                        placeholder="What it is for" onChange={(e) => set(i, { label: e.target.value })}
+                        className={r.origLabel !== undefined && r.label.trim() !== r.origLabel ? "changed" : ""} />
+                      {r.merchant ? <small>{r.merchant}</small> : null}
+                      {r.origLabel !== undefined && r.label.trim() !== r.origLabel
+                        ? <small className="edwas">Alex: {r.origLabel}{" "}
+                            <button className="tslink distinline" onClick={() => set(i, { label: r.origLabel! })}>undo</button></small>
+                        : null}
+                    </span>
                   : <span>{r.label}{r.merchant ? <small> · {r.merchant}</small> : null}</span>}
               </span>
               <span className="num">

@@ -17,6 +17,8 @@ export type Line = {
   markupPct?: number;
   /** What Alex's sheet said, when the amount has been changed here. */
   sheetCents?: number;
+  /** What Alex's sheet called it, when the description has been changed here. */
+  sheetLabel?: string;
   /** Taken off the statement here. Kept, so Alex's own figures can still be
    *  checked and the line put back; never shown to the owner. */
   removed?: boolean;
