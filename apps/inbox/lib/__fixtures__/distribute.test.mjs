@@ -119,12 +119,45 @@ t("lines under an unknown name do not land on the previous owner", () =>
   D.netCents(p.byOwner.art.lines) === 420000);
 
 /* the statement */
-const html = D.statementHtml({ month: "2026-11-01", ownerName: "A <b>& Co", lines: p.byOwner.shb.lines,
+const html = D.statementHtml({ month: "2026-11-01", payee: "A <b>& Co", lines: p.byOwner.shb.lines,
   payments: [{ sendOn: "2026-11-16", cents: 528000, arrivesOn: "2026-11-17" }] });
 t("the statement shows the net", () => html.includes("$5,280.00"));
-t("deductions show in brackets", () => html.includes("($4,125.00)"));
+t("deductions show with a minus", () => html.includes("-$4,125.00"));
 t("an owner's name cannot inject markup", () => !html.includes("<b>&") && html.includes("A &lt;b&gt;&amp; Co"));
 t("the subject names the month", () => D.subjectFor("2026-11-01") === "November 2026 Owner Distribution");
+
+/* the sheet's arithmetic -- Jack Curran, November 2026, as the sheet has it */
+const jack = [
+  ...[42539, 42539, 42539, 47449, 47449].map((c, i) => ({ label: `Mortgage - Lot ${[14, 15, 16, 17, 19][i]}`, cents: -c })),
+  ...[14, 15, 16, 17, 19].map((n) => ({ label: `Consultant Fee - Lot ${n}`, cents: -5000 })),
+  ...[14, 15, 16, 17, 19].map((n) => ({ label: `Lots rent - Jack Curran - Lot ${n}`, cents: -50000 })),
+  ...[155000, 155000, 155000, 158000, 156500].map((c, i) => ({ label: `Monthly Rent - Lot ${[14, 15, 16, 17, 19][i]}`, cents: c })),
+];
+const jackCarry = { previousOwedCents: 281985, priorPaidCents: 242871, statedNetCents: 281985, statedOwedCents: 321099 };
+t("net is revenue less expenses", () => D.netCents(jack) === 281985);
+// With last month fully paid, owed and net are the same number and a rule
+// that ignored the carry would pass. Jack was short-paid $391.14.
+t("owed carries what last month was short", () => D.owedCents(jack, jackCarry) === 321099);
+t("a sheet that adds up raises nothing but the carry", () => {
+  const c = D.checks("Jack Curran Lot - 1140 Northside Rd, Lots #14, #15, #16, #17, #19", jack, jackCarry);
+  return c.length === 1 && /carries into this month/.test(c[0]);
+});
+t("a stated Owed that disagrees is said", () =>
+  D.checks(null, jack, { ...jackCarry, statedOwedCents: 281985 }).some((x) => /Owed line says \$2,819\.85/.test(x)));
+t("a stated net that disagrees is said", () =>
+  D.checks(null, jack, { statedNetCents: 280000 }).some((x) => /Monthly Net Cashflow says/.test(x)));
+// PerryRd: title says Lots #32, #33; the costs are for 34 and 35.
+const perry = [
+  { label: "Mortgage - Lot 34", cents: -47449 }, { label: "Mortgage - Lot 35", cents: -47449 },
+  { label: "Monthly Rent - Lot 32", cents: 155000 }, { label: "Monthly Rent - Lot 33", cents: 155000 },
+];
+t("lots the title does not list are said", () =>
+  D.checks("PerryRd Distro - 1140 Northside Rd, Lots #32, #33", perry).some((x) => /lots 34, 35, which the title/.test(x)));
+t("a month that comes out negative says nothing is paid", () =>
+  D.checks(null, [{ label: "Supplies - Lot 10", cents: -417660 }]).some((x) => /Nothing to pay/.test(x)));
+const jackHtml = D.statementHtml({ month: "2026-11-01", payee: "Jack Curran", lines: jack, ...jackCarry, priorPaidOn: "10/14/2026" });
+t("the statement shows the carried balance and the owed total", () =>
+  jackHtml.includes("$391.14") && jackHtml.includes("$3,210.99"));
 
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);

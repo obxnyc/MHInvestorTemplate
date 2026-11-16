@@ -3561,3 +3561,4 @@ a.metric:hover{border-color:var(--accent)}
 .distpreviewbar{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;
   background:var(--card);color:var(--ink);border-radius:10px;padding:.5rem .75rem;font-size:.9rem}
 .distpreview iframe{flex:1;width:100%;border:0;border-radius:10px;background:#F3F4F6}
+.distneg{color:var(--crit)}

@@ -3,8 +3,8 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmailChecked } from "@/lib/notify";
 import {
-  netCents, planPayments, readPaste, statementHtml, statementText, subjectFor,
-  addBankDays, bankDayFrom, type Line,
+  netCents, owedCents, checks, planPayments, readPaste, statementHtml, statementText, subjectFor,
+  addBankDays, bankDayFrom, type Line, type Carry,
 } from "@/lib/distribute";
 
 export const runtime = "nodejs";
@@ -21,71 +21,85 @@ export const dynamic = "force-dynamic";
 const desk = (role: unknown) => role === "admin" || role === "office";
 const MONTH = /^\d{4}-\d{2}$/;
 const todayNY = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+const prevMonth = (m: string) => {
+  const d = new Date(`${m}-15T12:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString().slice(0, 7);
+};
 
 const cleanLines = (raw: unknown): Line[] =>
   (Array.isArray(raw) ? raw : [])
-    .map((l) => ({ label: String(l?.label ?? "").trim().slice(0, 120), cents: Math.round(Number(l?.cents)) }))
+    .map((l) => ({
+      label: String(l?.label ?? "").trim().slice(0, 200), cents: Math.round(Number(l?.cents)),
+      ...(l?.date ? { date: String(l.date).slice(0, 20) } : {}),
+      ...(l?.merchant ? { merchant: String(l.merchant).slice(0, 80) } : {}),
+      ...(l?.category ? { category: String(l.category).slice(0, 40) } : {}),
+    }))
     .filter((l) => l.label && Number.isFinite(l.cents) && Math.abs(l.cents) < 1e10);
 
 const emails = (s: unknown) => String(s ?? "").split(/[,;\s]+/).map((e) => e.trim()).filter(Boolean);
 const okEmail = (e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
 async function build(month: string) {
   const db = supabaseAdmin();
-  const first = `${month}-01`;
-  const [runRes, ownersRes, homesRes] = await Promise.all([
-    db.from("distribution_runs").select("*").eq("month", first).maybeSingle(),
-    db.from("owners").select("id, name, legal_name, kind, active, statement_email, settle_days, pay_note")
-      .eq("active", true).order("name"),
-    db.from("home_sales").select("owner_id").is("ended_on", null),
+  const [runRes, payeesRes] = await Promise.all([
+    db.from("distribution_runs").select("*").eq("month", `${month}-01`).maybeSingle(),
+    db.from("distribution_payees").select("*").order("name"),
   ]);
-  if (runRes.error || ownersRes.error) {
-    const msg = (runRes.error ?? ownersRes.error)!.message;
-    return { month, migrationMissing: /distribution_runs|statement_email|settle_days|does not exist/.test(msg), error: msg };
+  if (runRes.error || payeesRes.error) {
+    const msg = (runRes.error ?? payeesRes.error)!.message;
+    return { month, migrationMissing: /distribution_|does not exist/.test(msg), error: msg };
   }
-  const homes: Record<string, number> = {};
-  for (const h of homesRes.data ?? []) homes[String(h.owner_id)] = (homes[String(h.owner_id)] ?? 0) + 1;
-  const owners = (ownersRes.data ?? []).map((o) => ({
-    id: String(o.id), name: String(o.legal_name || o.name), kind: o.kind as string,
-    email: (o.statement_email as string | null) ?? "", settleDays: Number(o.settle_days ?? 2),
-    payNote: (o.pay_note as string | null) ?? "", homes: homes[String(o.id)] ?? 0,
+  const payees = (payeesRes.data ?? []).map((p) => ({
+    id: String(p.id), name: String(p.name), emails: (p.emails as string | null) ?? "",
+    settleDays: Number(p.settle_days ?? 2), active: !!p.active, sheetId: (p.sheet_id as string | null) ?? null,
   }));
-
   const run = runRes.data;
-  if (!run) return { month, run: null, owners, statements: [] };
+  if (!run) return { month, run: null, payees, statements: [] };
 
-  const [stRes, payRes] = await Promise.all([
-    db.from("distribution_statements").select("*").eq("run_id", run.id),
-    db.from("distribution_payments").select("*, distribution_statements!inner(run_id)")
-      .eq("distribution_statements.run_id", run.id).order("send_on"),
-  ]);
-  const byOwner = Object.fromEntries(owners.map((o) => [o.id, o]));
+  const stRes = await db.from("distribution_statements").select("*").eq("run_id", run.id);
+  const ids = (stRes.data ?? []).map((s) => s.id);
+  const payRes = ids.length
+    ? await db.from("distribution_payments").select("*").in("statement_id", ids).order("send_on")
+    : { data: [] as Record<string, unknown>[] };
+  const byPayee = Object.fromEntries(payees.map((p) => [p.id, p]));
   const pays = (payRes.data ?? []).map((p) => ({
     id: String(p.id), statementId: String(p.statement_id), sendOn: String(p.send_on),
     cents: Number(p.amount_cents), paidAt: (p.paid_at as string | null) ?? null,
     confirmation: (p.confirmation as string | null) ?? null,
   }));
+
   const statements = (stRes.data ?? []).map((s) => {
-    const owner = byOwner[String(s.owner_id)];
+    const payee = byPayee[String(s.payee_id)];
     const lines = cleanLines(s.lines);
+    const carry: Carry = {
+      previousOwedCents: n(s.previous_owed_cents), priorPaidCents: n(s.prior_paid_cents),
+      priorPaidOn: (s.prior_paid_on as string | null) ?? null, depositsCents: n(s.deposits_cents),
+      statedNetCents: n(s.stated_net_cents), statedOwedCents: n(s.stated_owed_cents),
+    };
     const mine = pays.filter((p) => p.statementId === String(s.id))
-      .map((p) => ({ ...p, arrivesOn: addBankDays(p.sendOn, owner?.settleDays ?? 2) }));
+      .map((p) => ({ ...p, arrivesOn: addBankDays(p.sendOn, payee?.settleDays ?? 2) }));
     return {
-      id: String(s.id), ownerId: String(s.owner_id), ownerName: owner?.name ?? "(owner not found)",
-      email: owner?.email ?? "", settleDays: owner?.settleDays ?? 2,
-      lines, netCents: netCents(lines), note: (s.note as string | null) ?? "", hold: !!s.hold,
+      id: String(s.id), payeeId: String(s.payee_id), payee: payee?.name ?? "(payee missing)",
+      email: payee?.emails ?? "", settleDays: payee?.settleDays ?? 2,
+      title: (s.title as string | null) ?? "", ...carry, owedNote: (s.owed_note as string | null) ?? "",
+      source: s.source ?? null,
+      lines, netCents: netCents(lines), owedCents: owedCents(lines, carry),
+      checks: checks(s.title as string | null, lines, carry),
+      note: (s.note as string | null) ?? "", hold: !!s.hold,
       emailedAt: (s.emailed_at as string | null) ?? null, emailedTo: (s.emailed_to as string | null) ?? null,
       emailDetail: (s.email_detail as string | null) ?? null,
       payments: mine,
       paidCents: mine.filter((p) => p.paidAt).reduce((a, p) => a + p.cents, 0),
       plannedCents: mine.reduce((a, p) => a + p.cents, 0),
     };
-  }).sort((a, b) => a.ownerName.localeCompare(b.ownerName));
+  }).sort((a, b) => a.payee.localeCompare(b.payee));
 
   return {
     month,
-    run: { id: String(run.id), capCents: Number(run.daily_cap_cents), startOn: (run.start_on as string | null) ?? null, note: run.note ?? "" },
-    owners, statements,
+    run: { id: String(run.id), capCents: Number(run.daily_cap_cents), startOn: (run.start_on as string | null) ?? null },
+    payees, statements,
   };
 }
 
@@ -106,42 +120,51 @@ export async function POST(req: Request) {
   const db = supabaseAdmin();
   const fail = (msg: string, status = 400) => NextResponse.json({ error: msg }, { status });
   const runId = async () => (await db.from("distribution_runs").select("id").eq("month", `${month}-01`).maybeSingle()).data?.id as string | undefined;
+  const sentOrPaid = async (statementId: string) => {
+    const st = await db.from("distribution_statements").select("emailed_at").eq("id", statementId).single();
+    const paid = await db.from("distribution_payments").select("id").eq("statement_id", statementId).not("paid_at", "is", null);
+    return !!st.data?.emailed_at || (paid.data ?? []).length > 0;
+  };
 
   switch (b.action) {
     case "start": {
-      // A month starts with a statement for every investor who has a home
-      // with us. Others are added by hand.
+      // A month starts with everybody who had a statement last month, so the
+      // list is right before anything is read in.
       const { data: run, error } = await db.from("distribution_runs")
-        .upsert({ month: `${month}-01`, created_by: me!.id }, { onConflict: "month", ignoreDuplicates: false })
-        .select("id").single();
+        .upsert({ month: `${month}-01`, created_by: me!.id }, { onConflict: "month" }).select("id").single();
       if (error) return fail(error.message, 500);
-      const now = await build(month);
-      const seed = (now.owners ?? []).filter((o) => o.kind === "investor" && o.homes > 0)
-        .map((o) => ({ run_id: run.id, owner_id: o.id, updated_by: me!.id }));
-      if (seed.length) await db.from("distribution_statements").upsert(seed, { onConflict: "run_id,owner_id", ignoreDuplicates: true });
+      const last = await db.from("distribution_runs").select("id").eq("month", `${prevMonth(month)}-01`).maybeSingle();
+      const lastPayees = last.data
+        ? ((await db.from("distribution_statements").select("payee_id").eq("run_id", last.data.id)).data ?? []).map((r) => r.payee_id)
+        : ((await db.from("distribution_payees").select("id").eq("active", true)).data ?? []).map((r) => r.id);
+      const seed = lastPayees.filter(Boolean).map((pid) => ({ run_id: run.id, payee_id: pid, updated_by: me!.id }));
+      if (seed.length) await db.from("distribution_statements").upsert(seed, { onConflict: "run_id,payee_id", ignoreDuplicates: true });
       break;
     }
 
-    case "add-owner": {
+    case "add-payee": {
       const id = await runId();
       if (!id) return fail("Start the month first.");
-      const { error } = await db.from("distribution_statements")
-        .upsert({ run_id: id, owner_id: String(b.ownerId), updated_by: me!.id }, { onConflict: "run_id,owner_id", ignoreDuplicates: true });
+      const name = String(b.name ?? "").trim().slice(0, 120);
+      if (!name) return fail("Whose statement?");
+      const { data: p, error } = await db.from("distribution_payees")
+        .upsert({ name }, { onConflict: "name" }).select("id").single();
       if (error) return fail(error.message, 500);
+      await db.from("distribution_statements")
+        .upsert({ run_id: id, payee_id: p.id, updated_by: me!.id }, { onConflict: "run_id,payee_id", ignoreDuplicates: true });
       break;
     }
 
     case "remove": {
-      const st = await db.from("distribution_statements").select("id, emailed_at").eq("id", String(b.statementId)).single();
-      const paid = await db.from("distribution_payments").select("id").eq("statement_id", String(b.statementId)).not("paid_at", "is", null);
-      if (st.data?.emailed_at || (paid.data ?? []).length) {
-        return fail("This statement has been emailed or paid, so it stays on the record.");
-      }
+      if (await sentOrPaid(String(b.statementId))) return fail("This statement has been emailed or paid, so it stays on the record.");
       await db.from("distribution_statements").delete().eq("id", String(b.statementId));
       break;
     }
 
     case "save": {
+      if (await sentOrPaid(String(b.statementId)) && ("lines" in b)) {
+        return fail("This statement has been emailed or paid. What was sent is the record.");
+      }
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: me!.id };
       if ("lines" in b) patch.lines = cleanLines(b.lines);
       if ("note" in b) patch.note = String(b.note ?? "").slice(0, 2000) || null;
@@ -151,15 +174,14 @@ export async function POST(req: Request) {
       break;
     }
 
-    case "owner": {
+    case "payee": {
       const list = emails(b.email);
       const bad = list.filter((e) => !okEmail(e));
       if (bad.length) return fail(`That is not an email address: ${bad.join(", ")}`);
       const settle = Math.round(Number(b.settleDays));
       if (!(settle >= 0 && settle <= 30)) return fail("Bank days must be between 0 and 30.");
-      const { error } = await db.from("owners")
-        .update({ statement_email: list.join(", ") || null, settle_days: settle, pay_note: String(b.payNote ?? "").slice(0, 300) || null })
-        .eq("id", String(b.ownerId));
+      const { error } = await db.from("distribution_payees")
+        .update({ emails: list.join(", ") || null, settle_days: settle }).eq("id", String(b.payeeId));
       if (error) return fail(error.message, 500);
       break;
     }
@@ -168,24 +190,23 @@ export async function POST(req: Request) {
       const id = await runId();
       if (!id) return fail("Start the month first.");
       const now = await build(month);
-      const read = readPaste(String(b.text ?? ""), (now.owners ?? []).map((o) => ({ id: o.id, name: o.name })));
+      const read = readPaste(String(b.text ?? ""), (now.payees ?? []).map((p) => ({ id: p.id, name: p.name })));
       const entries = Object.entries(read.byOwner).filter(([, v]) => v.lines.length);
       if (!entries.length) {
-        return fail(`Nothing in that paste matched an owner.${read.unmatched.length ? ` Not recognised: ${read.unmatched.slice(0, 5).join(" · ")}` : ""}`);
+        return fail(`Nothing in that paste matched a payee.${read.unmatched.length ? ` Not recognised: ${read.unmatched.slice(0, 5).join(" · ")}` : ""}`);
       }
-      const rows = entries.map(([ownerId, v]) => ({
-        run_id: id, owner_id: ownerId, lines: v.lines, updated_by: me!.id, updated_at: new Date().toISOString(),
+      const locked = new Set((now.statements ?? []).filter((s) => s.emailedAt || s.paidCents).map((s) => s.payeeId));
+      const rows = entries.filter(([pid]) => !locked.has(pid)).map(([pid, v]) => ({
+        run_id: id, payee_id: pid, lines: v.lines, stated_owed_cents: v.statedNetCents,
+        updated_by: me!.id, updated_at: new Date().toISOString(),
       }));
-      // Never overwrite a statement already emailed: what was sent is the record.
-      const sent = new Set(((await db.from("distribution_statements").select("owner_id").eq("run_id", id).not("emailed_at", "is", null)).data ?? []).map((r) => String(r.owner_id)));
-      const { error } = await db.from("distribution_statements")
-        .upsert(rows.filter((r) => !sent.has(r.owner_id)), { onConflict: "run_id,owner_id" });
-      if (error) return fail(error.message, 500);
-      const mismatched = entries.filter(([, v]) => v.statedNetCents !== null && v.statedNetCents !== netCents(v.lines))
-        .map(([oid, v]) => ({ ownerId: oid, stated: v.statedNetCents, lines: netCents(v.lines) }));
+      if (rows.length) {
+        const { error } = await db.from("distribution_statements").upsert(rows, { onConflict: "run_id,payee_id" });
+        if (error) return fail(error.message, 500);
+      }
       return NextResponse.json({
         ...(await build(month)),
-        pasted: { owners: entries.length, unmatched: read.unmatched, mismatched, skippedSent: rows.filter((r) => sent.has(r.owner_id)).length },
+        pasted: { payees: rows.length, unmatched: read.unmatched, skippedSent: entries.length - rows.length },
       });
     }
 
@@ -206,7 +227,7 @@ export async function POST(req: Request) {
       const taken: Record<string, number> = {};
       for (const s of now.statements ?? []) for (const p of s.payments) if (p.paidAt) taken[p.sendOn] = (taken[p.sendOn] ?? 0) + p.cents;
       const owed = (now.statements ?? []).filter((s) => !s.hold)
-        .map((s) => ({ id: s.id, name: s.ownerName, settleDays: s.settleDays, cents: s.netCents - s.paidCents }));
+        .map((s) => ({ id: s.id, name: s.payee, settleDays: s.settleDays, cents: s.owedCents - s.paidCents }));
       const plan = planPayments(owed, cap, bankDayFrom(startOn), taken);
       if (plan.length) {
         const { error } = await db.from("distribution_payments")
@@ -232,13 +253,14 @@ export async function POST(req: Request) {
       const now = await build(month);
       const { data: { user } } = await (await supabaseServer()).auth.getUser();
       const sender = user?.email ?? undefined;
-      const results: { ownerName: string; ok: boolean; detail: string }[] = [];
+      const results: { payee: string; ok: boolean; detail: string }[] = [];
       for (const s of (now.statements ?? []).filter((x) => ids.includes(x.id))) {
-        if (s.emailedAt && !b.resend) { results.push({ ownerName: s.ownerName, ok: false, detail: "already emailed" }); continue; }
+        if (s.emailedAt && !b.resend) { results.push({ payee: s.payee, ok: false, detail: "already emailed" }); continue; }
         const to = emails(s.email);
-        if (!to.length) { results.push({ ownerName: s.ownerName, ok: false, detail: "no email address on file" }); continue; }
-        if (!s.lines.length) { results.push({ ownerName: s.ownerName, ok: false, detail: "the statement has no lines" }); continue; }
-        const input = { month: `${month}-01`, ownerName: s.ownerName, lines: s.lines, note: s.note, payments: s.payments };
+        if (!to.length) { results.push({ payee: s.payee, ok: false, detail: "no email address on file" }); continue; }
+        if (!s.lines.length) { results.push({ payee: s.payee, ok: false, detail: "the statement has no lines" }); continue; }
+        const input = { month: `${month}-01`, payee: s.payee, title: s.title, lines: s.lines, note: s.note, payments: s.payments,
+          previousOwedCents: s.previousOwedCents, priorPaidCents: s.priorPaidCents, priorPaidOn: s.priorPaidOn, depositsCents: s.depositsCents };
         const r = await sendEmailChecked(to, subjectFor(`${month}-01`), statementText(input), statementHtml(input), {
           from: process.env.DISTRIBUTIONS_FROM || undefined,
           replyTo: process.env.DISTRIBUTIONS_REPLY_TO || sender,
@@ -248,7 +270,7 @@ export async function POST(req: Request) {
           ...(r.ok ? { emailed_at: new Date().toISOString(), emailed_to: to.join(", ") } : {}),
           email_detail: r.detail,
         }).eq("id", s.id);
-        results.push({ ownerName: s.ownerName, ...r });
+        results.push({ payee: s.payee, ...r });
       }
       return NextResponse.json({ ...(await build(month)), sent: results });
     }

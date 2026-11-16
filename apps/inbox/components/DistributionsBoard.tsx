@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  netCents, parseMoney, statementHtml, subjectFor, monthLabel, usd, type Line,
+  owedCents, checks, parseMoney, statementHtml, subjectFor, monthLabel, usd, type Line,
 } from "@/lib/distribute";
 
 /**
@@ -18,18 +18,20 @@ import {
 
 type Pay = { id: string; sendOn: string; cents: number; arrivesOn: string; paidAt: string | null; confirmation: string | null };
 type Statement = {
-  id: string; ownerId: string; ownerName: string; email: string; settleDays: number;
-  lines: Line[]; netCents: number; note: string; hold: boolean;
+  id: string; payeeId: string; payee: string; email: string; settleDays: number;
+  title: string; previousOwedCents: number | null; priorPaidCents: number | null; priorPaidOn: string | null;
+  depositsCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
+  lines: Line[]; netCents: number; owedCents: number; checks: string[]; note: string; hold: boolean;
   emailedAt: string | null; emailedTo: string | null; emailDetail: string | null;
   payments: Pay[]; paidCents: number; plannedCents: number;
 };
-type Owner = { id: string; name: string; kind: string; email: string; settleDays: number; payNote: string; homes: number };
+type Payee = { id: string; name: string; emails: string; settleDays: number; active: boolean };
 type Data = {
   month: string; error?: string; migrationMissing?: boolean;
   run?: { id: string; capCents: number; startOn: string | null } | null;
-  owners?: Owner[]; statements?: Statement[];
-  pasted?: { owners: number; unmatched: string[]; mismatched: { ownerId: string; stated: number; lines: number }[]; skippedSent: number };
-  sent?: { ownerName: string; ok: boolean; detail: string }[];
+  payees?: Payee[]; statements?: Statement[];
+  pasted?: { payees: number; unmatched: string[]; skippedSent: number };
+  sent?: { payee: string; ok: boolean; detail: string }[];
 };
 
 const thisMonth = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 7);
@@ -54,6 +56,7 @@ export default function DistributionsBoard() {
   const [startOn, setStartOn] = useState("");
   const [conf, setConf] = useState<Record<string, string>>({});
   const [confirmSend, setConfirmSend] = useState(false);
+  const [newPayee, setNewPayee] = useState("");
 
   const load = useCallback(async () => {
     setProblem(null);
@@ -88,7 +91,8 @@ export default function DistributionsBoard() {
 
   const statements = data?.statements ?? [];
   const ready = statements.filter((s) => !s.emailedAt && !s.hold && s.lines.length && s.email);
-  const totalNet = statements.filter((s) => !s.hold).reduce((a, s) => a + s.netCents, 0);
+  const totalNet = statements.filter((s) => !s.hold && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
+  const flagged = statements.filter((s) => s.checks.some((c) => !/carries into this month/.test(c))).length;
   const paidTotal = statements.reduce((a, s) => a + s.paidCents, 0);
   const days = useMemo(() => {
     const m: Record<string, { pay: Pay; s: Statement }[]> = {};
@@ -96,7 +100,6 @@ export default function DistributionsBoard() {
     return Object.entries(m).sort(([a], [b]) => a.localeCompare(b));
   }, [statements]);
   const capCents = data?.run?.capCents ?? 2_500_000;
-  const notOnStatement = (data?.owners ?? []).filter((o) => !statements.some((s) => s.ownerId === o.id) && o.kind !== "resident");
 
   if (!data) {
     return <main className="wrap crewwrap">{problem
@@ -126,7 +129,7 @@ export default function DistributionsBoard() {
       ) : !data.run ? (
         <section className="tscard">
           <p className="tsnote">Nothing has been started for {monthLabel(`${month}-01`)}.</p>
-          <button className="tsact" disabled={busy} onClick={() => act({ action: "start" }, "Started. A statement is open for every investor with a home.")}>
+          <button className="tsact" disabled={busy} onClick={() => act({ action: "start" }, "Started. Everybody paid last month has a statement open.")}>
             Start {monthLabel(`${month}-01`)}
           </button>
         </section>
@@ -136,23 +139,23 @@ export default function DistributionsBoard() {
           <section className="tscard">
             <div className="tscardhead">
               <h2>This month</h2>
-              <span className="tsnum">{statements.length} owners</span>
+              <span className="tsnum">{statements.length} statements</span>
             </div>
             <dl className="disttotals">
-              <div><dt>Net owed</dt><dd>{money(totalNet)}</dd></div>
+              <div><dt>To pay</dt><dd>{usd(totalNet)}</dd></div>
               <div><dt>Paid</dt><dd>{usd(paidTotal)}</dd></div>
               <div><dt>Emailed</dt><dd>{statements.filter((s) => s.emailedAt).length} of {statements.length}</dd></div>
             </dl>
+            {flagged ? <p className="tsnudge loud">{flagged} statement{flagged === 1 ? " has" : "s have"} something worth a look before it goes. Each says what, in yellow.</p> : null}
           </section>
 
           {/* ----------------------------------------------------- paste */}
           <section className="tscard">
-            <div className="tscardhead"><h2>Paste the breakdown</h2></div>
+            <div className="tscardhead"><h2>Paste lines by hand</h2></div>
             <p className="tsnote">
-              Copy the rows out of Excel and paste them here. An owner&rsquo;s name on its own row, with
-              their lines underneath (label, then amount), or one row per line as owner, label, amount.
-              Deductions in brackets or with a minus. A &ldquo;Net&rdquo; row is checked against the lines,
-              not added to them.
+              Alex&rsquo;s sheets are read in for you each month. For anything else, copy rows out of a
+              spreadsheet and paste them here: a payee&rsquo;s name on its own row with their lines underneath
+              (label, then amount), or one row per line as payee, label, amount. Costs with a minus or in brackets.
             </p>
             <div className="tsfield">
               <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={6}
@@ -162,19 +165,13 @@ export default function DistributionsBoard() {
               const j = await act({ action: "paste", text: paste });
               if (j?.pasted) {
                 setPaste("");
-                setSaid(`Read ${j.pasted.owners} owner${j.pasted.owners === 1 ? "" : "s"}.`
+                setSaid(`Read ${j.pasted.payees} statement${j.pasted.payees === 1 ? "" : "s"}.`
                   + (j.pasted.skippedSent ? ` ${j.pasted.skippedSent} already emailed and left as sent.` : ""));
               }
             }}>Read it in</button>
             {data.pasted?.unmatched.length ? (
-              <p className="tsnudge loud">Not matched to an owner, so not read: {data.pasted.unmatched.join(" · ")}</p>
+              <p className="tsnudge loud">Not matched to a payee, so not read: {data.pasted.unmatched.join(" · ")}</p>
             ) : null}
-            {data.pasted?.mismatched.map((m) => (
-              <p key={m.ownerId} className="tsnudge loud">
-                {statements.find((s) => s.ownerId === m.ownerId)?.ownerName}: the lines add up to {money(m.lines)}
-                {" "}but the sheet&rsquo;s Net says {money(m.stated)}. Check before sending.
-              </p>
-            ))}
           </section>
 
           {/* ------------------------------------------------ statements */}
@@ -182,18 +179,18 @@ export default function DistributionsBoard() {
             <StatementCard key={s.id} s={s} busy={busy} act={act} onPreview={() => setPreview(s)} />
           ))}
 
-          {notOnStatement.length ? (
-            <section className="tscard">
-              <div className="tsfield">
-                <label htmlFor="addowner">Add an owner to this month</label>
-                <select id="addowner" value="" disabled={busy}
-                  onChange={(e) => e.target.value && act({ action: "add-owner", ownerId: e.target.value })}>
-                  <option value="">Choose&hellip;</option>
-                  {notOnStatement.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                </select>
-              </div>
-            </section>
-          ) : null}
+          <section className="tscard">
+            <div className="tsfield">
+              <label htmlFor="addpayee">Add a statement for</label>
+              <input id="addpayee" list="payeelist" value={newPayee} placeholder="Name as it should appear on the statement"
+                onChange={(e) => setNewPayee(e.target.value)} />
+              <datalist id="payeelist">
+                {(data.payees ?? []).filter((p) => !statements.some((s) => s.payeeId === p.id)).map((p) => <option key={p.id} value={p.name} />)}
+              </datalist>
+            </div>
+            <button className="tsminor" disabled={busy || !newPayee.trim()}
+              onClick={async () => { if (await act({ action: "add-payee", name: newPayee.trim() })) setNewPayee(""); }}>Add</button>
+          </section>
 
           {/* ---------------------------------------------------- email */}
           <section className="tscard">
@@ -202,9 +199,9 @@ export default function DistributionsBoard() {
               <span className="tsnum">{ready.length} ready</span>
             </div>
             <p className="tsnote">
-              Each owner gets their own email, &ldquo;{subjectFor(`${month}-01`)}&rdquo;. You get a copy of
+              Each payee gets their own email, &ldquo;{subjectFor(`${month}-01`)}&rdquo;. You get a copy of
               every one, and replies come to you. A statement on hold, with no lines, or with no email
-              address is not sent.
+              address is not sent. Plan the payments first and each email says when the money was sent.
             </p>
             {!confirmSend ? (
               <button className="tsact" disabled={busy || !ready.length} onClick={() => setConfirmSend(true)}>
@@ -213,7 +210,7 @@ export default function DistributionsBoard() {
             ) : (
               <>
                 <p className="tsnudge loud">
-                  Send to: {ready.map((s) => `${s.ownerName} (${money(s.netCents)})`).join(" · ")}
+                  Send to: {ready.map((s) => `${s.payee} (${money(s.owedCents)})`).join(" · ")}
                 </p>
                 <div className="tsrow">
                   <button className="tsact" disabled={busy} onClick={async () => {
@@ -223,7 +220,7 @@ export default function DistributionsBoard() {
                       const ok = j.sent.filter((x) => x.ok).length;
                       const bad = j.sent.filter((x) => !x.ok);
                       setSaid(`${ok} emailed.`);
-                      if (bad.length) setProblem(bad.map((x) => `${x.ownerName}: ${x.detail}`).join(" · "));
+                      if (bad.length) setProblem(bad.map((x) => `${x.payee}: ${x.detail}`).join(" · "));
                     }
                   }}>Yes, send them</button>
                   <button className="tsminor" onClick={() => setConfirmSend(false)}>Not yet</button>
@@ -239,7 +236,7 @@ export default function DistributionsBoard() {
               <span className="tsnum">{usd(capCents)} a day</span>
             </div>
             <p className="tsnote">
-              The plan keeps each day under the limit, sends first to owners whose bank takes longest,
+              The plan keeps each day under the limit, sends first to payees whose bank takes longest,
               and keeps a payment whole unless it is bigger than a day allows. Paid payments stay put
               when you plan again.
             </p>
@@ -271,7 +268,7 @@ export default function DistributionsBoard() {
                     {rows.map(({ pay, s }) => (
                       <li key={pay.id} className={pay.paidAt ? "paid" : ""}>
                         <span className="distwho">
-                          <strong>{s.ownerName}</strong>
+                          <strong>{s.payee}</strong>
                           <span className="muted">arrives by {day(pay.arrivesOn)}{s.plannedCents > 0 && s.payments.length > 1 ? ` · part of ${usd(s.plannedCents)}` : ""}</span>
                         </span>
                         <span className="payamt">{usd(pay.cents)}</span>
@@ -282,10 +279,10 @@ export default function DistributionsBoard() {
                           </span>
                         ) : (
                           <span className="distmark">
-                            <input aria-label={`Confirmation number for ${s.ownerName}`} placeholder="Confirmation #"
+                            <input aria-label={`Confirmation number for ${s.payee}`} placeholder="Confirmation #"
                               value={conf[pay.id] ?? ""} onChange={(e) => setConf({ ...conf, [pay.id]: e.target.value })} />
                             <button className="btn pri" disabled={busy}
-                              onClick={() => act({ action: "paid", paymentId: pay.id, confirmation: conf[pay.id] ?? "" }, `${s.ownerName}: ${usd(pay.cents)} marked paid.`)}>
+                              onClick={() => act({ action: "paid", paymentId: pay.id, confirmation: conf[pay.id] ?? "" }, `${s.payee}: ${usd(pay.cents)} marked paid.`)}>
                               Paid
                             </button>
                           </span>
@@ -301,14 +298,15 @@ export default function DistributionsBoard() {
       )}
 
       {preview ? (
-        <div className="distpreview" role="dialog" aria-label={`Statement for ${preview.ownerName}`}>
+        <div className="distpreview" role="dialog" aria-label={`Statement for ${preview.payee}`}>
           <div className="distpreviewbar">
             <span><strong>{subjectFor(`${month}-01`)}</strong> &middot; to {preview.email || "no address yet"}</span>
             <button className="btn" onClick={() => setPreview(null)}>Close</button>
           </div>
           <iframe title="Statement preview" sandbox="" srcDoc={statementHtml({
-            month: `${month}-01`, ownerName: preview.ownerName, lines: preview.lines,
-            note: preview.note, payments: preview.payments,
+            month: `${month}-01`, payee: preview.payee, title: preview.title, lines: preview.lines,
+            note: preview.note, payments: preview.payments, previousOwedCents: preview.previousOwedCents,
+            priorPaidCents: preview.priorPaidCents, priorPaidOn: preview.priorPaidOn, depositsCents: preview.depositsCents,
           })} />
         </div>
       ) : null}
@@ -321,25 +319,39 @@ function StatementCard({ s, busy, act, onPreview }: {
   act: (b: Record<string, unknown>, done?: string) => Promise<unknown>;
   onPreview: () => void;
 }) {
-  const [rows, setRows] = useState(() => s.lines.map((l) => ({ label: l.label, amount: centsText(l.cents) })));
+  type Row = { label: string; amount: string; date?: string; merchant?: string; category?: string };
+  const toRows = (ls: Line[]): Row[] => ls.map((l) => ({ ...l, amount: centsText(l.cents) }));
+  const [rows, setRows] = useState<Row[]>(() => toRows(s.lines));
   const [note, setNote] = useState(s.note);
   const [email, setEmail] = useState(s.email);
   const [settle, setSettle] = useState(String(s.settleDays));
-  useEffect(() => { setRows(s.lines.map((l) => ({ label: l.label, amount: centsText(l.cents) }))); setNote(s.note); }, [s.lines, s.note]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setRows(toRows(s.lines)); setNote(s.note); }, [s.lines, s.note]);
   useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); }, [s.email, s.settleDays]);
 
-  const parsed = rows.map((r) => ({ label: r.label.trim(), cents: parseMoney(r.amount) }));
+  const parsed = rows.map((r) => ({ ...r, label: r.label.trim(), cents: parseMoney(r.amount) }));
   const bad = parsed.some((p) => (p.label || p.cents !== null) && (p.cents === null || !p.label));
-  const lines = parsed.filter((p): p is Line => !!p.label && p.cents !== null);
+  const lines: Line[] = parsed.filter((p) => !!p.label && p.cents !== null).map(({ amount: _a, ...l }) => ({ ...l, cents: l.cents! }));
   const dirty = JSON.stringify(lines) !== JSON.stringify(s.lines) || note !== s.note;
-  const locked = !!s.emailedAt;
+  const locked = !!s.emailedAt || s.paidCents > 0;
+  const owed = dirty ? owedCents(lines, s) : s.owedCents;
+  const said = dirty ? checks(s.title, lines, s) : s.checks;
+  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle) });
+  const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
 
   return (
     <section className={`tscard diststmt${s.hold ? " held" : ""}`}>
       <div className="tscardhead">
-        <h2 className="distowner">{s.ownerName}</h2>
-        <span className="tsnum">{money(dirty ? netCents(lines) : s.netCents)}</span>
+        <h2 className="distowner">{s.payee}</h2>
+        <span className={`tsnum${owed < 0 ? " distneg" : ""}`}>{money(owed)}</span>
       </div>
+      {s.title ? <p className="tsnote">{s.title}</p> : null}
+      <p className="tsnote">
+        {lines.length} lines · net {money(lines.reduce((a, l) => a + l.cents, 0))}
+        {carried ? ` · ${money(carried)} carried from last month` : ""}
+        {s.owedNote ? ` · sheet says “${s.owedNote}”` : ""}
+      </p>
+      {said.map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
       <p className="tsnote">
         {s.emailedAt ? `Emailed ${new Date(s.emailedAt).toLocaleDateString()} to ${s.emailedTo}.`
           : s.emailDetail ? `Not sent: ${s.emailDetail}` : "Not emailed yet."}
@@ -350,51 +362,54 @@ function StatementCard({ s, busy, act, onPreview }: {
       <div className="distowned">
         <div className="tsfield">
           <label htmlFor={`em-${s.id}`}>Statement email</label>
-          <input id={`em-${s.id}`} type="email" multiple value={email} placeholder="owner@example.com"
-            onChange={(e) => setEmail(e.target.value)}
-            onBlur={() => (email !== s.email) && act({ action: "owner", ownerId: s.ownerId, email, settleDays: Number(settle) })} />
+          <input id={`em-${s.id}`} type="text" inputMode="email" value={email} placeholder="name@example.com, another@example.com"
+            onChange={(e) => setEmail(e.target.value)} onBlur={() => email !== s.email && savePayee()} />
         </div>
         <div className="tsfield">
           <label htmlFor={`sd-${s.id}`}>Bank days to arrive</label>
           <input id={`sd-${s.id}`} inputMode="numeric" value={settle} onChange={(e) => setSettle(e.target.value)}
-            onBlur={() => (settle !== String(s.settleDays)) && act({ action: "owner", ownerId: s.ownerId, email, settleDays: Number(settle) })} />
+            onBlur={() => settle !== String(s.settleDays) && savePayee()} />
         </div>
       </div>
 
-      <ul className="distlines">
-        {rows.map((r, i) => (
-          <li key={i}>
-            <input aria-label="Line" value={r.label} disabled={locked} placeholder="Rent collected"
-              onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
-            <input aria-label="Amount" inputMode="decimal" value={r.amount} disabled={locked} placeholder="0.00"
-              className={parseMoney(r.amount) !== null && parseMoney(r.amount)! < 0 ? "neg" : ""}
-              onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} />
-            {!locked ? <button className="tslink" aria-label="Remove line" onClick={() => setRows(rows.filter((_, j) => j !== i))}>&times;</button> : null}
-          </li>
-        ))}
-      </ul>
-      {!locked ? (
-        <button className="tslink" onClick={() => setRows([...rows, { label: "", amount: "" }])}>+ Add a line</button>
+      <button className="tslink" onClick={() => setOpen(!open)}>{open ? "Hide the lines" : `Show the ${rows.length} lines`}</button>
+      {open ? (
+        <>
+          <ul className="distlines">
+            {rows.map((r, i) => (
+              <li key={i}>
+                <input aria-label="Line" value={r.label} disabled={locked} placeholder="Monthly Rent - Lot 13"
+                  title={[r.date, r.merchant, r.category].filter(Boolean).join(" · ")}
+                  onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
+                <input aria-label="Amount" inputMode="decimal" value={r.amount} disabled={locked} placeholder="0.00"
+                  className={(parseMoney(r.amount) ?? 0) < 0 ? "neg" : ""}
+                  onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} />
+                {!locked ? <button className="tslink" aria-label="Remove line" onClick={() => setRows(rows.filter((_, j) => j !== i))}>&times;</button> : null}
+              </li>
+            ))}
+          </ul>
+          {!locked ? <button className="tslink" onClick={() => setRows([...rows, { label: "", amount: "" }])}>+ Add a line</button> : null}
+        </>
       ) : null}
       <div className="tsfield">
         <label htmlFor={`nt-${s.id}`}>Note on the statement (optional)</label>
-        <textarea id={`nt-${s.id}`} rows={2} value={note} disabled={locked} onChange={(e) => setNote(e.target.value)} />
+        <textarea id={`nt-${s.id}`} rows={2} value={note} disabled={!!s.emailedAt} onChange={(e) => setNote(e.target.value)} />
       </div>
-      {bad ? <p className="tsalert">A line needs both a label and an amount like 1,250.00 or (45.00).</p> : null}
+      {bad ? <p className="tsalert">A line needs both a label and an amount like 1,250.00 or -45.00.</p> : null}
       <div className="tsrow">
-        {!locked ? (
+        {!s.emailedAt ? (
           <button className="tsact" disabled={busy || bad || !dirty}
-            onClick={() => act({ action: "save", statementId: s.id, lines, note }, `${s.ownerName} saved.`)}>
+            onClick={() => act({ action: "save", statementId: s.id, ...(locked ? {} : { lines }), note }, `${s.payee} saved.`)}>
             {dirty ? "Save" : "Saved"}
           </button>
         ) : null}
         <button className="tsminor" onClick={onPreview} disabled={dirty}>Preview email</button>
-        {!locked ? (
+        {!s.emailedAt ? (
           <button className="tsminor" disabled={busy} onClick={() => act({ action: "save", statementId: s.id, hold: !s.hold })}>
             {s.hold ? "Take off hold" : "Hold this month"}
           </button>
         ) : null}
-        {!locked && !s.paidCents ? (
+        {!locked ? (
           <button className="tsminor" disabled={busy} onClick={() => act({ action: "remove", statementId: s.id })}>Remove</button>
         ) : null}
       </div>
