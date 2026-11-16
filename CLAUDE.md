@@ -1862,6 +1862,19 @@ Beaga LLC (513 Madrin and 412 Bank) and Rentham LLC, separately. Two entities
 in one inbox stay two emails. The summary total counts only what is paid: a
 property that came out negative pays nothing and is not netted off another.
 
+Each block is headed by the PLACE ("The Retreat at Cross Creek · 4 homes"),
+via `placeOf`, never the sheet's long title or the workbook's name -- "Dutch
+doors" is the owner's management company, and it appeared beside Conor
+Dolan's address as though it were part of it. The logo is
+https://app.larabeehomesllc.com/icon-192.png, on a white header.
+
+Some owners are paid for empty homes as if let (061,
+`distribution_payees.guaranteed_rent_cents`). Those lines and any other
+adjustment carry category "Guaranteed rent" / "Adjustment", so the sheet's own
+figures are still checked without them and the screen says how much was added.
+`lotsIn` reads four digits: Cross Creek's lots are house numbers (3117), and at
+three digits every check involving them was blind.
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not
