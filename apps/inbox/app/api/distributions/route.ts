@@ -338,7 +338,12 @@ export async function POST(req: Request) {
           previousOwedCents: s.previousOwedCents, priorPaidCents: s.priorPaidCents, priorPaidOn: s.priorPaidOn, depositsCents: s.depositsCents,
           reserveHeldCents: s.reserveHeldCents, reserveRequiredCents: s.reserveRequiredCents }));
         const r = await sendEmailChecked(to, subjectFor(`${month}-01`), ownerEmailText(`${month}-01`, entity, inputs), ownerEmailHtml(`${month}-01`, entity, inputs), {
-          from: process.env.DISTRIBUTIONS_FROM || undefined,
+          /* From whoever presses Send -- the address owners already get these
+             from. The app's default (leasing@) was never a confirmed Postmark
+             sender, so the first real send was refused. Postmark still has to
+             have this address (or its domain) confirmed; if it does not, the
+             refusal names it on screen. */
+          from: process.env.DISTRIBUTIONS_FROM || sender || undefined,
           replyTo: process.env.DISTRIBUTIONS_REPLY_TO || sender,
           bcc: process.env.DISTRIBUTIONS_BCC || sender,
         });
