@@ -1963,9 +1963,13 @@ fill a formatted body or create a draft without its API, so the paste is the
 one step left. Postmark is pending approval and only delivers inside
 larabeehomesllc.com, which is why this exists.
 
-**Never email anybody on the owner's behalf** -- not owners, not a summary to
+**Never SEND email on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not
-press it, draft in Gmail, or schedule anything that sends. Alex Prieto's
+press it or schedule anything that sends. **Drafts are allowed** (owner, 16
+November 2026): Gmail drafts in cade@larabeehomesllc.com, built with
+`ownerEmailHtml` (logo as an inline attachment), ONLY for statements marked
+checked, and only when he asks. A draft is not a send: the statement is
+recorded sent when he presses "I sent it from Gmail". Alex Prieto's
 sheets contain mistakes; the screen's against-last-month line and checks are
 there so a person catches them before money moves.

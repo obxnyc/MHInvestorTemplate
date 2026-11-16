@@ -37,9 +37,10 @@ each tab) and reuse it -- name, entity, email, group -- before falling back to
 the sheet's own wording. Settled with the owner on 16 November 2026:
 
 - "Shannon Dist" is **Shannon Costello**; "Jack Curran Lot" is **Jack Curran**.
-- Beaga LLC (513 Madrin, 412 Bank), 105 Twiddy LLC and Elizabeth City
-  Property LLC (125 Franklin, and Gabe Moskow's Lot 1) are **Corporate**,
-  though Alex lists them under Individuals.
+- Beaga LLC (513 Madrin, 412 Bank), 105 Twiddy LLC, Rentham LLC (800 Cale)
+  and Elizabeth City Property LLC (125 Franklin, and Gabe Moskow's Lot 1) are
+  **Corporate**, though Alex lists them under Individuals. Any payee whose
+  name ends in LLC is Corporate.
 - The RNMK sheet has a second block, **Pines MHP** (30 homes), below the
   Northside one. It is its own statement, "RNMK Homes — Pines MHP", with
   entity RNMK Homes so both go in one email.
