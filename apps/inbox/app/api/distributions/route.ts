@@ -96,6 +96,10 @@ export async function POST(req: Request) {
       if ("hold" in b) patch.hold = !!b.hold;
       const { error } = await db.from("distribution_statements").update(patch).eq("id", String(b.statementId));
       if (error) return fail(error.message, 500);
+      // Payments planned for the old amount go: left in, they pay what the statement no longer says.
+      if ("lines" in b) {
+        await db.from("distribution_payments").delete().eq("statement_id", String(b.statementId)).is("paid_at", null);
+      }
       break;
     }
 
@@ -190,6 +194,17 @@ export async function POST(req: Request) {
 
     case "paid": {
       const conf = String(b.confirmation ?? "").trim().slice(0, 80);
+      /* A planned payment can be older than the statement it pays: Ridge Road
+         Advisors had $5,000 planned on a statement that came to $1,000. Marking
+         it paid would have recorded $4,000 nobody was owed. Refused, saying so. */
+      if (!b.undo) {
+        const now = await build(month);
+        const st = (now.statements ?? []).find((x) => x.payments.some((p) => p.id === String(b.paymentId)));
+        const pay = st?.payments.find((p) => p.id === String(b.paymentId));
+        if (st && pay && !pay.paidAt && st.paidCents + pay.cents > Math.max(0, st.owedCents)) {
+          return fail(`${st.payee} is owed ${usd(Math.max(0, st.owedCents))}${st.paidCents ? ` and ${usd(st.paidCents)} is already paid` : ""}, so this ${usd(pay.cents)} payment would be more than owed. The plan is out of date: press Plan again.`);
+        }
+      }
       const { error } = await db.from("distribution_payments")
         .update(b.undo ? { paid_at: null, paid_by: null, confirmation: null }
                        : { paid_at: new Date().toISOString(), paid_by: me!.id, confirmation: conf || null })
