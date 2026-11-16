@@ -253,6 +253,30 @@ t("our charges are adjustments, so Alex's figures are still checked without them
   lab.category === "Adjustment" && mk.category === "Adjustment"
   && D.checks(null, [{ label: "Rent", cents: 155000 }, lab], { statedNetCents: 155000 }).some((x) => /-\$97\.50 of adjustments/.test(x)));
 
+/* markups and changed amounts, on the line */
+const marked = [
+  { label: "Rent", cents: 154000 },
+  { label: "Supplies - Lot 10", cents: -2917, markupPct: 15 },
+  { label: "Mortgage - Lot 10", cents: -47449 },
+  { label: "Cleaning - Lot 10", cents: -20000, sheetCents: -16500 },
+];
+t("a markup is on its line and counts in the total", () => D.markupCents(marked[1]) === -438 && D.netCents(marked) === 154000 - 2917 - 438 - 47449 - 20000);
+t("a markup on rent is nothing", () => D.markupCents({ label: "Rent", cents: 154000, markupPct: 15 }) === 0);
+// Alex's own figure is what is checked: his amounts, no markups. Without
+// sheetCents the changed line would read as Alex's sheet being wrong.
+t("Alex's figures are checked without our markup or our change to his amount", () =>
+  D.sheetNetCents(marked) === 154000 - 2917 - 47449 - 16500
+  && !D.checks(null, marked, { statedNetCents: 154000 - 2917 - 47449 - 16500 }).some((x) => /Monthly Net Cashflow says/.test(x)));
+t("and the difference is said, to the cent", () =>
+  D.checks(null, marked, { statedNetCents: D.sheetNetCents(marked) }).some((x) => /-\$39\.38 of adjustments/.test(x)));
+t("a blanket markup takes repairs, not the loan, lot rent or fees", () =>
+  D.markupable(marked[1]) && D.markupable(marked[3]) && !D.markupable(marked[2]) && !D.markupable(marked[0])
+  && !D.markupable({ label: "Consultant Fee - Lot 10", cents: -5000 }) && !D.markupable({ label: "Property Management Fees MTD", cents: -15400, category: "Management" }));
+t("the email shows the markup under its line", () => {
+  const h = D.statementHtml({ month: "2026-11-01", payee: "X", lines: marked });
+  return /Markup 15%/.test(h) && h.includes("-$4.38");
+});
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);

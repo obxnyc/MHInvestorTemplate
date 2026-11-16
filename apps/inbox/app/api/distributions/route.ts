@@ -34,6 +34,9 @@ const cleanLines = (raw: unknown): Line[] =>
       ...(l?.date ? { date: String(l.date).slice(0, 20) } : {}),
       ...(l?.merchant ? { merchant: String(l.merchant).slice(0, 80) } : {}),
       ...(l?.category ? { category: String(l.category).slice(0, 40) } : {}),
+      ...(Number(l?.markupPct) > 0 && Number(l?.markupPct) <= 100 ? { markupPct: Math.round(Number(l.markupPct) * 100) / 100 } : {}),
+      ...(Number.isFinite(Number(l?.sheetCents)) && l?.sheetCents !== null && l?.sheetCents !== undefined
+        ? { sheetCents: Math.round(Number(l.sheetCents)) } : {}),
     }))
     .filter((l) => l.label && Number.isFinite(l.cents) && Math.abs(l.cents) < 1e10);
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, markupLine, lotsIn, subjectFor, monthLabel, usd, type Line, type StatementInput,
+  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, subjectFor, monthLabel, usd, type Line, type StatementInput,
 } from "@/lib/distribute";
 
 /**
@@ -475,211 +475,254 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   onPreview: () => void;
   others: Statement[]; onOpen: (id: string) => void;
 }) {
-  type Row = { label: string; amount: string; date?: string; merchant?: string; category?: string };
-  const toRows = (ls: Line[]): Row[] => ls.map((l) => ({ ...l, amount: centsText(l.cents) }));
+  /* One row per line, edited in place. Amounts are typed as they read --
+     a cost of 29.17 is typed 29.17 in the Expenses section, not -29.17 --
+     and the section says which way it goes. `orig` is Alex's amount for a
+     line that came from his sheet, so a changed amount keeps what he said. */
+  type Row = { label: string; amount: string; side: "in" | "out"; pct: string;
+               date?: string; merchant?: string; category?: string; orig?: number; sheet?: number };
+  const isOurs = (c?: string) => c === "Adjustment" || c === "Guaranteed rent";
+  const toRows = (ls: Line[]): Row[] => ls.map((l) => ({
+    label: l.label, amount: centsText(Math.abs(l.cents)), side: l.cents < 0 ? "out" : "in",
+    pct: l.markupPct ? String(l.markupPct) : "", date: l.date, merchant: l.merchant, category: l.category,
+    orig: isOurs(l.category) ? undefined : (l.sheetCents ?? l.cents), sheet: l.sheetCents,
+  }));
   const [rows, setRows] = useState<Row[]>(() => toRows(s.lines));
   const [note, setNote] = useState(s.note);
   const [email, setEmail] = useState(s.email);
   const [settle, setSettle] = useState(String(s.settleDays));
   const [entity, setEntity] = useState(s.entity);
   const [guar, setGuar] = useState(s.guaranteedCents ? centsText(s.guaranteedCents) : "");
-  const [open, setOpen] = useState(false);
-  useEffect(() => { setRows(toRows(s.lines)); setNote(s.note); }, [s.lines, s.note]);
-  useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); setEntity(s.entity);
-    setGuar(s.guaranteedCents ? centsText(s.guaranteedCents) : ""); }, [s.email, s.settleDays, s.entity, s.guaranteedCents]);
-
-  const parsed = rows.map((r) => ({ ...r, label: r.label.trim(), cents: parseMoney(r.amount) }));
-  const bad = parsed.some((p) => (p.label || p.cents !== null) && (p.cents === null || !p.label));
-  const lines: Line[] = parsed.filter((p) => !!p.label && p.cents !== null).map(({ amount: _a, ...l }) => ({ ...l, cents: l.cents! }));
-  const dirty = JSON.stringify(lines) !== JSON.stringify(s.lines) || note !== s.note;
-  const locked = !!s.emailedAt || s.paidCents > 0;
-  const owed = dirty ? owedCents(lines, s) : s.owedCents;
-  const said = dirty ? checks(s.title, lines, s) : s.checks;
-  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity,
-    guaranteedCents: parseMoney(guar) ?? 0 });
-  const guarCents = parseMoney(guar);
-  // Our own charges: our time at an hourly rate, and a markup on a cost.
-  const [charge, setCharge] = useState<"" | "labor" | "markup">("");
+  const [bulk, setBulk] = useState("15");
+  const [labor, setLabor] = useState(false);
   const [hours, setHours] = useState("");
   const [rate, setRate] = useState(() => { try { return localStorage.getItem("dist-labor-rate") ?? ""; } catch { return ""; } });
   const [what, setWhat] = useState("");
   const [lot, setLot] = useState("");
-  const [onLine, setOnLine] = useState("");
-  const [pct, setPct] = useState("");
-  const homes = [...new Set(s.lines.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
-  const costs = s.lines.map((l, i) => ({ l, i })).filter(({ l }) => l.cents < 0 && l.category !== "Adjustment" && l.category !== "Guaranteed rent");
-  const draft = charge === "labor"
-    ? laborLine(Number(hours), parseMoney(rate) ?? 0, what, lot ? Number(lot) : null)
-    : charge === "markup" && onLine !== "" ? markupLine(s.lines[Number(onLine)], Number(pct)) : null;
-  const addCharge = async () => {
-    if (!draft) return;
-    if (charge === "labor") { try { localStorage.setItem("dist-labor-rate", rate); } catch { /* fine */ } }
-    const ok = await act({ action: "save", statementId: s.id, lines: [...s.lines, draft] }, `${s.payee}: ${draft.label} added.`);
-    if (ok) { setCharge(""); setHours(""); setWhat(""); setLot(""); setOnLine(""); setPct(""); }
+  useEffect(() => { setRows(toRows(s.lines)); setNote(s.note); }, [s.lines, s.note]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); setEntity(s.entity);
+    setGuar(s.guaranteedCents ? centsText(s.guaranteedCents) : ""); }, [s.email, s.settleDays, s.entity, s.guaranteedCents]);
+
+  const locked = !!s.emailedAt || s.paidCents > 0;
+  const rowBad = (r: Row) => {
+    const a = parseMoney(r.amount);
+    const p = r.pct.trim() === "" ? 0 : Number(r.pct);
+    return !r.label.trim() || a === null || a < 0 || !Number.isFinite(p) || p < 0 || p > 100;
   };
+  const toLine = (r: Row): Line => {
+    const abs = parseMoney(r.amount) ?? 0;
+    const cents = r.side === "out" ? -abs : abs;
+    const p = Number(r.pct);
+    const sheetCents = r.orig !== undefined && cents !== r.orig ? r.orig : undefined;
+    return {
+      label: r.label.trim(), cents,
+      ...(r.date ? { date: r.date } : {}), ...(r.merchant ? { merchant: r.merchant } : {}), ...(r.category ? { category: r.category } : {}),
+      ...(r.side === "out" && p > 0 ? { markupPct: Math.round(p * 100) / 100 } : {}),
+      ...(sheetCents !== undefined ? { sheetCents } : {}),
+    };
+  };
+  const bad = rows.some(rowBad);
+  const lines: Line[] = rows.filter((r) => !rowBad(r)).map(toLine);
+  const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null })));
+  const dirty = norm(lines) !== norm(s.lines) || note !== s.note;
+  const owed = owedCents(lines, s);
+  const said = checks(s.title, lines, s);
+  const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity,
+    guaranteedCents: parseMoney(guar) ?? 0 });
+  const set = (i: number, patch: Partial<Row>) => setRows(rows.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
 
+  // Whole-statement tools. They change the rows here; nothing is kept until Save.
+  const canBulk = rows.filter((r) => !rowBad(r) && markupable(toLine(r)));
+  const bulkPct = Number(bulk);
+  const applyBulk = () => setRows(rows.map((r) => (!rowBad(r) && markupable(toLine(r)) ? { ...r, pct: String(bulkPct) } : r)));
+  const anyMarkup = rows.some((r) => Number(r.pct) > 0);
+  const homes = [...new Set(lines.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
+  const empty = vacantLots(lines);
+  const guarCents = parseMoney(guar) ?? 0;
+  const laborDraft = laborLine(Number(hours), parseMoney(rate) ?? 0, what, lot ? Number(lot) : null);
+  const addRow = (l: Line) => setRows([...rows, ...toRows([l]).map((r) => ({ ...r, orig: undefined }))]);
+
+  const section = (side: "in" | "out") => {
+    const idx = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.side === side);
+    if (!idx.length) return null;
+    const subtotal = idx.reduce((a, { r }) => a + (rowBad(r) ? 0 : lineTotal(toLine(r))), 0);
+    return (
+      <div className="edsection">
+        <div className="edrow edhead">
+          <span>{side === "in" ? "Revenue" : "Expenses"}</span>
+          <span className="num">Amount</span>
+          <span className="num">{side === "out" ? "Markup %" : ""}</span>
+          <span className="num">Total</span>
+          <span />
+        </div>
+        {idx.map(({ r, i }) => {
+          const l = rowBad(r) ? null : toLine(r);
+          const changed = l && r.orig !== undefined && l.cents !== r.orig;
+          return (
+            <div key={i} className={`edrow${rowBad(r) ? " bad" : ""}${isOurs(r.category) ? " ours" : ""}`}>
+              <span className="eddesc">
+                <span className="eddate">{shortDate(r.date)}</span>
+                {isOurs(r.category) && !locked
+                  ? <input aria-label="Description" value={r.label} placeholder="What it is for" onChange={(e) => set(i, { label: e.target.value })} />
+                  : <span>{r.label}{r.merchant ? <small> · {r.merchant}</small> : null}</span>}
+              </span>
+              <span className="num">
+                <input aria-label={`Amount for ${r.label}`} inputMode="decimal" value={r.amount} disabled={locked}
+                  onChange={(e) => set(i, { amount: e.target.value })} className={changed ? "changed" : ""} />
+                {changed ? <small className="edwas">Alex: {usd(Math.abs(r.orig!))}{" "}
+                  <button className="tslink distinline" disabled={locked} onClick={() => set(i, { amount: centsText(Math.abs(r.orig!)) })}>undo</button></small> : null}
+              </span>
+              <span className="num">
+                {side === "out"
+                  ? <input aria-label={`Markup percent for ${r.label}`} inputMode="decimal" value={r.pct} disabled={locked}
+                      onChange={(e) => set(i, { pct: e.target.value })} className="edpct" />
+                  : null}
+              </span>
+              <span className={`num edtotal${side === "out" ? " distneg" : ""}`}>
+                {l ? money(lineTotal(l)) : "—"}
+                {l && markupCents(l) ? <small>incl. {usd(-markupCents(l))} markup</small> : null}
+              </span>
+              <span>{!locked && isOurs(r.category)
+                ? <button className="tslink" aria-label="Remove this line" onClick={() => setRows(rows.filter((_, j) => j !== i))}>&times;</button>
+                : null}</span>
+            </div>
+          );
+        })}
+        <div className="edrow edsub"><span>Subtotal</span><span /><span /><span className="num">{money(subtotal)}</span><span /></div>
+      </div>
+    );
+  };
+
   return (
-    <section className={`tscard diststmt${s.hold ? " held" : ""}`}>
-      <div className="tscardhead">
-        <h2 className="distowner">{s.payee}</h2>
-        <span className={`tsnum${owed < 0 ? " distneg" : ""}`}>{money(owed)}</span>
-      </div>
-      <p className="tsnote">{placeOf(s.title, s.payee, s.lines)}</p>
-      <p className="tsnote">
-        {lines.length} lines · net {money(lines.reduce((a, l) => a + l.cents, 0))}
-        {carried ? ` · ${money(carried)} carried from last month` : ""}
-        {s.owedNote ? ` · sheet says “${s.owedNote}”` : ""}
-      </p>
-      <p className={`distvs${s.versus.loud ? " loud" : ""}`}>
-        <span>This month <strong>{money(owed)}</strong></span>
-        <span>Last month {s.versus.lastCents === null ? "—" : <strong>{money(s.versus.lastCents)}</strong>}
-          {s.versus.lastOn ? <span className="muted"> sent {shortDay(s.versus.lastOn)}</span> : null}</span>
-        {s.versus.diffCents !== null ? (
-          <span className={s.versus.diffCents < 0 ? "distneg" : ""}>{s.versus.diffCents >= 0 ? "+" : "−"}{usd(Math.abs(owed - (s.versus.lastCents ?? 0)))}</span>
-        ) : null}
-      </p>
-      {s.versus.says.map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
-      {said.map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
-      <p className="tsnote">
-        {s.emailedAt ? `Emailed ${new Date(s.emailedAt).toLocaleDateString()} to ${s.emailedTo}.`
-          : s.emailDetail ? `Not sent: ${s.emailDetail}` : "Not emailed yet."}
-        {s.paidCents ? ` ${usd(s.paidCents)} paid.` : ""}
-        {s.hold ? " On hold: not emailed or paid." : ""}
-      </p>
+    <section className={`edsheet${s.hold ? " held" : ""}`}>
+      <header className="edtop">
+        <div>
+          <h2 className="distowner">{s.payee}</h2>
+          <p className="tsnote">{placeOf(s.title, s.payee, s.lines)} · {s.email || "no email yet"}</p>
+        </div>
+        <div className="edowed">
+          <small>{owed < 0 ? "No distribution" : "Distribution"}</small>
+          <strong className={owed < 0 ? "distneg" : ""}>{money(owed)}</strong>
+          <small>last month {s.versus.lastCents === null ? "—" : usd(s.versus.lastCents)}</small>
+        </div>
+      </header>
 
-      <div className="distowned">
-        <div className="tsfield">
-          <label htmlFor={`em-${s.id}`}>Statement email</label>
-          <input id={`em-${s.id}`} type="text" inputMode="email" value={email} placeholder="name@example.com, another@example.com"
-            onChange={(e) => setEmail(e.target.value)} onBlur={() => email !== s.email && savePayee()} />
-        </div>
-        <div className="tsfield">
-          <label htmlFor={`sd-${s.id}`}>Bank days to arrive</label>
-          <input id={`sd-${s.id}`} inputMode="numeric" value={settle} onChange={(e) => setSettle(e.target.value)}
-            onBlur={() => settle !== String(s.settleDays) && savePayee()} />
-        </div>
-        <div className="tsfield distentity">
-          <label htmlFor={`en-${s.id}`}>Owning entity</label>
-          <input id={`en-${s.id}`} value={entity} placeholder={s.payee}
-            onChange={(e) => setEntity(e.target.value)} onBlur={() => entity !== s.entity && savePayee()} />
-        </div>
-      </div>
-      <p className="tsnote">
-        {others.length ? <>Goes in one email with{" "}
-          {others.map((o, i) => <span key={o.id}>{i ? ", " : ""}<button className="tslink distinline" onClick={() => onOpen(o.id)}>{placeOf(o.title, o.payee, o.lines)}</button></span>)}.
-          {" "}Statements with the same owning entity are sent together, a block each.</>
-          : <>Sent on its own. Give another statement the same owning entity to send them together.</>}
-      </p>
+      {[...s.versus.says, ...said].map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
 
-      <div className="distadjust">
-        <div className="tscardhead"><h2>Adjustments</h2></div>
-        <div className="tsfield">
-          <label htmlFor={`gr-${s.id}`}>Pays empty homes as if rented, at ($ per home)</label>
-          <input id={`gr-${s.id}`} inputMode="decimal" value={guar} placeholder="Leave empty if no such agreement"
-            onChange={(e) => setGuar(e.target.value)}
-            onBlur={() => (parseMoney(guar) ?? 0) !== (s.guaranteedCents ?? 0) && savePayee()} />
-        </div>
-        {s.vacant.length ? (
-          <p className="tsnote">
-            {s.vacant.length === 1 ? "Lot" : "Lots"} {s.vacant.join(", ")} {s.vacant.length === 1 ? "has" : "have"} costs this month and no rent.
-            {!s.guaranteedCents ? " If this owner is paid as if rented, put the rent above and save." : ""}
-          </p>
-        ) : null}
-        <div className="tsrow">
-          {s.vacant.length && s.guaranteedCents && !locked ? (
-            <button className="tsminor" disabled={busy}
-              onClick={() => act({ action: "guarantee", statementId: s.id }, `${s.payee}: ${s.vacant.length} empty home${s.vacant.length === 1 ? "" : "s"} paid as if rented.`)}>
-              Pay {s.vacant.length} empty home{s.vacant.length === 1 ? "" : "s"} as rented ({s.vacant.length} × {usd(s.guaranteedCents)})
+      {!locked ? (
+        <div className="edtools">
+          <span className="edtool">
+            <label htmlFor={`bk-${s.id}`}>Mark up repair costs by</label>
+            <input id={`bk-${s.id}`} inputMode="decimal" value={bulk} onChange={(e) => setBulk(e.target.value)} />%
+            <button className="btn pri" disabled={!(bulkPct > 0 && bulkPct <= 100) || !canBulk.length} onClick={applyBulk}>
+              Apply to {canBulk.length} line{canBulk.length === 1 ? "" : "s"}
             </button>
-          ) : null}
-          {!locked ? <button className="tsminor" onClick={() => setCharge(charge === "labor" ? "" : "labor")}>Our labor</button> : null}
-          {!locked && costs.length ? <button className="tsminor" onClick={() => setCharge(charge === "markup" ? "" : "markup")}>Markup</button> : null}
-          {!locked ? (
-            <button className="tsminor" onClick={() => {
-              if (!open) setOpen(true);
-              setRows([...rows, { label: "", amount: "", category: "Adjustment" }]);
-            }}>Other adjustment</button>
-          ) : null}
-          {!locked ? (
-            <button className="tsminor" onClick={() => setOpen(!open)}>{open ? "Done changing lines" : "Change the lines"}</button>
+          </span>
+          {anyMarkup ? <button className="btn" onClick={() => setRows(rows.map((r) => ({ ...r, pct: "" })))}>Clear markups</button> : null}
+          <button className="btn" onClick={() => setLabor(!labor)}>Our labor</button>
+          <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "out", pct: "", category: "Adjustment" }])}>Add a charge</button>
+          <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "in", pct: "", category: "Adjustment" }])}>Add a credit</button>
+          {empty.length && guarCents ? (
+            <button className="btn" onClick={() => setRows([...rows, ...empty.map((n) => ({
+              label: `Guaranteed rent - Lot ${n} (vacant)`, amount: centsText(guarCents), side: "in" as const, pct: "", category: "Guaranteed rent",
+            }))])}>Pay {empty.length} empty home{empty.length === 1 ? "" : "s"} as rented</button>
           ) : null}
         </div>
-        {charge === "labor" ? (
-          <div className="distcharge">
-            <div className="tsfield"><label htmlFor={`hr-${s.id}`}>Hours</label>
-              <input id={`hr-${s.id}`} inputMode="decimal" value={hours} placeholder="2" onChange={(e) => setHours(e.target.value)} /></div>
-            <div className="tsfield"><label htmlFor={`rt-${s.id}`}>Rate ($/hr)</label>
-              <input id={`rt-${s.id}`} inputMode="decimal" value={rate} placeholder="65.00" onChange={(e) => setRate(e.target.value)} /></div>
-            <div className="tsfield"><label htmlFor={`lt-${s.id}`}>Home</label>
-              <select id={`lt-${s.id}`} value={lot} onChange={(e) => setLot(e.target.value)}>
-                <option value="">Not one home</option>
-                {homes.map((n) => <option key={n} value={n}>Lot {n}</option>)}
-              </select></div>
-            <div className="tsfield distwide"><label htmlFor={`wt-${s.id}`}>What it was for</label>
-              <input id={`wt-${s.id}`} value={what} placeholder="Sent Jose to fix the water heater" onChange={(e) => setWhat(e.target.value)} /></div>
-          </div>
-        ) : null}
-        {charge === "markup" ? (
-          <div className="distcharge">
-            <div className="tsfield distwide"><label htmlFor={`on-${s.id}`}>Mark up which cost</label>
-              <select id={`on-${s.id}`} value={onLine} onChange={(e) => setOnLine(e.target.value)}>
-                <option value="">Choose a line&hellip;</option>
-                {costs.map(({ l, i }) => <option key={i} value={i}>{l.label} ({usd(-l.cents)})</option>)}
-              </select></div>
-            <div className="tsfield"><label htmlFor={`pc-${s.id}`}>Markup (%)</label>
-              <input id={`pc-${s.id}`} inputMode="decimal" value={pct} placeholder="15" onChange={(e) => setPct(e.target.value)} /></div>
-          </div>
-        ) : null}
-        {charge ? (
-          <div className="tsrow">
-            <span className="tsnote distdraft">{draft ? <>Adds <strong>{draft.label}</strong> &nbsp;{money(draft.cents)}</> : "Fill in the boxes to see the line."}</span>
-            <button className="tsact" disabled={busy || !draft} onClick={addCharge}>Add to statement</button>
-          </div>
-        ) : null}
-        {guarCents !== null && guarCents > 0 && guarCents < 100 ? <p className="tsalert">That is under a dollar; amounts are in dollars, like 1250.00.</p> : null}
-      </div>
-      {!open ? <StatementLines lines={s.lines} /> : null}
-      {open ? (
-        <>
-          <ul className="distlines">
-            {rows.map((r, i) => (
-              <li key={i}>
-                <input aria-label="Line" value={r.label} disabled={locked} placeholder="Monthly Rent - Lot 13"
-                  title={[r.date, r.merchant, r.category].filter(Boolean).join(" · ")}
-                  onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
-                <input aria-label="Amount" inputMode="decimal" value={r.amount} disabled={locked} placeholder="0.00"
-                  className={(parseMoney(r.amount) ?? 0) < 0 ? "neg" : ""}
-                  onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} />
-                {!locked ? <button className="tslink" aria-label="Remove line" onClick={() => setRows(rows.filter((_, j) => j !== i))}>&times;</button> : null}
-              </li>
-            ))}
-          </ul>
-          {!locked ? <button className="tslink" onClick={() => setRows([...rows, { label: "", amount: "", category: "Adjustment" }])}>+ Add an adjustment line</button> : null}
-        </>
       ) : null}
+      <p className="tsnote edhint">Repair costs are everything but the loan, lot rent and fees; you can set any line&rsquo;s own % in its box below.</p>
+
+      {labor && !locked ? (
+        <div className="distcharge edlabor">
+          <div className="tsfield"><label htmlFor={`hr-${s.id}`}>Hours</label>
+            <input id={`hr-${s.id}`} inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
+          <div className="tsfield"><label htmlFor={`rt-${s.id}`}>Rate ($ per hour)</label>
+            <input id={`rt-${s.id}`} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></div>
+          <div className="tsfield"><label htmlFor={`lt-${s.id}`}>Home</label>
+            <select id={`lt-${s.id}`} value={lot} onChange={(e) => setLot(e.target.value)}>
+              <option value="">Not one home</option>
+              {homes.map((n) => <option key={n} value={n}>Lot {n}</option>)}
+            </select></div>
+          <div className="tsfield distwide"><label htmlFor={`wt-${s.id}`}>What it was for</label>
+            <input id={`wt-${s.id}`} value={what} onChange={(e) => setWhat(e.target.value)} /></div>
+          <div className="tsrow distwide">
+            <span className="tsnote distdraft">{laborDraft ? <>Adds <strong>{laborDraft.label}</strong> &nbsp;{money(laborDraft.cents)}</> : "Type the hours and the rate."}</span>
+            <button className="tsact" disabled={!laborDraft} onClick={() => {
+              if (!laborDraft) return;
+              try { localStorage.setItem("dist-labor-rate", rate); } catch { /* fine */ }
+              addRow(laborDraft); setLabor(false); setHours(""); setWhat(""); setLot("");
+            }}>Add the line</button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="edtable">
+        {section("in")}
+        {section("out")}
+        <div className="edtotals">
+          <div><span>Monthly net cashflow</span><span>{money(netCents(lines))}</span></div>
+          {carried ? <div><span>Carried from last month</span><span>{money(carried)}</span></div> : null}
+          <div className="edbig"><span>{owed < 0 ? "Balance" : "Distribution"}</span><span className={owed < 0 ? "distneg" : ""}>{money(owed)}</span></div>
+        </div>
+      </div>
+
       <div className="tsfield">
         <label htmlFor={`nt-${s.id}`}>Note on the statement (optional)</label>
         <textarea id={`nt-${s.id}`} rows={2} value={note} disabled={!!s.emailedAt} onChange={(e) => setNote(e.target.value)} />
       </div>
-      {bad ? <p className="tsalert">A line needs both a label and an amount like 1,250.00 or -45.00.</p> : null}
-      <div className="tsrow">
+
+      <details className="eddetails">
+        <summary>Owner details: email, bank days, entity, empty-home agreement</summary>
+        <div className="distowned">
+          <div className="tsfield">
+            <label htmlFor={`em-${s.id}`}>Statement email</label>
+            <input id={`em-${s.id}`} type="text" inputMode="email" value={email}
+              onChange={(e) => setEmail(e.target.value)} onBlur={() => email !== s.email && savePayee()} />
+          </div>
+          <div className="tsfield">
+            <label htmlFor={`sd-${s.id}`}>Bank days to arrive</label>
+            <input id={`sd-${s.id}`} inputMode="numeric" value={settle} onChange={(e) => setSettle(e.target.value)}
+              onBlur={() => settle !== String(s.settleDays) && savePayee()} />
+          </div>
+          <div className="tsfield">
+            <label htmlFor={`en-${s.id}`}>Owning entity (same entity = one email; blank = sent on its own)</label>
+            <input id={`en-${s.id}`} value={entity}
+              onChange={(e) => setEntity(e.target.value)} onBlur={() => entity !== s.entity && savePayee()} />
+          </div>
+          <div className="tsfield">
+            <label htmlFor={`gr-${s.id}`}>Pays empty homes as if rented ($ per home)</label>
+            <input id={`gr-${s.id}`} inputMode="decimal" value={guar}
+              onChange={(e) => setGuar(e.target.value)}
+              onBlur={() => (parseMoney(guar) ?? 0) !== (s.guaranteedCents ?? 0) && savePayee()} />
+          </div>
+        </div>
+        {others.length ? <p className="tsnote">Sent in one email with{" "}
+          {others.map((o, i) => <span key={o.id}>{i ? ", " : ""}<button className="tslink distinline" onClick={() => onOpen(o.id)}>{placeOf(o.title, o.payee, o.lines)}</button></span>)}.</p> : null}
+        <p className="tsnote">
+          {s.emailedAt ? `Emailed ${new Date(s.emailedAt).toLocaleDateString()} to ${s.emailedTo}.` : s.emailDetail ? `Not sent: ${s.emailDetail}` : "Not emailed yet."}
+          {s.paidCents ? ` ${usd(s.paidCents)} paid.` : ""}{s.hold ? " On hold: not emailed or paid." : ""}
+        </p>
+      </details>
+
+      <footer className="edfoot">
+        {bad ? <span className="tsnote distneg">A line needs a description and an amount like 1,250.00; a markup is 0 to 100.</span>
+          : dirty ? <span className="tsnote">Changes not saved yet.</span> : <span className="tsnote">All saved.</span>}
         {!s.emailedAt ? (
-          <button className="tsact" disabled={busy || bad || !dirty}
-            onClick={() => act({ action: "save", statementId: s.id, ...(locked ? {} : { lines }), note }, `${s.payee} saved.`)}>
-            {dirty ? "Save" : "Saved"}
-          </button>
+          <>
+            <button className="btn" disabled={!dirty || busy} onClick={() => { setRows(toRows(s.lines)); setNote(s.note); }}>Discard</button>
+            <button className="btn pri" disabled={busy || bad || !dirty}
+              onClick={() => act({ action: "save", statementId: s.id, ...(locked ? {} : { lines }), note }, `${s.payee} saved.`)}>
+              Save changes
+            </button>
+          </>
         ) : null}
-        <button className="tsminor" onClick={onPreview} disabled={dirty}>Preview email</button>
+        <button className="btn" onClick={onPreview} disabled={dirty}>Preview email</button>
         {!s.emailedAt ? (
-          <button className="tsminor" disabled={busy} onClick={() => act({ action: "save", statementId: s.id, hold: !s.hold })}>
+          <button className="btn" disabled={busy} onClick={() => act({ action: "save", statementId: s.id, hold: !s.hold })}>
             {s.hold ? "Take off hold" : "Hold this month"}
           </button>
         ) : null}
-        {!locked ? (
-          <button className="tsminor" disabled={busy} onClick={() => act({ action: "remove", statementId: s.id })}>Remove</button>
-        ) : null}
-      </div>
+      </footer>
     </section>
   );
 }
