@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MonthPicker, RangeSummary, type Range } from "@/components/DistributionsRange";
 import {
   rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, ownerEmailText, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, reservesOf, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
@@ -211,9 +211,12 @@ export default function DistributionsBoard() {
   };
   // Everybody, and how much of what they are owed has been paid.
   const perCents = (data?.run?.perPaymentCents ?? 500000);
+  // The Pay tab follows the same groups as the statements, so Corporate is paid and recorded together.
+  const PAY_ORDER = ["Corporate", "Individuals", "Cross Creek"];
+  const groupRank = (st: Statement) => (PAY_ORDER.indexOf(st.source?.group ?? "") + 1) || 99;
   const byOwner = statements.filter((st) => st.payments.length || (!st.hold && !st.notStarted && st.owedCents > 0 && st.source?.group !== "Test"))
     .map((st) => ({ st, owed: Math.max(0, st.owedCents), planned: st.plannedCents, paid: st.paidCents }))
-    .sort((a, b) => (a.paid >= a.owed ? 1 : 0) - (b.paid >= b.owed ? 1 : 0) || a.st.payee.localeCompare(b.st.payee));
+    .sort((a, b) => groupRank(a.st) - groupRank(b.st) || (a.paid >= a.owed ? 1 : 0) - (b.paid >= b.owed ? 1 : 0) || a.st.payee.localeCompare(b.st.payee));
 
   if (!data) {
     return <main className="wrap crewwrap">{problem
@@ -522,14 +525,17 @@ export default function DistributionsBoard() {
                   <div className="tscardhead"><h2>By owner</h2>
                     <span className="tsnum">{byOwner.filter((o) => o.paid >= o.owed && o.owed > 0).length} of {byOwner.length} paid in full</span></div>
                   <div className="edrow edhead dbo"><span>Owner</span><span className="num">Owed</span><span className="num">Planned</span><span className="num">Paid</span><span className="num">Still to pay</span></div>
-                  {byOwner.map(({ st, owed, planned, paid }) => {
+                  {byOwner.map(({ st, owed, planned, paid }, bi) => {
+                    const g = st.source?.group ?? "Other";
+                    const head = bi === 0 || (byOwner[bi - 1].st.source?.group ?? "Other") !== g
+                      ? <div className="dbogroup" key={`g-${g}`}>{g}<span>{byOwner.filter((o) => (o.st.source?.group ?? "Other") === g).length}</span></div> : null;
                     const left = owed - paid;
                     const off = planned !== owed;
                     const open = entering === st.id;
                     const made = st.payments.filter((x) => x.paidAt).sort((a, b) => a.sendOn.localeCompare(b.sendOn));
                     const amt = parseMoney(entry.amount);
-                    return (
-                      <div key={st.id} className={`dboitem${left <= 0 ? " done" : ""}${open ? " open" : ""}`}>
+                    return (<Fragment key={st.id}>{head}
+                      <div className={`dboitem${left <= 0 ? " done" : ""}${open ? " open" : ""}`}>
                         <div className="edrow dbo">
                           <span className="distname">
                             <button className="tslink distinline" onClick={() => setOpenId(st.id)}><strong>{st.payee}</strong></button>
@@ -573,7 +579,7 @@ export default function DistributionsBoard() {
                           </div>
                         )}
                       </div>
-                    );
+                    </Fragment>);
                   })}
                 </div>
               ) : null}
@@ -590,10 +596,10 @@ export default function DistributionsBoard() {
                       </div>
                       <div className="distbar"><span style={{ width: `${Math.min(100, (total / capCents) * 100)}%` }} /></div>
                       <ul className="distpays">
-                        {rows.map(({ pay, s }) => (
+                        {[...rows].sort((x, y) => groupRank(x.s) - groupRank(y.s) || x.s.payee.localeCompare(y.s.payee)).map(({ pay, s }) => (
                           <li key={pay.id} className={pay.paidAt ? "paid" : ""}>
                             <button className="distwho" onClick={() => setOpenId(s.id)}>
-                              <strong>{s.payee}{pieceOf(pay.id, s)}</strong>
+                              <strong>{s.payee}{pieceOf(pay.id, s)}</strong>{s.source?.group ? <small className="dpaygroup">{s.source.group}</small> : null}
                               <span className={`muted${s.versus.loud ? " distneg" : ""}`}>
                                 {s.versus.loud ? "Check the statement · " : ""}{s.versus.lastCents !== null ? `last month ${usd(s.versus.lastCents)} · ` : ""}arrives {day(pay.arrivesOn)}
                               </span>
