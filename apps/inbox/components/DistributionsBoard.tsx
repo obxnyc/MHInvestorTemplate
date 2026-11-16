@@ -229,7 +229,8 @@ export default function DistributionsBoard() {
   const FILTERS: [string, string, (s: Statement) => boolean][] = [
     ["all", "All", () => true],
     ["look", "Needs a look", needsLook],
-    ["pay", "To pay", (s) => s.owedCents > 0 && !s.hold],
+    // Still to pay: owed and not yet paid in full. Paid owners drop off as they are paid.
+    ["pay", "To pay", (s) => s.owedCents - s.paidCents > 0 && !s.hold && !s.notStarted && !isTest(s)],
     ["none", "Nothing to pay", (s) => s.owedCents <= 0],
     ["noemail", "No email", (s) => !s.email],
     ["unchecked", "Not checked", (s) => !s.emailedAt && !s.notStarted && !s.hold && !isTest(s) && s.lines.length > 0 && !s.checkedAt],
@@ -284,7 +285,7 @@ export default function DistributionsBoard() {
       ) : (
         <>
           <dl className="disttotals">
-            <div><dt>To pay</dt><dd>{usd(totalNet)}</dd></div>
+            <div><dt>Still to pay</dt><dd>{usd(totalNet - paidTotal)}</dd><small className="muted">of {usd(totalNet)}</small></div>
             <div><dt>Last month</dt><dd>{usd(lastTotal)}</dd></div>
             <div><dt>Paid so far</dt><dd>{usd(paidTotal)}</dd></div>
             <button className={`distlook${flagged ? " on" : ""}`} onClick={() => { setTab("list"); setFilter("look"); }}>
