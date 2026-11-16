@@ -1947,6 +1947,22 @@ Entering one takes that owner's UNPAID planned payments off, because the plan
 was for a total that just changed and left in it would pay them twice; Plan
 again schedules what is left (it already plans owed minus paid).
 
+**Reserves move with the statements** (067, `reservesOf`). An expense line
+with "reserve" in its description is money put into reserves, not spent: held
+after = held before + put in − the part this month's income did not cover, and
+that uncovered part (`distribution_payees.reserve_pending_cents`) comes back
+when the next statement comes out positive. Andrew Habberstad, Nov 2026:
+$2,500 withheld, month $56.10 short → $2,443.90 of $2,500 held, $56.10 from
+December. Sending moves the payee's balance on and freezes what went in on the
+statement (`reserve_before_cents`). The old "expenses were $X more than its
+income" sentence is gone at the owner's request.
+
+**Open in Gmail** (preview bar): a Gmail compose URL with To, Cc and subject,
+the formatted statement copied to paste as the body. Gmail does not let a site
+fill a formatted body or create a draft without its API, so the paste is the
+one step left. Postmark is pending approval and only delivers inside
+larabeehomesllc.com, which is why this exists.
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not

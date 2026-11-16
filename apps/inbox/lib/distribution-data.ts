@@ -57,6 +57,7 @@ export async function build(month: string) {
     guaranteedCents: p.guaranteed_rent_cents == null ? null : Number(p.guaranteed_rent_cents),
     reserveHeldCents: p.reserve_held_cents == null ? null : Number(p.reserve_held_cents),
     reserveRequiredCents: p.reserve_required_cents == null ? null : Number(p.reserve_required_cents),
+    reservePendingCents: Number(p.reserve_pending_cents ?? 0),
     startsOn: (p.starts_on as string | null) ?? null,
     cc: (p.cc_emails as string | null) ?? "",
   }));
@@ -115,7 +116,11 @@ export async function build(month: string) {
     const carry: Carry = {
       previousOwedCents: n(s.previous_owed_cents), priorPaidCents: n(s.prior_paid_cents),
       priorPaidOn: (s.prior_paid_on as string | null) ?? null, depositsCents: n(s.deposits_cents),
-      reserveHeldCents: payee?.reserveHeldCents ?? null, reserveRequiredCents: payee?.reserveRequiredCents ?? null,
+      /* Reserves going INTO this statement. A sent statement keeps what it was
+         sent with (067), because the owner's balance has moved on since. */
+      reserveHeldCents: s.emailed_at && s.reserve_before_cents != null ? Number(s.reserve_before_cents) : payee?.reserveHeldCents ?? null,
+      reservePendingCents: s.emailed_at && s.reserve_pending_before_cents != null ? Number(s.reserve_pending_before_cents) : payee?.reservePendingCents ?? 0,
+      reserveRequiredCents: payee?.reserveRequiredCents ?? null,
       statedNetCents: n(s.stated_net_cents), statedOwedCents: n(s.stated_owed_cents),
     };
     const mine = pays.filter((p) => p.statementId === String(s.id))

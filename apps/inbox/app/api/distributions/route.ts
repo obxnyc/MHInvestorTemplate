@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmailChecked } from "@/lib/notify";
-import { usd, planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, bankDayFrom } from "@/lib/distribute";
+import { usd, reservesOf, type Line, type Carry, planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, bankDayFrom } from "@/lib/distribute";
 import { build, prevMonth, cleanLines, emails, okEmail } from "@/lib/distribution-data";
 import { excelUrl } from "@/lib/statement-link";
 
@@ -20,6 +20,18 @@ export const dynamic = "force-dynamic";
 const desk = (role: unknown) => role === "admin" || role === "office";
 const MONTH = /^\d{4}-\d{2}$/;
 const todayNY = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+/* Sending a statement moves the owner's reserves on: what it held going in is
+   kept on the statement (so it goes on saying what it said), and the payee's
+   balance becomes what it holds coming out, with any part this month's income
+   did not cover pending until the next statement makes it good. */
+async function moveReserves(db: ReturnType<typeof supabaseAdmin>, s: { id: string; payeeId: string; lines: Line[] } & Carry) {
+  const r = reservesOf(s.lines, s);
+  await db.from("distribution_statements").update({ reserve_before_cents: r.beforeCents, reserve_pending_before_cents: s.reservePendingCents ?? 0 }).eq("id", s.id);
+  if (!r.intoCents && !r.recoveredCents) return;
+  await db.from("distribution_payees").update({ reserve_held_cents: r.heldCents, reserve_pending_cents: r.shortCents }).eq("id", s.payeeId);
+}
+
 export async function GET(req: Request) {
   const me = await requireStaff();
   if (!desk(me?.role)) return NextResponse.json({ error: "not allowed" }, { status: 403 });
@@ -268,6 +280,7 @@ export async function POST(req: Request) {
       for (const s of (now.statements ?? []).filter((x) => ids.includes(x.id) && !x.emailedAt)) {
         const test = (s.source as { group?: string } | null)?.group === "Test";
         const to = String(b.to ?? "").slice(0, 300) || s.email;
+        if (!test) await moveReserves(db, s);
         await db.from("distribution_statements").update(test
           ? { email_detail: `Test sent from Gmail ${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })} to ${to}.` }
           : { emailed_at: new Date().toISOString(), emailed_to: to, lines: s.lines,
@@ -346,7 +359,7 @@ export async function POST(req: Request) {
         if (!to.length) { for (const s of list) results.push({ payee: s.payee, ok: false, detail: "no email address on file" }); continue; }
         const inputs = list.map((s) => ({ month: `${month}-01`, payee: s.payee, title: s.title, lines: s.lines, note: s.note, payments: s.payments,
           previousOwedCents: s.previousOwedCents, priorPaidCents: s.priorPaidCents, priorPaidOn: s.priorPaidOn, depositsCents: s.depositsCents,
-          reserveHeldCents: s.reserveHeldCents, reserveRequiredCents: s.reserveRequiredCents }));
+          reserveHeldCents: s.reserveHeldCents, reservePendingCents: s.reservePendingCents, reserveRequiredCents: s.reserveRequiredCents }));
         // The download link names exactly these statements and is signed over them.
         const excel = { excelUrl: excelUrl(month, list.map((x) => x.id)) };
         const r = await sendEmailChecked(to, subjectFor(`${month}-01`), ownerEmailText(`${month}-01`, entity, inputs, excel), ownerEmailHtml(`${month}-01`, entity, inputs, excel), {
@@ -364,6 +377,7 @@ export async function POST(req: Request) {
         // A TEST is never the record: it stays editable and can be sent again.
         for (const s of list) {
           const test = (s.source as { group?: string } | null)?.group === "Test";
+          if (r.ok && !test) await moveReserves(db, s);
           await db.from("distribution_statements").update({
             ...(r.ok && !test ? { emailed_at: new Date().toISOString(), emailed_to: to.join(", ") + (cc.length ? `; cc ${cc.join(", ")}` : ""), lines: s.lines } : {}),
             email_detail: r.ok && test ? `Test sent ${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })} to ${to.join(", ")}${cc.length ? `; cc ${cc.join(", ")}` : ""}.` : r.detail,

@@ -207,8 +207,10 @@ t("a combined email heads each block with its place, not the sheet's long title"
 // so a check that only asks whether it appears passes on the fault.
 const totalLine = (h) => (h.split("Total distribution")[1] ?? "").replace(/<[^>]+>/g, " ").match(/-?\$[\d,]+\.\d\d/)?.[0];
 t("the total counts only what is paid, not a negative property against a positive one", () => totalLine(both) === "$908.78");
-t("a negative property says there is no distribution for it, and by how much", () =>
-  /No distribution/.test(both) && /\$2,626\.60 more than its income/.test(both));
+// The summary still says "No distribution"; the long sentence under the balance
+// is gone (owner, 16 November 2026: "too clunky" -- a note says it when wanted).
+t("a negative property shows no distribution, without the long sentence", () =>
+  /No distribution/.test(both) && !/more than its income/.test(both));
 t("the email carries the logo", () => both.includes(D.LOGO) && /<img/.test(both));
 t("one statement alone has no summary", () => !/Total distribution/.test(D.statementHtml(shbCC)));
 const txt = D.ownerEmailText("2026-11-01", "SHB Investments LLC", [shb1148, shbCC]);
@@ -451,6 +453,31 @@ t("without the cap, RNMK is one payment", () => forOwner(D.planPayments(many, 25
   t("a markup is its own row", () => rows.some((r) => r[2] === "Markup 10% on Repair - Lot 10" && r[3].v === -20));
   t("the distribution in the spreadsheet is the statement's", () => labelled("Distribution")[3].v === D.owedCents(s.lines, s) / 100);
   t("money is numbers, not text", () => amounts.length > 4 && amounts.every((v) => typeof v === "number"));
+}
+
+/* reserves: Andrew Habberstad, November 2026 */
+{
+  const rent = Array.from({ length: 5 }, (_, i) => ({ label: `Rent - Lot ${3101 + i}`, cents: 125000 }));
+  const costs = [{ label: "Costs", cents: -(125000 * 5 - 250000 + 5610) }]; // everything but the reserve: income less $2,500 plus $56.10
+  const andrew = [...rent, ...costs, { label: "Reserve Withheld", cents: -250000 }];
+  const c = { reserveRequiredCents: 250000 };
+  const r = D.reservesOf(andrew, c);
+  t("the month is $56.10 short", () => D.owedCents(andrew, c) === -5610);
+  t("a reserve line is money put in", () => r.intoCents === 250000);
+  t("what income did not cover is carried, not lost", () => r.shortCents === 5610);
+  t("$2,443.90 held of $2,500", () => r.heldCents === 244390);
+  t("the email says what is held, not $0.00", () => {
+    const h = D.statementHtml({ month: "2026-11-01", payee: "Andrew", title: "Cross Creek", lines: andrew, note: "", ...c });
+    return h.includes("$2,443.90") && h.includes("$56.10 of this month's reserve") && !/no distribution for it this month/.test(h);
+  });
+  t("reserves not met says the real figure", () => D.checks("Cross Creek", andrew, c).some((x) => /\$2,443\.90 of the \$2,500\.00/.test(x)));
+  // December: income covers the month, so the $56.10 comes back and the reserve is whole.
+  const dec = D.reservesOf([...rent, { label: "Costs", cents: -100000 }], { ...c, reserveHeldCents: 244390, reservePendingCents: 5610, previousOwedCents: -5610, priorPaidCents: 0 });
+  t("next month made good, the reserve is whole", () => dec.heldCents === 250000 && dec.recoveredCents === 5610);
+  // A month short again does not make it good.
+  const bad = D.reservesOf([{ label: "Costs", cents: -100000 }], { ...c, reserveHeldCents: 244390, reservePendingCents: 5610 });
+  t("a month still short does not make it good", () => bad.heldCents === 244390);
+  t("a cost that only mentions reserves in passing is not counted as income", () => D.reservesOf([{ label: "Reserve Withheld", cents: 5000 }], c).intoCents === 0);
 }
 
 const failed = checks.filter(([, ok]) => !ok);

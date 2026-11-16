@@ -282,7 +282,8 @@ export type Carry = {
   priorPaidCents?: number | null;     // what was actually paid against it
   priorPaidOn?: string | null;
   depositsCents?: number | null;      // security deposits on file
-  reserveHeldCents?: number | null;   // reserves we hold for the owner
+  reserveHeldCents?: number | null;   // reserves we held for the owner BEFORE this statement
+  reservePendingCents?: number | null; // put into reserves last time and not yet covered by income
   reserveRequiredCents?: number | null; // what the agreement says we hold
   statedNetCents?: number | null;     // the sheet's "Monthly Net Cashflow"
   statedOwedCents?: number | null;    // the sheet's "Owed to ..."
@@ -329,10 +330,44 @@ export function placeOf(title: string | null | undefined, payee: string, lines: 
 export const OUR_CATEGORIES = ["Guaranteed rent", "Adjustment"];
 const ours = (l: Line) => OUR_CATEGORIES.includes(l.category ?? "");
 
+/** An expense line that puts money into the owner's reserves ("Reserve
+ *  Withheld", "Reserve Fund"): it is not spent, it is held for them. */
+export const isReserveLine = (l: Line) =>
+  !l.removed && l.cents < 0 && (l.category === "Reserves" || /\breserves?\b/i.test(l.label));
+
+export type Reserves = {
+  beforeCents: number;   // held going into this statement
+  recoveredCents: number; // last statement's shortfall, made good by this one
+  intoCents: number;     // put in by this statement's reserve lines
+  shortCents: number;    // of that, not covered by this month's income: comes out of the next statement
+  heldCents: number;     // held after this statement
+  requiredCents: number;
+};
+
+/**
+ * Reserves as the statement leaves them. A reserve line is money held, not
+ * spent, so it adds to what is held -- less whatever this month's income did
+ * not cover. Andrew Habberstad, November 2026: $2,500 withheld, the month
+ * $56.10 short, so $2,443.90 held of $2,500 and $56.10 carried into the next
+ * statement. When the next statement comes out positive, that $56.10 has been
+ * paid back out of it and the reserve is whole.
+ */
+export function reservesOf(lines: Line[], c: Carry = {}): Reserves {
+  const before = c.reserveHeldCents ?? 0;
+  const pending = Math.max(0, c.reservePendingCents ?? 0);
+  const into = lines.filter(isReserveLine).reduce((a, l) => a - lineTotal(l), 0);
+  const owed = owedCents(lines, c);
+  const recovered = owed >= 0 ? pending : 0;
+  const short = owed < 0 ? Math.min(-owed, into) : 0;
+  return { beforeCents: before, recoveredCents: recovered, intoCents: into, shortCents: short,
+    heldCents: before + recovered + into - short, requiredCents: c.reserveRequiredCents ?? 0 };
+}
+
 /** How far short of its reserves an owner is, or null when it is not.
- *  Holding nothing at all is short whatever the requirement says. */
-export function reserveShortCents(c: Carry): number | null {
-  const held = c.reserveHeldCents ?? 0;
+ *  Holding nothing at all is short whatever the requirement says. Takes the
+ *  reserves AFTER this statement when its lines are given. */
+export function reserveShortCents(c: Carry, lines?: Line[]): number | null {
+  const held = lines ? reservesOf(lines, c).heldCents : c.reserveHeldCents ?? 0;
   const need = c.reserveRequiredCents ?? 0;
   if (held <= 0) return need > 0 ? need : 0;
   return held < need ? need - held : null;
@@ -401,11 +436,12 @@ export function checks(title: string | null | undefined, lines: Line[], c: Carry
     out.push(`Last month ${money(c.previousOwedCents)} was owed and ${money(c.priorPaidCents)} was paid; the ${money(c.previousOwedCents - c.priorPaidCents)} difference carries into this month.`);
   }
   if (owed < 0) out.push(`Nothing to pay: the month comes out ${money(owed)}.`);
-  const short = reserveShortCents(c);
+  const res = reservesOf(lines, c);
+  const short = reserveShortCents(c, lines);
   if (short !== null) {
-    out.push(!(c.reserveHeldCents ?? 0)
+    out.push(!res.heldCents
       ? `Reserves not met: we hold no reserves for this owner${c.reserveRequiredCents ? ` (${usd(c.reserveRequiredCents)} required)` : ""}.`
-      : `Reserves not met: we hold ${usd(c.reserveHeldCents ?? 0)} of the ${usd(c.reserveRequiredCents ?? 0)} required.`);
+      : `Reserves not met: we hold ${usd(res.heldCents)} of the ${usd(c.reserveRequiredCents ?? 0)} required${res.shortCents ? `; ${usd(res.shortCents)} comes out of the next statement` : ""}.`);
   }
   const notDates = lines.filter((l) => l.date && !readDate(l.date));
   if (notDates.length) {
@@ -474,6 +510,7 @@ function section(full: StatementInput, boxed: boolean, entityName?: string): str
   const s = { ...full, lines: full.lines.filter((l) => !l.removed) };
   const net = netCents(s.lines);
   const owed = owedCents(s.lines, s);
+  const res = reservesOf(s.lines, s);
   const costs = s.lines.filter((l) => l.cents < 0);
   const income = s.lines.filter((l) => l.cents >= 0);
   const cell = "padding:7px 6px;border-bottom:1px solid #E6E8EC;vertical-align:top";
@@ -513,7 +550,6 @@ function section(full: StatementInput, boxed: boolean, entityName?: string): str
       ${carried ? sum(`Carried from last month${s.priorPaidOn ? ` (${esc(money(s.previousOwedCents ?? 0))} owed, ${esc(money(s.priorPaidCents ?? 0))} paid ${esc(shortDate(s.priorPaidOn))})` : ""}`, carried) : ""}
       ${sum(owed < 0 ? "Balance" : "Distribution owed to you", owed, true)}
     </table>
-    ${owed < 0 ? `<p style="margin:10px 0 0;color:#374151;line-height:1.6">This month's expenses on this property were ${usd(-owed)} more than its income, so there is no distribution for it this month.</p>` : ""}
     ${pays.length ? `
     <p style="${CAP}">Payment</p>
     <p style="margin:0;color:#374151;line-height:1.6">${pays.map((p) =>
@@ -521,7 +557,8 @@ function section(full: StatementInput, boxed: boolean, entityName?: string): str
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;font-size:13px;color:#374151">
       <tr><td colspan="2" style="${CAP};padding:0 0 4px">Held for you</td></tr>
       <tr><td style="padding:3px 0">Security deposits</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">${usd(s.depositsCents ?? 0)}</td></tr>
-      <tr><td style="padding:3px 0">Reserves</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">${usd(s.reserveHeldCents ?? 0)}${s.reserveRequiredCents ? ` <span style="color:#6B7280">of ${usd(s.reserveRequiredCents)} required</span>` : ""}</td></tr>
+      <tr><td style="padding:3px 0">Reserves</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">${usd(res.heldCents)}${res.requiredCents ? ` <span style="color:#6B7280">of ${usd(res.requiredCents)} required</span>` : ""}</td></tr>
+      ${res.shortCents ? `<tr><td colspan="2" style="padding:3px 0;color:#6B7280">${usd(res.shortCents)} of this month's reserve was not covered by this month's income, and comes out of your next statement.</td></tr>` : ""}
     </table>
     ${s.note ? `<p style="margin:18px 0 0;color:#374151;line-height:1.6;white-space:pre-wrap">${esc(s.note)}</p>` : ""}`;
   return boxed
@@ -600,7 +637,8 @@ function sectionText(full: StatementInput, many: boolean): string[] {
     ...((s.payments ?? []).length ? ["", ...s.payments!.map((p) =>
       `${usd(p.cents)} sent ${dayLabel(p.sendOn)}${p.arrivesOn ? `, expected by ${dayLabel(p.arrivesOn)}` : ""}`)] : []),
     "", "HELD FOR YOU", pad("Security deposits", usd(s.depositsCents ?? 0)),
-    pad("Reserves", `${usd(s.reserveHeldCents ?? 0)}${s.reserveRequiredCents ? ` of ${usd(s.reserveRequiredCents)} required` : ""}`),
+    ...(() => { const r = reservesOf(s.lines, s); return [pad("Reserves", `${usd(r.heldCents)}${r.requiredCents ? ` of ${usd(r.requiredCents)} required` : ""}`),
+      ...(r.shortCents ? [`${usd(r.shortCents)} of this month's reserve was not covered by this month's income, and comes out of your next statement.`] : [])]; })(),
     ...(s.note ? ["", s.note] : []),
     ``,
   ];
@@ -851,7 +889,8 @@ export function statementRows(full: StatementInput): XCell[][] {
       ...s.payments!.map((p): XCell[] => [shortDate(p.sendOn) || p.sendOn, "Wells Fargo Bill Pay", "Sent", $(p.cents)])] : []),
     [], [{ v: "Held for you", bold: true }],
     [null, null, "Security deposits", $(s.depositsCents ?? 0)],
-    [null, null, `Reserves${s.reserveRequiredCents ? ` (${usd(s.reserveRequiredCents)} required)` : ""}`, $(s.reserveHeldCents ?? 0)],
+    ...((): XCell[][] => { const r = reservesOf(s.lines, s); return [[null, null, `Reserves${r.requiredCents ? ` (${usd(r.requiredCents)} required)` : ""}`, $(r.heldCents)],
+      ...(r.shortCents ? [[null, null, "Not covered this month; comes out of the next statement", $(r.shortCents)] as XCell[]] : [])]; })(),
     ...(s.note ? [[] as XCell[], [s.note] as XCell[]] : []),
   ];
 }
