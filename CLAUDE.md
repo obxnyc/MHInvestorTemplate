@@ -1852,3 +1852,10 @@ The sender's own address is the Reply-To and gets a Bcc of every statement
 (`DISTRIBUTIONS_REPLY_TO`, `DISTRIBUTIONS_BCC`, `DISTRIBUTIONS_FROM` override).
 A statement once emailed is locked: what was sent is the record. 057 applied
 11/16/2026 through the connector.
+
+**Never email anybody on the owner's behalf** -- not owners, not a summary to
+Cade -- until he says the system is bullet-proof (16 November 2026). The
+distribution screen sends only when a person presses Send; Claude does not
+press it, draft in Gmail, or schedule anything that sends. Alex Prieto's
+sheets contain mistakes; the screen's against-last-month line and checks are
+there so a person catches them before money moves.
