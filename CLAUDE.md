@@ -1868,6 +1868,17 @@ doors" is the owner's management company, and it appeared beside Conor
 Dolan's address as though it were part of it. The logo is
 https://app.larabeehomesllc.com/icon-192.png, on a white header.
 
+**A rent agreement is a floor, not an empty-home rule** (061,
+`distribution_payees.guaranteed_rent_cents`, `withGuarantee`): every home on the
+statement is paid at least the agreed rent -- an empty home in full, a lower
+rent topped up (Ben Jackson: $1,148 collected on a $1,250 agreement is $102).
+The first version filled only empty homes, so the agreement typed for Ben did
+nothing at all. Top-ups are worked out on every read and frozen into the lines
+only when the statement is emailed. Reserves held and required are on the
+payee (062); "Reserves not met" when none are held or fewer than required.
+The editor resets its boxes only when the SAVED statement changes -- keying
+on the server's fresh array wiped unsaved typing whenever an owner field saved.
+
 Some owners are paid for empty homes as if let (061,
 `distribution_payees.guaranteed_rent_cents`). Those lines and any other
 adjustment carry category "Guaranteed rent" / "Adjustment", so the sheet's own

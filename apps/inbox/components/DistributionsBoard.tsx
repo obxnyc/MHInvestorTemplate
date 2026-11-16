@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, subjectFor, monthLabel, usd, type Line, type StatementInput,
+  owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, type Line, type StatementInput,
 } from "@/lib/distribute";
 
 /**
@@ -20,7 +20,7 @@ type Pay = { id: string; sendOn: string; cents: number; arrivesOn: string; paidA
 type Statement = {
   id: string; payeeId: string; payee: string; email: string; settleDays: number;
   title: string; previousOwedCents: number | null; priorPaidCents: number | null; priorPaidOn: string | null;
-  depositsCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
+  depositsCents: number | null; reserveHeldCents: number | null; reserveRequiredCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
   lines: Line[]; netCents: number; owedCents: number; checks: string[]; note: string; hold: boolean;
   versus: { lastCents: number | null; lastOn: string | null; diffCents: number | null; loud: boolean; says: string[] };
   source: { group?: string } | null;
@@ -151,6 +151,7 @@ export default function DistributionsBoard() {
   const asInput = (x: Statement): StatementInput => ({
     month: `${month}-01`, payee: x.payee, title: x.title, lines: x.lines, note: x.note, payments: x.payments,
     previousOwedCents: x.previousOwedCents, priorPaidCents: x.priorPaidCents, priorPaidOn: x.priorPaidOn, depositsCents: x.depositsCents,
+    reserveHeldCents: x.reserveHeldCents, reserveRequiredCents: x.reserveRequiredCents,
   });
   const totalNet = statements.filter((s) => !s.hold && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
   const flagged = statements.filter((s) => s.versus.loud || s.checks.some((c) => !/carries into this month/.test(c))).length;
@@ -191,6 +192,7 @@ export default function DistributionsBoard() {
     if (needsLook(s)) out.push(["warn", "Check"]);
     if (s.owedCents <= 0) out.push(["muted", "Nothing to pay"]);
     if (!s.email) out.push(["muted", "No email"]);
+    if (reserveShortCents(s) !== null) out.push(["warn", "Reserves not met"]);
     if (s.emailedAt) out.push(["ok", "Emailed"]);
     if (s.paidCents > 0) out.push(["ok", s.paidCents >= s.owedCents ? "Paid" : "Part paid"]);
     else if (s.plannedCents > 0) out.push(["plan", `Pay ${day(s.payments[0].sendOn)}`]);
@@ -487,7 +489,8 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
     pct: l.markupPct ? String(l.markupPct) : "", date: l.date, merchant: l.merchant, category: l.category,
     orig: isOurs(l.category) ? undefined : (l.sheetCents ?? l.cents), sheet: l.sheetCents,
   }));
-  const [rows, setRows] = useState<Row[]>(() => toRows(s.lines));
+  const own = (ls: Line[]) => ls.filter((l) => l.category !== "Guaranteed rent");
+  const [rows, setRows] = useState<Row[]>(() => toRows(own(s.lines)));
   const [note, setNote] = useState(s.note);
   const [email, setEmail] = useState(s.email);
   const [settle, setSettle] = useState(String(s.settleDays));
@@ -499,7 +502,17 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const [rate, setRate] = useState(() => { try { return localStorage.getItem("dist-labor-rate") ?? ""; } catch { return ""; } });
   const [what, setWhat] = useState("");
   const [lot, setLot] = useState("");
-  useEffect(() => { setRows(toRows(s.lines)); setNote(s.note); }, [s.lines, s.note]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [deposit, setDeposit] = useState(s.depositsCents === null ? "" : centsText(s.depositsCents));
+  const [resHeld, setResHeld] = useState(s.reserveHeldCents === null ? "" : centsText(s.reserveHeldCents));
+  const [resNeed, setResNeed] = useState(s.reserveRequiredCents === null ? "" : centsText(s.reserveRequiredCents));
+  /* Reset the boxes only when the SAVED statement changed. Every answer from
+     the server is a fresh array, so keying on the array itself threw away
+     whatever had been typed and not yet saved each time an owner field
+     (reserves, email) was saved on its own. */
+  const savedKey = JSON.stringify([own(s.lines), s.note, s.depositsCents]);
+  useEffect(() => { setRows(toRows(own(s.lines))); setNote(s.note); setDeposit(s.depositsCents === null ? "" : centsText(s.depositsCents)); }, [savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setResHeld(s.reserveHeldCents === null ? "" : centsText(s.reserveHeldCents));
+    setResNeed(s.reserveRequiredCents === null ? "" : centsText(s.reserveRequiredCents)); }, [s.reserveHeldCents, s.reserveRequiredCents]);
   useEffect(() => { setEmail(s.email); setSettle(String(s.settleDays)); setEntity(s.entity);
     setGuar(s.guaranteedCents ? centsText(s.guaranteedCents) : ""); }, [s.email, s.settleDays, s.entity, s.guaranteedCents]);
 
@@ -522,13 +535,19 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
     };
   };
   const bad = rows.some(rowBad);
-  const lines: Line[] = rows.filter((r) => !rowBad(r)).map(toLine);
+  const ownLines: Line[] = rows.filter((r) => !rowBad(r)).map(toLine);
+  // The agreement, as typed right now: its top-ups follow every change on screen.
+  const guarCents = parseMoney(guar) ?? 0;
+  const lines: Line[] = s.emailedAt ? s.lines : withGuarantee(ownLines, guarCents);
+  const topups = lines.filter((l) => l.category === "Guaranteed rent");
   const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null })));
-  const dirty = norm(lines) !== norm(s.lines) || note !== s.note;
+  const depositCents = deposit.trim() === "" ? null : parseMoney(deposit);
+  const dirty = norm(ownLines) !== norm(own(s.lines)) || note !== s.note || depositCents !== s.depositsCents;
+  const held = { reserveHeldCents: resHeld.trim() === "" ? null : parseMoney(resHeld), reserveRequiredCents: resNeed.trim() === "" ? null : parseMoney(resNeed) };
   const owed = owedCents(lines, s);
-  const said = checks(s.title, lines, s);
+  const said = checks(s.title, lines, { ...s, ...held, depositsCents: depositCents });
   const savePayee = () => act({ action: "payee", payeeId: s.payeeId, email, settleDays: Number(settle), entity,
-    guaranteedCents: parseMoney(guar) ?? 0 });
+    guaranteedCents: guarCents, reserveHeldCents: held.reserveHeldCents, reserveRequiredCents: held.reserveRequiredCents });
   const set = (i: number, patch: Partial<Row>) => setRows(rows.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
 
@@ -538,8 +557,6 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const applyBulk = () => setRows(rows.map((r) => (!rowBad(r) && markupable(toLine(r)) ? { ...r, pct: String(bulkPct) } : r)));
   const anyMarkup = rows.some((r) => Number(r.pct) > 0);
   const homes = [...new Set(lines.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
-  const empty = vacantLots(lines);
-  const guarCents = parseMoney(guar) ?? 0;
   const laborDraft = laborLine(Number(hours), parseMoney(rate) ?? 0, what, lot ? Number(lot) : null);
   const addRow = (l: Line) => setRows([...rows, ...toRows([l]).map((r) => ({ ...r, orig: undefined }))]);
 
@@ -610,6 +627,34 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
 
       {[...s.versus.says, ...said].map((c) => <p key={c} className="tsnudge loud">{c}</p>)}
 
+      <div className="edheld">
+        <div className="tsfield">
+          <label htmlFor={`dp-${s.id}`}>Security deposit held ($)</label>
+          <input id={`dp-${s.id}`} inputMode="decimal" value={deposit} disabled={!!s.emailedAt} onChange={(e) => setDeposit(e.target.value)} />
+        </div>
+        <div className="tsfield">
+          <label htmlFor={`rh-${s.id}`}>Reserves held ($)</label>
+          <input id={`rh-${s.id}`} inputMode="decimal" value={resHeld} onChange={(e) => setResHeld(e.target.value)}
+            onBlur={() => held.reserveHeldCents !== s.reserveHeldCents && savePayee()} />
+        </div>
+        <div className="tsfield">
+          <label htmlFor={`rr-${s.id}`}>Reserves required ($)</label>
+          <input id={`rr-${s.id}`} inputMode="decimal" value={resNeed} onChange={(e) => setResNeed(e.target.value)}
+            onBlur={() => held.reserveRequiredCents !== s.reserveRequiredCents && savePayee()} />
+        </div>
+        <div className="tsfield">
+          <label htmlFor={`gr-${s.id}`}>Rent agreement ($ per home)</label>
+          <input id={`gr-${s.id}`} inputMode="decimal" value={guar} disabled={!!s.emailedAt}
+            onChange={(e) => setGuar(e.target.value)}
+            onBlur={() => guarCents !== (s.guaranteedCents ?? 0) && savePayee()} />
+        </div>
+        <p className="tsnote edheldnote">
+          {reserveShortCents(held) !== null ? <strong className="distneg">Reserves not met. </strong> : null}
+          The rent agreement pays every home at least that rent: an empty home in full, a lower rent topped up to it.
+          Reserves and the agreement are kept for this owner from month to month; the deposit is this month&rsquo;s figure.
+        </p>
+      </div>
+
       {!locked ? (
         <div className="edtools">
           <span className="edtool">
@@ -623,11 +668,6 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
           <button className="btn" onClick={() => setLabor(!labor)}>Our labor</button>
           <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "out", pct: "", category: "Adjustment" }])}>Add a charge</button>
           <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "in", pct: "", category: "Adjustment" }])}>Add a credit</button>
-          {empty.length && guarCents ? (
-            <button className="btn" onClick={() => setRows([...rows, ...empty.map((n) => ({
-              label: `Guaranteed rent - Lot ${n} (vacant)`, amount: centsText(guarCents), side: "in" as const, pct: "", category: "Guaranteed rent",
-            }))])}>Pay {empty.length} empty home{empty.length === 1 ? "" : "s"} as rented</button>
-          ) : null}
         </div>
       ) : null}
       <p className="tsnote edhint">Repair costs are everything but the loan, lot rent and fees; you can set any line&rsquo;s own % in its box below.</p>
@@ -658,6 +698,15 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
 
       <div className="edtable">
         {section("in")}
+        {topups.length ? (
+          <div className="edsection">
+            <div className="edrow edhead"><span>Rent agreement ({usd(guarCents)} per home)</span><span /><span /><span className="num">Total</span><span /></div>
+            {topups.map((l) => (
+              <div key={l.label} className="edrow ours"><span className="eddesc"><span className="eddate" /><span>{l.label}</span></span>
+                <span /><span /><span className="num edtotal">{money(l.cents)}</span><span /></div>
+            ))}
+          </div>
+        ) : null}
         {section("out")}
         <div className="edtotals">
           <div><span>Monthly net cashflow</span><span>{money(netCents(lines))}</span></div>
@@ -672,7 +721,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
       </div>
 
       <details className="eddetails">
-        <summary>Owner details: email, bank days, entity, empty-home agreement</summary>
+        <summary>Owner details: email, bank days, entity</summary>
         <div className="distowned">
           <div className="tsfield">
             <label htmlFor={`em-${s.id}`}>Statement email</label>
@@ -689,12 +738,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
             <input id={`en-${s.id}`} value={entity}
               onChange={(e) => setEntity(e.target.value)} onBlur={() => entity !== s.entity && savePayee()} />
           </div>
-          <div className="tsfield">
-            <label htmlFor={`gr-${s.id}`}>Pays empty homes as if rented ($ per home)</label>
-            <input id={`gr-${s.id}`} inputMode="decimal" value={guar}
-              onChange={(e) => setGuar(e.target.value)}
-              onBlur={() => (parseMoney(guar) ?? 0) !== (s.guaranteedCents ?? 0) && savePayee()} />
-          </div>
+
         </div>
         {others.length ? <p className="tsnote">Sent in one email with{" "}
           {others.map((o, i) => <span key={o.id}>{i ? ", " : ""}<button className="tslink distinline" onClick={() => onOpen(o.id)}>{placeOf(o.title, o.payee, o.lines)}</button></span>)}.</p> : null}
@@ -709,9 +753,9 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
           : dirty ? <span className="tsnote">Changes not saved yet.</span> : <span className="tsnote">All saved.</span>}
         {!s.emailedAt ? (
           <>
-            <button className="btn" disabled={!dirty || busy} onClick={() => { setRows(toRows(s.lines)); setNote(s.note); }}>Discard</button>
+            <button className="btn" disabled={!dirty || busy} onClick={() => { setRows(toRows(own(s.lines))); setNote(s.note); setDeposit(s.depositsCents === null ? "" : centsText(s.depositsCents)); }}>Discard</button>
             <button className="btn pri" disabled={busy || bad || !dirty}
-              onClick={() => act({ action: "save", statementId: s.id, ...(locked ? {} : { lines }), note }, `${s.payee} saved.`)}>
+              onClick={() => act({ action: "save", statementId: s.id, ...(locked ? {} : { lines: ownLines }), note, depositsCents: depositCents }, `${s.payee} saved.`)}>
               Save changes
             </button>
           </>

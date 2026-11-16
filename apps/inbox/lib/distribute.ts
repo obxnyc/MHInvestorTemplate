@@ -256,6 +256,8 @@ export type Carry = {
   priorPaidCents?: number | null;     // what was actually paid against it
   priorPaidOn?: string | null;
   depositsCents?: number | null;      // security deposits on file
+  reserveHeldCents?: number | null;   // reserves we hold for the owner
+  reserveRequiredCents?: number | null; // what the agreement says we hold
   statedNetCents?: number | null;     // the sheet's "Monthly Net Cashflow"
   statedOwedCents?: number | null;    // the sheet's "Owed to ..."
 };
@@ -301,6 +303,48 @@ export function placeOf(title: string | null | undefined, payee: string, lines: 
 export const OUR_CATEGORIES = ["Guaranteed rent", "Adjustment"];
 const ours = (l: Line) => OUR_CATEGORIES.includes(l.category ?? "");
 
+/** How far short of its reserves an owner is, or null when it is not.
+ *  Holding nothing at all is short whatever the requirement says. */
+export function reserveShortCents(c: Carry): number | null {
+  const held = c.reserveHeldCents ?? 0;
+  const need = c.reserveRequiredCents ?? 0;
+  if (held <= 0) return need > 0 ? need : 0;
+  return held < need ? need - held : null;
+}
+
+/**
+ * An owner with a rent agreement is paid at least the agreed rent for every
+ * home on the statement: the whole of it for a home with no rent, and the
+ * difference for a home whose tenant paid less (a $1,148 rent on a $1,250
+ * agreement is topped up by $102). A home that brought in the agreed rent or
+ * more gets nothing added.
+ *
+ * Worked out from the other lines every time -- any "Guaranteed rent" line
+ * already there is dropped first -- so changing a rent, or the agreement,
+ * can never leave a stale top-up behind.
+ */
+export function withGuarantee(lines: Line[], perHomeCents: number | null | undefined): Line[] {
+  const base = lines.filter((l) => l.category !== "Guaranteed rent");
+  if (!perHomeCents || perHomeCents <= 0) return base;
+  const homes = [...new Set(base.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
+  const rentFor = (n: number) => base
+    .filter((l) => l.cents > 0 && l.category !== "Adjustment" && lotsIn(l.label).includes(n))
+    .reduce((a, l) => a + l.cents, 0);
+  const add: Line[] = [];
+  for (const n of homes) {
+    const got = rentFor(n);
+    if (got >= perHomeCents) continue;
+    add.push({
+      label: got > 0
+        ? `Guaranteed rent top-up - Lot ${n} (to ${usd(perHomeCents)})`
+        : `Guaranteed rent - Lot ${n} (vacant)`,
+      cents: perHomeCents - got,
+      category: "Guaranteed rent",
+    });
+  }
+  return [...base, ...add];
+}
+
 /**
  * Homes with costs this month and no rent: a loan, a lot rent or a fee was
  * charged for the lot and nothing came in for it. The owners on a guaranteed
@@ -329,6 +373,12 @@ export function checks(title: string | null | undefined, lines: Line[], c: Carry
     out.push(`Last month ${money(c.previousOwedCents)} was owed and ${money(c.priorPaidCents)} was paid; the ${money(c.previousOwedCents - c.priorPaidCents)} difference carries into this month.`);
   }
   if (owed < 0) out.push(`Nothing to pay: the month comes out ${money(owed)}.`);
+  const short = reserveShortCents(c);
+  if (short !== null) {
+    out.push(!(c.reserveHeldCents ?? 0)
+      ? `Reserves not met: we hold no reserves for this owner${c.reserveRequiredCents ? ` (${usd(c.reserveRequiredCents)} required)` : ""}.`
+      : `Reserves not met: we hold ${usd(c.reserveHeldCents ?? 0)} of the ${usd(c.reserveRequiredCents ?? 0)} required.`);
+  }
   const notDates = lines.filter((l) => l.date && !readDate(l.date));
   if (notDates.length) {
     out.push(`${notDates.length === 1 ? "A line's date is" : `${notDates.length} lines' dates are`} not a date (${notDates.slice(0, 2).map((l) => `"${l.date}" on ${l.label}`).join(", ")}), so the statement shows no date for ${notDates.length === 1 ? "it" : "them"}.`);
@@ -439,7 +489,11 @@ function section(s: StatementInput, boxed: boolean, entityName?: string): string
     <p style="${CAP}">Payment</p>
     <p style="margin:0;color:#374151;line-height:1.6">${pays.map((p) =>
       `${usd(p.cents)} sent ${dayLabel(p.sendOn)}${p.arrivesOn ? `, expected by ${dayLabel(p.arrivesOn)}` : ""}`).join("<br>")}</p>` : ""}
-    ${s.depositsCents ? `<p style="margin:18px 0 0;color:#6B7280;font-size:13px">Security deposits we hold on file: ${usd(s.depositsCents)}</p>` : ""}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;font-size:13px;color:#374151">
+      <tr><td colspan="2" style="${CAP};padding:0 0 4px">Held for you</td></tr>
+      <tr><td style="padding:3px 0">Security deposits</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">${usd(s.depositsCents ?? 0)}</td></tr>
+      <tr><td style="padding:3px 0">Reserves</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">${usd(s.reserveHeldCents ?? 0)}${s.reserveRequiredCents ? ` <span style="color:#6B7280">of ${usd(s.reserveRequiredCents)} required</span>` : ""}</td></tr>
+    </table>
     ${s.note ? `<p style="margin:18px 0 0;color:#374151;line-height:1.6;white-space:pre-wrap">${esc(s.note)}</p>` : ""}`;
   return boxed
     ? `<div style="border:1px solid #E6E8EC;border-radius:10px;padding:18px;margin-top:20px">${body}</div>`
@@ -514,7 +568,8 @@ function sectionText(s: StatementInput, many: boolean): string[] {
     pad(owed < 0 ? "Balance" : "Distribution owed to you", money(owed)),
     ...((s.payments ?? []).length ? ["", ...s.payments!.map((p) =>
       `${usd(p.cents)} sent ${dayLabel(p.sendOn)}${p.arrivesOn ? `, expected by ${dayLabel(p.arrivesOn)}` : ""}`)] : []),
-    ...(s.depositsCents ? ["", `Security deposits we hold on file: ${usd(s.depositsCents)}`] : []),
+    "", "HELD FOR YOU", pad("Security deposits", usd(s.depositsCents ?? 0)),
+    pad("Reserves", `${usd(s.reserveHeldCents ?? 0)}${s.reserveRequiredCents ? ` of ${usd(s.reserveRequiredCents)} required` : ""}`),
     ...(s.note ? ["", s.note] : []),
     ``,
   ];
