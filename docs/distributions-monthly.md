@@ -30,6 +30,23 @@ The tab's layout, column B onward:
 
 Owed this month = this month's net + (previous owed - what was paid).
 
+## Our names for things, which the sheets do not use
+
+Find last month's payee for each sheet (and, for the Dutch-doors workbook,
+each tab) and reuse it -- name, entity, email, group -- before falling back to
+the sheet's own wording. Settled with the owner on 16 November 2026:
+
+- "Shannon Dist" is **Shannon Costello**; "Jack Curran Lot" is **Jack Curran**.
+- Beaga LLC (513 Madrin, 412 Bank), 105 Twiddy LLC and Elizabeth City
+  Property LLC (125 Franklin, and Gabe Moskow's Lot 1) are **Corporate**,
+  though Alex lists them under Individuals.
+- The RNMK sheet has a second block, **Pines MHP** (30 homes), below the
+  Northside one. It is its own statement, "RNMK Homes — Pines MHP", with
+  entity RNMK Homes so both go in one email.
+- A rent agreement is a floor (see `withGuarantee`): actual rents unless the
+  owner has an agreement; with one, every home is paid at least the agreed
+  rent. Benjamin Jackson (Cross Creek) has one at $1,250; nobody else yet.
+
 ## Read-in
 
 Gmail, Google Sheets and Supabase connectors. Supabase project

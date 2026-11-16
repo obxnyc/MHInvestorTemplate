@@ -497,6 +497,10 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const [entity, setEntity] = useState(s.entity);
   const [guar, setGuar] = useState(s.guaranteedCents ? centsText(s.guaranteedCents) : "");
   const [bulk, setBulk] = useState("15");
+  const [sending, setSending] = useState(false);
+  const [sentSaid, setSentSaid] = useState<string | null>(null);
+  // This owner's email: this statement and any of the same entity not yet sent.
+  const sendWith = [s, ...others].filter((x) => !x.emailedAt && x.lines.length);
   const [labor, setLabor] = useState(false);
   const [hours, setHours] = useState("");
   const [rate, setRate] = useState(() => { try { return localStorage.getItem("dist-labor-rate") ?? ""; } catch { return ""; } });
@@ -750,6 +754,26 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
         </p>
       </details>
 
+      {sending ? (
+        <div className="edsend" role="dialog" aria-label="Email this owner">
+          <p><strong>Email {s.sendsAs} now?</strong></p>
+          <p className="tsnote">
+            To {[...new Set(sendWith.flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))].join(", ")}{sendWith.length > 1 ? `, with ${sendWith.length} statements in one email` : ""}:
+            {" "}{sendWith.map((x) => placeOf(x.title, x.payee, x.lines)).join(" · ")}.
+            Only this owner is emailed. You get a copy, and the statement{sendWith.length > 1 ? "s are" : " is"} locked once sent.
+          </p>
+          <div className="tsrow">
+            <button className="btn pri" disabled={busy} onClick={async () => {
+              const j = await act({ action: "send", statementIds: sendWith.map((x) => x.id) }) as { sent?: { payee: string; ok: boolean; detail: string }[] } | null;
+              setSending(false);
+              setSentSaid(j?.sent ? j.sent.map((x) => `${x.payee}: ${x.ok ? "sent" : x.detail}`).join(" · ") : "Not sent.");
+            }}>Send it</button>
+            <button className="btn" onClick={() => setSending(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : null}
+      {sentSaid ? <p className="tsnudge">{sentSaid}</p> : null}
+
       <footer className="edfoot">
         {bad ? <span className="tsnote distneg">A line needs a description and an amount like 1,250.00; a markup is 0 to 100.</span>
           : dirty ? <span className="tsnote">Changes not saved yet.</span> : <span className="tsnote">All saved.</span>}
@@ -763,6 +787,9 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
           </>
         ) : null}
         <button className="btn" onClick={onPreview} disabled={dirty}>Preview email</button>
+        {!s.emailedAt && s.email && !dirty ? (
+          <button className="btn" disabled={busy} onClick={() => setSending(true)}>Email this owner&hellip;</button>
+        ) : null}
         {!s.emailedAt ? (
           <button className="btn" disabled={busy} onClick={() => act({ action: "save", statementId: s.id, hold: !s.hold })}>
             {s.hold ? "Take off hold" : "Hold this month"}
