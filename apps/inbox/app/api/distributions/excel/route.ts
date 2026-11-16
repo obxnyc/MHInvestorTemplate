@@ -28,7 +28,7 @@ export async function GET(req: Request) {
 
   const inputs = list.map((s) => ({ month: `${month}-01`, payee: s.payee, title: s.title, lines: s.lines, note: s.note, payments: s.payments,
     previousOwedCents: s.previousOwedCents, priorPaidCents: s.priorPaidCents, priorPaidOn: s.priorPaidOn, depositsCents: s.depositsCents,
-    reserveHeldCents: s.reserveHeldCents, reserveRequiredCents: s.reserveRequiredCents }));
+    reserveHeldCents: s.reserveHeldCents, reservePendingCents: s.reservePendingCents, reserveRequiredCents: s.reserveRequiredCents }));
   const entity = entityOf({ entity: list[0].entity, payee: list[0].payee });
   const widths = [10, 22, 48, 14];
   const sheets: Sheet[] = [

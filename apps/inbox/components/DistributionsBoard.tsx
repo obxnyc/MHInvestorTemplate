@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MonthPicker, RangeSummary, type Range } from "@/components/DistributionsRange";
 import {
-  rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, ownerEmailText, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
+  rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, ownerEmailText, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, reservesOf, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
 } from "@/lib/distribute";
 
 /**
@@ -21,7 +21,7 @@ type Pay = { id: string; sendOn: string; cents: number; arrivesOn: string; paidA
 type Statement = {
   id: string; payeeId: string; payee: string; email: string; cc: string; settleDays: number;
   title: string; previousOwedCents: number | null; priorPaidCents: number | null; priorPaidOn: string | null;
-  depositsCents: number | null; reserveHeldCents: number | null; reserveRequiredCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
+  depositsCents: number | null; reserveHeldCents: number | null; reservePendingCents: number; reserveRequiredCents: number | null; statedNetCents: number | null; statedOwedCents: number | null; owedNote: string;
   lines: Line[]; netCents: number; owedCents: number; checks: string[]; note: string; hold: boolean;
   versus: { lastCents: number | null; lastOn: string | null; diffCents: number | null; loud: boolean; says: string[] };
   source: { group?: string } | null;
@@ -188,7 +188,7 @@ export default function DistributionsBoard() {
   const asInput = (x: Statement): StatementInput => ({
     month: `${month}-01`, payee: x.payee, title: x.title, lines: x.lines, note: x.note, payments: x.payments,
     previousOwedCents: x.previousOwedCents, priorPaidCents: x.priorPaidCents, priorPaidOn: x.priorPaidOn, depositsCents: x.depositsCents,
-    reserveHeldCents: x.reserveHeldCents, reserveRequiredCents: x.reserveRequiredCents,
+    reserveHeldCents: x.reserveHeldCents, reservePendingCents: x.reservePendingCents, reserveRequiredCents: x.reserveRequiredCents,
   });
   const totalNet = statements.filter((s) => !isTest(s) && !s.hold && !s.notStarted && s.owedCents > 0).reduce((a, s) => a + s.owedCents, 0);
   const changes = data?.changes ?? [];
@@ -246,7 +246,7 @@ export default function DistributionsBoard() {
     if (needsLook(s)) out.push(["warn", "Check"]);
     if (s.owedCents <= 0) out.push(["muted", "Nothing to pay"]);
     if (!s.email) out.push(["muted", "No email"]);
-    if (!s.notStarted && reserveShortCents(s) !== null) out.push(["warn", "Reserves not met"]);
+    if (!s.notStarted && reserveShortCents(s, s.lines) !== null) out.push(["warn", "Reserves not met"]);
     if (s.emailedAt) out.push(["ok", "Emailed"]);
     else if (s.checkedAt) out.push(["ok", "Checked"]);
     if (s.paidCents > 0) out.push(["ok", s.paidCents >= s.owedCents ? "Paid" : "Part paid"]);
@@ -671,10 +671,26 @@ export default function DistributionsBoard() {
                   setSaid(`Copied. In Gmail: New message, To ${to.join(", ") || "(no address on file)"}, subject "${subjectFor(`${month}-01`)}", then paste into the body.`);
                 } catch { setProblem("This browser would not copy. Click inside the preview, press Ctrl/Cmd-A then Ctrl/Cmd-C, and paste that into Gmail."); }
               };
+              const cc = [...new Set([...set.flatMap((x) => x.cc.split(/[,;\s]+/)), ...ccAll.split(/[,;\s]+/)]
+                .filter(Boolean).map((e) => e.toLowerCase()))].filter((e) => !to.includes(e));
+              /* A new Gmail message with To, Cc and the subject filled in, and the
+                 formatted statement on the clipboard to paste as its body. Gmail
+                 lets another site fill those fields; it does not let one put a
+                 formatted body in, so the paste is the one step left. Copied first,
+                 then opened, while the press still counts as the person's own. */
+              const openGmail = async () => {
+                await copyAll();
+                // encodeURIComponent, not URLSearchParams: a "+" for a space can show up in Gmail's subject as a "+".
+                const q = [["view", "cm"], ["fs", "1"], ["to", to.join(",")], ["su", subjectFor(`${month}-01`)], ...(cc.length ? [["cc", cc.join(",")]] : [])]
+                  .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+                window.open(`https://mail.google.com/mail/?${q}`, "_blank", "noopener");
+                setSaid(`Gmail is open with the address and subject filled in. Click in the body and paste (Cmd-V or Ctrl-V), look it over, and send. Then come back and press "I sent it from Gmail".`);
+              };
               return (<>
+                <button className="btn pri" disabled={!to.length} onClick={openGmail}>Open in Gmail</button>
                 <button className="btn" onClick={copyAll}>Copy for Gmail</button>
                 <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(subjectFor(`${month}-01`)); setSaid("Subject copied."); } catch { /* shown on screen anyway */ } }}>Copy subject</button>
-                <button className="btn pri" disabled={busy} onClick={async () => {
+                <button className="btn" disabled={busy} onClick={async () => {
                   const unchecked = set.filter((x) => !x.checkedAt);
                   if (!window.confirm(`${unchecked.length ? `${unchecked.length} of these ${set.length} statement(s) have not been marked checked.\n\n` : ""}Record that you emailed ${preview.sendsAs} from Gmail${to.length ? ` (${to.join(", ")})` : ""}? ${set.length > 1 ? "These statements are" : "This statement is"} then locked as sent, the same as if the app had sent it.`)) return;
                   const j = await act({ action: "sent-myself", statementIds: set.map((x) => x.id), to: to.join(", ") }, `${preview.sendsAs}: recorded as sent from Gmail.`);
@@ -901,7 +917,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
           <input id={`dp-${s.id}`} inputMode="decimal" value={deposit} disabled={!!s.emailedAt} onChange={(e) => setDeposit(e.target.value)} />
         </div>
         <div className="tsfield">
-          <label htmlFor={`rh-${s.id}`}>Reserves held ($)</label>
+          <label htmlFor={`rh-${s.id}`}>Reserves held before this statement ($)</label>
           <input id={`rh-${s.id}`} inputMode="decimal" value={resHeld} onChange={(e) => setResHeld(e.target.value)}
             onBlur={() => held.reserveHeldCents !== s.reserveHeldCents && savePayee()} />
         </div>
@@ -917,7 +933,19 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
             onBlur={() => guarCents !== (s.guaranteedCents ?? 0) && savePayee()} />
         </div>
         <p className="tsnote edheldnote">
-          {reserveShortCents(held) !== null ? <strong className="distneg">Reserves not met. </strong> : null}
+          {(() => {
+            /* What the statement does to the reserve, worked out as you type: a
+               line with "reserve" in it is money put in, and whatever the month's
+               income did not cover comes out of the next statement. */
+            const r = reservesOf(lines, { ...s, ...held });
+            return (<>
+              {r.intoCents || r.recoveredCents ? <strong>After this statement: {usd(r.heldCents)} held{r.requiredCents ? ` of ${usd(r.requiredCents)} required` : ""}
+                {r.intoCents ? ` (${usd(r.intoCents)} put in${r.shortCents ? `, ${usd(r.shortCents)} of it not covered this month and taken from the next statement` : ""})` : ""}
+                {r.recoveredCents ? ` (${usd(r.recoveredCents)} made good from last month)` : ""}. </strong> : null}
+              {reserveShortCents({ ...s, ...held }, lines) !== null ? <strong className="distneg">Reserves not met. </strong> : null}
+            </>);
+          })()}
+          A line with &ldquo;reserve&rdquo; in its description is money put into reserves, not spent.
           The rent agreement pays every home at least that rent: an empty home in full, a lower rent topped up to it.
           Reserves and the agreement are kept for this owner from month to month; the deposit is this month&rsquo;s figure.
         </p>
