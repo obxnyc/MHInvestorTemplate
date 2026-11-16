@@ -17,14 +17,17 @@ export type Line = {
   markupPct?: number;
   /** What Alex's sheet said, when the amount has been changed here. */
   sheetCents?: number;
+  /** Taken off the statement here. Kept, so Alex's own figures can still be
+   *  checked and the line put back; never shown to the owner. */
+  removed?: boolean;
 };
 
 /** The markup on one line, in cents (negative, like the cost it is on). */
 export const markupCents = (l: Line) =>
-  l.cents < 0 && (l.markupPct ?? 0) > 0 ? -Math.round((-l.cents * (l.markupPct as number)) / 100) : 0;
+  !l.removed && l.cents < 0 && (l.markupPct ?? 0) > 0 ? -Math.round((-l.cents * (l.markupPct as number)) / 100) : 0;
 
 /** A line as it counts: its amount plus any markup on it. */
-export const lineTotal = (l: Line) => (Number(l.cents) || 0) + markupCents(l);
+export const lineTotal = (l: Line) => (l.removed ? 0 : (Number(l.cents) || 0) + markupCents(l));
 
 export const netCents = (lines: Line[]) => lines.reduce((s, l) => s + lineTotal(l), 0);
 
@@ -40,7 +43,7 @@ export const sheetNetCents = (lines: Line[]) =>
  */
 export const FIXED = /mortgage|loan|lot rent|lots rent|lot fee|consult|management|insurance|warranty/i;
 export const markupable = (l: Line) =>
-  l.cents < 0 && !FIXED.test(`${l.label} ${l.category ?? ""}`) && !OUR_CATEGORIES.includes(l.category ?? "");
+  !l.removed && l.cents < 0 && !FIXED.test(`${l.label} ${l.category ?? ""}`) && !OUR_CATEGORIES.includes(l.category ?? "");
 
 export const usd = (c: number) =>
   (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -326,8 +329,9 @@ export function reserveShortCents(c: Carry): number | null {
 export function withGuarantee(lines: Line[], perHomeCents: number | null | undefined): Line[] {
   const base = lines.filter((l) => l.category !== "Guaranteed rent");
   if (!perHomeCents || perHomeCents <= 0) return base;
-  const homes = [...new Set(base.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
-  const rentFor = (n: number) => base
+  const live = base.filter((l) => !l.removed);
+  const homes = [...new Set(live.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
+  const rentFor = (n: number) => live
     .filter((l) => l.cents > 0 && l.category !== "Adjustment" && lotsIn(l.label).includes(n))
     .reduce((a, l) => a + l.cents, 0);
   const add: Line[] = [];
@@ -350,7 +354,8 @@ export function withGuarantee(lines: Line[], perHomeCents: number | null | undef
  * charged for the lot and nothing came in for it. The owners on a guaranteed
  * arrangement are paid for these as if they were let.
  */
-export function vacantLots(lines: Line[]): number[] {
+export function vacantLots(all: Line[]): number[] {
+  const lines = all.filter((l) => !l.removed);
   const rentLots = new Set(lines.filter((l) => l.cents > 0).flatMap((l) => lotsIn(l.label)));
   const costLots = new Set(lines.filter((l) => l.cents < 0).flatMap((l) => lotsIn(l.label)));
   return [...costLots].filter((n) => !rentLots.has(n)).sort((a, b) => a - b);
@@ -442,7 +447,8 @@ const CAP = "margin:22px 0 4px;font-size:11px;letter-spacing:.08em;text-transfor
 
 /** One property's P&L, as a block. The accountant's layout -- revenue,
  *  expenses, then the balance -- because that is what owners are used to. */
-function section(s: StatementInput, boxed: boolean, entityName?: string): string {
+function section(full: StatementInput, boxed: boolean, entityName?: string): string {
+  const s = { ...full, lines: full.lines.filter((l) => !l.removed) };
   const net = netCents(s.lines);
   const owed = owedCents(s.lines, s);
   const costs = s.lines.filter((l) => l.cents < 0);
@@ -549,7 +555,8 @@ export function ownerEmailHtml(month: string, entity: string, list: StatementInp
 /** A single statement on its own. */
 export const statementHtml = (s: StatementInput) => ownerEmailHtml(s.month, s.payee, [s]);
 
-function sectionText(s: StatementInput, many: boolean): string[] {
+function sectionText(full: StatementInput, many: boolean): string[] {
+  const s = { ...full, lines: full.lines.filter((l) => !l.removed) };
   const net = netCents(s.lines);
   const owed = owedCents(s.lines, s);
   const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);

@@ -482,12 +482,12 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
      and the section says which way it goes. `orig` is Alex's amount for a
      line that came from his sheet, so a changed amount keeps what he said. */
   type Row = { label: string; amount: string; side: "in" | "out"; pct: string;
-               date?: string; merchant?: string; category?: string; orig?: number; sheet?: number };
+               date?: string; merchant?: string; category?: string; orig?: number; sheet?: number; removed?: boolean };
   const isOurs = (c?: string) => c === "Adjustment" || c === "Guaranteed rent";
   const toRows = (ls: Line[]): Row[] => ls.map((l) => ({
     label: l.label, amount: centsText(Math.abs(l.cents)), side: l.cents < 0 ? "out" : "in",
     pct: l.markupPct ? String(l.markupPct) : "", date: l.date, merchant: l.merchant, category: l.category,
-    orig: isOurs(l.category) ? undefined : (l.sheetCents ?? l.cents), sheet: l.sheetCents,
+    orig: isOurs(l.category) ? undefined : (l.sheetCents ?? l.cents), sheet: l.sheetCents, removed: l.removed,
   }));
   const own = (ls: Line[]) => ls.filter((l) => l.category !== "Guaranteed rent");
   const [rows, setRows] = useState<Row[]>(() => toRows(own(s.lines)));
@@ -532,6 +532,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
       ...(r.date ? { date: r.date } : {}), ...(r.merchant ? { merchant: r.merchant } : {}), ...(r.category ? { category: r.category } : {}),
       ...(r.side === "out" && p > 0 ? { markupPct: Math.round(p * 100) / 100 } : {}),
       ...(sheetCents !== undefined ? { sheetCents } : {}),
+      ...(r.removed ? { removed: true } : {}),
     };
   };
   const bad = rows.some(rowBad);
@@ -540,7 +541,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
   const guarCents = parseMoney(guar) ?? 0;
   const lines: Line[] = s.emailedAt ? s.lines : withGuarantee(ownLines, guarCents);
   const topups = lines.filter((l) => l.category === "Guaranteed rent");
-  const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null })));
+  const norm = (ls: Line[]) => JSON.stringify(ls.map((l) => ({ ...l, markupPct: l.markupPct ?? 0, sheetCents: l.sheetCents ?? null, removed: !!l.removed })));
   const depositCents = deposit.trim() === "" ? null : parseMoney(deposit);
   const dirty = norm(ownLines) !== norm(own(s.lines)) || note !== s.note || depositCents !== s.depositsCents;
   const held = { reserveHeldCents: resHeld.trim() === "" ? null : parseMoney(resHeld), reserveRequiredCents: resNeed.trim() === "" ? null : parseMoney(resNeed) };
@@ -577,7 +578,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
           const l = rowBad(r) ? null : toLine(r);
           const changed = l && r.orig !== undefined && l.cents !== r.orig;
           return (
-            <div key={i} className={`edrow${rowBad(r) ? " bad" : ""}${isOurs(r.category) ? " ours" : ""}`}>
+            <div key={i} className={`edrow${rowBad(r) ? " bad" : ""}${isOurs(r.category) ? " ours" : ""}${r.removed ? " removed" : ""}`}>
               <span className="eddesc">
                 <span className="eddate">{shortDate(r.date)}</span>
                 {isOurs(r.category) && !locked
@@ -585,24 +586,25 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen }: {
                   : <span>{r.label}{r.merchant ? <small> · {r.merchant}</small> : null}</span>}
               </span>
               <span className="num">
-                <input aria-label={`Amount for ${r.label}`} inputMode="decimal" value={r.amount} disabled={locked}
+                <input aria-label={`Amount for ${r.label}`} inputMode="decimal" value={r.amount} disabled={locked || r.removed}
                   onChange={(e) => set(i, { amount: e.target.value })} className={changed ? "changed" : ""} />
                 {changed ? <small className="edwas">Alex: {usd(Math.abs(r.orig!))}{" "}
                   <button className="tslink distinline" disabled={locked} onClick={() => set(i, { amount: centsText(Math.abs(r.orig!)) })}>undo</button></small> : null}
               </span>
               <span className="num">
                 {side === "out"
-                  ? <input aria-label={`Markup percent for ${r.label}`} inputMode="decimal" value={r.pct} disabled={locked}
+                  ? <input aria-label={`Markup percent for ${r.label}`} inputMode="decimal" value={r.pct} disabled={locked || r.removed}
                       onChange={(e) => set(i, { pct: e.target.value })} className="edpct" />
                   : null}
               </span>
               <span className={`num edtotal${side === "out" ? " distneg" : ""}`}>
-                {l ? money(lineTotal(l)) : "—"}
+                {r.removed ? <span className="muted">deleted</span> : l ? money(lineTotal(l)) : "—"}
                 {l && markupCents(l) ? <small>incl. {usd(-markupCents(l))} markup</small> : null}
               </span>
-              <span>{!locked && isOurs(r.category)
-                ? <button className="tslink" aria-label="Remove this line" onClick={() => setRows(rows.filter((_, j) => j !== i))}>&times;</button>
-                : null}</span>
+              <span>{locked ? null : r.removed
+                ? <button className="tslink edundo" aria-label={`Put back ${r.label}`} onClick={() => set(i, { removed: false })}>undo</button>
+                : <button className="eddel" aria-label={`Delete ${r.label}`} title="Delete this line"
+                    onClick={() => (isOurs(r.category) ? setRows(rows.filter((_, j) => j !== i)) : set(i, { removed: true }))}>&times;</button>}</span>
             </div>
           );
         })}
