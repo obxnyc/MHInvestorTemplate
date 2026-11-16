@@ -257,7 +257,8 @@ export async function POST(req: Request) {
         const unchecked = list.filter((s) => !s.checkedAt);
         if (unchecked.length && !b.sendUnchecked) {
           for (const s of list) results.push({ payee: s.payee, ok: false,
-            detail: `not sent: ${unchecked.length === list.length ? "not checked yet" : `${unchecked.map((x) => x.title || x.payee).join(", ")} not checked yet`}` });
+            // Said so it can be acted on: what is unchecked, and where the button is.
+            detail: `${unchecked.length === list.length && list.length === 1 ? "this statement has" : `${unchecked.map((x) => x.title || x.payee).join(", ")} ${unchecked.length === 1 ? "has" : "have"}`} not been marked checked. Look it over, press Mark checked at the bottom of the statement, then send` });
           continue;
         }
         const to = [...new Set(list.flatMap((s) => emails(s.email)).map((e) => e.toLowerCase()))];
