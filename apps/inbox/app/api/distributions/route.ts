@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendEmailChecked } from "@/lib/notify";
-import { planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, bankDayFrom } from "@/lib/distribute";
+import { usd, planPayments, readPaste, ownerEmailHtml, ownerEmailText, subjectFor, bankDayFrom } from "@/lib/distribute";
 import { build, prevMonth, cleanLines, emails, okEmail } from "@/lib/distribution-data";
 import { excelUrl } from "@/lib/statement-link";
 
@@ -196,6 +196,41 @@ export async function POST(req: Request) {
         .eq("id", String(b.paymentId));
       if (error) return fail(error.message, 500);
       break;
+    }
+
+    case "enter-paid": {
+      /* A payment made in Bill Pay, typed in as it was made: how much, the day
+         it is sent, and the confirmation number. It is the record at once.
+         Whatever was PLANNED for that owner and not yet paid is taken off,
+         because the plan was for a total that has just changed -- left in, it
+         would pay them twice. Plan again schedules what is still left. */
+      const st = String(b.statementId ?? "");
+      const cents = Math.round(Number(b.cents));
+      const on = String(b.sendOn ?? "");
+      if (!(cents > 0)) return fail("Type the amount paid.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(on) || Number.isNaN(Date.parse(`${on}T12:00:00Z`))) return fail("Pick the day it is being paid.");
+      const now = await build(month);
+      const s = (now.statements ?? []).find((x) => x.id === st);
+      if (!s) return fail("That statement is not in this month.");
+      const { error } = await db.from("distribution_payments").insert({
+        statement_id: st, send_on: on, amount_cents: cents, paid_at: new Date().toISOString(), paid_by: me!.id,
+        confirmation: String(b.confirmation ?? "").trim().slice(0, 80) || null,
+      });
+      if (error) return fail(error.message, 500);
+      const dropped = s.payments.filter((p) => !p.paidAt);
+      if (dropped.length) await db.from("distribution_payments").delete().in("id", dropped.map((p) => p.id));
+      const after = await build(month);
+      const left = Math.max(0, s.owedCents) - (s.paidCents + cents);
+      const per = after.run?.perPaymentCents ?? 500000, cap = after.run?.capCents ?? 2500000;
+      const dayTotal = (after.statements ?? []).flatMap((x) => x.payments).filter((p) => p.paidAt && p.sendOn === on).reduce((a, p) => a + p.cents, 0);
+      const said = [
+        `${s.payee}: ${usd(cents)} entered for ${on}.`,
+        left > 0 ? `${usd(left)} left to pay.` : left === 0 ? "Paid in full." : `That is ${usd(-left)} more than was owed.`,
+        dropped.length ? `${dropped.length} planned payment${dropped.length === 1 ? " was" : "s were"} taken off; press Plan again to schedule the rest.` : "",
+        cents > per ? `Bill Pay allows ${usd(per)} a payment.` : "",
+        dayTotal > cap ? `${on} now totals ${usd(dayTotal)}, over the ${usd(cap)} daily limit.` : "",
+      ].filter(Boolean).join(" ");
+      return NextResponse.json({ ...after, said });
     }
 
     case "cc-all": {
