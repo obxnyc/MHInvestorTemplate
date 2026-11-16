@@ -399,6 +399,60 @@ t("without the cap, RNMK is one payment", () => forOwner(D.planPayments(many, 25
   t("unticked changes from last month are said", () => /2 changes from November 2026/.test(D.reconcile({ month: "2026-11-01", owedCents: null, paidCents: null, unrecorded: 2 }, {})[0]));
 }
 
+/* across several months */
+{
+  const st = (payeeId, lines, paidCents = 0, extra = {}) => ({ payeeId, payee: payeeId, title: "", lines, paidCents, ...extra });
+  const oct = { month: "2026-10", statements: [
+    st("a", [{ label: "Rent - Lot 10", cents: 150000 }, { label: "Mortgage - Lot 10", cents: -40000 }, { label: "Rent - Lot 12", cents: 120000 }], 230000),
+    st("t", [{ label: "Rent - Lot 1", cents: 99900 }], 0, { source: { group: "Test" } }),
+  ] };
+  const nov = { month: "2026-11", statements: [
+    st("a", [{ label: "Rent - Lot 10", cents: 150000 }, { label: "Repair - Lot 10", cents: -10000, markupPct: 15 },
+      { label: "Supplies - Lot 12", cents: -5000, removed: true }, { label: "Insurance", cents: -3000 }], 135000,
+      { previousOwedCents: 230000, priorPaidCents: 230000 }),
+    st("cc", [{ label: "Lot Rent - Lot 3117", cents: -34122 }], 0, { notStarted: true }),
+  ] };
+  const [a, ...rest] = D.summarize([oct, nov]);
+  t("one row per property, test and not-started left out", () => rest.length === 0 && a.payeeId === "a");
+  t("both months are counted", () => a.months.join() === "2026-10,2026-11");
+  t("revenue adds up", () => a.revenueCents === 150000 + 120000 + 150000);
+  // 400 + 100 + 15 markup + 30; the deleted $50 is not there.
+  t("expenses include markups and leave deleted lines out", () => a.expenseCents === -(40000 + 10000 + 1500 + 3000));
+  t("net is revenue plus expenses", () => a.netCents === a.revenueCents + a.expenseCents);
+  // Paid is what was paid; adding up each month's owed would count Oct's carry again in Nov.
+  t("paid out is what was paid, not each month's owed added up", () => a.paidCents === 365000);
+  const lot = (n) => a.lots.find((l) => l.lot === n);
+  t("each house has its own totals", () => lot(10).netCents === 150000 - 40000 + 150000 - 11500 && lot(12).netCents === 120000);
+  t("a line with no lot is property-wide, not a guessed house", () => lot(null).netCents === -3000);
+  t("the houses add up to the property", () => a.lots.reduce((x, l) => x + l.netCents, 0) === a.netCents);
+
+  t("a whole year reads as the year", () => D.rangeLabel("2025-01", "2025-12", "2026-11-16") === "2025");
+  t("January to now reads as year to date", () => D.rangeLabel("2026-01", "2026-11", "2026-11-16") === "Year to date 2026");
+  t("a range across a new year names both", () => D.rangeLabel("2025-11", "2026-02", "2026-11-16") === "Nov 2025 – Feb 2026");
+  t("months between crosses the year", () => D.monthsBetween("2025-11", "2026-02").join() === "2025-11,2025-12,2026-01,2026-02");
+  t("months between a month and itself is that month", () => D.monthsBetween("2026-03", "2026-03").join() === "2026-03");
+  const rows = D.summaryRangeRows("2026", [a]);
+  t("the spreadsheet total is the property total", () => {
+    const tot = rows[rows.length - 1];
+    return tot[0].v === "Total" && tot[6].v === a.netCents / 100 && tot[7].v === a.paidCents / 100;
+  });
+}
+
+/* the statement in Excel says what the email says */
+{
+  const s = { month: "2026-11-01", payee: "Wren", title: "1148 Northside Rd", note: "",
+    lines: [{ label: "Rent - Lot 10", cents: 155000, date: "2026-11-01" }, { label: "Repair - Lot 10", cents: -20000, markupPct: 10 },
+      { label: "Gone - Lot 10", cents: -99999, removed: true }],
+    previousOwedCents: 50000, priorPaidCents: 20000, payments: [] };
+  const rows = D.statementRows(s);
+  const amounts = rows.flatMap((r) => r.filter((c) => c && typeof c === "object" && c.money).map((c) => c.v));
+  const labelled = (txt) => rows.find((r) => r.some((c) => (typeof c === "object" && c ? c.v : c) === txt));
+  t("a deleted line is not in the spreadsheet", () => !rows.some((r) => r.includes("Gone - Lot 10")));
+  t("a markup is its own row", () => rows.some((r) => r[2] === "Markup 10% on Repair - Lot 10" && r[3].v === -20));
+  t("the distribution in the spreadsheet is the statement's", () => labelled("Distribution")[3].v === D.owedCents(s.lines, s) / 100);
+  t("money is numbers, not text", () => amounts.length > 4 && amounts.every((v) => typeof v === "number"));
+}
+
 const failed = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` -- ${why}` : ""}`);
 console.log(`\n${checks.length - failed.length}/${checks.length} distribution checks pass`);
