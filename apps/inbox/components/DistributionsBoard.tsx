@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MonthPicker, RangeSummary, type Range } from "@/components/DistributionsRange";
 import {
-  rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
+  rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, ownerEmailText, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
 } from "@/lib/distribute";
 
 /**
@@ -648,6 +648,36 @@ export default function DistributionsBoard() {
         <div className="distpreview" role="dialog" aria-label={`Statement for ${preview.payee}`}>
           <div className="distpreviewbar">
             <span><strong>{subjectFor(`${month}-01`)}</strong> &middot; {preview.sendsAs} &middot; to {[...new Set(emailSet(preview).flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))].join(", ") || "no address yet"}</span>
+            {emailSet(preview).length ? (() => {
+              /* Sending it yourself from Gmail, while Postmark is not yet
+                 approved to send to outside addresses: copy the finished email
+                 (formatted, logo and all), paste it into Gmail, and then record
+                 here that it went -- which locks it as the record, exactly as
+                 the app's own send would. */
+              const set = emailSet(preview);
+              const to = [...new Set(set.flatMap((x) => x.email.split(/[,;\s]+/)).filter(Boolean).map((e) => e.toLowerCase()))];
+              const copyAll = async () => {
+                const html = ownerEmailHtml(`${month}-01`, preview.sendsAs, set.map(asInput));
+                const text = ownerEmailText(`${month}-01`, preview.sendsAs, set.map(asInput));
+                try {
+                  if (typeof ClipboardItem !== "undefined") {
+                    await navigator.clipboard.write([new ClipboardItem({
+                      "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
+                  } else await navigator.clipboard.writeText(text);
+                  setSaid(`Copied. In Gmail: New message, To ${to.join(", ") || "(no address on file)"}, subject "${subjectFor(`${month}-01`)}", then paste into the body.`);
+                } catch { setProblem("This browser would not copy. Click inside the preview, press Ctrl/Cmd-A then Ctrl/Cmd-C, and paste that into Gmail."); }
+              };
+              return (<>
+                <button className="btn" onClick={copyAll}>Copy for Gmail</button>
+                <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(subjectFor(`${month}-01`)); setSaid("Subject copied."); } catch { /* shown on screen anyway */ } }}>Copy subject</button>
+                <button className="btn pri" disabled={busy} onClick={async () => {
+                  const unchecked = set.filter((x) => !x.checkedAt);
+                  if (!window.confirm(`${unchecked.length ? `${unchecked.length} of these ${set.length} statement(s) have not been marked checked.\n\n` : ""}Record that you emailed ${preview.sendsAs} from Gmail${to.length ? ` (${to.join(", ")})` : ""}? ${set.length > 1 ? "These statements are" : "This statement is"} then locked as sent, the same as if the app had sent it.`)) return;
+                  const j = await act({ action: "sent-myself", statementIds: set.map((x) => x.id), to: to.join(", ") }, `${preview.sendsAs}: recorded as sent from Gmail.`);
+                  if (j) setPreview(null);
+                }}>I sent it from Gmail</button>
+              </>);
+            })() : null}
             <button className="btn" onClick={() => setPreview(null)}>Close</button>
           </div>
           {emailSet(preview).length ? (

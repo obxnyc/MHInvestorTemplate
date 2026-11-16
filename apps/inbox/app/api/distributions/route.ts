@@ -233,6 +233,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ ...after, said });
     }
 
+    case "sent-myself": {
+      /* Emailed by a person from their own mail (Gmail), not by the app --
+         while Postmark is still pending approval it will only deliver inside
+         larabeehomesllc.com. Recorded exactly as the app's own send is: the
+         lines as they stand are frozen as what was sent, and it is locked. */
+      const ids: string[] = Array.isArray(b.statementIds) ? b.statementIds.map(String) : [];
+      if (!ids.length) return fail("Which statements?");
+      const now = await build(month);
+      const { data: { user } } = await (await supabaseServer()).auth.getUser();
+      for (const s of (now.statements ?? []).filter((x) => ids.includes(x.id) && !x.emailedAt)) {
+        const test = (s.source as { group?: string } | null)?.group === "Test";
+        const to = String(b.to ?? "").slice(0, 300) || s.email;
+        await db.from("distribution_statements").update(test
+          ? { email_detail: `Test sent from Gmail ${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })} to ${to}.` }
+          : { emailed_at: new Date().toISOString(), emailed_to: to, lines: s.lines,
+              email_detail: `Sent from Gmail by ${user?.email ?? "staff"}, recorded ${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })}.` })
+          .eq("id", s.id);
+      }
+      break;
+    }
+
     case "cc-all": {
       const list = emails(b.cc);
       const bad = list.filter((e) => !okEmail(e));
