@@ -46,7 +46,7 @@ the sheet's own wording. Settled with the owner on 16 November 2026:
   entity RNMK Homes so both go in one email.
 - Distributions start when the homes are ready, not when they are bought:
   `distribution_payees.starts_on` (063). Conor Dolan's four Cross Creek homes
-  start December 2026. Before that month the statement is read in and kept,
+  and SHB Investments' Cross Creek homes start December 2026. Before that month the statement is read in and kept,
   but never emailed, owed or planned.
 - A rent agreement is a floor (see `withGuarantee`): actual rents unless the
   owner has an agreement; with one, every home is paid at least the agreed
