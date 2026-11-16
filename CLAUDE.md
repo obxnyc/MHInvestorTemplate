@@ -1886,6 +1886,13 @@ figures are still checked without them and the screen says how much was added.
 `lotsIn` reads four digits: Cross Creek's lots are house numbers (3117), and at
 three digits every check involving them was blind.
 
+**Bill Pay has two limits, not one**: $25,000 a day AND $5,000 a payment
+(064, `distribution_runs.per_payment_cap_cents`). Anyone owed more is paid in
+pieces of the cap plus a remainder -- RNMK's $17,204.08 is 5,000 + 5,000 +
+5,000 + 2,204.08 -- each its own payment with its own confirmation number,
+labelled "payment 2 of 4"; the Pay tab's By owner list says owed, planned,
+paid and still to pay for everyone. An owner under the cap stays one payment.
+
 **Never email anybody on the owner's behalf** -- not owners, not a summary to
 Cade -- until he says the system is bullet-proof (16 November 2026). The
 distribution screen sends only when a person presses Send; Claude does not

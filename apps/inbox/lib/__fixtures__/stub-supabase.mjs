@@ -583,6 +583,26 @@ createServer((req, res) => {
      and the row was untouched, and the check passed on both. A stand-in that
      accepts a write it does not perform tells you the thing you were trying
      to find out is fine. */
+  /* DELETE, honouring the same filters. Without it a re-plan's "throw away
+     the unpaid payments" did nothing here, and the old payment sat beside the
+     new ones -- the stand-in answering a different question from the real
+     database, and the check reading it as the app's. */
+  if (req.method === "DELETE" && url.pathname.startsWith("/rest/v1/")) {
+    const table = url.pathname.slice("/rest/v1/".length);
+    const keep = (r) => {
+      for (const [k, v] of url.searchParams) {
+        if (["select", "order", "limit", "offset"].includes(k)) continue;
+        const inList = /^in\.\((.*)\)$/.exec(v);
+        if (inList) { if (!inList[1].split(",").map((x) => x.replace(/^"|"$/g, "")).includes(String(r[k]))) return true; continue; }
+        const m = /^eq\.(.*)$/.exec(v);
+        if (m && String(r[k]) !== m[1]) return true;
+      }
+      return false;
+    };
+    TABLES[table] = (TABLES[table] ?? []).filter(keep);
+    return send(204, {});
+  }
+
   if (req.method === "PATCH" && url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
     let raw = "";

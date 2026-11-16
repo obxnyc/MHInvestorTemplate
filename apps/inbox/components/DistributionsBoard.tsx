@@ -33,7 +33,7 @@ type Statement = {
 type Payee = { id: string; name: string; emails: string; settleDays: number; active: boolean };
 type Data = {
   month: string; error?: string; migrationMissing?: boolean;
-  run?: { id: string; capCents: number; startOn: string | null } | null;
+  run?: { id: string; capCents: number; startOn: string | null; perPaymentCents: number } | null;
   payees?: Payee[]; statements?: Statement[];
   pasted?: { payees: number; unmatched: string[]; skippedSent: number };
   sent?: { payee: string; ok: boolean; detail: string }[];
@@ -91,6 +91,7 @@ export default function DistributionsBoard() {
   const [paste, setPaste] = useState("");
   const [preview, setPreview] = useState<Statement | null>(null);
   const [cap, setCap] = useState("25000");
+  const [per, setPer] = useState("5000");
   const [startOn, setStartOn] = useState("");
   const [conf, setConf] = useState<Record<string, string>>({});
   const [confirmSend, setConfirmSend] = useState(false);
@@ -118,7 +119,7 @@ export default function DistributionsBoard() {
     if (!r.ok) { setProblem((j as { error: string }).error); return; }
     setData(j as Data);
     const run = (j as Data).run;
-    if (run) setCap(String(run.capCents / 100));
+    if (run) { setCap(String(run.capCents / 100)); setPer(String((run.perPaymentCents ?? 500000) / 100)); }
   }, [month]);
   useEffect(() => { setData(null); load(); }, [load]);
 
@@ -172,6 +173,15 @@ export default function DistributionsBoard() {
     return Object.entries(m).sort(([a], [b]) => a.localeCompare(b));
   }, [statements]);
   const capCents = data?.run?.capCents ?? 2_500_000;
+  const pieceOf = (payId: string, st: Statement) => {
+    if (st.payments.length < 2) return "";
+    const ordered = [...st.payments].sort((x, y) => x.sendOn.localeCompare(y.sendOn) || y.cents - x.cents || x.id.localeCompare(y.id));
+    return ` · payment ${ordered.findIndex((x) => x.id === payId) + 1} of ${ordered.length}`;
+  };
+  // Everybody, and how much of what they are owed has been paid.
+  const byOwner = statements.filter((st) => st.payments.length || (!st.hold && !st.notStarted && st.owedCents > 0 && st.source?.group !== "Test"))
+    .map((st) => ({ st, owed: Math.max(0, st.owedCents), planned: st.plannedCents, paid: st.paidCents }))
+    .sort((a, b) => (a.paid >= a.owed ? 1 : 0) - (b.paid >= b.owed ? 1 : 0) || a.st.payee.localeCompare(b.st.payee));
 
   if (!data) {
     return <main className="wrap crewwrap">{problem
@@ -388,19 +398,48 @@ export default function DistributionsBoard() {
                   <input id="cap" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} />
                 </div>
                 <div className="tsfield">
+                  <label htmlFor="per">Most per payment ($)</label>
+                  <input id="per" inputMode="decimal" value={per} onChange={(e) => setPer(e.target.value)} />
+                </div>
+                <div className="tsfield">
                   <label htmlFor="start">First day to send</label>
                   <input id="start" type="date" value={startOn || data.run.startOn || ""} onChange={(e) => setStartOn(e.target.value)} />
                 </div>
                 <button className="tsact distplanbtn" disabled={busy} onClick={() => {
                   const c = parseMoney(cap);
+                  const pp = parseMoney(per);
                   if (!c || c <= 0) { setProblem("The daily limit has to be an amount."); return; }
-                  act({ action: "plan", capCents: c, startOn: startOn || data.run?.startOn || "" }, "Planned.");
+                  if (!pp || pp <= 0) { setProblem("The most per payment has to be an amount."); return; }
+                  act({ action: "plan", capCents: c, perPaymentCents: pp, startOn: startOn || data.run?.startOn || "" }, "Planned.");
                 }}>{days.length ? "Plan again" : "Plan the payments"}</button>
               </div>
               <p className="tsnote">
-                Slowest banks go first, a payment stays whole unless it is bigger than a day allows, and
-                anything already marked paid keeps its day. Statements on hold or with nothing to pay are left out.
+                Anyone owed more than the most per payment is paid in pieces of that size, each its own Bill Pay
+                payment. No day goes over the daily limit, slowest banks go first, and anything already marked paid
+                keeps its day. Statements on hold, not started, or with nothing to pay are left out.
               </p>
+
+              {byOwner.length ? (
+                <div className="distbyowner">
+                  <div className="tscardhead"><h2>By owner</h2>
+                    <span className="tsnum">{byOwner.filter((o) => o.paid >= o.owed && o.owed > 0).length} of {byOwner.length} paid in full</span></div>
+                  <div className="edrow edhead dbo"><span>Owner</span><span className="num">Owed</span><span className="num">Planned</span><span className="num">Paid</span><span className="num">Still to pay</span></div>
+                  {byOwner.map(({ st, owed, planned, paid }) => {
+                    const left = owed - paid;
+                    const off = planned !== owed;
+                    return (
+                      <button key={st.id} className={`edrow dbo${left <= 0 ? " done" : ""}`} onClick={() => setOpenId(st.id)}>
+                        <span className="distname"><strong>{st.payee}</strong>
+                          <small>{st.payments.length} payment{st.payments.length === 1 ? "" : "s"}{st.payments.length ? ` · ${st.payments.filter((x) => x.paidAt).length} paid` : ""}</small></span>
+                        <span className="num">{usd(owed)}</span>
+                        <span className={`num${off ? " distneg" : ""}`}>{usd(planned)}{off ? <small>{planned < owed ? "plan again" : "more than owed"}</small> : null}</span>
+                        <span className="num">{usd(paid)}</span>
+                        <span className={`num${left > 0 ? "" : " distpos"}`}><strong>{left > 0 ? usd(left) : "Paid in full"}</strong></span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
 
               <div className="distdays">
                 {days.map(([d, rows]) => {
@@ -417,7 +456,7 @@ export default function DistributionsBoard() {
                         {rows.map(({ pay, s }) => (
                           <li key={pay.id} className={pay.paidAt ? "paid" : ""}>
                             <button className="distwho" onClick={() => setOpenId(s.id)}>
-                              <strong>{s.payee}</strong>
+                              <strong>{s.payee}{pieceOf(pay.id, s)}</strong>
                               <span className={`muted${s.versus.loud ? " distneg" : ""}`}>
                                 {s.versus.loud ? "Check the statement · " : ""}{s.versus.lastCents !== null ? `last month ${usd(s.versus.lastCents)} · ` : ""}arrives {day(pay.arrivesOn)}
                               </span>
