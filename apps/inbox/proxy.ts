@@ -40,7 +40,10 @@ const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /
                 // Says which commit is answering here and nothing else. The
                 // setup check fetches it across domains to find out whether a
                 // custom domain and this one are the same deployment.
-                /^\/api\/whoami$/];
+                /^\/api\/whoami$/,
+                // The ring a caller hears while the office's phones ring.
+                // Twilio fetches it, and Twilio has no session.
+                /^\/ringback\.wav$/];
 
 const isPublic = (path: string) => PUBLIC.some((re) => re.test(path));
 

@@ -1,22 +1,32 @@
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkTwilioSignature, formToObject, publicBase } from "@/lib/twilio";
-import { ringStages, groupIntro, twiml, escapeXml } from "@/lib/voice";
+import { ringStages, loadPerson, loadRoute, twiml, callSettings, type Stage } from "@/lib/voice";
+import { callBySid, contactOf, noAnswer, whoCalled } from "@/lib/calllog";
+import { nextRound, ringPeople, stopRinging, callerTwiml } from "@/lib/legs";
+import { pushToStaff } from "@/lib/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Ringing a group, one rung at a time.
+ * Ringing, one rung at a time, on the CALLER's leg.
  *
- * The same endpoint both starts a rung and is what Twilio calls when that rung
- * ends, because they are the same question asked twice: who is next. The stage
- * number lives in the URL, so no state is kept between calls and a retry cannot
- * ring somebody twice or skip them.
+ *   g  the ring group          s  the rung to start from
+ *   r  the route (what the call is, for the whisper)
+ *   p  one person instead of a group -- a transfer to somebody by name
+ *   t  this is a transfer      n  the round of ringing this belongs to
  *
- * Every leg still has to press 1. That is not ceremony -- a phone that is off
- * answers INSTANTLY with its owner's personal voicemail, which would swallow
- * the call while four other phones stopped ringing. A voicemail box cannot
- * press 1, so it can never win.
+ * Each rung starts the phones that are new on it, as calls of their own, and
+ * plays the caller an ordinary ringing tone for the rung's length; then this
+ * route is asked again for the next rung. A phone started on rung one is
+ * still ringing on rung three -- its call was placed for all the time left,
+ * not for its own twelve seconds -- so Hannah keeps ringing while Samantha
+ * and Cade are added beside her.
+ *
+ * Whoever presses 1 first takes the caller out of this ringing and into the
+ * conversation (see whisper/accept). If nobody does, the last rung ends here:
+ * every phone still ringing is stopped and the caller goes to voicemail.
  */
 export async function POST(req: Request) {
   const url = new URL(req.url);
@@ -27,35 +37,67 @@ export async function POST(req: Request) {
 
   const base = publicBase(req);
   const groupId = url.searchParams.get("g") ?? "";
+  const personId = url.searchParams.get("p") ?? "";
+  const routeKey = url.searchParams.get("r") ?? "";
+  const transferred = url.searchParams.get("t") === "1";
   const from = Math.max(1, Number(url.searchParams.get("s") ?? "1"));
 
-  // Arriving from a finished <Dial>. Somebody took it: nothing more to do, and
-  // the call is already bridged.
-  if (params.DialCallStatus === "completed") return twiml("");
+  const call = await callBySid(params.CallSid);
+  if (!call) return twiml(`<Redirect method="POST">${base}/api/twilio/voice/voicemail</Redirect>`);
 
-  const stages = await ringStages(groupId);
+  // The first rung starts a round; the rest carry its number.
+  const round = url.searchParams.get("n")
+    ? Number(url.searchParams.get("n"))
+    : await nextRound(call.id);
 
-  // The first rung with anybody on it. An empty rung is skipped rather than
-  // ringing nobody for forty seconds, which from the caller's end is
-  // indistinguishable from being ignored.
-  const stage = stages.find((s) => s.position >= from && s.numbers.length);
-  if (!stage) {
-    return twiml(`<Redirect>${base}/api/twilio/voice/voicemail</Redirect>`);
+  // Somebody already took it in this round: the caller belongs in the call.
+  const { data: state } = await supabaseAdmin().from("calls")
+    .select("claimed_round, line").eq("id", call.id).single();
+  if (state?.claimed_round === round) return twiml(callerTwiml(base, call.id));
+
+  let stages: Stage[] = [];
+  if (personId) {
+    const p = await loadPerson(personId);
+    if (p) stages = [{ position: 1, seconds: 20, people: [p] }];
+  } else if (groupId) {
+    stages = await ringStages(groupId);
   }
 
-  const intro = from === 1 ? await groupIntro(groupId) : null;
-  const next = `${base}/api/twilio/voice/ring?g=${groupId}&amp;s=${stage.position + 1}`;
+  const idx = stages.findIndex((s) => s.position >= from && s.people.length);
+  if (idx < 0) {
+    await stopRinging(call.id, round);
+    await noAnswer(call, await callSettings());
+    return twiml(`<Redirect method="POST">${base}/api/twilio/voice/voicemail</Redirect>`);
+  }
+  const stage = stages[idx];
+  const left = stages.slice(idx).reduce((sum, s) => sum + s.seconds, 0);
+  const route = routeKey ? await loadRoute(routeKey) : null;
 
-  const numbers = stage.numbers.map((n) =>
-    `<Number url="${base}/api/twilio/voice/whisper"`
-    + ` statusCallbackEvent="answered completed">${escapeXml(n)}</Number>`
-  ).join("");
+  const started = await ringPeople({
+    callId: call.id, round, people: stage.people, seconds: left,
+    line: state?.line ?? params.To ?? "", base, routeKey: routeKey || null, transferred,
+  });
 
+  // The people being rung who use the app see who it is while it rings.
+  const appUsers = stage.people.map((p) => p.staffId).filter((x): x is string => !!x);
+  if (started && appUsers.length) {
+    const who = whoCalled(await contactOf(call.contact_id));
+    await pushToStaff(appUsers, {
+      title: `${transferred ? "Transfer: " : ""}${route?.whisper ?? "Office call"} — ${who}`,
+      body: "Ringing your phone now. Press 1 when you pick up.",
+      url: "/calls",
+      tag: `ring:${call.id}`,
+    });
+  }
+
+  const q = new URLSearchParams({ s: String(stage.position + 1), n: String(round) });
+  if (personId) q.set("p", personId); else q.set("g", groupId);
+  if (routeKey) q.set("r", routeKey);
+  if (transferred) q.set("t", "1");
+
+  // The ring tone is six seconds a cycle.
   return twiml(
-    (intro ? `<Say voice="Polly.Joanna">${escapeXml(intro)}</Say>` : "")
-    + `<Dial timeout="${stage.seconds}" answerOnBridge="true"`
-    + ` record="record-from-answer-dual"`
-    + ` recordingStatusCallback="${base}/api/twilio/voice/recording"`
-    + ` action="${next}">${numbers}</Dial>`
+    `<Play loop="${Math.max(1, Math.round(stage.seconds / 6))}">${base}/ringback.wav</Play>`
+    + `<Redirect method="POST">${base}/api/twilio/voice/ring?${q.toString().replace(/&/g, "&amp;")}</Redirect>`
   );
 }

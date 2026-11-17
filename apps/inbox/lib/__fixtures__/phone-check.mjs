@@ -56,6 +56,8 @@ const SIGNED_IN = [
   // Crews, rates and the clock texts; and Friday pay. Set up from a phone
   // in a truck as often as at a desk.
   ["desk", "/crew"], ["desk", "/pay"],
+  // The office line: a call on the line now, a missed one, a transcript.
+  ["desk", "/calls"],
   // Owner distributions: a table and a side panel, read on a phone as often as not.
   ["desk", "/distributions"],
   // The day's trail, with a route on it: the stand-in has a morning of pings.

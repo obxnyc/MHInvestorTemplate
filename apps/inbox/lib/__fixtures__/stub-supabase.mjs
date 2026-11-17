@@ -126,7 +126,55 @@ const SHIFT_PINGS = [
   { shift_id: "s1", at: minsAfter(T0, 75), lat: 35.1002, lng: -78.96, accuracy: 15, fence: "inside", metres: 20 },
 ];
 
+/* THE OFFICE LINE (069): one call on the line now, one missed after hours
+   with a voicemail, one answered with a transcript -- so the Calls page is
+   drawn with every state a card can be in, not with "No calls yet." The
+   embeds are carried on the rows, which this stand-in keeps as given. */
+const CALL = (o) => ({ direction: "inbound", missed: false, duration_seconds: null,
+  voicemail_text: null, recording_sid: null, conversation_id: null, returns_call_id: null,
+  category: null, route_key: null, after_hours: false, answered_at: null, ended_at: null,
+  notes: null, summary: null, follow_up: null, suggested_category: null, texted: null, language: null,
+  contacts: null, answered: null, person: null, call_recordings: [], ...o });
+const CALLS = [
+  CALL({ id: "call1", created_at: iso(now - 3 * 60e3), category: "Emergency",
+    route_key: "emergency", answered_at: iso(now - 2 * 60e3),
+    contacts: { phone: "+12525550144", full_name: "Marisol Ortega-Whitfield" },
+    person: { full_name: "Hannah Pappas" } }),
+  CALL({ id: "call2", created_at: iso(now - 14 * 3600e3), category: "Leasing · Rent",
+    route_key: "rent", after_hours: true, missed: true, texted: "missed", language: "es",
+    voicemail_text: "Hi, I'm calling about the three bedroom on Northside, is it still available?",
+    summary: "Asked whether the three-bedroom at Northside is still available and what the deposit is.\nProperty: Northside, three-bedroom",
+    follow_up: "Call back about the Northside three-bedroom",
+    contacts: { phone: "+12525550199", full_name: null },
+    call_recordings: [{ recording_sid: "RE" + "a".repeat(32), kind: "voicemail",
+      duration_seconds: 24, transcript: null, transcript_status: null, created_at: iso(now - 14 * 3600e3) }] }),
+  CALL({ id: "call3", created_at: iso(now - 26 * 3600e3), category: "Payments",
+    route_key: "payments", answered_at: iso(now - 26 * 3600e3), ended_at: iso(now - 26 * 3600e3 + 240e3),
+    duration_seconds: 240, suggested_category: "Maintenance",
+    summary: "Paid lot rent late and asked to waive the fee. Also mentioned a soft spot in the bathroom floor.\nProperty: Lot 14, The Retreat\nWe said: we will look at the floor on Thursday",
+    follow_up: "Repair request: soft spot in the bathroom floor, Lot 14",
+    notes: "Fee waived once. Told him not again.",
+    contacts: { phone: "+19105550123", full_name: "Darnell Hughes" },
+    person: { full_name: "Samantha Graber" },
+    call_recordings: [{ recording_sid: "RE" + "b".repeat(32), kind: "call", duration_seconds: 240,
+      transcript_status: "completed", created_at: iso(now - 26 * 3600e3),
+      transcript: [
+        { who: "us", at: 0, text: "Larabee Homes, this is Samantha." },
+        { who: "caller", at: 3, text: "Hi, it's Darnell on lot fourteen. I paid late this month and I wondered about the fee." },
+        { who: "us", at: 11, text: "I can take it off this once. Anything else?" },
+        { who: "caller", at: 15, text: "Yeah, there's a soft spot in the bathroom floor by the tub." }] }] }),
+];
+
 const TABLES = {
+  calls: CALLS,
+  phone_people: [
+    { id: "pp1", full_name: "Hannah Pappas", active: true },
+    { id: "pp2", full_name: "Samantha Graber", active: true },
+  ],
+  call_routes: [
+    { key: "rent", category: "Leasing · Rent", day_group: "g1", night_group: null, sort: 10 },
+    { key: "maintenance", category: "Maintenance", day_group: null, night_group: null, sort: 40 },
+  ],
   staff: STAFF,
   properties: PROPERTIES,
   shifts: SHIFTS,
