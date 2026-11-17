@@ -153,162 +153,112 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
   if (error) return <p className="err">{error}</p>;
   if (!rows) return <p className="parkhint">Reading…</p>;
 
+  const here = KINDS.find((k) => k.key === tab)!;
+  const initials = (n: string) => n.replace(/\b(LLC|Inc|Trust|The)\b\.?/gi, "").trim()
+    .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "·";
+
   return (
-    <div className="parkpage">
-      <header className="parkhead">
-        <h1>Investors</h1>
-        <div className="parkacts">
-          {canAdd && (
-            <button type="button" className={adding ? "btn pri" : "btn"}
-                    onClick={() => { setAdding((v) => !v); setSaid(null); }}>
-              {adding ? "Never mind" : "New investor"}
-            </button>
-          )}
+    <div className="olpage">
+      <header className="olhead">
+        <div>
+          <h1>Investors</h1>
+          <p className="olsub">{tally.investor} investor{tally.investor === 1 ? "" : "s"}
+            {holdings ? ` · ${(rows ?? []).filter((r) => r.kind === "investor").reduce((a, r) => a + r.homes, 0)} homes` : ""}</p>
         </div>
+        {canAdd && (
+          <button type="button" className={adding ? "btn" : "btn pri"}
+                  onClick={() => { setAdding((v) => !v); setSaid(null); }}>
+            {adding ? "Cancel" : "New investor"}
+          </button>
+        )}
       </header>
 
-      <p className="parkhint">
-        Open one to see every home they hold, what they are charged each
-        month, and to draw the purchase agreement and park land lease for a
-        sale. Homes can be typed in by hand there, so the papers do not wait
-        on the sale being recorded.
-      </p>
-
-      {!configured && (
-        <p className="err">
-          Investors need migration 017 run on the database first.
-        </p>
-      )}
+      {!configured && <p className="err">Investors need migration 017 run on the database first.</p>}
       {configured && !holdings && (
-        <p className="parkhint">
-          Sales could not be read, so the homes and monthly figures below are
-          not filled in. That is migration 031.
-        </p>
+        <p className="parkhint">Sales could not be read, so homes and monthly figures are not filled in (migration 031).</p>
+      )}
+      {!kinds && rows.length > 0 && (
+        <p className="parkhint">Sorting into residents and our own companies needs migration 050.</p>
       )}
 
       {adding && (
-        <div className="papersetup">
-          <div className="papergrid">
-            <label>Name as you say it
-              <input value={name} autoFocus
-                     onChange={(e) => setName(e.target.value)} /></label>
-            <label>Legal name, if it differs
-              <input value={legal} placeholder="e.g. Oak Ridge Holdings LLC"
-                     onChange={(e) => setLegal(e.target.value)} /></label>
-          </div>
-          <div className="paperacts">
-            <button type="button" className="btn pri" disabled={saving || name.trim().length < 2}
-                    onClick={() => void add()}>
-              {saving ? "Saving…" : "Add investor"}
-            </button>
-            {said && <span className="err">{said}</span>}
-          </div>
+        <div className="oladd">
+          <label>Name<input value={name} autoFocus onChange={(e) => setName(e.target.value)} /></label>
+          <label>Legal name, if it differs
+            <input value={legal} placeholder="e.g. Oak Ridge Holdings LLC" onChange={(e) => setLegal(e.target.value)} /></label>
+          <button type="button" className="btn pri" disabled={saving || name.trim().length < 2} onClick={() => void add()}>
+            {saving ? "Saving…" : "Add"}
+          </button>
+          {said && <span className="err">{said}</span>}
         </div>
       )}
 
-      {/* WHO IS ON THIS LIST. Three different relationships were sharing
-          one screen, and the only one the papers are for is the first. */}
-      {kinds && rows.length > 0 && (
-        <div className="tabsrow">
-          {KINDS.map((k) => (
-            <button key={k.key} type="button"
-                    className={tab === k.key ? "chip on" : "chip"}
-                    onClick={() => setTab(k.key)}>
-              {k.tab} <span className="dim">{tally[k.key]}</span>
-            </button>
-          ))}
+      {rows.length > 0 && (
+        <div className="oltools">
+          <label className="olsearch">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input value={find} onChange={(e) => setFind(e.target.value)} type="search"
+                   placeholder="Search by name, company or park" aria-label="Search investors" />
+          </label>
+          {kinds && (
+            <div className="olseg" role="tablist">
+              {KINDS.map((k) => (
+                <button key={k.key} type="button" role="tab" aria-selected={tab === k.key}
+                        className={tab === k.key ? "on" : ""} onClick={() => setTab(k.key)}>
+                  {k.tab}<span>{tally[k.key]}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-      {!kinds && rows.length > 0 && (
-        <p className="parkhint">
-          Everybody here reads as an investor: sorting them into residents
-          and our own companies needs migration 050 run on the database.
-        </p>
       )}
       {moveSaid && <p className="err">{moveSaid}</p>}
 
-      {rows.length > 0 && (
-        <div className="papersetup">
-          <label className="findrow">Find
-            <input value={find} onChange={(e) => setFind(e.target.value)}
-                   placeholder="name, company or park" />
-          </label>
-        </div>
-      )}
-
       {!rows.length ? (
-        <p className="parkhint">
-          No investors on file yet.{canAdd ? " Add the first one above." : ""}
-        </p>
+        <p className="olempty">No investors on file yet.{canAdd ? " Add the first one above." : ""}</p>
       ) : !shown.length ? (
-        <p className="parkhint">
-          {find.trim()
-            ? `Nothing in ${KINDS.find((k) => k.key === tab)?.tab} matches `
-              + `“${find.trim()}”.`
-            : KINDS.find((k) => k.key === tab)?.empty}
-        </p>
+        <p className="olempty">{find.trim() ? `Nothing in ${here.tab} matches “${find.trim()}”.` : here.empty}</p>
       ) : (
-        <div className="ownercards">
+        <ul className="ollist">
           {shown.map((r) => (
-            <div className="ownercard" key={r.id}>
-              <Link href={`/owners/${r.id}`} className="ownername">{r.name}</Link>
-              {smallPrint(r) && <span className="dim">{smallPrint(r)}</span>}
-              <p className="ownerheld">
-                {!holdings ? (
-                  <span className="dim">holdings not read</span>
-                ) : r.homes === 0 ? (
-                  <span className="dim">no homes recorded</span>
-                ) : (
-                  <>
-                    <strong>{r.homes} home{r.homes === 1 ? "" : "s"}</strong>
-                    {r.parks.length > 0 && <> · {r.parks.join(", ")}</>}
-                    {r.owesCents > 0 && (
-                      <><br />${money0(r.owesCents / 100)} a month</>
-                    )}
-                  </>
-                )}
-              </p>
-              {/* WHERE THE PAPERS STAND, on the list rather than only
-                  inside. Opening six investors one at a time to find out
-                  who has signed is the whole job this list exists to
-                  save. `papers` false is the database not answering,
-                  which is not the same as nobody having been sent
-                  anything -- the same pair as `holdings` above. */}
-              {papers && r.papers && (
-                <p className="ownerstands">
-                  <span className={STANDS[r.papers].tone}>
-                    {STANDS[r.papers].say}
-                  </span>
-                  {r.papersAt && (
-                    <span className="dim">
-                      {" "}{new Date(r.papersAt).toLocaleDateString("en-US",
-                        { dateStyle: "medium" })}
-                    </span>
+            <li key={r.id} className="olrow">
+              <Link href={`/owners/${r.id}`} className="olmain">
+                <span className="olav" aria-hidden="true">{initials(r.name)}</span>
+                <span className="olwho">
+                  <strong>{r.name}</strong>
+                  {[smallPrint(r), r.parks.join(", ")].some(Boolean)
+                    ? <small>{[smallPrint(r), r.parks.join(", ")].filter(Boolean).join(" · ")}</small> : null}
+                </span>
+                <span className="olnum">
+                  {!holdings ? <small>—</small> : r.homes === 0 ? <small>No homes</small> : (
+                    <>
+                      <strong>{r.homes} home{r.homes === 1 ? "" : "s"}</strong>
+                      {r.owesCents > 0 ? <small>${money0(r.owesCents / 100)}/mo</small> : null}
+                    </>
                   )}
-                </p>
-              )}
-              {/* MOVE SOMEBODY WITHOUT ASKING ME. Twenty of these had to
-                  be read out one at a time and set by hand, which is the
-                  shape of a job that belongs on the screen. It changes a
-                  label and nothing else. */}
-              {kinds && canAdd && (
-                <div className="ownerkind">
-                  {KINDS.map((k) => (
-                    <button key={k.key} type="button"
-                            className={r.kind === k.key ? "chip on" : "chip"}
-                            disabled={moving === r.id || r.kind === k.key}
-                            onClick={() => void setKind(r.id, k.key)}>
-                      {k.one}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <Link className="btn" href={`/owners/${r.id}`}>
-                {r.kind === "investor" ? "Papers" : "Open"}
+                </span>
+                <span className="olpapers">
+                  {/* Have they signed: the one question this column answers. */}
+                  {papers && r.papers ? <span className={STANDS[r.papers].tone}>{STANDS[r.papers].say}</span> : null}
+                </span>
+                <svg className="olgo" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </Link>
-            </div>
+              {/* Moving somebody between investor, resident and ours changes
+                  a label and nothing else -- tucked away, since it is rare. */}
+              {kinds && canAdd && (
+                <select className="olkind" aria-label={`${r.name} is`} value={r.kind} disabled={moving === r.id}
+                        onChange={(e) => void setKind(r.id, e.target.value as Kind)}>
+                  {KINDS.map((k) => <option key={k.key} value={k.key}>{k.one}</option>)}
+                </select>
+              )}
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
