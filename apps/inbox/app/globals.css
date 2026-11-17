@@ -3851,3 +3851,51 @@ button.edrow.dbo:hover{background:var(--sunk)}
 .dpaygroup{margin-left:.45rem;font-size:.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 /* The month arrows: a single character is under a fingertip wide on its own. */
 .distmonth .tslink{min-width:32px}
+
+/* ---- Investors: one searchable list, a row per owner ---- */
+.olpage{max-width:960px;margin:0 auto;padding:1.5rem 1rem 3rem}
+.olhead{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin-bottom:1.1rem}
+.olhead h1{margin:0;font-size:1.6rem;letter-spacing:-.02em}
+.olsub{margin:.2rem 0 0;color:var(--muted);font-size:.9rem}
+.oltools{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:.9rem}
+.olsearch{flex:1 1 18rem;display:flex;align-items:center;gap:.55rem;padding:0 .85rem;height:2.75rem;
+  background:var(--card);border:1px solid var(--hair);border-radius:12px;color:var(--muted)}
+.olsearch:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.olsearch input{flex:1;min-width:0;border:0;outline:0;background:none;font:inherit;color:var(--ink);padding:0;height:100%}
+.olseg{display:flex;background:var(--sunk);border-radius:10px;padding:.2rem;gap:.15rem}
+.olseg button{border:0;background:none;color:var(--muted);font:inherit;font-size:.86rem;font-weight:600;
+  padding:.45rem .8rem;border-radius:8px;display:flex;gap:.4rem;align-items:center;min-height:2.1rem}
+.olseg button span{font-size:.75rem;font-weight:600;opacity:.7}
+.olseg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.oladd{display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;padding:1rem;margin-bottom:1rem;
+  background:var(--card);border:1px solid var(--hair);border-radius:12px}
+.oladd label{display:flex;flex-direction:column;gap:.3rem;font-size:.8rem;color:var(--muted);flex:1 1 14rem}
+.oladd input{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:.5rem .65rem}
+.ollist{list-style:none;margin:0;padding:0;background:var(--card);border:1px solid var(--hair);border-radius:14px;overflow:hidden}
+.olrow{display:flex;align-items:center;border-top:1px solid var(--hair)}
+.olrow:first-child{border-top:0}
+.olrow:hover{background:var(--sunk)}
+.olmain{flex:1;min-width:0;display:grid;grid-template-columns:2.4rem minmax(0,1fr) 7.5rem 9rem 1rem;gap:.9rem;
+  align-items:center;padding:.8rem 1rem;color:var(--ink);text-decoration:none}
+.olav{width:2.4rem;height:2.4rem;border-radius:50%;display:grid;place-items:center;font-size:.78rem;font-weight:700;
+  background:var(--accent-soft);color:var(--accent-ink)}
+.olwho,.olnum{display:flex;flex-direction:column;justify-content:center;min-width:0;gap:.1rem}
+.olwho strong{font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.olwho small,.olnum small{color:var(--muted);font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.olnum{text-align:right}
+.olnum strong{font-size:.88rem;font-weight:600}
+.olpapers{display:flex;justify-content:flex-end}
+.olpapers .pill{font-family:inherit;font-size:.75rem;font-weight:600;letter-spacing:0;padding:.2rem .55rem;border-radius:999px}
+.olgo{color:var(--muted)}
+.olkind{margin-right:.9rem;font:inherit;font-size:.8rem;color:var(--muted);background:transparent;
+  border:1px solid transparent;border-radius:8px;padding:.3rem .4rem;width:auto;min-width:6rem}
+.olrow:hover .olkind,.olkind:focus{border-color:var(--hair);color:var(--ink)}
+.olempty{padding:2rem 1rem;text-align:center;color:var(--muted);background:var(--card);border:1px solid var(--hair);border-radius:14px}
+@media (max-width:700px){
+  .olmain{grid-template-columns:2.4rem minmax(0,1fr) auto 1rem;padding:.75rem .85rem;gap:.7rem}
+  .olpapers{display:none}
+  .olkind{display:none}
+  .oltools{flex-direction:column;align-items:stretch}
+  .olsearch{flex:none}
+  .olseg button{flex:1;justify-content:center}
+}
