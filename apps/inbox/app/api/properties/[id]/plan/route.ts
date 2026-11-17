@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { layRow, clamp, angleOf } from "@/lib/park";
+import { lookup, ringOf, middle, metres, refOf, type ParcelFeature } from "@/lib/parcel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,13 +131,47 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
+  // --- the property line ---
+  //
+  // The county's is the default for every property; a line somebody drew
+  // on this screen is an override and wins. So a property with no plan
+  // of its own still opens on its own land, inside its own line, instead
+  // of on a form asking for a parcel viewer's address bar.
+  const county = await countyLine(id);
+  let plan = (property.plan ?? null) as Record<string, unknown> | null;
+  const countyRing = ringOf(county?.parcel);
+  if (countyRing.length) {
+    const drawn = Array.isArray(plan?.fence) && (plan!.fence as unknown[]).length > 3;
+    if (!plan) {
+      const c = middle(countyRing)!;
+      plan = {
+        centre: c, rows: [], fence: countyRing, fenceFrom: "county",
+        pin: county!.ref ?? undefined, address: county!.address ?? undefined,
+        naming: "lot", size: { width: 4.88, length: 18.29 },
+        bearing: 0, homeTurn: 0, padSpacing: 14, pairGap: 34, streetGap: 60,
+        countFrom: "west",
+      };
+    } else if (!drawn) {
+      plan = { ...plan, fence: countyRing, fenceFrom: "county",
+        pin: plan.pin ?? county!.ref ?? undefined };
+    }
+  }
+
   return NextResponse.json({
     property: {
       id: property.id, name: property.name, kind: property.kind,
-      // Null means nobody has described this park yet, which the screen
-      // says rather than drawing somebody else's park.
-      plan: property.plan ?? null,
+      // Null means nobody has described this park and the county has no
+      // line for it either, which the screen says rather than drawing
+      // somebody else's park.
+      plan,
     },
+    // The county's own line, so a drawn override can be compared with it
+    // and put back to it.
+    county: countyRing.length ? { ring: countyRing, ref: county!.ref } : null,
+    // Every other property whose line is within reach, drawn faintly round
+    // this one, so where two parcels meet -- or fail to -- can be seen.
+    neighbours: await neighboursOf(id, countyRing.length ? middle(countyRing)
+      : Array.isArray(plan?.centre) ? plan!.centre as [number, number] : null),
     plans,
     pending,
     lots: rows.map((u) => ({
@@ -494,4 +529,62 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
+}
+
+/**
+ * This property's county parcel: what is on file, or a lookup now.
+ *
+ * Looked up the first time anybody opens a property that has none, and
+ * kept. The service is the state's, reachable from the deployment though
+ * not from a development machine; a failed lookup costs nothing but a
+ * line that is not drawn yet, and the next opening tries again.
+ */
+async function countyLine(id: string): Promise<{
+  parcel: ParcelFeature | null; ref: string | null; address: string | null;
+} | null> {
+  const db = supabaseAdmin();
+  const got = await db.from("properties")
+    .select("address, lat, lng, parcel_geojson, parcel_ref").eq("id", id).maybeSingle();
+  if (got.error || !got.data) return null;
+  const row = got.data as {
+    address: string | null; lat: number | null; lng: number | null;
+    parcel_geojson: ParcelFeature | null; parcel_ref: string | null;
+  };
+  const address = row.address?.replace(/,\s*Lot\s*#.*$/i, "") ?? null;
+  if (row.parcel_geojson) {
+    return { parcel: row.parcel_geojson, ref: row.parcel_ref, address };
+  }
+  if (!address) return { parcel: null, ref: null, address };
+  const pin = row.lat != null && row.lng != null
+    ? [Number(row.lng), Number(row.lat)] as [number, number] : null;
+  const found = await lookup(address, pin);
+  if (!found) return { parcel: null, ref: null, address };
+  const ref = refOf(found);
+  await db.from("properties").update({
+    parcel_geojson: found, parcel_ref: ref, parcel_at: new Date().toISOString(),
+  }).eq("id", id);
+  return { parcel: found, ref, address };
+}
+
+/** Other properties' lines near this one: a drawn override where there
+ *  is one, the county's otherwise -- the same rule as this property's. */
+async function neighboursOf(id: string, at: [number, number] | null) {
+  if (!at) return [];
+  const db = supabaseAdmin();
+  const { data } = await db.from("properties")
+    .select("id, name, plan, parcel_geojson").neq("id", id)
+    .or("parcel_geojson.not.is.null,plan.not.is.null");
+  const out: { id: string; name: string; ring: number[][]; from: "county" | "drawn" }[] = [];
+  for (const p of (data ?? []) as {
+    id: string; name: string; plan: { fence?: number[][]; fenceFrom?: string } | null;
+    parcel_geojson: ParcelFeature | null;
+  }[]) {
+    const drawn = p.plan?.fence && p.plan.fence.length > 3 && p.plan.fenceFrom !== "county"
+      ? p.plan.fence : null;
+    const ring = drawn ?? (p.plan?.fence?.length ? p.plan.fence : ringOf(p.parcel_geojson));
+    const c = middle(ring);
+    if (!c || metres(c, at) > 1500) continue;
+    out.push({ id: p.id, name: p.name, ring, from: drawn ? "drawn" : "county" });
+  }
+  return out;
 }

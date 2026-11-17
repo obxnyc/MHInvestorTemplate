@@ -1994,3 +1994,35 @@ Lot #02" and the plan files them as "... Lot 2", so `place` matched nothing
 `unplace`, `row` and `move` for that park, reading the lock from the
 database rather than the request, until Unlock. `lock-check.mjs` holds it;
 each rule was broken in turn to confirm it is caught.
+
+### Every property has the county's line by default
+
+`properties.parcel_geojson` (made by 025, never filled until 17 November
+2026) holds each property's parcel from NC OneMap, the state's statewide
+parcel service -- reachable from the database through pg_net and from the
+deployment, not from this container. 83 of 99 addressed properties were
+filled that day by house number and street, the nearest the pin winning.
+`lib/parcel.ts` is the rule and the live lookup: a property opened with no
+parcel is looked up then and kept.
+
+**The county's line is the default; a line drawn on the park screen is an
+override and wins** (owner, 17 November 2026). The plan route fills the
+county's line into a plan that has none and never saves it over one;
+The Retreat's and Cross Creek's drawn lines stay, with the county's drawn
+under them dashed orange, and **Use the county line** puts the default back.
+Every property's map also draws its neighbours' lines within 1.5 km, dashed
+purple, so where two parcels meet -- or leave a gap -- is seen.
+
+Two things the bulk run got wrong first, both now in `county-line-check.mjs`:
+a lone match was taken without asking where it was (128 Sunflower Ln came
+back 347 km away -- the same address in another county), and a parcel found
+under a pin was not checked against the house number (609 Foreman Bundy's
+pin stands on 472 Okisko's land). Left without a line: the Hertford/
+Perquimans addresses whose point lookup came back as a 4 MB page (pg_net's
+cap), 1319 S Williams Cir, 609 Foreman Bundy, 130 Evergreen St and Pines
+MHP (pins on neighbours), 220-222 N Poindexter, 480 Okisko, 1168 B
+Northside, and the two Fayetteville addresses with no pin. The site's own
+lookup will try each again when it is opened.
+
+1140, 1142 and 1148 Northside are three county parcels that share their
+edges vertex for vertex: no gap, no overlap.
