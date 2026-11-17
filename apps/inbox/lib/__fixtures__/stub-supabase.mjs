@@ -228,13 +228,47 @@ const TABLES = {
     { id: "ow4", name: "Hudson Yards LLC", legal_name: "Hudson Yards LLC",
       active: true, notes: null, kind: "ours" },
   ],
+  /* Four units, and the four states the public listings page has to tell
+     apart: advertised with a date, advertised with none, coming up, and
+     not advertised at all. The last one is the point -- with every unit
+     advertised, "shows what the office is renting" and "shows everything"
+     are the same page and the fixture cannot tell them apart.
+
+     `is_vacant` deliberately DISAGREES with `listing`, because that is the
+     real state: on 17 November Rent Manager called one unit vacant while
+     the office advertised six, and the vacant one was not among them. */
   units: [
     { id: "u1", label: "3124", property_id: "p1",
+      listing: "for_rent", is_vacant: false, bedrooms: 3, bathrooms: 2,
+      monthly_rent: 1150, available_on: "2026-12-01",
       properties: { id: "p1", name: "The Retreat",
                     address: "3100 Lady Viola Dr, Fayetteville NC" } },
     { id: "u2", label: "17", property_id: "p2",
+      listing: "for_rent", is_vacant: false, bedrooms: 2, bathrooms: 1,
+      monthly_rent: 875, available_on: null,
       properties: { id: "p2", name: "1140 Northside Road Mobile Home Community",
                     address: "1140 Northside Rd, Elizabeth City NC" } },
+    { id: "u4", label: "211 Roscoe Dr", property_id: "p3",
+      listing: "upcoming", is_vacant: false, bedrooms: 4, bathrooms: 2,
+      monthly_rent: 1495, available_on: null,
+      properties: { id: "p3", name: "211 Roscoe Dr",
+                    address: "211 Roscoe Dr, Elizabeth City NC" } },
+    /* A LONG NAME ON AN UPCOMING HOME, and that is the whole reason it is
+       here. "211 Roscoe Dr" is short enough to clear the "Coming up" pill
+       whether or not room is reserved for it, so with only that card the
+       overlap check passes with the fix deleted. The two answers have to
+       differ somewhere or the check is not asking the question. */
+    { id: "u6", label: "Lot 14", property_id: "p5",
+      listing: "upcoming", is_vacant: false, bedrooms: 3, bathrooms: 2,
+      monthly_rent: 1025, available_on: null,
+      properties: { id: "p5",
+                    name: "1140 Northside Road Mobile Home Community",
+                    address: "1140 Northside Rd, Elizabeth City NC" } },
+    { id: "u5", label: "9 Nowhere Ln", property_id: "p4",
+      listing: null, is_vacant: true, bedrooms: 2, bathrooms: 1,
+      monthly_rent: 700, available_on: null,
+      properties: { id: "p4", name: "9 Nowhere Ln",
+                    address: "9 Nowhere Ln, Elizabeth City NC" } },
   ],
   /* Two homes, in two parks, to ow1 -- so "across N parks" has a number
      to get wrong, and ow2 has nothing.
@@ -575,6 +609,21 @@ createServer((req, res) => {
         });
         continue;
       }
+      /* `in.(a,b)` as well, because an unknown filter here is SKIPPED -- and
+         a skipped filter is not a neutral one. The public listings page asks
+         `listing in (for_rent, upcoming)`, and without this the stand-in
+         handed back every unit in the fixture, so the page rendered homes
+         nobody is advertising and read as working. A stand-in that ignores
+         the question answers the wrong one confidently, which is the note
+         already written above about `eq` and about `is.null`. */
+      const inList = /^in\.\((.*)\)$/.exec(v);
+      if (inList) {
+        const want = new Set(inList[1].split(",")
+          .map((s) => s.trim().replace(/^"|"$/g, "")));
+        rows = rows.filter((r) => want.has(String(r[k])));
+        continue;
+      }
+
       const m = /^eq\.(.*)$/.exec(v);
       if (!m) continue;
       const want = m[1] === "null" ? null : m[1];

@@ -89,9 +89,28 @@ const EMERGENCY = [
   "gas leak", "smell gas", "smell of gas", "carbon monoxide", "co detector",
   "sewage", "sewer back", "flooding", "flooded", "water pouring",
   "no heat", "without heat", "heat is out", "furnace is out",
-  "electrical fire", "sparking", "smoke", "exposed wire", "no power",
+  "electrical fire", "sparking", "exposed wire", "no power",
   "break in", "broken window", "door won't lock", "door wont lock",
+  /* A FIRE, NOT A FIREPLACE, AND NOT A DETECTOR.
+   *
+   * This list used to contain the bare word "smoke", and the dashboard
+   * showed ten emergencies of which six were smoke detectors: "Smoke
+   * dectectors", "Smoke dectors", "Same smoke dector beeping bedroom".
+   * A detector beeping at 3am is a nine-volt battery, and an emergency
+   * queue with batteries at the top is one nobody reads down.
+   *
+   * "fire" alone is no better -- "ceiling by fireplace looks like it has
+   * water damage" is a real request on this account. So the phrases are
+   * the ones that only ever mean a fire. */
+  "on fire", "smell smoke", "smells like smoke", "smoke coming",
+  "smoke filling", "house is smoking",
 ];
+
+/** A detector is a safety item and it is not tonight's emergency.
+ *
+ *  Matched as a pattern rather than a word because every one of these is
+ *  real, typed by a tenant on a phone: "dectector", "dector", "detecter". */
+const DETECTOR = /\bsmoke\s*(?:detect|dectect|dector|detecter|alarm)/i;
 
 const URGENT = [
   "no hot water", "no water", "water heater", "burst", "leak", "leaking",
@@ -102,6 +121,15 @@ const URGENT = [
 
 export function urgencyFromText(text: string): number {
   const t = text.toLowerCase();
+
+  /* First, and it wins: a detector that mentions nothing else is a battery.
+     Asked BEFORE the emergency scan rather than after, because "smoke
+     detectors and outlets" hits "no power"-adjacent wording often enough
+     that ordering by accident is not ordering. A report that names a
+     detector AND an actual fire still reads as the fire, because those
+     phrases are checked on the way past. */
+  if (DETECTOR.test(t) && !EMERGENCY.some((k) => t.includes(k))) return 2;
+
   if (EMERGENCY.some((k) => t.includes(k))) return 1;
   if (URGENT.some((k) => t.includes(k))) return 2;
   return 3;
