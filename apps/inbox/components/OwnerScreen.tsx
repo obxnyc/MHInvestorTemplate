@@ -721,9 +721,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   return (
     <div className="parkpage ownerpage">
       <header className="parkhead noprint">
-        <h1>{owner.name}</h1>
-        {owner.legal_name && owner.legal_name !== owner.name && (
-          <span className="parkkept">{owner.legal_name}</span>
+        <h1>{owner.legal_name?.trim() || owner.name}</h1>
+        {owner.legal_name?.trim() && owner.legal_name.trim() !== owner.name && (
+          <span className="parkkept">{owner.name}</span>
         )}
         <div className="parkacts">
           {papers && canKeep && (
