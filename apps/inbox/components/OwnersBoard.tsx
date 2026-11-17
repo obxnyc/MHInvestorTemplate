@@ -90,8 +90,11 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
 
   const shown = useMemo(() => {
     const q = find.trim().toLowerCase();
-    if (!q) return inTab;
-    return inTab.filter((r) =>
+    // Alphabetical by the name shown on the card, the entity where there is one.
+    const shownAs = (r: Row) => (r.legal_name?.trim() || r.name).toLowerCase();
+    const sorted = [...inTab].sort((a, b) => shownAs(a).localeCompare(shownAs(b)));
+    if (!q) return sorted;
+    return sorted.filter((r) =>
       r.name.toLowerCase().includes(q)
       || (r.legal_name ?? "").toLowerCase().includes(q)
       || r.parks.some((p) => p.toLowerCase().includes(q)));
@@ -245,9 +248,11 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
         <div className="ownercards">
           {shown.map((r) => (
             <div className="ownercard" key={r.id}>
-              <Link href={`/owners/${r.id}`} className="ownername">{r.name}</Link>
-              {r.legal_name && r.legal_name !== r.name && (
-                <span className="dim">{r.legal_name}</span>
+              {/* The entity that holds the homes is the heading; the person
+                  behind it is the small print. */}
+              <Link href={`/owners/${r.id}`} className="ownername">{r.legal_name?.trim() || r.name}</Link>
+              {r.legal_name?.trim() && r.legal_name.trim() !== r.name && (
+                <span className="dim">{r.name}</span>
               )}
               <p className="ownerheld">
                 {!holdings ? (
