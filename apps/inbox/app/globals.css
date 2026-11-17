@@ -3482,3 +3482,50 @@ a.metric:hover{border-color:var(--accent)}
 /* The week grid in a box of its own that scrolls sideways on the smallest
    phones: eight columns of hours do not fit in 288px and should not try to. */
 .tsscroll{overflow-x:auto;max-width:100%}
+
+/* ---- the office line: Calls page ----
+   Prefixed cl- throughout. Bare names like .check, .empty and .danger were
+   each borrowed by a second screen here and came out wrong. */
+.cl-filters{display:flex;gap:.35rem;overflow-x:auto;padding:.2rem 0 .75rem;scrollbar-width:none}
+.cl-filter{flex:none;font-size:.76rem;padding:.3rem .75rem;min-height:2.4rem;display:inline-flex;align-items:center;border-radius:999px;border:1px solid var(--hair);
+  background:var(--card);color:var(--ink-2);text-decoration:none;white-space:nowrap}
+.cl-filter.on{background:var(--accent);border-color:var(--accent);color:var(--accent-on);font-weight:700}
+.cl-card{display:flex;flex-direction:column;gap:.45rem}
+.cl-card.cl-live{border-color:var(--tn)}
+.cl-meta{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
+.cl-num{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.cl-cat,.cl-badge{font-size:.68rem;font-weight:700;padding:.14rem .5rem;border-radius:999px;
+  background:var(--sunk);color:var(--ink-2)}
+.cl-pr{background:var(--pr-soft);color:var(--pr-ink)}
+.cl-tn{background:var(--tn-soft);color:var(--tn-ink)}
+.cl-mt{background:var(--mt-soft);color:var(--mt-ink)}
+.cl-vd{background:var(--vd-soft);color:var(--vd-ink)}
+.cl-crit{background:var(--warn-soft);color:var(--crit)}
+.cl-ot{background:var(--sunk);color:var(--ink-2)}
+.cl-onair{background:var(--tn-soft);color:var(--tn-ink)}
+.cl-status{margin:0;font-size:.82rem;color:var(--muted)}
+.cl-summary{margin:0;white-space:pre-line;font-size:.88rem;color:var(--ink);line-height:1.45}
+.cl-follow,.cl-suggest,.cl-notes{margin:0;font-size:.82rem;color:var(--ink-2)}
+.cl-link{background:none;border:0;padding:.45rem .1rem;min-height:2.2rem;font:inherit;color:var(--accent-ink);text-decoration:underline;cursor:pointer}
+.cl-rec{display:flex;flex-direction:column;gap:.1rem}
+.cl-reclabel{font-size:.7rem;color:var(--muted);font-weight:600}
+.cl-transcript summary,.cl-more summary{cursor:pointer;font-size:.8rem;font-weight:600;color:var(--ink-2)}
+.cl-transcript ol{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem;
+  max-height:22rem;overflow-y:auto}
+.cl-transcript li{font-size:.84rem;line-height:1.4;padding:.35rem .55rem;border-radius:8px;
+  background:var(--sunk);color:var(--ink)}
+.cl-transcript li.cl-us{background:var(--accent-soft);color:var(--ink)}
+.cl-transcript li b{margin-right:.3rem;color:var(--ink-2)}
+.cl-actions{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+.cl-actions .mini{text-decoration:none;min-height:2rem;display:inline-flex;align-items:center}
+.cl-transfer{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;padding:.5rem;border-radius:8px;
+  background:var(--tn-soft);color:var(--tn-ink)}
+.cl-transfer label{font-size:.78rem;font-weight:700}
+.cl-transfer select{min-width:0;flex:1 1 10rem}
+.cl-form{display:grid;grid-template-columns:minmax(0,1fr);gap:.35rem;margin-top:.4rem}
+.cl-form label{font-size:.74rem;color:var(--muted);font-weight:600}
+.cl-form textarea{width:100%;font:inherit;font-size:.85rem}
+.cl-form .mini{justify-self:start}
+.cl-said{margin:0;font-size:.8rem;color:var(--tn-ink)}
+.cl-error{margin:0;font-size:.8rem;color:var(--crit);font-weight:600}
+.cl-none{color:var(--muted);font-size:.86rem;padding:1rem 0}

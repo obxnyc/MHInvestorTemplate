@@ -56,6 +56,8 @@ const SIGNED_IN = [
   // Crews, rates and the clock texts; and Friday pay. Set up from a phone
   // in a truck as often as at a desk.
   ["desk", "/crew"], ["desk", "/pay"],
+  // The office line: a call on the line now, a missed one, a transcript.
+  ["desk", "/calls"],
 ];
 // A phone, a small phone, and a phone held sideways.
 const SIZES = [[390, 844], [320, 568], [844, 390]];

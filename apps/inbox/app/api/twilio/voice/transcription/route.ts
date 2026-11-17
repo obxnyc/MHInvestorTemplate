@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkTwilioSignature, formToObject } from "@/lib/twilio";
-import { pushToTeam, CLAIM_ACTIONS } from "@/lib/push";
+import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "@/lib/push";
+import { callSettings } from "@/lib/voice";
+import { summarizeCall } from "@/lib/transcribe";
 import { prettyPhone } from "@/lib/format";
 
 export const runtime = "nodejs";
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
   const { data: call } = await db.from("calls")
     .update({ voicemail_text: text })
     .eq("twilio_call_sid", params.CallSid)
-    .select("id, contact_id, conversation_id")
+    .select("id, contact_id, conversation_id, after_hours, route_key, category")
     .maybeSingle();
   if (!call) return new NextResponse(null, { status: 204 });
 
@@ -65,14 +67,25 @@ export async function POST(req: Request) {
     .eq("id", conversationId);
 
   const who = contact?.full_name || prettyPhone(contact?.phone ?? "");
-  await pushToTeam(null, {
-    title: `Voicemail — ${who}`,
+  const note = {
+    title: `Voicemail — ${who}${call.category ? ` · ${call.category}` : ""}`,
     body: (text ?? "").slice(0, 140),
     url: `/c/${conversationId}`,
     tag: `vm:${call.id}`,
     conversationId,
     actions: CLAIM_ACTIONS,
-  });
+  };
+  // After hours the voicemail goes to the person who asked to hear about
+  // after-hours calls, not to everybody's phone at midnight. An emergency is
+  // the exception.
+  const s = await callSettings();
+  if (call.after_hours && call.route_key !== "emergency" && s.after_hours_notify) {
+    await pushToStaff([s.after_hours_notify], note);
+  } else {
+    await pushToTeam(null, note);
+  }
+
+  await summarizeCall(call.id);
 
   return new NextResponse(null, { status: 204 });
 }

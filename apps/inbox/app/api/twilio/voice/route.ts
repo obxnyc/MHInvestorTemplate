@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkTwilioSignature, formToObject, toE164, publicBase } from "@/lib/twilio";
-import { loadMenu, menuTwiml, twiml } from "@/lib/voice";
+import { loadMenu, menuTwiml, twiml, say, callSettings } from "@/lib/voice";
+import { isOpen } from "@/lib/hours";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * An inbound call to the shared line.
+ * An inbound call to the office line.
  *
- * The call is logged and then handed to the menu, which lives in the database
- * rather than here. Everything after this point -- what the caller hears, which
- * keys do what, who rings and in what order -- is editable by the office
- * without a deployment.
+ * The call is logged, office hours are asked once, and the caller hears the
+ * greeting for this time of day and then the menu -- which lives in the
+ * database, along with everything after it.
+ *
+ * The greeting is said INSIDE the menu's Gather, so a regular caller who knows
+ * that 2 then 1 is maintenance can press through it instead of sitting out the
+ * whole speech every time.
  */
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -23,31 +27,35 @@ export async function POST(req: Request) {
 
   const from = toE164(params.From ?? "");
   const db = supabaseAdmin();
+  const s = await callSettings();
+  const open = isOpen(s);
 
   let { data: contact } = await db.from("contacts").select("id").eq("phone", from).maybeSingle();
-  if (!contact) {
+  if (!contact && from) {
     const { data } = await db.from("contacts")
       .insert({ phone: from, party: "other" }).select("id").single();
-    contact = data!;
+    contact = data;
   }
 
-  await db.from("calls").insert({
-    contact_id: contact.id,
-    direction: "inbound",
-    twilio_call_sid: params.CallSid,
-  });
+  // Twilio retries a webhook it did not hear back from, and a second row for
+  // one phone call would make every count on the Calls page wrong.
+  const { data: seen } = await db.from("calls").select("id")
+    .eq("twilio_call_sid", params.CallSid).maybeSingle();
+  if (!seen) {
+    await db.from("calls").insert({
+      contact_id: contact?.id ?? null,
+      direction: "inbound",
+      twilio_call_sid: params.CallSid,
+      after_hours: !open,
+    });
+  }
 
+  const greeting = open ? s.day_greeting : s.night_greeting;
   const menu = await loadMenu("root");
-  // No menu built yet: ring nobody rather than hanging up, and let voicemail
-  // take it. Silence on a business line is worse than a machine.
+  // No menu built yet: voicemail rather than silence. Silence on a business
+  // line is worse than a machine.
   if (!menu) {
-    return twiml(`<Redirect>${base}/api/twilio/voice/voicemail</Redirect>`);
+    return twiml(say(greeting) + `<Redirect method="POST">${base}/api/twilio/voice/voicemail</Redirect>`);
   }
-
-  // Recording consent varies by state; two-party states require notice. One
-  // line, before anything else, removes the question entirely.
-  return twiml(
-    `<Say voice="Polly.Joanna">This call may be recorded.</Say>`
-    + menuTwiml(menu, base, 0)
-  );
+  return twiml(menuTwiml(menu, base, 0, greeting));
 }
