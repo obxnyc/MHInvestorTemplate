@@ -39,6 +39,10 @@ export default function AppHeader(
         { href: "/", label: "Messages" },
         { href: "/properties", label: "Properties" },
         { href: "/leasing", label: "Leasing" },
+        // Who owes and what was promised: the desk's daily screen at the
+        // start of every month, so it is a place of its own, not a page
+        // under something.
+        { href: "/collections", label: "Collections" },
         { href: "/owners", label: "Investors", under: [
           { href: "/owners", label: "Investors" },
           // Everybody's money: only the two roles the page itself lets in.

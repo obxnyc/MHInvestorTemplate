@@ -24,6 +24,7 @@ import NotesPanel, { type Note } from "@/components/NotesPanel";
 import Attachment from "@/components/Attachment";
 import IntakeCard from "@/components/IntakeCard";
 import NewJob from "@/components/NewJob";
+import CollectionCard from "@/components/CollectionCard";
 
 type Thread = {
   convo: Record<string, unknown>;
@@ -268,6 +269,11 @@ export default function ThreadPane(
                      } : null}
                      onChanged={() => void load(String(convo.id))} />
       ) : null}
+
+      {/* Rent, where the tenant is talking about it. Shows nothing for
+          somebody who owes nothing. */}
+      <CollectionCard contactId={contact?.id ? String(contact.id) : null} conversationId={convo.id}
+                      bump={data.messages.length} />
 
       <OpenJobs jobs={data.jobs ?? []} />
 

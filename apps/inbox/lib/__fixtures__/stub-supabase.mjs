@@ -461,6 +461,72 @@ const TABLES = {
   })(),
 };
 
+/* RENT COLLECTIONS (069), as the shapes that tell the rules apart: somebody
+   arranged before the lock-out, somebody whose promise is AFTER it, a broken
+   promise, somebody nobody has heard from, a filed case with a court date,
+   and one paid off mid-process. Every standing the screen can show, at
+   once, so a picture of it is a picture of all of them. */
+{
+  const d = (n) => new Date(now + n * 864e5).toISOString().slice(0, 10);
+  const acct = (id, name, cents, stage, stageOn, more = {}) => ({
+    rm_tenant_id: id, name, rm_status: "Current", contact_id: `cc${id}`, unit_id: null,
+    place: more.place ?? "1140 Northside Rd · Lot " + (id - 500), balance_cents: cents,
+    oldest_charge: more.oldest ?? d(-16), read_at: iso(now - 40 * 60e3), stage, stage_on: stageOn,
+    stage_by: null, court_on: more.court ?? null, case_number: more.caseNo ?? null,
+    paid_during: more.paidDuring ?? null, assigned_to: more.assigned ?? null,
+    updated_at: iso(now), contacts: { phone: more.phone === undefined ? `+1910555${String(id).padStart(4, "0")}` : more.phone },
+  });
+  Object.assign(TABLES, {
+    collection_accounts: [
+      acct(501, "Tiffany Jernigan", 135000, "late", d(-11), { assigned: DESK }),
+      acct(502, "Marcus Hill", 98000, "late", d(-11)),
+      acct(503, "Renee Watts", 162500, "late", d(-11), { phone: null }),
+      acct(504, "Darnell Price", 250000, "filed", d(-4), { court: d(6), caseNo: "26-CVM-1184", oldest: d(-47), assigned: DESK }),
+      acct(505, "Lisa Ortega", 62500, "late", d(-11)),
+      acct(506, "Kevin Brooks", 0, "current", d(-1), { paidDuring: "filed" }),
+    ],
+    collection_readings: [
+      { id: 1, rm_tenant_id: 505, at: iso(now - 12 * 864e5), cents: 125000 },
+      { id: 2, rm_tenant_id: 505, at: iso(now - 2 * 864e5), cents: 62500 },
+      { id: 3, rm_tenant_id: 506, at: iso(now - 864e5), cents: 0 },
+    ],
+    collection_promises: [
+      { id: "pr1", rm_tenant_id: 501, amount_cents: 135000, due_on: d(3), made_at: iso(now - 2 * 864e5),
+        made_by: DESK, balance_at_cents: 135000, paid_now_cents: 0, note: "Paycheck Friday", status: "open", paid_cents: 0 },
+      { id: "pr2", rm_tenant_id: 502, amount_cents: 98000, due_on: d(-2), made_at: iso(now - 6 * 864e5),
+        made_by: DESK, balance_at_cents: 98000, paid_now_cents: 0, note: null, status: "broken", paid_cents: 0 },
+      { id: "pr3", rm_tenant_id: 505, amount_cents: 62500, due_on: d(40), made_at: iso(now - 2 * 864e5),
+        made_by: DESK, balance_at_cents: 125000, paid_now_cents: 62500, note: "Paid half, rest on the 27th of next month", status: "open", paid_cents: 0 },
+    ],
+    collection_events: [
+      { id: "ev1", rm_tenant_id: 501, at: iso(now - 2 * 864e5), by: DESK, kind: "note",
+        body: "Called her. Hours were cut, gets paid Friday. Said she will pay the whole thing.", stage_from: null, stage_to: null },
+      { id: "ev2", rm_tenant_id: 504, at: iso(now - 4 * 864e5), by: DESK, kind: "stage",
+        body: "Done: Eviction filed. Court on the summons.", stage_from: "late", stage_to: "filed" },
+    ],
+    collection_texts: [],
+    collection_settings: [{ id: true, policy: {}, enabled: ["before_due", "due_today", "last_day", "late", "promise_eve", "promise_missed"],
+      auto_send: false, send_hour: 9, updated_by: null, updated_at: iso(now) }],
+    collection_pulls: [{ id: 1, at: iso(now - 40 * 60e3), ok: true, tenants: 310, owing: 43, partial: false, detail: "via /Tenants?embeds=OpenReceivables" }],
+  });
+  for (const a of TABLES.collection_accounts) {
+    TABLES.contacts.push({ id: a.contact_id, phone: a.contacts.phone, full_name: a.name, party: "current_tenant",
+      language: null, unit_id: null, units: null, email: null, rm_tenant_id: a.rm_tenant_id });
+  }
+  /* Only when asked: a conversation adds a row to the inbox, and the inbox
+     checks count rows. */
+  if (process.env.STUB_RENT) {
+    TABLES.conversations.push({ id: "cv501", category: "collections", source: "sms", status: "open",
+      assigned_to: null, closure_prompts: 0, category_confidence: 0.9, last_message_at: iso(now - 3 * 3600e3),
+      last_message_preview: "I can pay 400 on Friday and the rest on the 1st", subject: null, units: null, staff: null,
+      team_id: null, unit_id: null, contact_id: "cc502",
+      contacts: { id: "cc502", phone: "+19105550502", full_name: "Marcus Hill", party: "current_tenant",
+        language: null, unit_id: null, units: null, email: null } });
+    TABLES.messages.push({ id: "m501", conversation_id: "cv501", direction: "inbound",
+      body: "I can pay 400 on Friday and the rest on the 1st", body_en: null, created_at: iso(now - 3 * 3600e3) });
+  }
+}
+
 /* The seed, kept, so a run can put the tables back.
    Anything that WRITES changes what the next check reads: two end-to-end
    posts left an Office thread behind, a fourth row appeared in the inbox, and
@@ -711,6 +777,7 @@ createServer((req, res) => {
     const EMBEDS = {
       dm_members: { thread: ["thread_id", "dm_threads"] },
       shifts: { properties: ["property_id", "properties"] },
+      collection_accounts: { contacts: ["contact_id", "contacts"] },
       properties: { owners: ["owner_id", "owners"] },
     };
 

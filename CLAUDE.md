@@ -31,6 +31,7 @@ answers and is the fallback if the domain ever misbehaves.
 | Team chat | https://app.larabeehomesllc.com/team |
 | Jobs | https://app.larabeehomesllc.com/jobs |
 | Properties | https://app.larabeehomesllc.com/properties |
+| Rent collections | https://app.larabeehomesllc.com/collections |
 | Crew clock | https://app.larabeehomesllc.com/clock |
 | Timesheets | https://app.larabeehomesllc.com/timesheets |
 | Friday pay | https://app.larabeehomesllc.com/pay |
@@ -1973,3 +1974,44 @@ checked, and only when he asks. A draft is not a send: the statement is
 recorded sent when he presses "I sent it from Gmail". Alex Prieto's
 sheets contain mistakes; the screen's against-last-month line and checks are
 there so a person catches them before money moves.
+
+### Rent collections
+
+https://app.larabeehomesllc.com/collections -- who owes, the step of the
+eviction each is at, what they promised and whether it came. Migration 069,
+applied 17 November 2026 through the connector.
+
+**The policy is the owner's and it is rigid.** Due the 1st, late after the
+5th. On the 6th the late notice AND the 10-day demand go out together (the
+owner, 17 November 2026) and Rent Manager adds the late fee. The eviction is
+filed when the ten days have run (the 17th). Every step has a day and is
+OVERDUE in red when not taken by it. Later steps (filed, judgment, writ, out)
+are never inferred -- somebody presses Mark done, and the history records who.
+
+**A promise never stops the process.** It decides who to worry about.
+"Arranged" = a promise due before the process would play out
+(`playsOutBy`), or a significant payment (50%) plus a date for the rest.
+Broken promise or nothing heard in 3 days = worry.
+
+**Payments are read off the balance**: Rent Manager is read every hour
+(pg_cron `collections-hourly` -> `/api/cron/collections`, the reports key)
+and a payment is a FALL between two readings. Net change would let the 1st's
+new charge hide a payment. A partial read zeroes nobody.
+
+**Nobody relays a conversation.** A tenant's row opens into their notes,
+steps and promises AND every text and call with them on the shared line,
+read live. Each tenant thread in Messages carries a card: balance, step,
+"They promised to pay", and -- when their last text reads like one --
+"Log $400 by Fri" in one press (`readPromise`, a suggestion, never a record).
+
+**Reminder texts** (3 days before the 1st, the 1st, the 5th, the 6th, the
+day before a promise, the day after a broken one) are drafted daily and
+sent from the office line into the tenant's own thread, so replies land in
+Messages. Claimed in `collection_texts` before sending. **Automatic sending
+is OFF** until an admin ticks it under "The policy and the reminders"; until
+then a person presses Send. Texts only go between 8am and 7pm.
+
+`collections-check.mjs` holds the rules; every guard in it was broken on
+purpose and caught. One rule that never fired (an am/pm test, shadowed by
+the under-20 rule) was deleted rather than kept as a guard that proves
+nothing.

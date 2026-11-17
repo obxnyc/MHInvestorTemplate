@@ -75,33 +75,39 @@ async function through(
   return { rows, partial, readAs };
 }
 
+/** The whole tenant roster with whatever money is on it, through the first
+ *  spelling that answers with a balance. Shared by the morning report and
+ *  the hourly collections read, so the two cannot disagree about who owes. */
+export async function readRoster(seconds = 42): Promise<
+  | { ok: true; rows: Record<string, unknown>[]; partial: boolean; readAs: Record<string, string>; using: string }
+  | { ok: false; error: string }
+> {
+  const auth = await rmAuthorize();
+  if (!auth.ok) {
+    return { ok: false, error: "Rent Manager would not accept the sign-in, so no balances could be read." };
+  }
+  const until = Date.now() + seconds * 1000;
+  const tried: string[] = [];
+  for (const path of TENANT_PATHS) {
+    const got = await through(auth.session, path, until, tried);
+    if (got) return { ok: true, ...got, using: path };
+    if (Date.now() > until) break;
+  }
+  return {
+    ok: false,
+    error: "Rent Manager answered, but none of the ways of asking returned a balance. " + tried.join(" | "),
+  };
+}
+
 export async function pullDelinquency(day: string, seconds = 42): Promise<Report> {
   const blank: Report = {
     day, ok: false, error: null, debtors: [], tenantsRead: 0, partial: false,
     using: null, readAs: {},
   };
 
-  const auth = await rmAuthorize();
-  if (!auth.ok) {
-    return { ...blank, error: "Rent Manager would not accept the sign-in, so no balances could be read." };
-  }
-  const until = Date.now() + seconds * 1000;
-  const tried: string[] = [];
-
-  let got: Awaited<ReturnType<typeof through>> = null;
-  let using: string | null = null;
-  for (const path of TENANT_PATHS) {
-    got = await through(auth.session, path, until, tried);
-    if (got) { using = path; break; }
-    if (Date.now() > until) break;
-  }
-  if (!got) {
-    return {
-      ...blank,
-      error: "Rent Manager answered, but none of the ways of asking returned a balance. "
-        + tried.join(" | "),
-    };
-  }
+  const got = await readRoster(seconds);
+  if (!got.ok) return { ...blank, error: got.error };
+  const using = got.using;
 
   const { rows, partial, readAs } = got;
   const owing: { id: number; name: string; status: string | null; balance: number; oldest: string | null }[] = [];
