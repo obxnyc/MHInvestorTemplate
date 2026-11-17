@@ -99,6 +99,9 @@ const BARE = /\$\s*([\d][\d,]{1,6})\b/;
 const NOT_A_CEILING =
   /\b(deposit|income|i (?:make|earn|bring|gross|net)|we (?:make|earn|bring)|paid|salary|wages?|an hour|hourly|a week|weekly|bi[- ]?weekly|credit|score|fee|rent is)\b/i;
 
+const STREET_AFTER =
+  /^\s+(?:[NSEW]\.?\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:Rd|Road|St|Street|Ave|Avenue|Dr|Drive|Ln|Lane|Ct|Court|Cir|Circle|Blvd|Way|Pl|Place|Hwy|Highway|Pkwy|Ter|Trl|Loop)\b/;
+
 const money = (s: string) => Number(s.replace(/,/g, ""));
 
 /** The sentence a figure is sitting in.
@@ -134,6 +137,10 @@ function ceiling(text: string): { n: number; from: string; at: number } | null {
     if (NOT_A_CEILING.test(sentence)) return null;
     const after = text.slice(m.index + m[0].length);
     if (A_RATE.test(after)) return null;
+    // A house number is not a price. "a question about 1140 Northside Rd"
+    // read as a budget of $1,140 -- "about" is a ceiling word and the
+    // dollar sign is optional, so only what follows the figure can tell.
+    if (!/\$/.test(m[0]) && STREET_AFTER.test(after)) return null;
     return { n, from: m[0].trim(), at: m.index };
   };
 

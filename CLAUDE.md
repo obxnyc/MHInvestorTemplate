@@ -1994,3 +1994,30 @@ Lot #02" and the plan files them as "... Lot 2", so `place` matched nothing
 `unplace`, `row` and `move` for that park, reading the lock from the
 database rather than the request, until Unlock. `lock-check.mjs` holds it;
 each rule was broken in turn to confirm it is caught.
+
+### Zillow leads come by API, not by email
+
+Zillow's notification email masks the renter (a `@convo.zillow.com` relay, no
+phone). Zillow's **Lead API** POSTs each lead to
+https://app.larabeehomesllc.com/api/intake/zillow with the real name, phone
+and email, plus income, credit range, move date, bedrooms and pets
+(`lib/zillow-lead.ts`; fields from Zillow's "Lead Delivery API Guide", 11 Dec
+2024). It needs no listing feed: Zillow can trigger it on the domain of the
+listing's contact email. Set up by emailing rentalfeeds@zillow.com; free.
+
+Zillow sends a static header, `X-Zillow-Key`, whose value is the Vault secret
+`zillow_lead_key` (072, applied 17 November 2026), checked by
+`zillow_lead_key_ok`. Read it through the connector when Zillow asks for it.
+Answer 200 only once the lead is stored: Zillow redelivers on any failure and
+never after a 200.
+
+Zillow's emails, Rent Manager's TWA emails and the website forms all land in
+**larabeehomesllc@gmail.com**. The Gmail connector here is cade@, so that inbox
+is read by forwarding it into the app (Postmark inbound), never by Claude
+signing in to it. On 17 November 2026 the forward carried Rent Manager mail
+and not Zillow's; no inquiry had ever been recorded.
+
+**A house number is not a budget.** `readWanted` read "a question about 1140
+Northside Rd" as a $1,140 ceiling, because "about" is a ceiling word and the
+dollar sign is optional. A figure without `$` followed by a street name is now
+refused; `zillow-lead.test.mjs` holds it.
