@@ -29,7 +29,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const supabase = await supabaseServer();
 
   const who = await supabase
-    .from("owners").select("id, name, legal_name, notes").eq("id", id).maybeSingle();
+    .from("owners").select("id, name, legal_name, contact_name, notes").eq("id", id).maybeSingle();
   if (who.error) {
     return NextResponse.json({ error: who.error.message }, { status: 400 });
   }

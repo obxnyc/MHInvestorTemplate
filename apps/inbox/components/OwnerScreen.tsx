@@ -70,7 +70,7 @@ const asMoney = (cents: number | null | undefined) =>
  * standalone generator with twenty-four boxes typed again each time.
  */
 export default function OwnerScreen({ ownerId }: { ownerId: string }) {
-  const [owner, setOwner] = useState<{ name: string; legal_name: string | null } | null>(null);
+  const [owner, setOwner] = useState<{ name: string; legal_name: string | null; contact_name?: string | null } | null>(null);
   const [homes, setHomes] = useState<Held[]>([]);
   /** The executed papers already on file, by sale. */
   const [filed, setFiled] = useState<Record<string, Paper[]>>({});
@@ -721,9 +721,9 @@ export default function OwnerScreen({ ownerId }: { ownerId: string }) {
   return (
     <div className="parkpage ownerpage">
       <header className="parkhead noprint">
-        <h1>{owner.legal_name?.trim() || owner.name}</h1>
-        {owner.legal_name?.trim() && owner.legal_name.trim() !== owner.name && (
-          <span className="parkkept">{owner.name}</span>
+        <h1>{owner.name}</h1>
+        {(owner.legal_name?.trim() && owner.legal_name.trim() !== owner.name ? owner.legal_name : owner.contact_name?.trim()) && (
+          <span className="parkkept">{owner.legal_name?.trim() && owner.legal_name.trim() !== owner.name ? owner.legal_name : owner.contact_name}</span>
         )}
         <div className="parkacts">
           {papers && canKeep && (
