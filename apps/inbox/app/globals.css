@@ -3947,3 +3947,43 @@ button.edrow.dbo:hover{background:var(--sunk)}
   .olhead{flex-wrap:wrap}
   .olpage{padding:1.1rem .75rem 2.5rem;min-width:0}
 }
+/* ---------------------------------------------------------------- listings
+ *
+ * The public "what have you got" page. `/apply` answers "which of these do
+ * you want", which is the second question -- somebody deciding whether to
+ * ring needs the first one answered first.
+ *
+ * Every colour here is a token. The stylesheet redefines all of them under
+ * prefers-color-scheme: dark, so a literal is an ink that does not move and
+ * comes out invisible at night -- which this file has learned six times. */
+.listings{max-width:62rem;margin-inline:auto;padding:2.5rem 1.25rem 4rem;line-height:1.6}
+.listings h1{font-size:1.7rem;letter-spacing:-.02em;margin:0 0 .6rem}
+.listings .lede{color:var(--muted);margin:0 0 1.8rem}
+
+/* auto-fit, not a fixed count: three cards do not fit a phone and a bare
+   1fr column never shrinks below the width of what is inside it. */
+.homegrid{list-style:none;margin:0;padding:0;display:grid;gap:1rem;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr))}
+
+.homecard{position:relative;background:var(--card);border:1px solid var(--hair);
+  border-radius:.7rem;padding:1.1rem 1.1rem 1.2rem;display:flex;flex-direction:column;
+  gap:.15rem}
+.homecard h2{font-size:1.05rem;letter-spacing:-.01em;margin:0;color:var(--ink)}
+/* The pill is positioned, so it is out of flow and a long name runs under
+   it. "1140 Northside Road Mobile Home Community" wraps to two full-width
+   lines on a phone -- room has to be kept, and only on the cards that have
+   one, or every other card wraps early for nothing. */
+.homecard.issoon h2{padding-right:6rem}
+.homecard .unit{margin:0;color:var(--ink-2);font-size:.92rem}
+.homecard .addr{margin:.1rem 0 0;color:var(--muted);font-size:.86rem}
+.homecard .facts{margin:.55rem 0 0;color:var(--ink-2);font-size:.9rem}
+.homecard .rent{margin:.35rem 0 0;font-size:1.25rem;letter-spacing:-.02em;color:var(--ink)}
+.homecard .rent .per{font-size:.85rem;color:var(--muted);letter-spacing:0}
+.homecard .when{margin:.1rem 0 .9rem;color:var(--muted);font-size:.86rem}
+.homecard .btn{margin-top:auto;width:100%}
+
+/* The ground is a token and so is the ink on it, so the pair inverts
+   together at night instead of going grey-on-grey. */
+.homecard .soon{position:absolute;top:.85rem;right:.9rem;
+  background:var(--sunk);color:var(--ink-2);border:1px solid var(--hair);
+  border-radius:999px;padding:.1rem .5rem;font-size:.72rem;letter-spacing:.01em}
