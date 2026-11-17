@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MonthPicker, RangeSummary, type Range } from "@/components/DistributionsRange";
 import {
-  rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, ownerEmailText, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, withGuarantee, reserveShortCents, reservesOf, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
+  rangeLabel, owedCents, checks, parseMoney, ownerEmailHtml, ownerEmailText, placeOf, laborLine, lotsIn, lineTotal, markupCents, markupable, vacantLots, netCents, shortDate, readDate, withGuarantee, reserveShortCents, reservesOf, subjectFor, monthLabel, usd, changeKindSays, type Line, type StatementInput, type Change,
 } from "@/lib/distribute";
 
 /**
@@ -87,6 +87,15 @@ function StatementLines({ lines }: { lines: Line[] }) {
     </table>
   );
 }
+
+/* A line's date as the date box wants it (YYYY-MM-DD). Alex's sheet writes
+   11/14/2026 as often as 2026-11-14, and a box handed the first shows blank. */
+const isoDay = (v?: string) => {
+  const d = v ? readDate(v) : null;
+  return d ? d.toISOString().slice(0, 10) : "";
+};
+/* Today in the office's own day, not UTC's -- after 7pm Eastern UTC is tomorrow. */
+const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
 export default function DistributionsBoard() {
   const [month, setMonth] = useState(thisMonth());
@@ -837,7 +846,7 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
   const anyMarkup = rows.some((r) => Number(r.pct) > 0);
   const homes = [...new Set(lines.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
   const laborDraft = laborLine(Number(hours), parseMoney(rate) ?? 0, what, lot ? Number(lot) : null);
-  const addRow = (l: Line) => setRows([...rows, ...toRows([l]).map((r) => ({ ...r, orig: undefined }))]);
+  const addRow = (l: Line) => setRows([...rows, ...toRows([{ date: today(), ...l }]).map((r) => ({ ...r, orig: undefined }))]);
 
   const section = (side: "in" | "out") => {
     const idx = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.side === side);
@@ -858,7 +867,10 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
           return (
             <div key={i} className={`edrow${rowBad(r) ? " bad" : ""}${isOurs(r.category) ? " ours" : ""}${r.removed ? " removed" : ""}`}>
               <span className="eddesc">
-                <span className="eddate">{shortDate(r.date)}</span>
+                {!locked && !r.removed && r.category === "Adjustment"
+                  ? <input type="date" className="eddatein" aria-label={`Date for ${r.label || "this line"}`} value={isoDay(r.date)}
+                      onChange={(e) => set(i, { date: e.target.value || undefined })} />
+                  : <span className="eddate">{shortDate(r.date)}</span>}
                 {!locked && !r.removed
                   ? <span className="edlabel">
                       <input aria-label={`Description${r.origLabel ? ` for ${r.origLabel}` : ""}`} value={r.label} spellCheck lang="en-US" autoCorrect="on"
@@ -969,8 +981,8 @@ function StatementCard({ s, busy, act, onPreview, others, onOpen, sendSet, ccAll
           </span>
           {anyMarkup ? <button className="btn" onClick={() => setRows(rows.map((r) => ({ ...r, pct: "" })))}>Clear markups</button> : null}
           <button className="btn" onClick={() => setLabor(!labor)}>Our labor</button>
-          <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "out", pct: "", category: "Adjustment" }])}>Add a charge</button>
-          <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "in", pct: "", category: "Adjustment" }])}>Add a credit</button>
+          <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "out", pct: "", category: "Adjustment", date: today() }])}>Add a charge</button>
+          <button className="btn" onClick={() => setRows([...rows, { label: "", amount: "", side: "in", pct: "", category: "Adjustment", date: today() }])}>Add a credit</button>
         </div>
       ) : null}
       <p className="tsnote edhint">Repair costs are everything but the loan, lot rent and fees; you can set any line&rsquo;s own % in its box below.</p>
