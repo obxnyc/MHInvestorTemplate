@@ -342,6 +342,11 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    */
   const own = useRef(false);
   const remember = useCallback((next: Plan, auto = false) => {
+    // A locked park is not re-fitted, re-angled or re-drawn by anything
+    // -- not the fitting that runs on load, and not a key pressed by
+    // accident. The server refuses the write anyway; this keeps the
+    // screen from showing a layout that is not the one on file.
+    if (planNow.current.locked) return;
     setPlan(next);
     try {
       localStorage.setItem(key, JSON.stringify({
@@ -729,13 +734,16 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     for (const l of lots) {
       if (l.lat != null && l.lng != null) onFile.set(norm(l.label), [l.lng, l.lat]);
     }
-    if (!onFile.size && !Object.keys(moved).length) return real;
+    // A locked layout is the record. A browser still holding drags from
+    // before it was locked does not get to draw them over it.
+    const mine = plan.locked ? {} : moved;
+    if (!onFile.size && !Object.keys(mine).length) return real;
 
     return {
       ...real,
       homes: real.homes.map((h) => {
         const at = onFile.get(norm(h.filed))
-          ?? onFile.get(norm(h.label)) ?? moved[h.id];
+          ?? onFile.get(norm(h.label)) ?? mine[h.id];
         if (!at) return h;
         // The whole pad slid so its middle lands on the saved point.
         // Never turned: the ladder stays a ladder however much is moved.
@@ -749,7 +757,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
         };
       }),
     };
-  }, [real, moved, lots]);
+  }, [real, moved, lots, plan.locked]);
 
   /**
    * The plan as drawn.
@@ -805,6 +813,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   useEffect(() => {
     const was = oldShape.current;
     if (!was || rescued.current || !real?.homes?.length) return;
+    if (planNow.current.locked) return;
     rescued.current = true;
 
     void (async () => {
@@ -884,6 +893,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
   const syncing = useRef(false);
   useEffect(() => {
     if (syncing.current || !real?.homes?.length || !lots.length) return;
+    if (planNow.current.locked) return;
     const mine = Object.keys(moved).length;
     if (!mine) return;
 
@@ -1185,6 +1195,88 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     return true;
   }
 
+  const isLocked = plan.locked === true;
+
+  /**
+   * The layout as it is on screen, as a plan.
+   *
+   * What the owner is looking at when they press Lock is the answer, and
+   * part of it may live only in this browser: a home dragged with Move
+   * homes is saved against its lot, and a park whose lots are filed under
+   * different names from its plan (The Retreat's are "1140 Northside Rd,
+   * Lot #02", its plan says "Lot 2") had every one of those saves
+   * refused. So each moved home is taken out of its row and put down on
+   * its own exactly where it is drawn -- same angle, same size -- and the
+   * plan carries it from then on, on every machine.
+   */
+  function asOnScreen(): Plan {
+    const now = shownNow.current;
+    if (!now) return plan;
+    // Where each moved home is drawn, by id.
+    const drawnAt = new Map<string, [number, number]>();
+    for (const h of now.homes) {
+      if (!(h as { moved?: boolean }).moved) continue;
+      const mid = middleOf(h.ring);
+      if (mid) drawnAt.set(h.id, mid);
+    }
+    if (!drawnAt.size) return plan;
+
+    const rows: PlanRow[] = [];
+    for (const row of plan.rows) {
+      const ids = row.numbers.map((num) => `${row.street}|${num}`);
+      if (!ids.some((id) => drawnAt.has(id))) { rows.push(row); continue; }
+      // Every home in a row with a moved one goes down on its own, where
+      // it is drawn. Taking one number out of a row re-spaces the rest --
+      // a row's homes are shared out evenly between its ends -- so
+      // lifting only the moved one would shift its neighbours as it was
+      // locked.
+      const turn = row.turn ?? plan.homeTurn ?? 0;
+      row.numbers.forEach((num, i) => {
+        const me = laid.find((x) => x.id === ids[i]);
+        if (!me) return;
+        rows.push(homeAt(plan, drawnAt.get(ids[i]) ?? [me.lng, me.lat], num, {
+          street: row.street, turn: row.turn, size: row.size,
+          head: me.bearing - 90 - turn,
+        }));
+      });
+    }
+    return { ...plan, rows };
+  }
+
+  async function lockIt(want: boolean) {
+    if (!want && !confirm(
+      "Unlock the layout?\n\nThe homes can be moved again until you lock it."
+      + " Every earlier version is kept, so a mistake can be put back.")) return;
+    // Anything still waiting in the debounce is older than what is about
+    // to be written, and must not land on top of it afterwards.
+    if (saving.current) { clearTimeout(saving.current); saving.current = null; }
+    unsaved.current = null;
+    setArranging(false); setDropping(false); setLaying(false);
+    setFencing(false); setFitting(false); setSelected(null);
+    setBusy(true); setError(null); setKept("saving");
+    const res = await fetch(`/api/properties/${propertyId}/plan`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(want
+        ? { action: "lock", locked: true, plan: asOnScreen() }
+        : { action: "lock", locked: false }),
+    }).catch(() => null);
+    const out = await res?.json().catch(() => ({})) ?? {};
+    setBusy(false);
+    if (!res?.ok) {
+      setKept("failed");
+      setError(out.error ?? "Could not reach the server. Nothing was changed.");
+      return;
+    }
+    setKept("saved");
+    if (want) {
+      // Now in the plan itself, so this browser's copy is not needed and
+      // must not be drawn over the plan again later.
+      setMoved({});
+      try { localStorage.removeItem(byHand); } catch { /* fine */ }
+    }
+    await load();
+  }
+
   return (
     <div className="parkpage">
       <header className="parkhead">
@@ -1206,6 +1298,22 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           </span>
         )}
         <div className="parkacts">
+          {isLocked && (
+            <>
+              <span className="parkkept">Layout locked</span>
+              <button type="button" className="btn" disabled={busy}
+                      onClick={() => void lockIt(false)}>
+                Unlock layout
+              </button>
+            </>
+          )}
+          {!isLocked && described === true && plan.rows.length > 0 && (
+            <button type="button" className="btn pri" disabled={busy}
+                    onClick={() => void lockIt(true)}>
+              Lock layout
+            </button>
+          )}
+          {!isLocked && (<>
           {real && (
             <button type="button" className={arranging ? "btn pri" : "btn"}
                     onClick={() => { setArranging((v) => !v); setSelected(null); }}>
@@ -1324,6 +1432,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
               {fitting ? "Done" : "Fit to aerial"}
             </button>
           )}
+          </>)}
         </div>
       </header>
 
@@ -1661,7 +1770,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           before a park has been laid out -- so the one park that needed
           it had to be re-described to get at it, and the box fitted
           round the homes stayed on screen looking like the answer. */}
-      {described && !fitting && (
+      {described && !fitting && !isLocked && (
         <Parcel propertyId={propertyId}
                 pin={plan.pin ?? ""}
                 where={plan.address ?? name}

@@ -1973,3 +1973,24 @@ checked, and only when he asks. A draft is not a send: the statement is
 recorded sent when he presses "I sent it from Gmail". Alex Prieto's
 sheets contain mistakes; the screen's against-last-month line and checks are
 there so a person catches them before money moves.
+
+### A park layout can be locked, and every version is kept
+
+The Retreat's sixty hand-placed homes came back "distorted everywhere" on 17
+November 2026 and were put right by hand again. Two things now stand behind
+that work.
+
+**`plan_history` (071)** keeps the version BEFORE every change to
+`properties.plan`, by trigger, whoever writes it -- app, connector or SQL
+editor. To put a park back, read its rows newest first and write the one
+wanted back into `properties.plan` through the connector; that write is
+itself kept, so it can be undone too.
+
+**Lock layout** on the park screen saves the layout AS DRAWN -- including
+homes dragged in that browser that never reached the server, which on The
+Retreat is every drag, because its lots are filed as "1140 Northside Rd,
+Lot #02" and the plan files them as "... Lot 2", so `place` matched nothing
+-- and sets `plan.locked`. The server then refuses `plan`, `place`,
+`unplace`, `row` and `move` for that park, reading the lock from the
+database rather than the request, until Unlock. `lock-check.mjs` holds it;
+each rule was broken in turn to confirm it is caught.
