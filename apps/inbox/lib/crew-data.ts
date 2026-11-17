@@ -33,6 +33,8 @@ export type SetupRow = {
   push: boolean;
   /** Gets "Check: ..." texts as they happen (056). The owner. */
   integrityAlerts: boolean;
+  /** The app clocks him in and out by where his phone is (072). */
+  autoClock: boolean;
 };
 
 export async function loadSetup(): Promise<SetupRow[]> {
@@ -70,6 +72,7 @@ export async function loadSetup(): Promise<SetupRow[]> {
       textsTo: e164 && isValidPhone(e164) && canSmsFromLine(e164) ? e164 : null,
       push: pushers.has(String(s.id)),
       integrityAlerts: !!c?.integrity_alerts,
+      autoClock: !!c?.auto_clock,
     };
   });
 }

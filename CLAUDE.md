@@ -2026,3 +2026,36 @@ lookup will try each again when it is opened.
 
 1140, 1142 and 1148 Northside are three county parcels that share their
 edges vertex for vertex: no gap, no overlap.
+
+### The man who never clocks in (072)
+
+"He is just very bad with phone." Three ways his hours get on the record
+without him pressing anything, all marked on the shift (`start_how`:
+self / auto / lead / office, `started_by`, `end_how`, `ended_by`) and on
+Friday pay, and each one texted to the owner:
+
+- **His phone** (`lib/auto-clock.ts`, ticked per man on Crews & texts): the
+  installed app watches all day, judges every fix ON THE PHONE against the
+  job-site pins and throws it away; three minutes standing at a site inside
+  the working window clocks him in AT THE MOMENT HE ARRIVED; 45 minutes clear
+  of every site clocks out AT THE MOMENT HE LEFT. Nothing is sent before the
+  clock-in. Only a shift the phone started is ended by the phone.
+- **His lead** ("Your crew" on the clock screen, `for-in` / `for-out`): at
+  NOW, with the lead's name and the lead's position on it.
+- **The office** ("Enter Hours" on Timesheets, `lib/office-hours.ts`): a
+  whole day, typed in Eastern wall-clock time, refused if it overlaps.
+
+**The trigger in 072 shut a hole that predated all of it.** 038's update
+policy let a crew member write any `started_at`/`ended_at` on his own shift
+straight through the API -- a timesheet anybody could write. `shifts_guard`
+now sets the time to now() for everybody but the office and the service
+role; the one exception is the phone's own clock-in/out, bounded to 35 / 50
+minutes back and only for a man ticked for it. `auto-guard-check.mjs` runs it
+in a real Postgres AS THE `authenticated` ROLE -- as the superuser the row
+policies do not apply, and "a lead cannot clock in a man not on his crew"
+passed for that reason alone on the first run.
+
+Leads cannot read `crew_setup`, so "is this my man" is `leads_crew()`, and
+the screen's list is `my_crew()`; both security definer, both narrow.
+`started_by`/`ended_by` are deliberately not foreign keys: a third link from
+shifts to staff would make every unnamed staff embed on shifts ambiguous.

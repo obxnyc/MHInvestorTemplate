@@ -4,7 +4,7 @@ import { readFix, whichSite, defaultRadius, type Fence, type Fix } from "@/lib/f
 import { worked, nudges, week, weekStart, type Shift, type Rules, RULES } from "@/lib/shift";
 import { check, type Place } from "@/lib/clockin";
 import { checkPhotos } from "@/lib/clock-photos";
-import { alertText } from "@/lib/integrity";
+import { alertText, onBehalfText } from "@/lib/integrity";
 import { alertOwners } from "@/lib/alert-owner";
 import { deviceOf, phoneFacts, DEVICE_COOKIE } from "@/lib/phones";
 
@@ -118,8 +118,9 @@ async function state(db: Db, staffId: string, offset = 0) {
   // so last week is readable on a Friday morning when this week is empty.
   const from = new Date(now.getTime() - 21 * 864e5).toISOString();
 
-  const [shifts, rules, where, asks] = await Promise.all([
+  const [shifts, rules, where, asks, auto, crew] = await Promise.all([
     since(db, staffId, from), rulesOf(db), places(db), pending(db, staffId),
+    autoOf(db), crewOf(db),
   ]);
 
   // Today in the handset's own terms, not the server's.
@@ -133,6 +134,11 @@ async function state(db: Db, staffId: string, offset = 0) {
   const open = shifts.find((s) => !s.endedAt) ?? null;
   const onBreak = open?.breaks?.some((b) => !b.endedAt) ?? false;
   const thisWeek = weekStart(now, offset);
+  // How the open shift was started: the phone only ever ends one it began.
+  const openHow = open
+    ? ((await db.from("shifts").select("start_how").eq("id", open.id).maybeSingle())
+        .data?.start_how as string | undefined) ?? "self"
+    : null;
 
   return {
     shifts: todays,
@@ -145,7 +151,47 @@ async function state(db: Db, staffId: string, offset = 0) {
     week: week(shifts, thisWeek, now, { offsetMinutes: offset, rules }),
     lastWeek: week(shifts, lastWeekOf(thisWeek), now, { offsetMinutes: offset, rules }),
     asks,
+    openHow,
+    auto,
+    crew,
   };
+}
+
+/**
+ * Whether this man's phone clocks him in by itself (072), and the working
+ * week it does it in. Asked of the database through two narrow functions,
+ * because crew cannot read crew_setup or the text settings directly.
+ * Absent (072 not run): off.
+ */
+async function autoOf(db: Db) {
+  const [{ data: on, error }, { data: win }] = await Promise.all([
+    db.rpc("my_auto_clock"), db.rpc("clock_window"),
+  ]);
+  if (error || on !== true) return { on: false as const, window: null };
+  const w = (win ?? {}) as { tz?: string; days?: number[]; optional_days?: number[]; auto_out?: string | null };
+  return {
+    on: true as const,
+    window: {
+      tz: w.tz ?? "America/New_York",
+      // A sometimes-day is a work day for this: arriving at a job on a
+      // Saturday Jose's crew is working IS work.
+      days: [...new Set([...(w.days ?? [1, 2, 3, 4, 5, 6]), ...(w.optional_days ?? [])])],
+      from: "05:00",
+      until: w.auto_out ?? "18:00",
+    },
+  };
+}
+
+/** The men this person can clock in for: a lead's crew; for the office,
+ *  everybody on the clock. Empty for everybody else, and before 072. */
+async function crewOf(db: Db) {
+  const { data, error } = await db.rpc("my_crew");
+  if (error || !Array.isArray(data)) return [];
+  return (data as { staff_id: string; full_name: string | null; open_shift: string | null; open_since: string | null }[])
+    .map((r) => ({
+      id: String(r.staff_id), name: String(r.full_name ?? "Unknown"),
+      openShiftId: r.open_shift, openSince: r.open_since,
+    }));
 }
 
 const lastWeekOf = (start: string) => {
@@ -217,6 +263,15 @@ export async function POST(req: Request) {
        the last fifteen minutes on this man's own account -- see
        lib/clock-photos.ts. Never a refusal of the hours: the camera always
        works, so this is a step to take, not a door that can stay shut. */
+    /* HIS PHONE DID IT (072). Only with a position -- arriving at a site IS
+       a position -- and at the moment he arrived, which the phone says and
+       the database bounds to 35 minutes back. Whether he is ticked for it is
+       the database's question too, not this route's. */
+    const auto = body.auto === true;
+    const at = auto ? new Date(String(body.at ?? "")) : null;
+    if (auto && (!fix || !at || Number.isNaN(at.getTime()))) {
+      return NextResponse.json({ error: "An automatic clock-in needs where and when." }, { status: 400 });
+    }
     let photos: string[] | null = null;
     if (!fix) {
       const ok = checkPhotos(body.photos, me.id, Date.now());
@@ -252,6 +307,7 @@ export async function POST(req: Request) {
       start_fence: startFence,
       start_metres: verdict && "metres" in verdict ? Math.round(verdict.metres) : null,
       start_photos: photos,
+      ...(auto ? { start_how: "auto", started_at: at!.toISOString() } : {}),
     }).select("id").single();
 
     if (error) {
@@ -280,6 +336,13 @@ export async function POST(req: Request) {
       phoneUsedBy: facts.usedBy, newPhone: facts.newPhone,
     }, clockTimeEastern(new Date()), trailLink(req, me.id));
     if (say) await alertOwners(`in:${data!.id}`, say, trailLink(req, me.id));
+    else if (auto) {
+      // Nothing wrong with it, and the owner asked to know each one.
+      await alertOwners(`in:${data!.id}`, onBehalfText({
+        how: "auto", name: me.full_name ?? "Somebody", site: chosenName ?? "a job",
+        at: clockTimeEastern(at!),
+      }, trailLink(req, me.id)), trailLink(req, me.id));
+    }
 
     const res = NextResponse.json({ ok: true, shiftId: data!.id, ...await state(db, me.id, offset) });
     if (device.fresh) {
@@ -298,10 +361,17 @@ export async function POST(req: Request) {
     if (!open) {
       return NextResponse.json({ error: "You are not clocked in." }, { status: 409 });
     }
+    // His phone closing a shift it opened, at the time he left (072). The
+    // database refuses it for any shift the phone did not start.
+    const auto = body.auto === true;
+    const at = auto ? new Date(String(body.at ?? "")) : new Date();
+    if (Number.isNaN(at.getTime())) {
+      return NextResponse.json({ error: "An automatic clock-out needs when." }, { status: 400 });
+    }
 
     // End any break still running first, or the shift closes around an open
     // break and the hours come out longer than the man was there.
-    await db.from("shift_breaks").update({ ended_at: new Date().toISOString() })
+    await db.from("shift_breaks").update({ ended_at: at.toISOString() })
       .eq("shift_id", open.id).is("ended_at", null);
 
     const sites = await fences(db);
@@ -310,7 +380,8 @@ export async function POST(req: Request) {
       : null;
 
     const { error } = await db.from("shifts").update({
-      ended_at: new Date().toISOString(),
+      ended_at: at.toISOString(),
+      ...(auto ? { end_how: "auto" } : {}),
       end_lat: fix?.lat ?? null,
       end_lng: fix?.lng ?? null,
       end_acc: fix?.accuracy ?? null,
@@ -360,6 +431,74 @@ export async function POST(req: Request) {
       .update({ property_id: propertyId, property_from: propertyId ? "chosen" : null })
       .eq("id", open.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
+  }
+
+  if (action === "for-in" || action === "for-out") {
+    /* CLOCKING ANOTHER MAN IN OR OUT (072): his crew lead, or the office,
+       for a man who does not use his phone. As the signed-in presser, so the
+       row policies decide who may: a lead only for his own crew. The time is
+       always NOW -- the database sets it -- and the presser's name and
+       position go on the shift, and to the owner, because the lead is the
+       one person who gains from his men showing more hours. */
+    const who = String(body.staffId ?? "");
+    const man = (await crewOf(db)).find((c) => c.id === who);
+    if (!man) return NextResponse.json({ error: "That person is not on your crew." }, { status: 403 });
+    const now = new Date();
+
+    if (action === "for-in") {
+      const chosenId = String(body.propertyId ?? "") || null;
+      const chosen = chosenId ? (await places(db)).find((p) => p.id === chosenId) ?? null : null;
+      if (chosenId && !chosen) {
+        return NextResponse.json({ error: "That job is not on file. Pick it again." }, { status: 400 });
+      }
+      const verdict = chosen ? check(fix, chosen) : null;
+      const { data, error } = await db.from("shifts").insert({
+        staff_id: who,
+        property_id: chosen?.id ?? null,
+        property_from: chosen ? "chosen" : null,
+        // Where the PRESSER's phone was. Evidence of where the lead was
+        // standing, which is the thing the owner wants to check.
+        start_lat: fix?.lat ?? null, start_lng: fix?.lng ?? null, start_acc: fix?.accuracy ?? null,
+        start_fence: verdict ? (verdict.kind === "far" ? "outside" : "unsure") : "unsure",
+        start_metres: verdict && "metres" in verdict ? Math.round(verdict.metres) : null,
+        start_how: "lead",
+        started_by: me.id,
+      }).select("id").single();
+      if (error) {
+        const already = /shifts_one_open_per_person/.test(error.message);
+        return NextResponse.json({
+          error: already ? `${man.name} is already clocked in.` : error.message,
+        }, { status: already ? 409 : 500 });
+      }
+      await alertOwners(`for-in:${data!.id}`, onBehalfText({
+        how: "lead", name: man.name, by: me.full_name ?? "Somebody", site: chosen?.name ?? null,
+        at: clockTimeEastern(now),
+        byMetres: verdict && "metres" in verdict ? verdict.metres : null, byNoFix: !fix,
+      }, trailLink(req, who)), trailLink(req, who));
+      return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
+    }
+
+    const { data: open } = await db.from("shifts")
+      .select("id, property_id").eq("staff_id", who).is("ended_at", null).maybeSingle();
+    if (!open) return NextResponse.json({ error: `${man.name} is not clocked in.` }, { status: 409 });
+    await db.from("shift_breaks").update({ ended_at: now.toISOString() })
+      .eq("shift_id", open.id).is("ended_at", null);
+    const site = open.property_id
+      ? (await places(db)).find((p) => p.id === open.property_id) ?? null : null;
+    const verdict = site ? check(fix, site) : null;
+    const { error } = await db.from("shifts").update({
+      ended_at: now.toISOString(),
+      end_lat: fix?.lat ?? null, end_lng: fix?.lng ?? null, end_acc: fix?.accuracy ?? null,
+      end_fence: verdict ? (verdict.kind === "far" ? "outside" : "unsure") : "unsure",
+      end_how: "lead", ended_by: me.id,
+    }).eq("id", open.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await alertOwners(`for-out:${open.id}`, onBehalfText({
+      how: "lead", name: man.name, by: me.full_name ?? "Somebody", site: site?.name ?? null,
+      at: clockTimeEastern(now), out: true,
+      byMetres: verdict && "metres" in verdict ? verdict.metres : null, byNoFix: !fix,
+    }, trailLink(req, who)), trailLink(req, who));
     return NextResponse.json({ ok: true, ...await state(db, me.id, offset) });
   }
 

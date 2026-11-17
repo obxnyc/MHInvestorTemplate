@@ -101,6 +101,7 @@ export async function PATCH(req: Request) {
   if ("onClock" in body) row.on_clock = !!body.onClock;
   if ("allReports" in body) row.all_reports = !!body.allReports;
   if ("integrityAlerts" in body) row.integrity_alerts = !!body.integrityAlerts;
+  if ("autoClock" in body) row.auto_clock = !!body.autoClock;
   if ("rate" in body) {
     const raw = String(body.rate ?? "").replace(/[$,\s]/g, "");
     if (!raw) row.rate_cents = null;

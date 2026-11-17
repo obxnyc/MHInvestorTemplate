@@ -21,7 +21,8 @@ type Line = {
   hours: number; regular: number; overtime: number;
   rateCents: number | null; amountCents: number | null;
   method: string | null; handle: string | null;
-  openShifts: number; unsigned: number; autoClosed: number; payLink: string | null;
+  openShifts: number; unsigned: number; autoClosed: number;
+  startedBy?: { auto: number; lead: number; office: number }; payLink: string | null;
 };
 type Crew = { id: string | null; name: string; hours: number; amountCents: number; people: number };
 type Data = {
@@ -209,6 +210,9 @@ export default function PayBoard() {
                     {l.overtime ? ` (${hhmm(l.overtime)} overtime)` : ""}
                     {l.rateCents !== null ? ` × ${usd(l.rateCents)}` : " · no rate"}
                     {l.autoClosed ? ` · ${l.autoClosed} closed by the clock` : ""}
+                    {l.startedBy?.auto ? ` · ${l.startedBy.auto} clocked in by his phone` : ""}
+                    {l.startedBy?.lead ? ` · ${l.startedBy.lead} clocked in by his lead` : ""}
+                    {l.startedBy?.office ? ` · ${l.startedBy.office} entered by the office` : ""}
                   </span>
                   <span className="payhow">
                     {paid
