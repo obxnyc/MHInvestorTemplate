@@ -181,6 +181,47 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = await req.json().catch(() => ({}));
   const db = supabaseAdmin();
 
+  // --- a layout somebody has said is right ---
+  //
+  // The Retreat's sixty homes were put down and angled one at a time, and
+  // then "distorted everywhere" -- by a button, a stale tab or a drag --
+  // with the plan as the only copy. A lock is the owner saying "this is
+  // the ground now", and it is kept HERE rather than on the screen,
+  // because a screen that hides its buttons still has a second tab open
+  // somewhere holding the old layout and a debounce waiting to save it.
+  const { data: held } = await db.from("properties")
+    .select("plan").eq("id", id).maybeSingle();
+  const was = (held?.plan ?? null) as Record<string, unknown> | null;
+  const locked = was?.locked === true;
+
+  if (body.action === "lock") {
+    const want = body.locked !== false;
+    // Locking writes what was on screen, so the layout kept is the one
+    // the owner was looking at when they said it was right -- including
+    // homes dragged in this browser that never reached the server.
+    // Unlocking changes the flag and nothing else.
+    const given = body.plan;
+    const base = want && given && typeof given === "object" && !Array.isArray(given)
+      ? given as Record<string, unknown> : was;
+    if (!base) return NextResponse.json({ error: "this park has no layout to lock" }, { status: 400 });
+    if (want && locked && given) {
+      return NextResponse.json({ error: "Already locked. Unlock it first." }, { status: 409 });
+    }
+    const plan = { ...base, locked: want };
+    const { error } = await db.from("properties").update({ plan }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true, locked: want });
+  }
+
+  const moves = ["plan", "place", "unplace", "row", "move"];
+  if (locked && moves.includes(String(body.action))) {
+    return NextResponse.json({
+      error: "This park's layout is locked, so nothing on the map was changed."
+        + " Press Unlock layout first if it really needs to move.",
+      locked: true,
+    }, { status: 409 });
+  }
+
   // --- lay out a street in one go ---
   if (body.action === "row") {
     const count = Number(body.count);

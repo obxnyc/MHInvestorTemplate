@@ -183,6 +183,12 @@ export type Plan = {
    */
   fenceFrom?: "county" | "hand";
   /**
+   * The owner has said this layout is right. The server refuses every
+   * change to where homes sit until it is unlocked, and the screen puts
+   * its moving tools away.
+   */
+  locked?: boolean;
+  /**
    * A road the property line runs out to, by name.
    *
    * Cross Creek's deed line is the kerb of Pamalee Drive, so a box
