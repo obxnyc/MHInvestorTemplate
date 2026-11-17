@@ -81,21 +81,41 @@ export async function pullDelinquency(day: string, seconds = 42): Promise<Report
     using: null, readAs: {},
   };
 
-  const auth = await rmAuthorize();
+  let auth = await rmAuthorize();
   if (!auth.ok) {
     return { ...blank, error: "Rent Manager would not accept the sign-in, so no balances could be read." };
   }
   const until = Date.now() + seconds * 1000;
-  const tried: string[] = [];
+  let tried: string[] = [];
 
-  let got: Awaited<ReturnType<typeof through>> = null;
-  let using: string | null = null;
-  for (const path of TENANT_PATHS) {
-    got = await through(auth.session, path, until, tried);
-    if (got) { using = path; break; }
-    if (Date.now() > until) break;
+  type Got = NonNullable<Awaited<ReturnType<typeof through>>>;
+  const attempt = async (session: RmSession): Promise<{ got: Got; using: string } | null> => {
+    for (const path of TENANT_PATHS) {
+      const g = await through(session, path, until, tried);
+      if (g) return { got: g, using: path };
+      if (Date.now() > until) return null;
+    }
+    return null;
+  };
+  let found = await attempt(auth.session);
+
+  /* A SIGN-IN REMEMBERED IS NOT A SIGN-IN THAT STILL WORKS. The token is
+     kept for 45 minutes in a warm instance, and Rent Manager can stop
+     honouring it sooner -- 17 November went out saying "answered 401"
+     three times over, on a token from an earlier call, while a fresh
+     sign-in a few minutes later read every balance. A 401 on the data
+     is a stale token, not a refused password (that fails at sign-in), so
+     sign in again and ask once more. */
+  if (!found && auth.cached && tried.some((t) => / answered 401\b/.test(t))) {
+    auth = await rmAuthorize(true);
+    if (auth.ok) {
+      const before = tried;
+      tried = [];
+      found = await attempt(auth.session);
+      if (!found) tried = [...before, "-- signed in afresh and asked again --", ...tried];
+    }
   }
-  if (!got) {
+  if (!found) {
     return {
       ...blank,
       error: "Rent Manager answered, but none of the ways of asking returned a balance. "
@@ -103,7 +123,8 @@ export async function pullDelinquency(day: string, seconds = 42): Promise<Report
     };
   }
 
-  const { rows, partial, readAs } = got;
+  const { using } = found;
+  const { rows, partial, readAs } = found.got;
   const owing: { id: number; name: string; status: string | null; balance: number; oldest: string | null }[] = [];
   for (const t of rows) {
     const id = num(pick(t, ["TenantID", "TenantId", "ID"], readAs, "tenantId"));
