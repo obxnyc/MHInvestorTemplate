@@ -100,6 +100,39 @@ t("nobody is dialled twice on one rung, and a rung adding nobody is dropped", ()
 t("the ring list uses it unless a group says otherwise", () =>
   /keep_ringing === false \? stages : keepRinging\(stages\)/.test(code("lib/voice.ts")));
 
+/* ------------------------------------------------------------ 1c. transfer by text */
+
+const wsrc = read("lib/transfer-words.ts");
+const wgen = join(here, "transfer-words.gen.mjs");
+writeFileSync(wgen, ts.transpileModule(wsrc, { compilerOptions: { target: 99, module: 99 } }).outputText);
+const { parseTransfer, resolveTarget } = await import(wgen);
+rmSync(wgen);
+const LIST = [{ id: "h", name: "Hannah Pappas" }, { id: "s", name: "Samantha Graber" },
+  { id: "c", name: "Cade Larabee" }, { id: "n", name: "Natashia" }, { id: "w", name: "William Nelson" }];
+t("'transfer Samantha' is a transfer to Samantha", () =>
+  parseTransfer("transfer Samantha") === "Samantha"
+  && resolveTarget("Samantha", LIST).target?.personId === "s");
+t("a first name, a surname or the start of one finds the person", () =>
+  resolveTarget("sam", LIST).target?.personId === "s"
+  && resolveTarget("nelson", LIST).target?.personId === "w");
+t("'xfer leasing' is the leasing team", () =>
+  resolveTarget(parseTransfer("XFER leasing"), LIST).target?.routeKey === "rent");
+t("an ordinary text is not a transfer -- 'T-Mobile says...', 'the tenant called'", () =>
+  parseTransfer("T-Mobile says my bill is late") === null
+  && parseTransfer("the tenant at lot 4 called") === null
+  && parseTransfer("transferred the deposit yesterday") === null);
+t("a name that could be two people is a question, not a guess", () => {
+  const two = [...LIST, { id: "h2", name: "Hannah Brooks" }];
+  return "error" in resolveTarget("hannah", two);
+});
+t("nobody by that name is said, not silently dropped", () => "error" in resolveTarget("zelda", LIST));
+const sms = code("app/api/twilio/sms/route.ts");
+t("only a phone on the list can transfer by text", () =>
+  /from\("phone_people"\)[\s\S]{0,120}\.eq\("phone", from\)/.test(sms) && /if \(!me\) return null;/.test(sms));
+t("and only the call that phone is on", () => /\.eq\("answered_person", me\.id\)/.test(sms));
+t("the command is handled before the text is filed as a message", () =>
+  sms.indexOf("transferByText(from") > -1 && sms.indexOf("transferByText(from") < sms.indexOf("toEnglish(body)"));
+
 /* ------------------------------------------------------------ 2. TwiML */
 
 const VOICE = [
@@ -185,7 +218,7 @@ t("recordings are played only to somebody signed in", () =>
   rec.indexOf("requireStaff()") > -1 && rec.indexOf("requireStaff()") < rec.indexOf("fetch("));
 t("and only recordings that belong to a call on file", () => /no such recording/.test(rec));
 
-const xfer = code("app/api/calls/[id]/transfer/route.ts");
+const xfer = code("lib/transfer.ts");
 t("a transfer is not reported done until Twilio took it", () =>
   xfer.indexOf(".update({") < xfer.lastIndexOf("ok: true"));
 t("a call that already ended is refused, not 'transferred'", () => /already ended/.test(xfer));

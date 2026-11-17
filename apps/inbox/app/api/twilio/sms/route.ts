@@ -7,6 +7,9 @@ import { openInquiry, knownPlaces } from "@/lib/inquiry";
 import { prettyPhone } from "@/lib/format";
 import { storeInboundMedia } from "@/lib/media";
 import { toEnglish } from "@/lib/translate";
+import { escapeXml } from "@/lib/voice";
+import { parseTransfer, resolveTarget } from "@/lib/transfer-words";
+import { transferCall } from "@/lib/transfer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +34,15 @@ export async function POST(req: Request) {
   const { data: seen } = await db
     .from("messages").select("id").eq("twilio_sid", sid).maybeSingle();
   if (seen) return xml();
+
+  // "transfer Samantha", texted by somebody who is on a call from the office
+  // line. Handled before anything else: it is an instruction to the phone
+  // system, not a message to file, and it must not open a thread.
+  const wanted = parseTransfer(body);
+  if (wanted !== null) {
+    const handled = await transferByText(from, wanted, new URL(req.url).origin);
+    if (handled) return xml(handled);
+  }
 
   // Contacts are keyed on E.164 so an inbound text always finds its person.
   let { data: contact } = await db
@@ -205,9 +217,37 @@ export async function POST(req: Request) {
   return xml();
 }
 
-function xml() {
-  return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+function xml(reply?: string) {
+  const say = reply ? `<Message>${escapeXml(reply)}</Message>` : "";
+  return new NextResponse(`<?xml version="1.0" encoding="UTF-8"?><Response>${say}</Response>`, {
     status: 200,
     headers: { "Content-Type": "text/xml" },
   });
+}
+
+/**
+ * A transfer texted from a phone on the list. Returns the reply to text back,
+ * or null when the sender is not on the phone list -- a tenant who happens to
+ * text "T" is a tenant, and their message goes on to be filed as one.
+ */
+async function transferByText(from: string, word: string, origin: string): Promise<string | null> {
+  const db = supabaseAdmin();
+  const { data: me } = await db.from("phone_people")
+    .select("id, full_name").eq("phone", from).eq("active", true).maybeSingle();
+  if (!me) return null;
+
+  const since = new Date(Date.now() - 4 * 3600 * 1000).toISOString();
+  const { data: live } = await db.from("calls")
+    .select("id").eq("answered_person", me.id).not("answered_at", "is", null)
+    .is("ended_at", null).gte("created_at", since)
+    .order("answered_at", { ascending: false }).limit(1).maybeSingle();
+  if (!live) return "You're not on an office-line call right now, so there is nothing to transfer.";
+
+  const { data: people } = await db.from("phone_people")
+    .select("id, full_name").eq("active", true).neq("id", me.id);
+  const who = resolveTarget(word, (people ?? []).map((p) => ({ id: p.id, name: p.full_name })));
+  if ("error" in who) return who.error;
+
+  const out = await transferCall(live.id, who.target, origin);
+  return out.ok ? `Transferred to ${out.to}. You can hang up.` : `Not transferred: ${out.error}`;
 }
