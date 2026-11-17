@@ -3,6 +3,9 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { week, weekStart, type Shift } from "@/lib/shift";
 import { isField } from "@/lib/roles";
 import { whereNow, hoursBySite, type OpenShift, type Ping } from "@/lib/crew";
+import { checkEntry, overlaps } from "@/lib/office-hours";
+import { onBehalfText } from "@/lib/integrity";
+import { alertOwners } from "@/lib/alert-owner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -207,4 +210,83 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ error: "approve or decline" }, { status: 400 });
+}
+
+/**
+ * The office enters a day's hours for somebody (072) -- the man whose phone
+ * was dead, or left in the truck, or who never had the app. As the signed-in
+ * office user, so the row policies stay the rule; the database puts their
+ * name on it, and the owner is told.
+ */
+export async function POST(req: Request) {
+  const me = await requireStaff();
+  if (me?.role !== "admin" && me?.role !== "office") {
+    return NextResponse.json({ error: "not allowed" }, { status: 403 });
+  }
+  const db = await supabaseServer();
+  const body = await req.json().catch(() => ({}));
+  const staffId = String(body.staffId ?? "");
+  if (!staffId) return NextResponse.json({ error: "Whose hours?" }, { status: 400 });
+  const { data: man } = await db.from("staff").select("id, full_name").eq("id", staffId).maybeSingle();
+  if (!man) return NextResponse.json({ error: "That person is not on file." }, { status: 400 });
+
+  const tz = "America/New_York";
+  const c = checkEntry({
+    day: String(body.day ?? ""), from: String(body.from ?? ""), to: String(body.to ?? ""),
+    breakMinutes: Number(body.breakMinutes ?? 0),
+  }, tz, new Date());
+  if (!c.ok) return NextResponse.json({ error: c.why }, { status: 400 });
+
+  // Never two records of the same stretch of somebody's time: whichever
+  // landed second would be paid twice.
+  const { data: near } = await db.from("shifts").select("id, started_at, ended_at")
+    .eq("staff_id", staffId)
+    .gte("started_at", new Date(Date.parse(c.startedAt) - 864e5).toISOString())
+    .lte("started_at", c.endedAt);
+  if ((near ?? []).some((x) => overlaps(c.startedAt, c.endedAt, String(x.started_at), (x.ended_at as string | null) ?? null))) {
+    return NextResponse.json({
+      error: `${man.full_name ?? "He"} already has hours recorded in that time. Fix that shift instead.`,
+    }, { status: 409 });
+  }
+
+  const propertyId = String(body.propertyId ?? "") || null;
+  const note = String(body.note ?? "").trim().slice(0, 500) || null;
+  const { data, error } = await db.from("shifts").insert({
+    staff_id: staffId, property_id: propertyId, property_from: propertyId ? "chosen" : null,
+    started_at: c.startedAt, ended_at: c.endedAt,
+    start_fence: "unsure", end_fence: "unsure",
+    start_how: "office", started_by: me.id, end_how: "office", ended_by: me.id,
+    note,
+  }).select("id").single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (c.breakMinutes) {
+    // One break of that length, from the middle of the day: where in the
+    // day it fell does not change the hours, and nobody typed where.
+    const mid = (Date.parse(c.startedAt) + Date.parse(c.endedAt)) / 2;
+    const b0 = new Date(mid - (c.breakMinutes * 60_000) / 2);
+    const { error: be } = await db.from("shift_breaks").insert({
+      shift_id: data!.id, started_at: b0.toISOString(),
+      ended_at: new Date(b0.getTime() + c.breakMinutes * 60_000).toISOString(),
+    });
+    if (be) {
+      // Said plainly rather than undone: the day IS on the record, and a
+      // day without its break pays the break, which somebody has to know.
+      return NextResponse.json({
+        error: `The hours were saved but the ${c.breakMinutes}-minute break was not (${be.message}). `
+          + "Ask him to send a correction for the break, or approve one for him.",
+      }, { status: 500 });
+    }
+  }
+
+  const t = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
+  const dayWords = new Date(c.startedAt).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" });
+  const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "app.larabeehomesllc.com").split(",")[0].trim();
+  const link = `https://${host}/timesheets`;
+  await alertOwners(`office:${data!.id}`, onBehalfText({
+    how: "office", name: String(man.full_name ?? "Somebody"), by: me.full_name ?? "The office",
+    day: dayWords, from: t(c.startedAt), to: t(c.endedAt),
+  }, link), link);
+
+  return NextResponse.json({ ok: true, id: data!.id });
 }

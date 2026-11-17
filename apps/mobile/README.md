@@ -102,3 +102,25 @@ secrets below exist, each run only proves the app compiles and says at the top
    he is on the clock is the app recording -- it goes at clock-out.
 5. When asked about the **camera**, **Allow** -- it is only used when the
    phone cannot find him.
+
+## A man who clocks in automatically
+
+For somebody who will not use his phone. Done once, by you or his lead,
+with his phone in your hand:
+
+1. On https://app.larabeehomesllc.com/crew tick **Clocks in automatically**
+   on his card and **Save**.
+2. Install the app on his phone (above), open it, sign him in with his name
+   and PIN.
+3. When it asks about location, choose **Allow all the time** (Android) or
+   **Always** (iPhone). "While using" is not enough for this.
+4. **Android:** Settings, Apps, Larabee, Battery, **Unrestricted**. Without
+   it some phones stop the app after an hour in a pocket.
+5. Leave the app open and press the home button. Do not swipe it away: a
+   swiped-away app is not running and cannot see him arrive.
+
+A notification reading "Larabee — Clocks you in when you get to a job" stays
+up while it is watching. From then on, on a work day between 5am and the
+clock's close, arriving at a job site with a pin clocks him in at the time he
+got there, and 45 minutes away from every job site clocks him out at the time
+he left. You get a text for each clock-in.

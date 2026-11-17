@@ -625,6 +625,21 @@ createServer((req, res) => {
         row.ok = args.p_ok; row.filed = args.p_filed; row.error = args.p_error;
         return send(200, null);
       }
+      /* 072: a lead's crew, so the clock screen's crew panel is drawn and
+         measured -- one man on the clock and one off, with a long name,
+         because the off one carries the job picker and that is the row
+         that can overflow. */
+      if (fn === "my_crew") {
+        return send(200, [
+          { staff_id: "cm1", full_name: "Guadalupe Hernández-Villanueva", open_shift: null, open_since: null },
+          { staff_id: "cm2", full_name: "Pedro Gil", open_shift: "sh-cm2",
+            open_since: new Date(Date.now() - 3 * 3600e3).toISOString() },
+        ]);
+      }
+      if (fn === "my_auto_clock") return send(200, false);
+      if (fn === "clock_window") {
+        return send(200, { tz: "America/New_York", days: [1, 2, 3, 4, 5, 6], optional_days: [6], auto_out: "18:00" });
+      }
       return send(200, null);
     });
     return;

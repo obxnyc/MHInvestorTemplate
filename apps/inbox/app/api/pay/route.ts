@@ -37,13 +37,14 @@ async function build(week: string, offset: number) {
     loadSetup(),
     loadTextSettings(),
     db.from("shifts")
-      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, auto_clocked_out, shift_breaks(started_at, ended_at)")
+      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, auto_clocked_out, start_how, shift_breaks(started_at, ended_at)")
       .gte("started_at", from).lt("started_at", to),
     db.from("pay_runs").select("*").eq("week_start", week),
   ]);
 
-  const shifts: (Shift & { autoOut: boolean })[] = (shiftsRes.data ?? []).map((s) => ({
+  const shifts: (Shift & { autoOut: boolean; how: string })[] = (shiftsRes.data ?? []).map((s) => ({
     autoOut: !!s.auto_clocked_out,
+    how: String((s as { start_how?: string }).start_how ?? "self"),
     id: String(s.id), staffId: String(s.staff_id),
     propertyId: (s.property_id as string | null) ?? null,
     startedAt: String(s.started_at), endedAt: (s.ended_at as string | null) ?? null,

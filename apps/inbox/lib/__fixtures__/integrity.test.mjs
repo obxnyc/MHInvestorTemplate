@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const js = ts.transpileModule(readFileSync(join(here, "..", "integrity.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { reasons, alertText, forgotText } = await import("data:text/javascript," + encodeURIComponent(js));
+const { reasons, alertText, forgotText, onBehalfText } = await import("data:text/javascript," + encodeURIComponent(js));
 
 const checks = [];
 const t = (name, ok) => {
@@ -46,6 +46,21 @@ t("two reasons in one text", () => alertText({ ...base, phoneUsedBy: ["Juan Ruiz
 t("no job chosen says so", () => alertText({ ...base, site: null, noFix: true }, "7:55 AM", L).includes("at no job chosen"));
 t("forgot to clock out", () => forgotText("Pedro Gil", "6:00 PM", L)
   === `Check: Pedro Gil did not clock out; the clock closed his shift at 6:00 PM. ${L}`);
+
+/* --------------------------------------------- hours he did not press */
+t("his phone did it: says so, and where", () => onBehalfText({ how: "auto", name: "Pedro Gil", site: "Northside", at: "7:12 AM" }, L)
+  === `Auto: Pedro Gil arrived at Northside and his phone clocked him in, 7:12 AM. ${L}`);
+const lead = { how: "lead", name: "Pedro Gil", by: "Jose Beltran", site: "Northside", at: "7:05 AM", byMetres: 40, byNoFix: false };
+t("his lead did it at the job", () => onBehalfText(lead, L).includes("Jose Beltran clocked Pedro Gil in at Northside, 7:05 AM (Jose Beltran was at the job)"));
+t("his lead did it from miles away: says how far", () => onBehalfText({ ...lead, byMetres: 8000 }, L).includes("was 5.0 mi from the job"));
+t("his lead's phone had no location: says so", () => onBehalfText({ ...lead, byNoFix: true, byMetres: null }, L).includes("phone had no location"));
+t("a job with no pin: says it could not be checked, never 'at the job'", () => {
+  const s = onBehalfText({ ...lead, byMetres: null }, L);
+  return s.includes("could not be checked") && !s.includes("was at the job");
+});
+t("clocked out by the lead says out", () => onBehalfText({ ...lead, out: true }, L).includes("clocked Pedro Gil out at"));
+t("the office entered it: who, whose, which day", () => onBehalfText({ how: "office", name: "Pedro Gil", by: "Dana Forsyth", day: "Tue Nov 17", from: "7:00 AM", to: "4:30 PM" }, L)
+  === `Dana Forsyth entered hours for Pedro Gil: Tue Nov 17, 7:00 AM to 4:30 PM. ${L}`);
 
 const bad = checks.filter(([, ok]) => !ok);
 for (const [name, ok, why] of checks) console.log(`${ok ? "ok  " : "FAIL"} ${name}${why ? ` (${why})` : ""}`);

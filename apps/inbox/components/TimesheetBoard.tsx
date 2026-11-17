@@ -73,6 +73,86 @@ const shift = (start: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
+/**
+ * Hours for somebody whose phone did not record them (072). The office's name
+ * goes on the shift and the owner is told; nothing on screen clears until the
+ * server has taken it.
+ */
+function EnterHours({ people, sites, onSaved }: {
+  people: Person[]; sites: SiteRow[]; onSaved: () => Promise<void>;
+}) {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const blank = { staffId: "", day: today, from: "07:00", to: "", breakMinutes: "30", propertyId: "", note: "" };
+  const [f, setF] = useState(blank);
+  const [st, setSt] = useState<{ busy?: boolean; error?: string; done?: string }>({});
+  const set = (k: keyof typeof f, v: string) => { setF((x) => ({ ...x, [k]: v })); setSt({}); };
+  const save = async () => {
+    setSt({ busy: true });
+    const res = await fetch("/api/timesheets", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...f, breakMinutes: Number(f.breakMinutes || 0) }),
+    }).catch(() => null);
+    const out = await res?.json().catch(() => ({})) ?? {};
+    if (!res?.ok) { setSt({ error: out.error ?? "That did not save." }); return; }
+    const who = people.find((p) => p.id === f.staffId)?.name ?? "them";
+    setF({ ...blank, day: f.day });
+    setSt({ done: `Saved for ${who}. The owner has been told.` });
+    await onSaved();
+  };
+  return (
+    <section className="tscard">
+      <div className="tscardhead"><h2>Enter Hours</h2></div>
+      <p className="tsnote">
+        For somebody whose phone did not record a day. Times are as the clock on the job read them.
+        Your name goes on it, and the owner gets a text.
+      </p>
+      <div className="crewgrid">
+        <div className="tsfield">
+          <label htmlFor="eh-who">Who</label>
+          <select id="eh-who" value={f.staffId} onChange={(e) => set("staffId", e.target.value)}>
+            <option value="">Choose…</option>
+            {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div className="tsfield">
+          <label htmlFor="eh-day">Day</label>
+          <input id="eh-day" type="date" value={f.day} max={today} onChange={(e) => set("day", e.target.value)} />
+        </div>
+        <div className="tsfield">
+          <label htmlFor="eh-from">Started</label>
+          <input id="eh-from" type="time" value={f.from} onChange={(e) => set("from", e.target.value)} />
+        </div>
+        <div className="tsfield">
+          <label htmlFor="eh-to">Finished</label>
+          <input id="eh-to" type="time" value={f.to} onChange={(e) => set("to", e.target.value)} />
+        </div>
+        <div className="tsfield">
+          <label htmlFor="eh-break">Break (minutes)</label>
+          <input id="eh-break" type="number" min={0} step={5} inputMode="numeric" value={f.breakMinutes}
+                 onChange={(e) => set("breakMinutes", e.target.value)} />
+        </div>
+        <div className="tsfield">
+          <label htmlFor="eh-job">Job</label>
+          <select id="eh-job" value={f.propertyId} onChange={(e) => set("propertyId", e.target.value)}>
+            <option value="">Not recorded</option>
+            {sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="tsfield">
+        <label htmlFor="eh-note">Why (optional)</label>
+        <input id="eh-note" type="text" value={f.note} placeholder="Phone was dead"
+               onChange={(e) => set("note", e.target.value)} />
+      </div>
+      <button className="tsminor" disabled={st.busy || !f.staffId || !f.day || !f.from || !f.to} onClick={save}>
+        {st.busy ? "Saving…" : "Save these hours"}
+      </button>
+      {st.error ? <p className="tsalert" role="alert">{st.error}</p> : null}
+      {st.done ? <p className="tsdone" role="status">{st.done}</p> : null}
+    </section>
+  );
+}
+
 export default function TimesheetBoard() {
   const [data, setData] = useState<{
     week: string; people: Person[]; asks: Ask[]; migrationMissing: boolean;
@@ -217,6 +297,9 @@ export default function TimesheetBoard() {
           </>
         ) : <p className="tsnote">Nobody is on the clock right now.</p>}
       </section>
+
+      <EnterHours people={data.people} sites={data.sitesList}
+                  onSaved={() => load(showing ?? undefined)} />
 
       {data.sites.pinned < data.sites.total ? (
         <section className="tscard">

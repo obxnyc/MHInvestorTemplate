@@ -132,9 +132,12 @@ t("and never one already signed off",
  * man was there.
  */
 t("clocking out ends a break that is still running first", () => {
-  const out = route.slice(route.indexOf('action === "out"'));
+  // Cut the block out first, then match inside it: an anchor that runs on
+  // into the next block matches that block's update instead.
+  const from = route.indexOf('if (action === "out")');
+  const out = route.slice(from, route.indexOf("if (action ===", from + 10));
   const ends = out.indexOf('from("shift_breaks").update');
-  const shut = out.indexOf('ended_at: new Date().toISOString(),\n      end_lat');
+  const shut = out.search(/from\("shifts"\)\.update\(\{\s*ended_at:/);
   return ends > 0 && shut > ends;
 });
 

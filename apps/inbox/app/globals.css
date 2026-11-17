@@ -3987,3 +3987,15 @@ button.edrow.dbo:hover{background:var(--sunk)}
 .homecard .soon{position:absolute;top:.85rem;right:.9rem;
   background:var(--sunk);color:var(--ink-2);border:1px solid var(--hair);
   border-radius:999px;padding:.1rem .5rem;font-size:.72rem;letter-spacing:.01em}
+
+/* A lead's crew on his clock screen (072): name, on or off, the job, the
+   button. The select and button wrap under the name on a narrow phone. */
+/* min-width:0 because a grid item's floor is its min-content, and a long
+   name beside a job list would otherwise push the row off a 320px phone. */
+.tsruns li.tscrewrow{align-items:center;padding:.5rem 0;border-top:1px solid var(--hair);min-width:0}
+.tscrewrow .tsspan{white-space:normal}
+.tsruns li.tscrewrow:first-child{border-top:0}
+.tscrewrow .tsplace{flex:1 1 8rem;font-weight:600}
+.tscrewrow select{flex:1 1 10rem;min-width:0;min-height:2.75rem;font:inherit;
+  color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:.5rem;padding:0 .5rem}
+.tscrewrow .tsminor{flex:1 1 8rem;width:auto}

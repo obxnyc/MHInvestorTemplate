@@ -55,7 +55,14 @@ type State = {
   week: Week;
   lastWeek: Week;
   asks: Ask[];
+  /** How the open shift began: the phone only ends one it started. */
+  openHow?: string | null;
+  /** This man's phone clocks him in by itself (072), and when. */
+  auto?: { on: boolean; window: AutoWindow | null };
+  /** The men this person can clock in for: a lead's crew. */
+  crew?: CrewMan[];
 };
+type CrewMan = { id: string; name: string; openShiftId: string | null; openSince: string | null };
 
 /** How long to wait for a position before going without one. */
 const FIX_MS = 6_000;
@@ -128,7 +135,9 @@ import { say, LANGS, LANG_NAME, type Key } from "@/lib/say";
 import { useLang } from "@/components/useLang";
 import PinChoose from "@/components/PinChoose";
 import { suggest, check, howFar, type Place } from "@/lib/clockin";
-import { isNativeApp, nativePlatform, startShiftTracking, postPing } from "@/lib/native-location";
+import { isNativeApp, nativePlatform, startShiftTracking, postPing,
+         ARRIVAL_TITLE, ARRIVAL_MESSAGE } from "@/lib/native-location";
+import { step, FRESH, type Memory, type Window as AutoWindow, type Decision } from "@/lib/auto-clock";
 import type { Fix } from "@/lib/fence";
 
 type Taken = { path: string; preview: string };
@@ -200,6 +209,36 @@ function JobPicker({ places, busy, label, placeholder, onPick }: {
         {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
     </div>
+  );
+}
+
+/** One man on a lead's crew: on or off, and the button. Clocking in asks
+ *  which job, starting from the job the lead is on himself. */
+function CrewRow({ man, places, busy, s, mine, onGo }: {
+  man: CrewMan; places: Place[]; busy: boolean; mine: string | null;
+  s: (k: Key, h?: Record<string, string | number>) => string;
+  onGo: (propertyId: string | null) => void;
+}) {
+  const [job, setJob] = useState<string>(mine ?? "");
+  const on = !!man.openShiftId;
+  return (
+    <li className="tscrewrow">
+      <span className="tsplace">{man.name}</span>
+      <span className="tsspan">
+        {on && man.openSince ? s("onSince", { time: clockTime(man.openSince) }) : s("notOn")}
+      </span>
+      {on ? null : (
+        <select aria-label={s("atJob")} value={job} disabled={busy}
+                onChange={(e) => setJob(e.target.value)}>
+          <option value="">{s("atJob")}</option>
+          {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      )}
+      <button className="tsminor" disabled={busy || (!on && !job)}
+              onClick={() => onGo(on ? null : job)}>
+        {s(on ? "clockHimOut" : "clockHimIn")}
+      </button>
+    </li>
   );
 }
 
@@ -402,6 +441,80 @@ export default function ClockScreen({ name }: { name: string }) {
       document.removeEventListener("visibilitychange", onBack);
     };
   }, [on]);
+
+  /* AUTOMATIC CLOCK-IN (072), for a man the office has ticked. Inside the
+     installed app only: a web page has no position once the phone is in a
+     pocket, which is the whole case. The watcher runs all day; every fix is
+     judged HERE against the job sites' pins by lib/auto-clock.ts and then
+     dropped. Nothing leaves the phone until it decides he has arrived -- the
+     clock-in is the first thing sent. The refs carry the latest of everything
+     into the watcher's callback, which outlives any one render. */
+  const autoOn = native && !!state?.auto?.on && !!state.auto.window;
+  const autoMem = useRef<Memory>(FRESH);
+  const autoCtx = useRef<{ sites: Place[]; window: AutoWindow | null; on: boolean; how: string | null;
+                           startedAt: number | null }>({ sites: [], window: null, on: false, how: null, startedAt: null });
+  {
+    const open = state?.shifts.find((x) => !x.endedAt) ?? null;
+    autoCtx.current = {
+      sites: state?.places ?? [], window: state?.auto?.window ?? null, on,
+      how: state?.openHow ?? null, startedAt: open ? Date.parse(open.startedAt) : null,
+    };
+  }
+  const autoSending = useRef(false);
+  // The words, by ref: a change of language must not restart the watcher.
+  const sRef = useRef(s);
+  sRef.current = s;
+  useEffect(() => {
+    if (!autoOn) return;
+    let alive = true;
+    let stop: (() => void) | null = null;
+    const send = async (d: NonNullable<Decision>, fix: Fix) => {
+      autoSending.current = true;
+      const body = d.act === "in"
+        ? { action: "in", auto: true, at: new Date(d.at).toISOString(), propertyId: d.siteId, fix }
+        : { action: "out", auto: true, at: new Date(d.at).toISOString(), fix };
+      const res = await fetch("/api/clock", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, offset: new Date().getTimezoneOffset() }),
+      }).catch(() => null);
+      autoSending.current = false;
+      if (!alive) return;
+      // Whatever the server said, show the server's state: a refusal (already
+      // clocked in by his lead, say) must not leave the phone believing it
+      // clocked him in.
+      const out = await res?.json().catch(() => null);
+      if (res?.ok && out) {
+        setState(out as State);
+        setSaid(d.act === "in" ? sRef.current("autoClockedIn", { name: d.siteName }) : sRef.current("autoClockedOut"));
+      } else {
+        autoMem.current = FRESH;
+        void load();
+      }
+    };
+    startShiftTracking((fix) => {
+      const c = autoCtx.current;
+      if (!c.window || autoSending.current) return;
+      const r = step(fix, Date.now(), c.sites, c.window,
+        { on: c.on, auto: c.how === "auto", startedAt: c.startedAt }, autoMem.current);
+      autoMem.current = r.mem;
+      if (r.decision) void send(r.decision, fix);
+    }, {
+      everyMs: 30_000, title: ARRIVAL_TITLE, message: ARRIVAL_MESSAGE,
+      onDenied: () => setLocationDenied(true),
+    })
+      .then((x) => { if (alive) stop = x; else x(); })
+      .catch((e: Error) => { if (e.message === "location-denied") setLocationDenied(true); });
+    return () => { alive = false; stop?.(); };
+  }, [autoOn, load]);
+
+  /* Clocking a man in or out for him: his lead, for somebody who does not
+     use his phone. The lead's own position goes with it -- it is the
+     evidence of where the lead was standing, and the owner is told. */
+  const forMan = async (man: CrewMan, propertyId: string | null) => {
+    const w = warm.current;
+    const fix = w && Date.now() - w.at < WARM_FRESH_MS ? w.fix : fixOf(await position(CLOCK_IN_FIX_MS));
+    await act(man.openShiftId ? "for-out" : "for-in", { staffId: man.id, propertyId, fix });
+  };
 
   if (!state) {
     return (
@@ -608,9 +721,13 @@ export default function ClockScreen({ name }: { name: string }) {
           </div>
         ) : null}
 
+        {state.auto?.on ? (
+          <p className="tsnote">{s(native ? "autoOn" : "autoNeedsApp")}</p>
+        ) : null}
+
         {/* Said out loud. Somebody who cannot tell whether they are being
             followed assumes the worse answer, and they would be right to. */}
-        {on && locationDenied ? (
+        {(on || autoOn) && locationDenied ? (
           <p className="tsnudge loud" role="alert">
             {s(platform === "ios" ? "appLocationOffIos" : "appLocationOffAndroid")}
           </p>
@@ -623,6 +740,20 @@ export default function ClockScreen({ name }: { name: string }) {
           </p>
         ) : null}
       </section>
+
+      {state.crew?.length ? (
+        <section className="tscard">
+          <div className="tscardhead"><h2>{s("yourCrew")}</h2></div>
+          <p className="tsnote">{s("yourCrewHow")}</p>
+          <ul className="tsruns">
+            {state.crew.map((m) => (
+              <CrewRow key={m.id} man={m} places={state.places} busy={busy} s={s}
+                       mine={openShift?.propertyId ?? null}
+                       onGo={(job) => forMan(m, job)} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {state.nudges.map((n) => (
         <p key={n.key} className={`tsnudge ${n.urgent ? "loud" : ""}`}>{n.says}</p>
