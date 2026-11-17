@@ -1125,10 +1125,17 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
 .topnav a.on{background:var(--sunk);color:var(--ink)}
 /* A heading with pages under it: the link, a small arrow, and a list that
    opens below. The list is fixed, not absolute -- see NavGroup. */
-.navgroup{display:flex;align-items:center;flex:none}
-.navgroup>a{padding-right:.3rem !important}
-.navcaret{background:none;border:0;min-width:30px;min-height:32px;padding:.45rem .35rem .45rem .1rem;color:var(--muted);font-size:.7rem;border-radius:8px}
-.navcaret:hover,.navcaret[aria-expanded="true"]{color:var(--ink);background:var(--sunk)}
+.navgroup{display:flex;align-items:center;flex:none;border-radius:8px}
+/* Heading and chevron are one control: they light up together, and neither
+   has a box of its own. */
+.navgroup>a{padding-right:.1rem !important;background:none !important}
+.navgroup:hover,.navgroup.on,.navgroup.open{background:var(--sunk)}
+.navgroup:hover>a,.navgroup.on>a,.navgroup.open>a{color:var(--ink)}
+.navcaret{display:grid;place-items:center;background:none;border:0;min-width:30px;min-height:32px;padding:0 .55rem 0 .15rem;
+  color:var(--muted);border-radius:0 8px 8px 0}
+.navcaret svg{transition:transform .15s ease;opacity:.8}
+.navgroup:hover .navcaret,.navgroup.on .navcaret,.navgroup.open .navcaret{color:var(--ink)}
+.navgroup.open .navcaret svg{transform:rotate(180deg)}
 .navmenu{position:fixed;z-index:60;width:200px;display:flex;flex-direction:column;padding:.3rem;
   background:var(--card);color:var(--ink);border:1px solid var(--hair);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14)}
 .navmenu a{padding:.5rem .7rem;border-radius:7px;font-size:.88rem;font-weight:600;color:var(--ink)}
