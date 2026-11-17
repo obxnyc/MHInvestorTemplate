@@ -162,16 +162,12 @@ Anything on your radar? Even a maybe is worth a call.`,
   },
   {
     key: "buybox", label: "What we buy (buy box)",
-    subject: "What we're buying right now -- mobile home parks, NC",
+    subject: "What we're buying right now",
     body: `Hi {first},
 
 A quick update on what we're buying, in case something fits:
 
-- Mobile home parks, [10-150] lots
-- North Carolina first, then South Carolina and Georgia
-- Value-add welcome: park-owned homes, vacancy, deferred maintenance, private water or septic
-- [Price range]
-- [How we close: cash / bank / seller finance, and how fast]
+{buybox}
 
 If you have something, or know an owner who might sell, I'd love to hear about it.`,
   },

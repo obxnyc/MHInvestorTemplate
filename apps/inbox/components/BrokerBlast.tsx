@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { buyBoxBlock, type BuyBox } from "@/lib/buybox";
 import {
   BLAST_TEMPLATES, BROKER_STAGES, EVERYONE, blastFooter, gmailComposeUrl, hasBrackets, personalize, pickAudience,
   type Audience, type Broker,
@@ -42,6 +43,7 @@ export default function BrokerBlast({ brokers, onClose, onSent }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [arm, setArm] = useState<null | "send" | "gmail">(null);
   const [gmail, setGmail] = useState<Gmail | null>(null);
+  const [boxes, setBoxes] = useState<BuyBox[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -49,20 +51,28 @@ export default function BrokerBlast({ brokers, onClose, onSent }: {
       if (!ok) { setErr(String(j.error)); return; }
       setPast(j.blasts as Past[]); setSignature((j.signature as string) ?? null);
       setAddress((j.mailing_address as string) ?? ""); setAppCanSend(Boolean(j.appCanSend));
+      const bb = await call("/api/buy-boxes", "GET");
+      if (bb.ok) setBoxes(bb.j.boxes as BuyBox[]);
     })().catch((e) => setErr(String(e)));
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
   }, [onClose]);
 
   const pick = useMemo(() => pickAudience(brokers, aud), [brokers, aud]);
+  // {buybox} becomes the buy boxes marked In use, as written on the Buy
+  // boxes tab -- expanded here so the preview, the test and the send are
+  // the same words.
+  const boxText = buyBoxBlock(boxes);
+  const filled = body.replace(/\{buybox\}/g, boxText || "{buybox}");
   const states = useMemo(() => [...new Set(brokers.map((b) => b.state).filter(Boolean) as string[])].sort(), [brokers]);
   const sample = pick.to[0] ?? null;
-  const preview = `${personalize(body, sample)}\n\n${blastFooter(signature, address)}`;
-  const brackets = hasBrackets(subject + body);
-  const blocked = brackets || !subject.trim() || !body.trim() || !pick.to.length;
+  const preview = `${personalize(filled, sample)}\n\n${blastFooter(signature, address)}`;
+  const brackets = hasBrackets(subject + filled);
+  const noBoxes = /\{buybox\}/.test(filled);
+  const blocked = brackets || noBoxes || !subject.trim() || !body.trim() || !pick.to.length;
   useEffect(() => { setArm(null); }, [aud, subject, body]);
 
-  const payload = { subject, body, audience: aud, mailing_address: address };
+  const payload = { subject, body: filled, audience: aud, mailing_address: address };
 
   async function go(action: "test" | "send" | "gmail") {
     setBusy(action); setErr(null); setNote(null);
@@ -152,7 +162,7 @@ export default function BrokerBlast({ brokers, onClose, onSent }: {
               </div>
               <input id="bl-subject" className="pk-search bl-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
               <textarea id="bl-body" className="bk-text" rows={11} value={body} onChange={(e) => setBody(e.target.value)} />
-              <p className="pk-faint">{"{first}"} becomes each broker&rsquo;s first name.</p>
+              <p className="pk-faint">{"{first}"} becomes each broker&rsquo;s first name; {"{buybox}"} becomes your buy boxes that are In use.</p>
             </section>
 
             <section><h3>Your business mailing address</h3>
@@ -164,6 +174,7 @@ export default function BrokerBlast({ brokers, onClose, onSent }: {
               <pre className="bl-preview"><b>{subject}</b>{"\n\n"}{preview}</pre>
             </section>
 
+            {noBoxes ? <p className="pk-err">This message lists your buy boxes, and none are marked In use yet. Add them on the <a href="/parks?tab=buy">Buy boxes</a> tab.</p> : null}
             {brackets ? <p className="pk-err">There are still [square brackets] in the message. Fill them in first.</p> : null}
             {!address.trim() ? <p className="pk-err">Add your mailing address before sending to everyone.</p> : null}
             {err ? <p className="pk-err" role="alert">{err}</p> : null}

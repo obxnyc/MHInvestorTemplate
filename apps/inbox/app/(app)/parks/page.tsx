@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import ParkLeads from "@/components/ParkLeads";
 import BrokerBoard from "@/components/BrokerBoard";
+import BuyBoxes from "@/components/BuyBoxes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,14 +14,16 @@ export const dynamic = "force-dynamic";
 export default async function Parks({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const me = await requireStaff();
   if (!me || !isDesk(me.role)) redirect("/home");
-  const tab = (await searchParams).tab === "brokers" ? "brokers" : "owners";
+  const t = (await searchParams).tab;
+  const tab = t === "brokers" || t === "buy" ? t : "owners";
   return (
     <div className="pk-page">
       <nav className="pk-tabs" aria-label="Acquisitions">
         <Link href="/parks" className={tab === "owners" ? "on" : ""} aria-current={tab === "owners" ? "page" : undefined}>Park owners</Link>
         <Link href="/parks?tab=brokers" className={tab === "brokers" ? "on" : ""} aria-current={tab === "brokers" ? "page" : undefined}>Brokers &amp; agents</Link>
+        <Link href="/parks?tab=buy" className={tab === "buy" ? "on" : ""} aria-current={tab === "buy" ? "page" : undefined}>Buy boxes</Link>
       </nav>
-      {tab === "brokers" ? <BrokerBoard /> : <ParkLeads />}
+      {tab === "brokers" ? <BrokerBoard /> : tab === "buy" ? <BuyBoxes /> : <ParkLeads />}
     </div>
   );
 }

@@ -4025,3 +4025,20 @@ button.edrow.dbo:hover{background:var(--sunk)}
 .bl-optout{display:flex;gap:.5rem;align-items:center;font-size:.84rem;color:var(--ink-2)}
 .bl-optout input{width:auto}
 .bl-modal .pk-search{width:100%;box-sizing:border-box;flex:none}
+
+/* Buy boxes. */
+.bb-shell{overflow-y:auto;padding-bottom:1.2rem}
+.bb-list{display:flex;flex-direction:column;gap:.8rem;max-width:56rem}
+.bb-box{border:1px solid var(--hair);border-radius:12px;background:var(--card);padding:.85rem .95rem;display:flex;flex-direction:column;gap:.65rem}
+.bb-box.off{opacity:.6}
+.bb-top{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap}
+.bb-area{flex:1 1 14rem}
+.bb-active{display:flex;gap:.35rem;align-items:center;font-size:.82rem;color:var(--ink-2)}
+.bb-active input{width:auto}
+.bb-state{font-size:.75rem;color:var(--muted);min-width:4rem}
+.bb-state.error{color:var(--crit)}
+.bb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.5rem}
+.bb-grid label{display:flex;flex-direction:column;gap:.2rem;font-size:.72rem;font-weight:600;color:var(--muted);min-width:0}
+.bb-grid label.wide{grid-column:1/-1}
+.bb-grid input{border:1px solid var(--hair);background:var(--card);color:var(--ink);font:inherit;font-size:.86rem;padding:.42rem .5rem;border-radius:8px;min-width:0}
+.bb-line{margin:0;font-size:.85rem;color:var(--ink-2);background:var(--pane);border-radius:8px;padding:.5rem .65rem}

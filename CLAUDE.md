@@ -2035,3 +2035,17 @@ BCC, each recipient row carrying its batch number so "batch 2 went" marks the
 same fifty people. A postal address (`acquisition_settings.mailing_address`)
 and a "reply remove" line go on every blast; the server refuses a blast
 without the address. Never schedule one.
+
+### Buy boxes
+
+https://app.larabeehomesllc.com/parks?tab=buy -- 074. What the owner buys,
+one row per asset class and area ("his buy box is different for all asset
+classes and areas, with a general one for each", 17 November 2026). Each box
+saves on leaving a field and shows the exact sentence a broker will read
+(`describeBox`). `{buybox}` in a blast becomes every box marked In use, and
+the blast refuses to go while `{buybox}` has nothing to become. An empty
+number is "no limit", never zero. Listing alerts are to be matched against
+these same rows -- one set of criteria, not two.
+
+The owner's address is cade@larabeehomesllc.com; blasts and outreach go
+from it and come back to it.

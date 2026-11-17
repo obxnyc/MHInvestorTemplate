@@ -461,6 +461,10 @@ const TABLES = {
       acquisition_settings: [{ id: true, pitch: null, pitch_residential: null, signature: "Cade Larabee\nLarabee Homes LLC", mailing_address: null }],
       broker_blasts: [{ id: "c0000000-0000-4000-8000-000000000001", subject: "Anything on your radar? Still buying mobile home parks", via: "gmail", recipients: 3, sent: 3, failed: 0, created_at: "2026-10-15T15:00:00Z", audience: {} }],
       broker_blast_recipients: [],
+      buy_boxes: [
+        { id: "d0000000-0000-4000-8000-000000000001", asset_class: "mhp", area: "Sanford and east", min_units: 20, max_units: 150, min_price: null, max_price: 4000000, max_price_per_unit: 40000, min_occupancy: null, financing: "cash or seller finance", wants: "Park-owned homes, vacant lots, deferred maintenance, private utilities", avoids: null, notes: null, active: true, sort: 1 },
+        { id: "d0000000-0000-4000-8000-000000000002", asset_class: "multifamily", area: "Fayetteville", min_units: 10, max_units: 60, min_price: null, max_price: 3000000, max_price_per_unit: null, min_occupancy: 70, financing: null, wants: null, avoids: null, notes: null, active: true, sort: 2 },
+      ],
       mhp_touches: [
         { id: 1, owner_key: k(1), kind: "call", body: "Owner is 71, open to selling in the spring. Septic on the back 20 lots.", at: "2026-11-12T15:00:00Z", by: DESK },
         { id: 2, owner_key: k(1), kind: "letter", body: null, at: "2026-10-20T15:00:00Z", by: DESK },
