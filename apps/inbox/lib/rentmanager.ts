@@ -200,9 +200,61 @@ export type RmCall = {
   detail: string | null;
 };
 
-/** One GET, reported rather than thrown -- the probe makes a dozen of these
- *  and a 404 is an answer, not an exception. */
-export async function rmGet(path: string, session: RmSession): Promise<RmCall> {
+/**
+ * One GET, reported rather than thrown -- the probe makes a dozen of these
+ * and a 404 is an answer, not an exception.
+ *
+ * A 401 IS AN EXCEPTION, AND IT USED TO BE FATAL FOR A WHOLE RUN.
+ *
+ * The session above is cached for 45 minutes, which is short of the token's
+ * real lifetime on purpose. That is not a guarantee: Rent Manager can retire
+ * a token early, and signing in elsewhere can invalidate this one. When that
+ * happened, every call for the rest of the run came back 401 and nothing
+ * re-authenticated -- so the morning report of 17 November went out saying
+ * "none of the ways of asking returned a balance" with three 401s under it,
+ * and the same credential worked perfectly a few minutes later.
+ *
+ * A token that has expired is the one failure here that fixes itself, and it
+ * was the one failure nothing tried to fix.
+ *
+ * So: on a 401, sign in again and have one more go. The new credential is
+ * written back into the CALLER'S session object, because the alternative is
+ * re-authenticating on every one of three hundred tenants.
+ *
+ * Once, and only on a 401. A wrong password returns 401 too, and retrying
+ * that forever is how an account gets locked out -- which turns an hour's
+ * outage into somebody ringing Rent Manager support.
+ */
+export async function rmGet(
+  path: string, session: RmSession, retryAuth = true,
+): Promise<RmCall> {
+  const first = await rmGetOnce(path, session);
+  if (first.status !== 401 || !retryAuth) return first;
+
+  const again = await rmAuthorize(true);
+  /* Nothing to retry WITH. A fresh sign-in that failed, or that handed back
+     the very token just refused, means the credential is the problem and not
+     its age -- so the original 401 stands, with the reason named. */
+  if (!again.ok) {
+    return { ...first, detail: `${first.detail ?? "401"} — and signing in`
+      + " again failed, so the credential itself is being refused" };
+  }
+  if (again.session.token === session.token) {
+    return { ...first, detail: `${first.detail ?? "401"} — signing in again`
+      + " returned the same token, so this is a refusal and not an expiry" };
+  }
+
+  session.base = again.session.base;
+  session.token = again.session.token;
+  session.header = again.session.header;
+
+  const second = await rmGetOnce(path, session);
+  return second.ok
+    ? { ...second, detail: second.detail ?? "the token had expired; signed in again" }
+    : second;
+}
+
+async function rmGetOnce(path: string, session: RmSession): Promise<RmCall> {
   try {
     const res = await fetch(`${session.base}${path}`, {
       headers: { [session.header]: session.token, Accept: "application/json" },
