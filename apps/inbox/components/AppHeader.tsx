@@ -149,11 +149,15 @@ function NavGroup({ item, here, on }: { item: Item; here: boolean; on: (href: st
   const hide = () => { shut.current = setTimeout(() => setOpen(null), 150); };
   const mouse = (e: React.PointerEvent) => e.pointerType === "mouse";
   return (
-    <span className="navgroup" ref={box}
+    <span className={`navgroup${here ? " on" : ""}${open ? " open" : ""}`} ref={box}
           onPointerEnter={(e) => mouse(e) && show()} onPointerLeave={(e) => mouse(e) && hide()}>
       <Link href={item.href} className={here ? "on" : ""} aria-current={here ? "page" : undefined}>{item.label}</Link>
       <button type="button" className="navcaret" aria-label={`More under ${item.label}`} aria-expanded={!!open}
-              onClick={() => (open ? setOpen(null) : show())}>&#9662;</button>
+              onClick={() => (open ? setOpen(null) : show())}>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M2 3.75 5 6.75 8 3.75" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
       {open ? (
         <span className="navmenu" role="menu" style={{ left: open.left, top: open.top }}>
           {item.under!.map((u) => (
