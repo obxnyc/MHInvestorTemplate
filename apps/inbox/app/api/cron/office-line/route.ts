@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { cronKeyOk } from "@/lib/cron-key";
 import { twilioClient } from "@/lib/twilio";
 import { transcriptServiceCheck } from "@/lib/transcribe";
 
@@ -21,21 +20,11 @@ export const maxDuration = 60;
  *                      the line being the number whose TEXTS already come
  *                      here -- and make sure transcripts can be made
  *
- * Asked with the scheduler's key, which is generated and checked inside the
- * database (051), so the Supabase connector can call it through pg_net and
- * nobody copies a secret between two dashboards.
+ * Asked with the reports key, which is generated and checked inside the
+ * database (051) and read from Vault by pg_net, so the Supabase connector can
+ * call it and nobody copies a secret between two dashboards.
  */
-async function authorized(req: Request): Promise<boolean> {
-  const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  if (!given) return false;
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const a = Buffer.from(given), b = Buffer.from(secret);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  const { data } = await supabaseAdmin().rpc("clock_cron_ok", { p_token: given });
-  return data === true;
-}
+const authorized = (req: Request) => cronKeyOk(req, "report_key_ok");
 
 export async function GET(req: Request) {
   if (!(await authorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

@@ -47,6 +47,9 @@ export async function POST(req: Request) {
       direction: "inbound",
       twilio_call_sid: params.CallSid,
       after_hours: !open,
+      // The office number that was rung. Every phone the office answers on
+      // is called FROM it, so they see it is work before they say a word.
+      line: toE164(params.To ?? "") || null,
     });
   }
 

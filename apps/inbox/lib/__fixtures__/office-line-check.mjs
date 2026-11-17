@@ -175,18 +175,60 @@ t("the whisper says what kind of call it is", () => /route\?\.whisper/.test(whis
 
 const accept = code("app/api/twilio/voice/whisper/accept/route.ts");
 t("only 1 accepts", () => /params\.Digits !== "1"/.test(accept));
-t("who answered is written when they press 1, against the CALLER's sid", () =>
-  /answered_at:/.test(accept) && /\.eq\("twilio_call_sid", params\.ParentCallSid\)/.test(accept));
+t("the round is claimed before anything else, so two phones cannot both connect", () => {
+  const c = accept.indexOf("claim(callId, round)");
+  return c > -1 && c < accept.indexOf("answered_at:") && c < accept.indexOf("moveCaller(");
+});
+t("a phone that loses the race is told, not connected", () =>
+  /if \(!\(await claim\(callId, round\)\)\)[\s\S]{0,120}Someone else/.test(accept));
+t("who answered is written when they press 1, for this call", () =>
+  /answered_at:[\s\S]{0,200}\.eq\("id", callId\)/.test(accept));
+t("every other phone stops ringing once somebody has it", () => /stopRinging\(callId, round, params\.CallSid\)/.test(accept));
+t("a caller who hung up while it rang is not 'connected'", () =>
+  accept.indexOf("callerStillThere(") > -1 && accept.indexOf("callerStillThere(") < accept.indexOf("moveCaller("));
+t("the conversation is recorded on two channels, on the caller's leg", () =>
+  /calls\(call\.twilio_call_sid\)\.recordings\.create\(\{[\s\S]{0,60}recordingChannels: "dual"/.test(accept));
+
+const legs = code("lib/legs.ts");
+t("the claim is ONE conditional update on the round", () =>
+  /update\(\{ claimed_round: round \}\)[\s\S]{0,120}\.eq\("round", round\)[\s\S]{0,80}claimed_round\.is\.null/.test(legs));
+t("the answerer's side can step out with *", () => /<Dial hangupOnStar="true"/.test(legs));
+t("the caller hanging up ends the conversation; the answerer leaving does not", () =>
+  /agentTwiml[\s\S]*?endConferenceOnExit="false"/.test(legs) && /callerTwiml[\s\S]*?endConferenceOnExit="true"/.test(legs));
+t("each office phone is rung FROM the office number", () => /from: line/.test(legs));
+t("one phone that cannot be rung does not stop the others", () =>
+  /for \(const p of people\)[\s\S]*?try \{[\s\S]*?catch/.test(legs));
 
 const ring = code("app/api/twilio/voice/ring/route.ts");
-t("the phone that rings shows the office number", () => /callerId=/.test(ring));
-t("each rung is the stage's own length, not a constant", () => /timeout="\$\{stage\.seconds\}"/.test(ring));
-t("every phone has to press 1 (the whisper is on each number)", () =>
-  /<Number url="\$\{base\}\/api\/twilio\/voice\/whisper/.test(ring));
-t("a list that rings out is a missed call, before voicemail", () => {
-  const block = ring.slice(ring.indexOf("if (!stage)"), ring.indexOf("if (!stage)") + 400);
-  return block.indexOf("noAnswer(") > -1 && block.indexOf("noAnswer(") < block.indexOf("/voicemail");
+t("a phone started on rung one keeps ringing for all the time left, not just its rung", () =>
+  /seconds: left/.test(ring) && /reduce\(\(sum, s\) => sum \+ s\.seconds, 0\)/.test(ring));
+t("and the number they are rung from is the office line the caller dialled, stored with the call", () =>
+  /line: state\?\.line \?\? params\.To/.test(ring)
+  && /line: toE164\(params\.To/.test(code("app/api/twilio/voice/route.ts")));
+t("the caller hears ringing for the rung's length", () => /ringback\.wav/.test(ring) && /stage\.seconds \/ 6/.test(ring));
+t("a list that rings out stops every phone and is a missed call, before voicemail", () => {
+  const block = ring.slice(ring.indexOf("if (idx < 0)"), ring.indexOf("if (idx < 0)") + 300);
+  const stop = block.indexOf("stopRinging("), miss = block.indexOf("noAnswer("), vm = block.indexOf("/voicemail");
+  return stop > -1 && miss > stop && vm > miss;
 });
+t("twilio can fetch the ring tone without signing in", () => /ringback\\\.wav/.test(code("proxy.ts")));
+
+const menu = code("app/api/twilio/voice/staff-menu/route.ts");
+t("after *, the caller is put on hold before the answerer is asked", () =>
+  menu.indexOf("/api/twilio/voice/hold") > -1 && menu.indexOf("/api/twilio/voice/hold") < menu.indexOf("transferMenu()"));
+t("an answerer who simply hangs up ends the call for the caller too", () =>
+  /CallStatus === "completed"[\s\S]{0,200}<Hangup\/>/.test(menu));
+t("a phone no longer the answerer (moved by app or text) is let go", () =>
+  /agent_leg_sid !== params\.CallSid/.test(menu));
+const pick = code("app/api/twilio/voice/staff-pick/route.ts");
+t("0, nothing, or a wrong key puts the caller back -- never stranded on hold", () =>
+  /if \(!key \|\|[\s\S]{0,120}return back\(/.test(pick));
+t("a transfer that fails puts the caller back too", () => /if \(!out\.ok\) return back\(/.test(pick));
+const tr = code("lib/transfer.ts");
+t("the old answerer is let go BEFORE the caller moves", () =>
+  tr.indexOf("agent_leg_sid: null") > -1 && tr.indexOf("agent_leg_sid: null") < tr.indexOf("moveCaller("));
+t("what the keypad says is read from the same list the keys work from", () =>
+  /transferMenu[\s\S]*?await keys\(\)/.test(tr) && /transferKey[\s\S]*?await keys\(\)/.test(tr));
 
 t("a phone that belongs to a crew member's login is refused like any crew phone", () =>
   /role: m\.person\.staff\?\.role/.test(code("lib/voice.ts")));
@@ -234,6 +276,7 @@ t("the call card reads the server's answer before saying anything worked", () =>
 
 const SQL012 = join(app, "..", "..", "docs", "shared-line", "012-call-flow.sql");
 const SQL069 = join(app, "..", "..", "docs", "shared-line", "069-the-office-line.sql");
+const SQL070 = join(app, "..", "..", "docs", "shared-line", "070-transfer-from-the-keypad.sql");
 const BIN = ["/usr/lib/postgresql/16/bin", "/usr/lib/postgresql/15/bin", "/usr/local/pgsql/bin"]
   .find((d) => existsSync(join(d, "initdb")));
 
@@ -271,6 +314,20 @@ if (!BIN) {
     let replayed = true; why = "";
     try { file(SQL069); } catch (e) { replayed = false; why = String(e.stderr ?? e).slice(0, 400); }
     results.push(["069 applies a second time", replayed, why]);
+    for (const n of [1, 2]) {
+      let ok = true; why = "";
+      try { file(SQL070); } catch (e) { ok = false; why = String(e.stderr ?? e).slice(0, 400); }
+      results.push([n === 1 ? "070 applies on top" : "070 applies a second time", ok, why]);
+    }
+    t("5 on the keypad is the office line", () =>
+      psql(`select coalesce(route_key,'')||'|'||label from transfer_keys where digit='5'`).trim() === "general|the office line");
+    t("a key goes to a person or a team, never both", () => {
+      try {
+        psql(`insert into transfer_keys (digit, person_id, route_key, label)
+              select '9', null, 'general', 'x' union all select '9', null, null, 'y'`);
+        return false;
+      } catch { return true; }
+    });
 
     /** Follow digits from the root menu to wherever they end. */
     const walk = (digits) => {
