@@ -118,7 +118,22 @@ export function parseRentManager(mail: RawEmail): Intake {
   const title = field(t, "Issue Title", "Issue");
   const description = field(t, "Description", "Details");
   const tenant = flipName(field(t, "Tenant", "Resident"));
-  const phone = field(t, "Number", "Phone", "Phone Number") ?? firstPhone(t);
+  /* THE NUMBER OUT OF THE LINE, not the whole line.
+   *
+   * Rent Manager writes the tenant's number as a link, and every mail
+   * client that turns HTML into text leaves the href behind:
+   *
+   *     Number: 2527221728 <(252)%20722-1728>
+   *
+   * `field` hands back everything after the colon, so the value was
+   * that entire string. Its digits run to twenty-two, which is not a
+   * phone number -- and `isValidPhone` correctly refused it, so a
+   * tenant who HAD given us her number arrived with none, and the
+   * office could not ring her back.
+   *
+   * The guard did its job. The value should never have reached it. */
+  const phone = firstPhone(field(t, "Number", "Phone", "Phone Number") ?? "")
+    ?? firstPhone(t);
   const assigned = field(t, "Assigned To");
 
   // "New Issue Submitted from TWA: 1140 Northside #51, 1140 Northside Rd, Lot #51"

@@ -3,6 +3,7 @@ import { placeKey, readHint } from "./alias";
 import { twinFragment } from "./sameissue";
 import { mendFor, type Held } from "./fillblanks";
 import { matchPlace, unitKey } from "./placematch";
+import { unitFromTenant } from "./tenant-lot";
 import { toE164 } from "./twilio";
 import { urgencyFromText, lotDigits, propertyHint } from "./jobs";
 import { pushToTeam, pushToStaff, CLAIM_ACTIONS } from "./push";
@@ -323,6 +324,39 @@ async function openJob(
   if (!unitId && item.unitHint) {
     unitId = await unitFromHint(db, item.unitHint);
     worked = Boolean(unitId);
+  }
+
+  /* WHO REPORTED IT, WHEN NOTHING SAID WHERE.
+   *
+   * The hourly Rent Manager pull hands over an issue with no property, no
+   * unit and no tenant -- the embeds 404 on this account -- so there is no
+   * `unitHint` to read and every one of those requests landed against
+   * nothing. 315 on file and two of them knew which home.
+   *
+   * But the request often knows the tenant's own email, and the portfolio
+   * import knows where 308 tenants live. Nobody had asked the one question
+   * that joins them. It placed 61 of the backlog the first time it was
+   * asked, and it is asked here so the next one places itself.
+   *
+   * LAST, deliberately. An address written in the message beats an
+   * inference from who sent it: a tenant reports a leak at their
+   * neighbour's as readily as their own, and the subject line is about the
+   * home while the sender is only about the person.
+   *
+   * It refuses an email that sits on two lots rather than choosing. A
+   * request filed against the wrong home sends somebody to a stranger's
+   * door, which is worse than one filed against none. */
+  if (!unitId) {
+    try {
+      const byWho = await unitFromTenant(db, { email: item.email, name: item.name });
+      if (byWho) { unitId = byWho.unitId; worked = true; }
+    } catch (e) {
+      /* Not fatal. A request that arrives saying where it is not from is
+         still a request, and losing it because a lookup failed would be a
+         far worse trade. Logged rather than silent. */
+      console.warn("could not place the request by who reported it:",
+        (e as Error).message);
+    }
   }
 
   /* TAG THE THREAD, NOT ONLY THE JOB.

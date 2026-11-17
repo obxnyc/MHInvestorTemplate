@@ -94,7 +94,7 @@ export default async function Calls({ searchParams }: { searchParams: Promise<{ 
       {error && (
         <p className="cl-error">
           Could not read the calls: {error.message}.
-          {/column|relation/.test(error.message) ? " Migration 053 has probably not been run yet." : ""}
+          {/column|relation/.test(error.message) ? " Migration 069 has probably not been run yet." : ""}
         </p>
       )}
 

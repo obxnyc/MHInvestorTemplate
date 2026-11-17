@@ -2,6 +2,30 @@ import { supabaseAdmin } from "./supabase-admin";
 import { isOpen, type Hours } from "./hours";
 import { keepRinging, type Person, type Stage } from "./ringorder";
 export type { Person, Stage };
+import { isClockOnly } from "./roles";
+
+/**
+ * WHO MAY RING FOR A TENANT CALL. Crew never: they are hourly on site and
+ * have nothing to do with tenants. This is the one place a call becomes a
+ * phone ringing, so it is the one place that has to be right -- whatever
+ * number is sitting in `forward_to`, whoever put it there. Every way of
+ * adding a person also leaves crew out, but this is the rule; those are
+ * tidiness.
+ */
+export function rings(p: { active?: boolean | null; forward_to?: string | null; role?: unknown } | null): boolean {
+  return Boolean(p && p.active && p.forward_to && !isClockOnly(p.role));
+}
+
+/** The ring group, in the order Twilio should dial them. Everyone rings at
+ *  once; the whisper decides who actually gets the call. */
+export async function ringGroup() {
+  const { data } = await supabaseAdmin()
+    .from("staff")
+    .select("id, full_name, forward_to, role, active")
+    .eq("active", true)
+    .not("forward_to", "is", null);
+  return (data ?? []).filter(rings);
+}
 
 export function escapeXml(s: string) {
   return s.replace(/[<>&'"]/g, (c) =>
@@ -33,8 +57,8 @@ export const PHRASE: Record<string, Record<Lang, string>> = {
 /* ---------------------------------------------------------------- settings
  *
  * Office hours, greetings and the texts the line sends. One row, edited
- * without a deployment. If the row is missing -- migration 053 not run --
- * the defaults below are what 053 would have written, so the line still
+ * without a deployment. If the row is missing -- migration 069 not run --
+ * the defaults below are what 069 would have written, so the line still
  * answers properly rather than falling over on a null.
  */
 
@@ -207,19 +231,32 @@ export async function ringStages(groupId: string): Promise<Stage[]> {
     .select("keep_ringing").eq("id", groupId).maybeSingle();
   const { data } = await db
     .from("ring_stages")
-    .select("position, ring_seconds, ring_stage_people(person:person_id(id, full_name, phone, staff_id, active))")
+    // The phone list (069), with the role of the app user a phone belongs to,
+    // where it belongs to one -- so a crew member's phone is refused here
+    // exactly as it is on the old staff-based ring group.
+    .select("position, ring_seconds, ring_stage_people(person:person_id(id, full_name, phone, staff_id, active, staff:staff_id(role)))")
     .eq("group_id", groupId)
     .order("position");
 
   const stages = (data ?? []).map((s) => ({
     position: s.position,
     seconds: s.ring_seconds,
-    people: ((s.ring_stage_people ?? []) as unknown as { person: PersonRow | null }[])
-      .map((m) => m.person)
-      .filter((p): p is PersonRow => Boolean(p?.active && p.phone))
+    people: ((s.ring_stage_people ?? []) as unknown as {
+      person: (PersonRow & { staff: { role: string } | null }) | null;
+    }[])
+      // Put in the shape rings() asks about: the phone is what rings, and the
+      // role is the app user's, where the phone belongs to one.
+      .map((m) => m.person && { ...m.person, forward_to: m.person.phone, role: m.person.staff?.role })
+      .filter((p): p is NonNullable<typeof p> => rings(p))
       .map(asPerson),
   }));
   return group?.keep_ringing === false ? stages : keepRinging(stages);
+}
+
+export async function groupIntro(groupId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin()
+    .from("ring_groups").select("intro").eq("id", groupId).maybeSingle();
+  return data?.intro ?? null;
 }
 
 export async function loadPerson(id: string): Promise<Person | null> {

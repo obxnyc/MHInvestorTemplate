@@ -153,6 +153,7 @@ export default function TimesheetBoard() {
         <h1>Timesheets</h1>
         <span className="tsrow">
           <a className="tslink" href="/pay">Friday pay</a>
+          <a className="tslink" href="/trail">Where they went</a>
           <a className="tslink" href="/crew">Crews &amp; texts</a>
         </span>
       </div>
@@ -185,7 +186,7 @@ export default function TimesheetBoard() {
             <CrewMap
               dots={data.live.filter((l) => l.at).map((l) => ({
                 id: l.shiftId, name: l.name, lat: l.at!.lat, lng: l.at!.lng,
-                fresh: l.from === "ping" && (l.quietMinutes ?? 99) <= 20,
+                fresh: l.from === "ping" && (l.quietMinutes ?? 99) <= 6,
                 abandoned: l.abandoned,
               }))}
               sites={data.sitesList.filter((s) => s.lat !== null && s.lng !== null)
@@ -194,7 +195,7 @@ export default function TimesheetBoard() {
             <ul className="tsruns">
               {data.live.map((l) => (
                 <li key={l.shiftId}>
-                  <span className="tsspan">{l.name}</span>
+                  <a className="tsspan tslink" href={`/trail?staff=${l.staffId}`}>{l.name}</a>
                   {l.abandoned
                     ? <span className="tsbadge asked">Never clocked out</span>
                     : <span className="tsbadge onclock">since {when(l.startedAt)}</span>}
@@ -209,7 +210,7 @@ export default function TimesheetBoard() {
               ))}
             </ul>
             <p className="tsnote">
-              The phone sends its position every ten minutes while the clock
+              The phone sends its position every two minutes while the clock
               screen is open. With the phone locked or the app closed it cannot,
               so a dot that has gone quiet is the last place it was seen.
             </p>

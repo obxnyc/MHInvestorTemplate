@@ -150,5 +150,8 @@ export const config = {
   //  was refused nothing that mattered: the screens are reads, and every
   //  change in this application is an API call. The proxy lets an
   //  unauthenticated API request straight through, so webhooks are unaffected.
-  matcher: ["/((?!_next/static|_next/image|sw\\.js|favicon\\.ico|.*\\.(?:png|jpg|jpeg|webp|svg|ico|webmanifest)$).*)"],
+  //  `apk` is the crew app's download (public/downloads/larabee.apk): a man
+  //  installing it has no session yet, and the sign-in wall would hand his
+  //  phone a login page instead of the app.
+  matcher: ["/((?!_next/static|_next/image|sw\\.js|favicon\\.ico|.*\\.(?:png|jpg|jpeg|webp|svg|ico|webmanifest|apk)$).*)"],
 };

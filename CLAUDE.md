@@ -1105,6 +1105,20 @@ real kinds would have fallen to a default wrong for all three. The harness
 reads the kinds out of `property.ts` and checks the two lists against each
 other rather than trusting either.
 
+**A guard that stopped being awaited.** `authorized` was a plain boolean in
+four cron routes and became a promise when the rule moved into
+`lib/cron-key.ts`. `if (!authorized(req))` still compiles -- a promise is an
+object, an object is truthy, `!` of it is `false` -- so every one of those
+routes went from refusing strangers to admitting everybody. Green types,
+unchanged reading, open door. `cron-key-check.mjs` asks it of EVERY call
+site rather than of the four that exist today, because the next route
+written is the one that gets it wrong.
+
+**`timingSafeEqual` throws on a length mismatch.** The `a.length ===
+b.length` in front of it is not an optimisation. Without it a key of the
+wrong length is a 500 where a 401 belongs, and a 500 on an authorization
+path reads as the app being broken rather than as the caller being refused.
+
 ### What running 038 found that reading it could not
 
 A **GRANT to a role that does not exist is an error, not a no-op** -- the
@@ -1421,6 +1435,70 @@ need a part" is "where are you?", and the screen it was sent from already
 knows. Read from the database, never from the request: a claim about which job
 somebody is on is worth nothing if the person sending it chose the words.
 
+### Five fixes downstream of a pipe that never carried water
+
+The owner photographed the Rent Manager email: Tiffany Jernigan, her
+number, and "1140 Northside #46, 1140 Northside Rd, Lot #45" in the
+subject. "this cannot happen. it has to recognize that."
+
+It could not. Her request in the app is `rm:issue:310`, from the hourly
+API read, whose subject is the issue Title -- "Multiple" -- and which
+carries no address of any kind, because Rent Manager's endpoint has
+none to give. The email that has all of it has never reached this
+application. **Zero inbound messages have ever carried a Message-ID.
+Not one, since the day the forward was built.** 309 by the pull, 16 by
+text, nought by email.
+
+So a week went on the half that READS the address -- `matchPlace`, the
+repair pass, `unitKey`, the lot lookup -- each one a real fault, each
+one fixed, and not one of them reachable, because the half that
+RECEIVES it has been dead the whole time.
+
+**ASK HOW THE WORK IS GETTING IN BEFORE FIXING WHAT IS DONE WITH IT.**
+One query -- count inbound messages by the mark each path leaves --
+would have said this on the first day. It was run on the last.
+
+And the reason nobody knew: the two paths are told apart by the id
+stamped on the message (`rm:issue:<n>` from the pull, a Message-ID from
+mail) and NOT by `conversations.source`, which both write as `zego`
+because it is the maintenance-intake key. The setup page counted
+`source` and reported "Email intake. Arriving. 200 zego" on a database
+where no email had ever landed. A green line is worse than a missing
+one.
+
+So `lib/intake-health.ts` puts it in the 10am report, in the SUBJECT
+when it is broken, because a fault in the body of a daily email is a
+fault nobody reads about.
+
+**The rule it has to get right is the one that is easy to get wrong.**
+"No emails arrived" is not a fault -- a quiet week looks exactly like
+that, and a check that shouts at one is a check nobody reads by
+Thursday, which is worse than no check because the real finding is in
+that list too. The fault is ONE PATH SILENT WHILE ANOTHER IS BUSY.
+`intake-health-check.mjs` holds a broken week and a quiet week that
+differ in one number, because with only the broken one in the fixture
+"shout when no email came" and "shout when the forward is dead" are the
+same rule.
+
+Two faults in that harness were no-ops on the first run, both the same
+shape as every other one in this file: a guard that tests for the
+PRESENCE OF A NAME tests nothing about whether anything reads it.
+`/intakePart/.test(source)` passed with the subject line no longer
+using it, because the declaration was still sitting there. Ask the
+subject template what it interpolates.
+
+### What the pull cannot ever tell you
+
+Settled, so nobody spends another week on it. A Service Manager issue
+as `/ServiceManagerIssues` hands it over carries `CreateWebUserID` and
+no PropertyID, UnitID or TenantID; Property, Unit and Tenant embeds all
+404; and `/TenantWebUsers` and `/WebUsers` 404 by every spelling tried.
+`/Tenants` has no web-user id to join back on either.
+
+**There is no route from a pulled issue to a lot.** The email's subject
+line is the only thing that says where a request came from, which is
+why the forward is not a nice-to-have.
+
 ### Texts at a time of day: the scheduler is in the database
 
 Crew reminders and Jose's 8:45 report need a time of day, and Vercel's Hobby
@@ -1539,3 +1617,359 @@ Supabase connector --
 -- then read the answer a second later from `net._http_response` by the id
 it returned, and compare `commit` to `git log origin/main -1`. The same
 trick does a dry run of a cron route with its real key and real data.
+
+### And so can the whole setup check
+
+Whether the Anthropic key in a build is accepted, whether Twilio points at
+this deployment, whether email is arriving -- all of it could only be read
+by a person signing in, opening https://app.larabeehomesllc.com/setup and
+reading a line back. "Did the redeploy take" was somebody else's afternoon
+every single time, and the owner was right to be short about it: **do not
+make him do anything that can be done from here.**
+
+`/api/setup` takes the reports key as well as an admin session, so --
+
+    select net.http_get(
+      'https://app.larabeehomesllc.com/api/setup',
+      headers := jsonb_build_object(
+        'Authorization', 'Bearer ' || (select decrypted_secret
+          from vault.decrypted_secrets where name = 'reports_cron_key')));
+
+-- and read `net._http_response` by the returned id a few seconds later. It
+makes real calls to Anthropic, Twilio and Postmark, so give it longer than
+whoami. The key is read and sent inside the database and never passes
+through a file, a terminal or a chat window.
+
+**A machine is not given the Visibility checks.** Those ask what THAT PERSON
+can see. Answered as the service role, which sees everything, they all pass
+and say nothing -- the same narrower-question-answered-confidently shape as
+`described` keyed on rows and the fence keyed on one number.
+
+The four cron routes take it too (`autoclose`, `maintenance`, `delinquency`,
+`clock-texts`), so any of them can be dry-run from here.
+
+### Crew could never have a PIN
+
+038 added the `crew` role and never told `set_staff_pin` or
+`verify_staff_pin`, which both still said `('tech','shower')`. So a man added
+as Crew reached "pick your PIN" on his setup link and was refused -- the crew
+clock's entire sign-in was a door with no key, and no check here could see
+it, because none of them ever ran the real functions against a crew row.
+The owner found it on his first try. 053 adds crew to both lists and nothing
+else.
+
+When a role is added, search the DATABASE for every function that lists
+roles (`position('''shower''' in prosrc)`), not just the TypeScript.
+
+### A crew member's phone never rings for a tenant call
+
+"A crew member SHOULD NEVER GET AN OFFICE CALL." The owner read his own
+crew setup page say "Calls to the shared line will ring" his number.
+
+`rings()` in `lib/voice.ts` is the rule, and `ringGroup` and `ringStages`
+-- the only ways a call becomes a phone ringing -- both go through it: a
+clock-only role never rings, WHATEVER is in `forward_to`. Every way of
+adding a person (PIN invite, email invite, access request, the People
+form) also leaves crew out of `forward_to`, but that is tidiness; the rule
+is the filter, because a crew row with a number already exists in the live
+data and nothing should have to be cleaned up for the rule to hold.
+
+`crew-ring-check.mjs` holds it. (`ring-check.mjs` is a different thing --
+polygon rings for the property line. Writing over it was caught by the
+Write tool saying "updated" for a file I thought was new; restored.)
+
+### A web page cannot track a phone in a pocket
+
+The owner's crews swing hammers with the phone locked in a pocket, and play
+music or read his texts in between. A browser page gets NO location once the
+screen locks or another app is in front -- iOS and Android both enforce it,
+and no setting, wake lock or service worker changes that. The ping interval
+is two minutes now (it was ten), but that only helps while the screen is
+open. The hours are unaffected either way: a shift is a server row from the
+tap, and nothing about a locked phone touches it.
+
+All-day location with the phone locked needs an INSTALLED app with the
+operating system's background-location permission ("Always" on iPhone, a
+foreground-service notification on Android). That is the phase-2 item in the
+owner's original brief, and the owner has now said it is required.
+
+### Where are you, then which job, then the clock
+
+The owner clocked in at a job he was nowhere near and nothing asked. The
+clock started first and the job was asked afterwards, and nothing compared
+the two -- and the clock-in had no position at all, because six seconds was
+not long enough for a cold GPS and the press went through without one.
+
+Now `lib/clockin.ts`: Clock In takes a fix (fifteen seconds), suggests the
+nearest job, and asks "You're 4.8 mi from X. Clock in there anyway?" when the
+job chosen is far. Still never refused. What changes is that it is recorded
+-- `shifts.start_metres` (054), `start_fence` 'outside' -- and the lead's
+8:45 report says "(off site, 4.8 mi away)" or "(no location)".
+
+**"Far" is its own test, not the fence's "outside".** `readFix` answers
+"cannot tell" for any fix vaguer than 500m, which would wave through a phone
+plainly five miles away. Far is: even the most generous reading of the fix
+-- metres minus its own accuracy -- is outside the site's radius.
+
+Suggesting a site needs a pin on it. On 11 November 2026 two of 114 had one.
+
+### Clock-in is instant; the GPS is already awake
+
+"Guys could have to wait 15 seconds to get clocked in? Should be right
+away." The clock screen now runs `watchPosition` while it is open and he is
+off the clock, holding the newest fix in a ref -- nothing is sent anywhere
+until he clocks in, so it is not tracking somebody off the clock. Clock In
+uses that fix if it is under two minutes old; only a screen opened and
+tapped in the same breath waits, and then five seconds at most.
+
+### Where they went: the trail
+
+`/trail` (office and admin) draws one person's day: clock-in, every ping,
+clock-out, as a line with arrows -- a MapLibre symbol layer placed ALONG
+the line, so MapLibre turns each arrow to face the way he went and nothing
+here does that arithmetic. `lib/trail.ts` finds the STOPS: eight minutes or
+more within 120m, and says whether each was a job site. It does not judge;
+"25 min, not a job site" next to a Lowe's on the basemap is the owner's
+call.
+
+A fix vaguer than 250m is drawn but never starts or ends a stop -- a cold
+start a kilometre wide would otherwise split a morning on site in two.
+
+Nothing ages pings out; the owner wants about three weeks back. A trail
+drawn from the web app only has points while the clock screen was open.
+The tiles are unreachable from this machine, so a picture of the trail here
+needs the style answered locally (an empty background) or the map never
+loads and draws nothing -- which looks exactly like a trail with no points.
+
+### The installed app: where it stands
+
+Crew phones: 20 Android, 10 iPhone (owner, 12 November 2026).
+
+Apple Developer Program enrollment was submitted on 12 November 2026 under
+**Hudson Yards LLC**, not Larabee Homes LLC -- the owner's choice, so that
+is the name Apple shows as the seller on TestFlight and the App Store. An
+app can be transferred to another developer account later if that matters.
+Enrollment was "being processed" at the time; Apple can take a few days and
+sometimes rings to verify the business.
+
+Android needs no store to start: an APK the crew install from a link.
+
+### No position at clock-in: two photos, taken now
+
+A clock-in the phone cannot place needs a selfie (who) and a photo of the
+job (where), and the server refuses it without them (`lib/clock-photos.ts`,
+055). The photos are uploaded by `/api/clock/photo` into the private
+`attachments` bucket at `clock/<staff id>/<server ms>-<face|site>.<ext>` --
+the time is the SERVER's, when it arrived -- and the clock-in accepts only
+the man's own paths from the last fifteen minutes. That is what stops a
+buddy's upload or yesterday's photo; each case has its own check.
+
+The screen opens the camera with `capture` (front for the selfie, back for
+the job), so the library is not offered. A browser can be talked out of
+`capture` by somebody determined; the installed app is where camera-only can
+be enforced. Office sees both photos on the trail list for that clock-in.
+
+`.tsfield input{width:100%}` outranks one class: a hidden file input was
+390px wide and pushed the clock screen sideways. `.visuallyhidden` is all
+!important for that reason. The phone harness could not see it, because the
+panel only exists after Clock In has been pressed with no location.
+
+### The Android app
+
+`apps/mobile`: Capacitor 7, a thin shell around
+https://app.larabeehomesllc.com/clock with `@capacitor-community/background-geolocation`.
+`apps/inbox/lib/native-location.ts` is the bridge, wired into the clock
+screen's ping effect: inside the app the plugin sends a position every two
+minutes, locked or not; in a browser nothing changes. Built by GitHub
+Actions (`.github/workflows/android.yml`) -- this container cannot reach
+dl.google.com, so there is no Android SDK here and no local build. Every
+build is signed with `apps/mobile/android/app/pilot.keystore` so updates
+install over the old app; before a Play Store release, move to a release key
+in GitHub secrets (steps in the workflow's comments). The owner's
+instructions are in `apps/mobile/README.md`.
+
+### "Check this" alerts go to the owner, not the crew lead
+
+"Jose would benefit from his guys getting more hours" -- so a check Jose
+controls is not a check. `lib/integrity.ts` decides what is worth a look; it
+is sent AS IT HAPPENS, by `lib/alert-owner.ts`, to whoever is ticked for
+integrity alerts on Crews & texts (`crew_setup.integrity_alerts`, 056) --
+Cade Larabee from 12 November 2026. Text, or app notification when the
+number cannot be texted; claimed in the ledger first, keyed per event per
+person, so each goes once and there is a record of what he was told.
+
+Flagged: a clock-in far from the job, with no location (with or without
+photos), on a phone another crew member has used in the last 30 days (the
+buddy case, named), or on a phone new to this man; and a shift the clock had
+to close. The lead's report still carries the off-site / no-location flags.
+
+**Whose phone** is `lib/phones.ts`: an httpOnly random id per phone, and
+`staff_devices` records every man who clocks in on it. That module alone
+uses the service role -- crew must not be able to write their own phone
+history -- and the clock route still writes shifts as the signed-in man,
+which `clock-screen-check` enforces; it caught the first version importing
+the admin client into the route.
+
+### The crew get the Android app from a plain link
+
+https://app.larabeehomesllc.com/downloads/larabee.apk -- the GitHub
+artifact needs a GitHub login the crew do not have, and this container
+cannot download artifacts either (the blob host is refused). So the Android
+workflow's last step commits the APK into `apps/inbox/public/downloads/`
+on main, and Vercel serves it. `.apk` is excluded from the proxy's matcher:
+a man installing it has no session, and the sign-in wall would hand his
+phone a login page. The owner has an iPhone, so the first real Android test
+is a crew member's phone.
+
+### The iPhone app is the same shell, sent through TestFlight
+
+`apps/mobile/ios` is Capacitor's iOS project around the same
+https://app.larabeehomesllc.com/clock, built and uploaded by
+`.github/workflows/ios.yml` on a macOS runner -- no Mac anywhere else. Signing
+is cloud-managed by an App Store Connect API key (Admin), so the only things to
+keep are four GitHub secrets; until they exist each run compiles unsigned and
+says "Not sent to TestFlight" at the top, because a skip must not read as a
+ship. A monthly run keeps a build inside TestFlight's 90-day life. The owner's
+one-time Apple steps are in `apps/mobile/README.md`.
+
+**On iPhone the ping goes by fetch, not CapacitorHttp.** The sign-in cookie is
+in WKWebView's own store, which native HTTP on iOS does not read, so a native
+ping would arrive signed out and be refused all day without a sound. Android is
+the other way round (its WebView is throttled in the background and its native
+HTTP shares the WebView's cookies). `native-location.test.mjs` holds both.
+
+### Owner distributions
+
+https://app.larabeehomesllc.com/distributions -- the monthly statement per
+investor (normally the 15th), emailed from the app as "<Month Year> Owner
+Distribution", and paid through Wells Fargo Business Bill Pay, which allows
+$25,000 a day. The breakdown comes from Alex Prieto's email to
+cade@larabeehomesllc.com; paste it in from Excel. Bill Pay has no API, so the
+screen plans which owner is paid on which bank day (slowest bank first, whole
+payments where they fit, nothing over the limit) and records each one paid
+with its confirmation number. Paid payments keep their day when re-planned.
+The sender's own address is the Reply-To and gets a Bcc of every statement
+(`DISTRIBUTIONS_REPLY_TO`, `DISTRIBUTIONS_BCC`, `DISTRIBUTIONS_FROM` override).
+A statement once emailed is locked: what was sent is the record. 057 applied
+11/16/2026 through the connector.
+
+**One email per owning ENTITY, not per address and not per person** (060,
+`distribution_payees.entity`). SHB's 1148 and Cross Creek statements go in one
+email, a block each with the property as its heading and a summary on top.
+Gabriel Moskow owns Elizabeth City Property LLC (Lot 1 and 125 Franklin -- one
+email) and 105 Twiddy LLC (another email, same address); Matt Glebus owns
+Beaga LLC (513 Madrin and 412 Bank) and Rentham LLC, separately. Two entities
+in one inbox stay two emails. The summary total counts only what is paid: a
+property that came out negative pays nothing and is not netted off another.
+
+Each block is headed by the PLACE ("The Retreat at Cross Creek · 4 homes"),
+via `placeOf`, never the sheet's long title or the workbook's name -- "Dutch
+doors" is the owner's management company, and it appeared beside Conor
+Dolan's address as though it were part of it. The logo is
+https://app.larabeehomesllc.com/icon-192.png, on a white header.
+
+**A rent agreement is a floor, not an empty-home rule** (061,
+`distribution_payees.guaranteed_rent_cents`, `withGuarantee`): every home on the
+statement is paid at least the agreed rent -- an empty home in full, a lower
+rent topped up (Ben Jackson: $1,148 collected on a $1,250 agreement is $102).
+The first version filled only empty homes, so the agreement typed for Ben did
+nothing at all. Top-ups are worked out on every read and frozen into the lines
+only when the statement is emailed. Reserves held and required are on the
+payee (062); "Reserves not met" when none are held or fewer than required.
+The editor resets its boxes only when the SAVED statement changes -- keying
+on the server's fresh array wiped unsaved typing whenever an owner field saved.
+
+Some owners are paid for empty homes as if let (061,
+`distribution_payees.guaranteed_rent_cents`). Those lines and any other
+adjustment carry category "Guaranteed rent" / "Adjustment", so the sheet's own
+figures are still checked without them and the screen says how much was added.
+`lotsIn` reads four digits: Cross Creek's lots are house numbers (3117), and at
+three digits every check involving them was blind.
+
+**Bill Pay has two limits, not one**: $25,000 a day AND $5,000 a payment
+(064, `distribution_runs.per_payment_cap_cents`). Anyone owed more is paid in
+pieces of the cap plus a remainder -- RNMK's $17,204.08 is 5,000 + 5,000 +
+5,000 + 2,204.08 -- each its own payment with its own confirmation number,
+labelled "payment 2 of 4"; the Pay tab's By owner list says owed, planned,
+paid and still to pay for everyone. An owner under the cap stays one payment.
+
+**Nothing paid out may differ quietly from Rent Manager** (065). Every change
+made on a statement -- a line added, deleted, re-priced or marked up, a
+rent-agreement top-up -- and every payment marked paid is on the **To record**
+tab until somebody ticks it as entered in Rent Manager (`changesOf`; the key is
+the change itself, so changing it again unticks it). And next month's sheet is
+checked against this month as it was left here (`reconcile`): Alex's "Previous
+Distribution Owed" is last month's owed (confirmed on the November data), so a
+change Rent Manager never got shows as a difference on that owner's statement.
+A description changed on its own moves no money and is not listed.
+
+Copies: `distribution_payees.cc_emails` per owner (an accountant) and
+`distribution_settings.cc_all` on every statement -- alex@larabeehomesllc.com,
+the bookkeeper, from 16 November 2026. Cc, not Bcc.
+
+Reserves (checked 16 November 2026, every November sheet and the sent mail):
+no reserve BALANCE is recorded anywhere for any owner. The six Dutch-doors
+properties carry a $2,000 "Reserves requirement" line that is never subtracted;
+Andrew Habberstad's contract has a $2,500 holdback cap. Reserves live on the
+payee, so they carry from month to month until someone changes them.
+
+**Test statements are never the record.** A test send records "Test sent …"
+in `email_detail` and leaves `emailed_at` empty, so a test stays editable and
+can be sent again. Everything else that freezes on send keys on `emailed_at`.
+
+**Download for Excel** in every owner email is
+`/api/distributions/excel?m=&s=&t=`, an HMAC over the month and exactly those
+statement ids (`lib/statement-link.ts`, keyed on DISTRIBUTIONS_LINK_SECRET or
+the service-role key). No sign-in -- the owner has no account -- and an edited
+id is refused. The workbook is written by `lib/xlsx.ts` (fflate, no xlsx
+library); money is a number with a currency format, not text.
+
+The month at the top is a picker (4×3 months, the year a button for 4×3
+years) with Year to date / a whole year / From–To. A range is
+`/api/distributions/summary`: every statement in it added up per property and
+per house (`summarize`). Paid out is what was PAID, never the months' "owed"
+added together -- that would count every carried balance twice.
+
+**Nothing goes to an owner unchecked without saying so** (066,
+`distribution_statements.checked_at/by`). Mark checked is per statement; saving
+the statement or the owner's details takes it off again. The send dialog lists
+every statement in that email with a tick each, and names any OTHER email the
+same inbox gets this month. If any are unticked the only button is "Send anyway,
+unchecked", and the server refuses an entity with an unchecked statement
+unless `sendUnchecked` is sent. Send-all leaves out every owner with one
+unchecked statement -- sending only the checked half would email an owner part
+of their month and look complete.
+
+**A payment made in Bill Pay is typed in as it was made** (Pay tab, By owner,
+Enter a payment: amount, the day it is paid, confirmation #) -- the
+`enter-paid` action, recorded paid at once, with "left" = owed minus paid.
+Entering one takes that owner's UNPAID planned payments off, because the plan
+was for a total that just changed and left in it would pay them twice; Plan
+again schedules what is left (it already plans owed minus paid).
+
+**Reserves move with the statements** (067, `reservesOf`). An expense line
+with "reserve" in its description is money put into reserves, not spent: held
+after = held before + put in − the part this month's income did not cover, and
+that uncovered part (`distribution_payees.reserve_pending_cents`) comes back
+when the next statement comes out positive. Andrew Habberstad, Nov 2026:
+$2,500 withheld, month $56.10 short → $2,443.90 of $2,500 held, $56.10 from
+December. Sending moves the payee's balance on and freezes what went in on the
+statement (`reserve_before_cents`). The old "expenses were $X more than its
+income" sentence is gone at the owner's request.
+
+**Open in Gmail** (preview bar): a Gmail compose URL with To, Cc and subject,
+the formatted statement copied to paste as the body. Gmail does not let a site
+fill a formatted body or create a draft without its API, so the paste is the
+one step left. Postmark is pending approval and only delivers inside
+larabeehomesllc.com, which is why this exists.
+
+**Never SEND email on the owner's behalf** -- not owners, not a summary to
+Cade -- until he says the system is bullet-proof (16 November 2026). The
+distribution screen sends only when a person presses Send; Claude does not
+press it or schedule anything that sends. **Drafts are allowed** (owner, 16
+November 2026): Gmail drafts in cade@larabeehomesllc.com, built with
+`ownerEmailHtml` (logo as an inline attachment), ONLY for statements marked
+checked, and only when he asks. A draft is not a send: the statement is
+recorded sent when he presses "I sent it from Gmail". Alex Prieto's
+sheets contain mistakes; the screen's against-last-month line and checks are
+there so a person catches them before money moves.

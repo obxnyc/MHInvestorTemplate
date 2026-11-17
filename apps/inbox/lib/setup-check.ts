@@ -23,7 +23,8 @@
 import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { recipients } from "./invoices";
+import { mailList } from "./mail-list";
+import { postmarkChecks } from "./postmark-health";
 
 type Level = "good" | "bad" | "warn";
 export type Check = { name: string; level: Level; detail: string; fix?: string };
@@ -43,10 +44,12 @@ export async function runSetupChecks(
     ...(await guardAsync("Twilio", () => twilioChecks(origin))),
     ...(await guardAsync("Anthropic", anthropicChecks)),
     ...(await guardAsync("Delivery", deliveryChecks)),
+    ...(await guardAsync("Postmark", postmarkChecks)),
+    ...(await guardAsync("The morning report", reportChecks)),
     ...(await guardAsync("Database", databaseChecks)),
     ...(await guardAsync("Migrations", migrationChecks)),
     ...(await guardAsync("Email intake", intakeChecks)),
-    ...guard("Bookkeeper", bookkeeperCheck),
+    ...(await guardAsync("Bookkeeper", bookkeeperCheck)),
     ...(asUser ? await guardAsync("Visibility", () => visibilityChecks(asUser)) : []),
   ];
 }
@@ -387,6 +390,60 @@ async function deliveryChecks(): Promise<Check[]> {
   }];
 }
 
+/**
+ * Did the morning report actually go out?
+ *
+ * The configuration check above asks whether sending COULD work. This asks
+ * whether it DID, which is a different question and the one that found the
+ * missing token: `report_runs` had two rows, both `ok = false`, both saying
+ * why, for eleven days before anybody looked.
+ *
+ * Reading the record beats reading the settings. A token that is present and
+ * correct and a report that still is not arriving is a real state, and only
+ * this half can see it.
+ */
+async function reportChecks(): Promise<Check[]> {
+  const { data, error } = await supabaseAdmin().from("report_runs")
+    .select("day, ok, detail, sent_to")
+    .order("started_at", { ascending: false }).limit(5);
+
+  if (error) {
+    return [{ name: "The morning report", level: "warn",
+      detail: `Its record could not be read: ${error.message}` }];
+  }
+
+  const runs = data ?? [];
+  if (runs.length === 0) {
+    return [{ name: "The morning report has never run", level: "warn",
+      detail: "report_runs is empty. The schedule lives in the database"
+        + " (migration 051) and calls the route at 14:00 and 15:00 UTC; if"
+        + " nothing is recorded, pg_cron is not firing or cannot reach the"
+        + " site.",
+      fix: "select * from cron.job — both delinquency rows should be active." }];
+  }
+
+  const failed = runs.filter((r) => r.ok !== true);
+  if (failed.length === 0) {
+    const last = runs[0]!;
+    return [{ name: "The morning report is going out", level: "good",
+      detail: `The last ${runs.length} run${runs.length === 1 ? "" : "s"} sent,`
+        + ` most recently on ${last.day} to`
+        + ` ${(last.sent_to ?? []).length} ${(last.sent_to ?? []).length === 1 ? "person" : "people"}.` }];
+  }
+
+  return [{
+    name: "The morning report is not reaching anybody", level: "bad",
+    /* The database's own sentence, not a guess about it. The reason the
+       report did not send is already written down at the moment it failed;
+       re-deriving it here is how a diagnosis goes stale. */
+    detail: `${failed.length} of the last ${runs.length} runs did not send.`
+      + ` The most recent said: ${failed[0]!.detail ?? "(nothing recorded)"}`,
+    fix: "The sentence above is the database's own record of the failure at"
+      + " the moment it happened. Fix what it names, then wait for the next"
+      + " 10am or call the route with ?force=1.",
+  }];
+}
+
 /** The half of the pipeline the Twilio console cannot see.
  *
  *  A webhook that passes its signature check and then cannot write is
@@ -664,26 +721,44 @@ function buildCheck(): Check {
  *  Worth its own line because the failure is silent and expensive: invoices
  *  keep arriving, the record is perfect, and nobody is told. The vendor sees
  *  "the office has it" and is right; the bookkeeper simply never hears. */
-function bookkeeperCheck(): Check[] {
-  const to = recipients(process.env.BOOKKEEPER_EMAIL);
+async function bookkeeperCheck(): Promise<Check[]> {
+  const { to, from, waiting } =
+    await mailList(supabaseAdmin(), "invoices", process.env.BOOKKEEPER_EMAIL);
+
+  const later = waiting
+    ? ` ${waiting} more ${waiting === 1 ? "is" : "are"} on the list but not`
+      + " active today — either starting later or taken off."
+    : "";
+
   if (to.length) {
     return [{
       name: "Invoices reach the bookkeeper", level: "good",
+      /* WHERE the list came from, not merely that there is one. The two look
+         identical on a screen and are not the same claim: a list from the
+         table is changed with an insert, and a list from the environment
+         needs a dashboard and a redeploy. Same shape as `fenceFrom`. */
       detail: `Every invoice a vendor submits is emailed to ${to.join(", ")} as it`
-        + " arrives, and so is every correction, naming what it replaced and why.",
+        + " arrives, and so is every correction, naming what it replaced and why."
+        + (from === "table"
+          ? " The list is rows in report_recipients, so adding or removing"
+            + " somebody is a change to the data and needs no deployment."
+          : " These come from the BOOKKEEPER_EMAIL setting, which needs a"
+            + " redeploy to change. Putting them in report_recipients instead"
+            + " makes it an ordinary edit.")
+        + later,
     }];
   }
+
   return [{
     name: "Nobody is told when an invoice arrives",
     level: "warn",
-    detail: "BOOKKEEPER_EMAIL is not set. Vendor invoices are still recorded"
-      + " and still cannot be edited — nothing is lost — but no email goes"
-      + " out, so the first anybody hears of a bill is when somebody opens"
-      + " the job.",
-    fix: "Add BOOKKEEPER_EMAIL to the hosting dashboard with the address that"
-      + " should receive them — several, separated by commas, if more than one"
-      + " person should — then redeploy. POSTMARK_SERVER_TOKEN has to be set as"
-      + " well, since it is what actually sends.",
+    detail: "Nobody is on the invoices list. Vendor invoices are still"
+      + " recorded and still cannot be edited — nothing is lost — but no"
+      + " email goes out, so the first anybody hears of a bill is when"
+      + " somebody opens the job." + later,
+    fix: "Add a row to report_recipients for each person, with report set to"
+      + " 'invoices'. No deployment is needed. POSTMARK_SERVER_TOKEN has to"
+      + " be set as well, since it is what actually sends.",
   }];
 }
 
@@ -758,7 +833,13 @@ async function intakeChecks(): Promise<Check[]> {
     let byEmail = 0, byPull = 0;
     try {
       byPull = await ask("external_id=like.rm:issue:*");
-      byEmail = await ask("external_id=like.*@*&external_id=not.like.rm:issue:*");
+      /* NOT by looking for an `@`. Postmark's id is a plain UUID, not an
+         RFC Message-ID, so that rule counted zero while email worked --
+         and this page would have gone on saying "nothing has arrived by
+         email in 30 days" for ever. By exclusion of the paths we can
+         name instead: the pull stamps `rm:issue:<n>`, a text stamps
+         nothing, everything else arrived as mail. */
+      byEmail = await ask("external_id=not.is.null&external_id=not.like.rm:issue:*");
     } catch (e) {
       return [{
         name: "Could not check whether email is arriving",

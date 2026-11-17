@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { isRole } from "@/lib/roles";
+import { isRole, isClockOnly } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
@@ -56,7 +56,8 @@ export async function POST(req: Request) {
     id: created.user.id,
     full_name: String(fullName).trim(),
     role,
-    forward_to: String(forwardTo ?? "").trim() || null,
+    // Crew never ring for tenant calls; see `rings` in lib/voice.ts.
+    forward_to: isClockOnly(role) ? null : String(forwardTo ?? "").trim() || null,
   });
   if (rowError) {
     // Do not leave a sign-in account with no staff record behind it: that is an

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { money0 } from "@/lib/papers";
 
 type Row = {
-  id: string; name: string; legal_name: string | null;
+  id: string; name: string; legal_name: string | null; contact_name?: string | null;
   homes: number; owesCents: number; parks: string[];
   /** Where their latest pack stands, or null if none has gone out. */
   papers: "signed" | "opened" | "sent" | "expired" | null;
@@ -49,6 +49,11 @@ const STANDS: Record<string, { say: string; tone: string }> = {
  * holding nothing -- which is a sentence about the database written as
  * though it were a fact about the business.
  */
+/* Under the owner's name: the name on the papers when it differs, else the
+   person behind an entity (Josh Barron behind The 226 Ocean Trust). */
+const smallPrint = (r: { name: string; legal_name: string | null; contact_name?: string | null }) =>
+  (r.legal_name?.trim() && r.legal_name.trim() !== r.name ? r.legal_name.trim() : "") || r.contact_name?.trim() || "";
+
 export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [configured, setConfigured] = useState(true);
@@ -94,6 +99,7 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
     return inTab.filter((r) =>
       r.name.toLowerCase().includes(q)
       || (r.legal_name ?? "").toLowerCase().includes(q)
+      || (r.contact_name ?? "").toLowerCase().includes(q)
       || r.parks.some((p) => p.toLowerCase().includes(q)));
   }, [inTab, find]);
 
@@ -246,9 +252,7 @@ export default function OwnersBoard({ canAdd }: { canAdd: boolean }) {
           {shown.map((r) => (
             <div className="ownercard" key={r.id}>
               <Link href={`/owners/${r.id}`} className="ownername">{r.name}</Link>
-              {r.legal_name && r.legal_name !== r.name && (
-                <span className="dim">{r.legal_name}</span>
-              )}
+              {smallPrint(r) && <span className="dim">{smallPrint(r)}</span>}
               <p className="ownerheld">
                 {!holdings ? (
                   <span className="dim">holdings not read</span>

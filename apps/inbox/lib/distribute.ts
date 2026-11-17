@@ -1,0 +1,1007 @@
+/**
+ * Owner distributions: the monthly statement and the plan for paying it.
+ *
+ * Pure functions only -- the route and the screen both use them, and the
+ * check in lib/__fixtures__/distribute.test.mjs runs them without a database.
+ *
+ * Money is integer cents throughout. A statement line is positive when it is
+ * money to the owner and negative when it is a deduction.
+ */
+
+/** One row of a statement. Positive is money to the owner (rent), negative
+ *  is a cost (lot rent, loan, a repair). Date, merchant and category are
+ *  shown when the sheet had them. */
+export type Line = {
+  label: string; cents: number; date?: string; merchant?: string; category?: string;
+  /** A markup on this cost, in percent. Applies only to a cost (cents < 0). */
+  markupPct?: number;
+  /** What Alex's sheet said, when the amount has been changed here. */
+  sheetCents?: number;
+  /** What Alex's sheet called it, when the description has been changed here. */
+  sheetLabel?: string;
+  /** Taken off the statement here. Kept, so Alex's own figures can still be
+   *  checked and the line put back; never shown to the owner. */
+  removed?: boolean;
+};
+
+/** The markup on one line, in cents (negative, like the cost it is on). */
+export const markupCents = (l: Line) =>
+  !l.removed && l.cents < 0 && (l.markupPct ?? 0) > 0 ? -Math.round((-l.cents * (l.markupPct as number)) / 100) : 0;
+
+/** A line as it counts: its amount plus any markup on it. */
+export const lineTotal = (l: Line) => (l.removed ? 0 : (Number(l.cents) || 0) + markupCents(l));
+
+export const netCents = (lines: Line[]) => lines.reduce((s, l) => s + lineTotal(l), 0);
+
+/** Alex's figures alone: his amounts, no markups, none of our own lines. */
+export const sheetNetCents = (lines: Line[]) =>
+  lines.filter((l) => !OUR_CATEGORIES.includes(l.category ?? "")).reduce((s, l) => s + (l.sheetCents ?? l.cents), 0);
+
+/**
+ * Costs a blanket markup applies to: repairs, materials, labor, cleaning,
+ * utilities -- the things we buy or do for the owner. Not the fixed monthly
+ * charges (loan, lot rent, consultant and management fees, insurance,
+ * warranty), which are an agreed price, and not our own lines.
+ */
+export const FIXED = /mortgage|loan|lot rent|lots rent|lot fee|consult|management|insurance|warranty/i;
+export const markupable = (l: Line) =>
+  !l.removed && l.cents < 0 && !FIXED.test(`${l.label} ${l.category ?? ""}`) && !OUR_CATEGORIES.includes(l.category ?? "");
+
+export const usd = (c: number) =>
+  (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+/* ----------------------------------------------------------- bank days */
+
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
+const at = (s: string) => new Date(`${s}T12:00:00Z`);
+
+/** nth weekday (0=Sun) of a month; n = -1 for the last. */
+function nth(year: number, month: number, weekday: number, n: number): string {
+  if (n > 0) {
+    const first = new Date(Date.UTC(year, month, 1, 12));
+    const shift = (weekday - first.getUTCDay() + 7) % 7;
+    return ymd(new Date(Date.UTC(year, month, 1 + shift + (n - 1) * 7, 12)));
+  }
+  const last = new Date(Date.UTC(year, month + 1, 0, 12));
+  const back = (last.getUTCDay() - weekday + 7) % 7;
+  return ymd(new Date(Date.UTC(year, month + 1, -back, 12)));
+}
+
+/** Federal Reserve holidays, when banks do not move money. A holiday on a
+ *  Sunday is observed Monday; on a Saturday the Fed does not shift it. */
+export function bankHolidays(year: number): Set<string> {
+  const fixed = [[0, 1], [5, 19], [6, 4], [10, 11], [11, 25]].map(([m, d]) => {
+    const x = new Date(Date.UTC(year, m, d, 12));
+    if (x.getUTCDay() === 0) x.setUTCDate(x.getUTCDate() + 1);
+    return ymd(x);
+  });
+  return new Set([
+    ...fixed,
+    nth(year, 0, 1, 3),   // MLK
+    nth(year, 1, 1, 3),   // Presidents
+    nth(year, 4, 1, -1),  // Memorial
+    nth(year, 8, 1, 1),   // Labor
+    nth(year, 9, 1, 2),   // Columbus
+    nth(year, 10, 4, 4),  // Thanksgiving
+  ]);
+}
+
+export function isBankDay(s: string): boolean {
+  const d = at(s);
+  const w = d.getUTCDay();
+  return w !== 0 && w !== 6 && !bankHolidays(d.getUTCFullYear()).has(s);
+}
+
+/** The first bank day on or after s. */
+export function bankDayFrom(s: string): string {
+  const d = at(s);
+  while (!isBankDay(ymd(d))) d.setUTCDate(d.getUTCDate() + 1);
+  return ymd(d);
+}
+
+/** n bank days after s (s itself is day 0). */
+export function addBankDays(s: string, n: number): string {
+  const d = at(bankDayFrom(s));
+  for (let i = 0; i < n; ) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    if (isBankDay(ymd(d))) i++;
+  }
+  return ymd(d);
+}
+
+/* -------------------------------------------------------------- the plan */
+
+export type Owed = { id: string; name: string; cents: number; settleDays: number };
+export type Planned = { id: string; sendOn: string; cents: number; arrivesOn: string };
+
+/**
+ * Spread what is owed across bank days so no day goes over the cap.
+ *
+ * `taken` is what is already committed on a day (payments marked paid), so
+ * re-planning half-way through a month never overfills a day that is gone.
+ *
+ * Owners whose bank takes longest go first -- they need the earliest send to
+ * arrive with everybody else -- then the larger amounts, so the big ones are
+ * not left to be chopped up at the end. A payment is kept whole when it fits
+ * on a day; only an amount bigger than a whole day's room is split, and then
+ * across consecutive days.
+ */
+export function planPayments(
+  owed: Owed[], capCents: number, startOn: string, taken: Record<string, number> = {},
+  maxPerPaymentCents: number = Infinity,
+): Planned[] {
+  if (!(capCents > 0)) throw new Error("the daily limit must be more than nothing");
+  if (!(maxPerPaymentCents > 0)) throw new Error("the most per payment must be more than nothing");
+  const used: Record<string, number> = { ...taken };
+  const room = (d: string) => capCents - (used[d] ?? 0);
+  const out: Planned[] = [];
+  const first = bankDayFrom(startOn);
+  const order = owed.filter((o) => o.cents > 0)
+    .sort((a, b) => b.settleDays - a.settleDays || b.cents - a.cents || a.name.localeCompare(b.name));
+
+  /* A cap on each payment (Wells Fargo Bill Pay: $5,000) is a second limit
+     beside the daily one. An owner owed more is paid in pieces of the cap and
+     a remainder -- $17,204.08 is 5,000 + 5,000 + 5,000 + 2,204.08 -- each a
+     whole payment on the first bank day with room for it, so no day goes
+     over its limit and no payment over its own. */
+  if (maxPerPaymentCents < capCents) {
+    for (const o of order) {
+      const pieces: number[] = [];
+      for (let left = o.cents; left > 0; left -= Math.min(left, maxPerPaymentCents)) pieces.push(Math.min(left, maxPerPaymentCents));
+      for (const piece of pieces) {
+        let d = first;
+        for (let i = 0; i < 400 && room(d) < piece; i++) d = addBankDays(d, 1);
+        used[d] = (used[d] ?? 0) + piece;
+        out.push({ id: o.id, sendOn: d, cents: piece, arrivesOn: addBankDays(d, o.settleDays) });
+      }
+    }
+    return out.sort((a, b) => a.sendOn.localeCompare(b.sendOn));
+  }
+
+  for (const o of order) {
+    let left = o.cents;
+    // Whole if it can be: the first day with room for all of it.
+    if (left <= capCents) {
+      let d = first;
+      for (let i = 0; i < 400 && room(d) < left; i++) d = addBankDays(d, 1);
+      if (room(d) >= left) {
+        used[d] = (used[d] ?? 0) + left;
+        out.push({ id: o.id, sendOn: d, cents: left, arrivesOn: addBankDays(d, o.settleDays) });
+        continue;
+      }
+    }
+    // Too big for one day: as much as each day allows, in order.
+    let d = first;
+    for (let i = 0; left > 0 && i < 400; i++, d = addBankDays(d, 1)) {
+      const take = Math.min(left, room(d));
+      if (take <= 0) continue;
+      used[d] = (used[d] ?? 0) + take;
+      out.push({ id: o.id, sendOn: d, cents: take, arrivesOn: addBankDays(d, o.settleDays) });
+      left -= take;
+    }
+  }
+  return out.sort((a, b) => a.sendOn.localeCompare(b.sendOn));
+}
+
+/* ------------------------------------------------------- reading a paste */
+
+/** "$1,234.56" -> 123456; "(1,234.56)" and "-1234.56" -> -123456. */
+export function parseMoney(raw: string): number | null {
+  let s = String(raw ?? "").trim();
+  if (!s) return null;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[$,\s]/g, "");
+  if (s.startsWith("-")) { neg = !neg; s = s.slice(1); }
+  if (s.endsWith("-")) { neg = !neg; s = s.slice(0, -1); }
+  if (!/^\d+(\.\d{1,2})?$|^\.\d{1,2}$/.test(s)) return null;
+  const c = Math.round(parseFloat(s) * 100);
+  return neg ? -c : c;
+}
+
+export const nameKey = (s: string) => String(s ?? "").toLowerCase()
+  .replace(/\b(llc|l\.l\.c\.|inc|corp|co|ltd|the)\b/g, "").replace(/[^a-z0-9]/g, "");
+
+const TOTAL = /^(net( (owed|due|distribution|to owner|amount))?|total( due| owed)?|amount (owed|due)|distribution)$/i;
+
+export type Pasted = {
+  byOwner: Record<string, { lines: Line[]; statedNetCents: number | null }>;
+  unmatched: string[];
+};
+
+/**
+ * Read a block copied out of Excel (tab-separated) or typed by hand.
+ *
+ * Two shapes are understood, and can be mixed:
+ *  - a row holding just an owner's name, then that owner's lines beneath it
+ *    as `label <tab> amount`;
+ *  - rows of `owner <tab> label <tab> amount`.
+ *
+ * A row labelled Net / Total / Net owed is NOT added as a line: it is kept as
+ * the figure the spreadsheet says, so the screen can say when the lines do
+ * not add up to it rather than one silently winning.
+ */
+export function readPaste(text: string, owners: { id: string; name: string }[]): Pasted {
+  const keyed = owners.map((o) => ({ ...o, k: nameKey(o.name) })).filter((o) => o.k);
+  const find = (cell: string) => {
+    const k = nameKey(cell);
+    if (!k) return null;
+    return keyed.find((o) => o.k === k)
+      ?? keyed.find((o) => k.length >= 5 && (o.k.startsWith(k) || k.startsWith(o.k)))
+      ?? null;
+  };
+  const byOwner: Pasted["byOwner"] = {};
+  const unmatched: string[] = [];
+  const slot = (id: string) => (byOwner[id] ??= { lines: [], statedNetCents: null });
+  let current: string | null = null;
+
+  for (const raw of String(text ?? "").split(/\r?\n/)) {
+    let filled = raw.split(/\t|\s{2,}|\|/).map((c) => c.trim()).filter(Boolean);
+    if (!filled.length) continue;
+    // "Rent collected 4,125.00" typed with single spaces: the last word is the amount.
+    if (filled.length === 1) {
+      const m = filled[0].match(/^(.*\S)\s+(\S+)$/);
+      if (m && parseMoney(m[2]) !== null) filled = [m[1], m[2]];
+    }
+
+    const money = filled.map(parseMoney);
+    let amountAt = -1;
+    money.forEach((m, i) => { if (m !== null) amountAt = i; });
+
+    if (amountAt < 0) {
+      const o = find(filled.join(" "));
+      // An unknown name ends the previous owner's block: lines under it must
+      // not land on whoever came before.
+      if (o) { current = o.id; slot(o.id); } else { current = null; unmatched.push(raw.trim()); }
+      continue;
+    }
+    const cents = money[amountAt]!;
+    const words = filled.slice(0, amountAt).filter((w) => parseMoney(w) === null);
+    if (!words.length && !current) { unmatched.push(raw.trim()); continue; }
+
+    // owner <tab> label <tab> amount
+    let owner = current;
+    let label = words.join(" ");
+    if (words.length >= 2) {
+      const o = find(words[0]);
+      if (o) { owner = o.id; current = o.id; label = words.slice(1).join(" "); }
+    }
+    if (!owner) { unmatched.push(raw.trim()); continue; }
+    if (!label) label = "Distribution";
+    if (TOTAL.test(label.trim())) { slot(owner).statedNetCents = cents; continue; }
+    slot(owner).lines.push({ label, cents });
+  }
+  return { byOwner, unmatched };
+}
+
+/* ---------------------------------------------------------- the statement */
+
+/** What a statement says beyond its lines, as the accountant's sheet has it. */
+export type Carry = {
+  previousOwedCents?: number | null;  // last month's "Owed to"
+  priorPaidCents?: number | null;     // what was actually paid against it
+  priorPaidOn?: string | null;
+  depositsCents?: number | null;      // security deposits on file
+  reserveHeldCents?: number | null;   // reserves we held for the owner BEFORE this statement
+  reservePendingCents?: number | null; // put into reserves last time and not yet covered by income
+  reserveRequiredCents?: number | null; // what the agreement says we hold
+  statedNetCents?: number | null;     // the sheet's "Monthly Net Cashflow"
+  statedOwedCents?: number | null;    // the sheet's "Owed to ..."
+};
+
+/** Owed this month = this month's net + whatever of last month's was not paid. */
+export const owedCents = (lines: Line[], c: Carry = {}) =>
+  netCents(lines) + ((c.previousOwedCents ?? 0) - (c.priorPaidCents ?? 0));
+
+/** Lot numbers mentioned in a piece of text: "Lots #13, #32" / "Lot 13". */
+export const lotsIn = (s: string) =>
+  // Four digits: Cross Creek's lots are its house numbers (3117). At three, every
+  // Cross Creek lot read as no lot at all and the title-vs-lines check was blind there.
+  [...String(s ?? "").matchAll(/(?:lots?\s*#?\s*|#\s*)(\d{1,4})\b/gi)].map((m) => Number(m[1]));
+
+/**
+ * The things worth a look before a statement goes out. Each is said as a
+ * sentence because each is a decision somebody makes, not an error the app
+ * can fix: the sheet is the accountant's, and a statement is somebody's money.
+ */
+/**
+ * The short name of the place a statement is for -- "1140 Northside Rd",
+ * "The Retreat at Cross Creek", "223 Cisco" -- with how many homes.
+ *
+ * The sheets title a statement "Conor Dolan - The Retreat at Cross Creek,
+ * Lady Cheryl Dr, Lots #3117, #3119, #3121, #3123": the owner's name is
+ * already at the top of the email and every lot is itemized below, so the
+ * heading only has to say WHERE. Never the name of a spreadsheet: "Dutch
+ * doors" is the management company's workbook, not a property.
+ */
+export function placeOf(title: string | null | undefined, payee: string, lines: Line[] = []): string {
+  let t = String(title || payee).replace(/\s*\(dutch doors\)\s*/i, " ").trim();
+  const dash = t.indexOf(" - ");
+  if (dash > 0) t = t.slice(dash + 3);
+  t = t.split(/,\s*lots?\b/i)[0].split(",")[0].trim() || t;
+  const lots = new Set(lotsIn(title ?? "").length ? lotsIn(title ?? "") : lines.flatMap((l) => lotsIn(l.label)));
+  if (lots.size === 1 && !/\blot\b/i.test(t)) return `${t}, Lot ${[...lots][0]}`;
+  if (lots.size > 1) return `${t} · ${lots.size} homes`;
+  return t;
+}
+
+/** Categories that are ours, not the sheet's: they move the total on purpose,
+ *  so the sheet's own figure is compared without them. */
+export const OUR_CATEGORIES = ["Guaranteed rent", "Adjustment"];
+const ours = (l: Line) => OUR_CATEGORIES.includes(l.category ?? "");
+
+/** An expense line that puts money into the owner's reserves ("Reserve
+ *  Withheld", "Reserve Fund"): it is not spent, it is held for them. */
+export const isReserveLine = (l: Line) =>
+  !l.removed && l.cents < 0 && (l.category === "Reserves" || /\breserves?\b/i.test(l.label));
+
+export type Reserves = {
+  beforeCents: number;   // held going into this statement
+  recoveredCents: number; // last statement's shortfall, made good by this one
+  intoCents: number;     // put in by this statement's reserve lines
+  shortCents: number;    // of that, not covered by this month's income: comes out of the next statement
+  heldCents: number;     // held after this statement
+  requiredCents: number;
+};
+
+/**
+ * Reserves as the statement leaves them. A reserve line is money held, not
+ * spent, so it adds to what is held -- less whatever this month's income did
+ * not cover. Andrew Habberstad, November 2026: $2,500 withheld, the month
+ * $56.10 short, so $2,443.90 held of $2,500 and $56.10 carried into the next
+ * statement. When the next statement comes out positive, that $56.10 has been
+ * paid back out of it and the reserve is whole.
+ */
+export function reservesOf(lines: Line[], c: Carry = {}): Reserves {
+  const before = c.reserveHeldCents ?? 0;
+  const pending = Math.max(0, c.reservePendingCents ?? 0);
+  const into = lines.filter(isReserveLine).reduce((a, l) => a - lineTotal(l), 0);
+  const owed = owedCents(lines, c);
+  const recovered = owed >= 0 ? pending : 0;
+  const short = owed < 0 ? Math.min(-owed, into) : 0;
+  return { beforeCents: before, recoveredCents: recovered, intoCents: into, shortCents: short,
+    heldCents: before + recovered + into - short, requiredCents: c.reserveRequiredCents ?? 0 };
+}
+
+/** How far short of its reserves an owner is, or null when it is not.
+ *  Holding nothing at all is short whatever the requirement says. Takes the
+ *  reserves AFTER this statement when its lines are given. */
+export function reserveShortCents(c: Carry, lines?: Line[]): number | null {
+  const held = lines ? reservesOf(lines, c).heldCents : c.reserveHeldCents ?? 0;
+  const need = c.reserveRequiredCents ?? 0;
+  if (held <= 0) return need > 0 ? need : 0;
+  return held < need ? need - held : null;
+}
+
+/**
+ * An owner with a rent agreement is paid at least the agreed rent for every
+ * home on the statement: the whole of it for a home with no rent, and the
+ * difference for a home whose tenant paid less (a $1,148 rent on a $1,250
+ * agreement is topped up by $102). A home that brought in the agreed rent or
+ * more gets nothing added.
+ *
+ * Worked out from the other lines every time -- any "Guaranteed rent" line
+ * already there is dropped first -- so changing a rent, or the agreement,
+ * can never leave a stale top-up behind.
+ */
+export function withGuarantee(lines: Line[], perHomeCents: number | null | undefined): Line[] {
+  const base = lines.filter((l) => l.category !== "Guaranteed rent");
+  if (!perHomeCents || perHomeCents <= 0) return base;
+  const live = base.filter((l) => !l.removed);
+  const homes = [...new Set(live.flatMap((l) => lotsIn(l.label)))].sort((a, b) => a - b);
+  const rentFor = (n: number) => live
+    .filter((l) => l.cents > 0 && l.category !== "Adjustment" && lotsIn(l.label).includes(n))
+    .reduce((a, l) => a + l.cents, 0);
+  const add: Line[] = [];
+  for (const n of homes) {
+    const got = rentFor(n);
+    if (got >= perHomeCents) continue;
+    add.push({
+      label: got > 0
+        ? `Guaranteed rent top-up - Lot ${n} (to ${usd(perHomeCents)})`
+        : `Guaranteed rent - Lot ${n} (vacant)`,
+      cents: perHomeCents - got,
+      category: "Guaranteed rent",
+    });
+  }
+  return [...base, ...add];
+}
+
+/**
+ * Homes with costs this month and no rent: a loan, a lot rent or a fee was
+ * charged for the lot and nothing came in for it. The owners on a guaranteed
+ * arrangement are paid for these as if they were let.
+ */
+export function vacantLots(all: Line[]): number[] {
+  const lines = all.filter((l) => !l.removed);
+  const rentLots = new Set(lines.filter((l) => l.cents > 0).flatMap((l) => lotsIn(l.label)));
+  const costLots = new Set(lines.filter((l) => l.cents < 0).flatMap((l) => lotsIn(l.label)));
+  return [...costLots].filter((n) => !rentLots.has(n)).sort((a, b) => a - b);
+}
+
+export function checks(title: string | null | undefined, lines: Line[], c: Carry = {}): string[] {
+  const out: string[] = [];
+  const net = netCents(lines);
+  const owed = owedCents(lines, c);
+  const sheetNet = sheetNetCents(lines);
+  const added = net - sheetNet;
+  if (c.statedNetCents != null && c.statedNetCents !== sheetNet) {
+    out.push(`The lines add up to ${money(sheetNet)} but the sheet's Monthly Net Cashflow says ${money(c.statedNetCents)}.`);
+  }
+  if (added) out.push(`Includes ${money(added)} of adjustments made here, not on Alex's sheet.`);
+  if (c.statedOwedCents != null && c.statedOwedCents !== owed - added) {
+    out.push(`Net plus last month's balance comes to ${money(owed)} but the sheet's Owed line says ${money(c.statedOwedCents)}.`);
+  }
+  if (c.previousOwedCents != null && c.priorPaidCents != null && c.previousOwedCents !== c.priorPaidCents) {
+    out.push(`Last month ${money(c.previousOwedCents)} was owed and ${money(c.priorPaidCents)} was paid; the ${money(c.previousOwedCents - c.priorPaidCents)} difference carries into this month.`);
+  }
+  if (owed < 0) out.push(`Nothing to pay: the month comes out ${money(owed)}.`);
+  const res = reservesOf(lines, c);
+  const short = reserveShortCents(c, lines);
+  if (short !== null) {
+    out.push(!res.heldCents
+      ? `Reserves not met: we hold no reserves for this owner${c.reserveRequiredCents ? ` (${usd(c.reserveRequiredCents)} required)` : ""}.`
+      : `Reserves not met: we hold ${usd(res.heldCents)} of the ${usd(c.reserveRequiredCents ?? 0)} required${res.shortCents ? `; ${usd(res.shortCents)} comes out of the next statement` : ""}.`);
+  }
+  const notDates = lines.filter((l) => l.date && !readDate(l.date));
+  if (notDates.length) {
+    out.push(`${notDates.length === 1 ? "A line's date is" : `${notDates.length} lines' dates are`} not a date (${notDates.slice(0, 2).map((l) => `"${l.date}" on ${l.label}`).join(", ")}), so the statement shows no date for ${notDates.length === 1 ? "it" : "them"}.`);
+  }
+  const said = new Set(lotsIn(title ?? ""));
+  const used = new Set(lines.flatMap((l) => lotsIn(l.label)));
+  if (said.size && used.size) {
+    const missing = [...used].filter((n) => !said.has(n)).sort((a, b) => a - b);
+    const idle = [...said].filter((n) => !used.has(n)).sort((a, b) => a - b);
+    if (missing.length) out.push(`Lines mention lot${missing.length > 1 ? "s" : ""} ${missing.join(", ")}, which the title does not list.`);
+    if (idle.length) out.push(`The title lists lot${idle.length > 1 ? "s" : ""} ${idle.join(", ")}, which no line mentions.`);
+  }
+  return out;
+}
+
+const esc = (s: string) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+const money = (c: number) => (c < 0 ? `-${usd(-c)}` : usd(c));
+
+export const monthLabel = (month: string) =>
+  new Date(`${month.slice(0, 7)}-15T12:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+
+/** "November 2026 Owner Distribution" -- the subject the owners already know. */
+export const subjectFor = (month: string) => `${monthLabel(month)} Owner Distribution`;
+
+const dayLabel = (s: string) =>
+  at(s).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+
+/** "2026-11-14" or "11/1/2026" to "Nov 14"; anything else as written. */
+/** A date as the sheet wrote it -- "2026-11-14", "11/1/2026", "09-11-2026",
+ *  "September 28, 2026" -- as "Nov 14". Null when it is not a date at all
+ *  (a bare spreadsheet serial like "46033" is a number, and guessing which
+ *  day it meant is how a statement ends up dated wrong). */
+export const readDate = (s?: string): Date | null => {
+  const v = String(s ?? "").trim();
+  let m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12));
+  if ((m = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/))) return new Date(Date.UTC(+m[3], +m[1] - 1, +m[2], 12));
+  if ((m = v.match(/^([A-Za-z]+)\.? (\d{1,2}),? (\d{4})$/))) {
+    const t = Date.parse(`${m[1]} ${m[2]}, ${m[3]} 12:00 UTC`);
+    if (!Number.isNaN(t)) return new Date(t);
+  }
+  return null;
+};
+export const shortDate = (s?: string) => {
+  if (!s) return "";
+  const d = readDate(s);
+  return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
+};
+
+export type StatementInput = Carry & {
+  month: string; payee: string; title?: string | null; lines: Line[]; note?: string | null;
+  payments?: { sendOn: string; cents: number; arrivesOn?: string }[];
+};
+
+/** The company mark, served by the live site. An email cannot carry a file
+ *  path, and a mail client will not load a data: URI in most inboxes. */
+export const LOGO = "https://app.larabeehomesllc.com/icon-192.png";
+const F = "font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif";
+const CAP = "margin:22px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6B7280;font-weight:700";
+
+/** One property's P&L, as a block. The accountant's layout -- revenue,
+ *  expenses, then the balance -- because that is what owners are used to. */
+function section(full: StatementInput, boxed: boolean, entityName?: string): string {
+  const s = { ...full, lines: full.lines.filter((l) => !l.removed) };
+  const net = netCents(s.lines);
+  const owed = owedCents(s.lines, s);
+  const res = reservesOf(s.lines, s);
+  const costs = s.lines.filter((l) => l.cents < 0);
+  const income = s.lines.filter((l) => l.cents >= 0);
+  const cell = "padding:7px 6px;border-bottom:1px solid #E6E8EC;vertical-align:top";
+  const num = `${cell};text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap`;
+  const row = (l: Line) => `<tr>
+      <td style="${cell};color:#6B7280;white-space:nowrap">${esc(shortDate(l.date))}</td>
+      <td style="${cell};color:#1F2937">${esc(l.label)}${l.merchant ? `<div style="color:#6B7280;font-size:12px">${esc(l.merchant)}</div>` : ""}</td>
+      <td style="${num};color:${l.cents < 0 ? "#9B2C2C" : "#1F2937"}">${money(l.cents)}</td></tr>${markupCents(l) ? `<tr>
+      <td style="${cell}"></td>
+      <td style="${cell};color:#6B7280;padding-left:18px">Markup ${l.markupPct}%</td>
+      <td style="${num};color:#9B2C2C">${money(markupCents(l))}</td></tr>` : ""}`;
+  const table = (name: string, rows: Line[]) => rows.length ? `
+    <p style="${CAP}">${name}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px">
+      ${rows.map(row).join("")}
+      <tr><td></td><td style="${cell};font-weight:700;color:#111827;border-bottom:0">Subtotal</td>
+      <td style="${num};font-weight:700;color:#111827;border-bottom:0">${money(netCents(rows))}</td></tr>
+    </table>` : "";
+  const sum = (label: string, c: number, strong = false) => `<tr>
+      <td style="padding:6px 0;color:${strong ? "#111827" : "#374151"};${strong ? "font-weight:800;font-size:16px" : ""}">${label}</td>
+      <td style="padding:6px 0;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:#111827;${strong ? "font-weight:800;font-size:18px" : ""}">${money(c)}</td></tr>`;
+  const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
+  const pays = (s.payments ?? []).filter((p) => p.cents > 0);
+  // In a combined email the PROPERTY is the heading, so nobody has to work
+  // out which block is which; alone, the payee is.
+  const head = boxed
+    ? `<div style="background:#F3F4F6;margin:-18px -18px 0;padding:14px 18px;border-radius:10px 10px 0 0;border-bottom:1px solid #E6E8EC">
+         <div style="font-size:16px;font-weight:800;color:#111827">${esc(placeOf(s.title, s.payee, s.lines))}</div>
+       </div>`
+    : `<div style="font-size:19px;font-weight:700;color:#111827">${esc(entityName ?? s.payee)}</div>
+       <div style="color:#6B7280;font-size:13px;margin-top:3px">${esc(placeOf(s.title, s.payee, s.lines))}</div>`;
+  const body = `${head}
+    ${table("Revenue", income)}
+    ${table("Expenses", costs)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;border-top:2px solid #111827;border-collapse:collapse;font-size:14px">
+      ${sum("Monthly net cashflow", net)}
+      ${carried ? sum(`Carried from last month${s.priorPaidOn ? ` (${esc(money(s.previousOwedCents ?? 0))} owed, ${esc(money(s.priorPaidCents ?? 0))} paid ${esc(shortDate(s.priorPaidOn))})` : ""}`, carried) : ""}
+      ${sum(owed < 0 ? "Balance" : "Distribution owed to you", owed, true)}
+    </table>
+    ${pays.length ? `
+    <p style="${CAP}">Payment</p>
+    <p style="margin:0;color:#374151;line-height:1.6">${pays.map((p) =>
+      `${usd(p.cents)} sent ${dayLabel(p.sendOn)}${p.arrivesOn ? `, expected by ${dayLabel(p.arrivesOn)}` : ""}`).join("<br>")}</p>` : ""}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;font-size:13px;color:#374151">
+      <tr><td colspan="2" style="${CAP};padding:0 0 4px">Held for you</td></tr>
+      <tr><td style="padding:3px 0">Security deposits</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">${usd(s.depositsCents ?? 0)}</td></tr>
+      <tr><td style="padding:3px 0">Reserves</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">${usd(res.heldCents)}${res.requiredCents ? ` <span style="color:#6B7280">of ${usd(res.requiredCents)} required</span>` : ""}</td></tr>
+      ${res.shortCents ? `<tr><td colspan="2" style="padding:3px 0;color:#6B7280">${usd(res.shortCents)} of this month's reserve was not covered by this month's income, and comes out of your next statement.</td></tr>` : ""}
+    </table>
+    ${s.note ? `<p style="margin:18px 0 0;color:#374151;line-height:1.6;white-space:pre-wrap">${esc(s.note)}</p>` : ""}`;
+  return boxed
+    ? `<div style="border:1px solid #E6E8EC;border-radius:10px;padding:18px;margin-top:20px">${body}</div>`
+    : body;
+}
+
+/**
+ * The email one owning entity receives: every property it holds, each in its
+ * own block, with a summary on top when there is more than one. Two entities
+ * are two emails even at the same address -- that is decided by the caller,
+ * from the payee's entity, never from the address.
+ *
+ * Email-safe HTML: tables and inline styles, because mail clients ignore
+ * stylesheets. Light ground on purpose: a statement is read and printed.
+ */
+export function ownerEmailHtml(month: string, entity: string, list: StatementInput[], opts: { excelUrl?: string } = {}): string {
+  const many = list.length > 1;
+  const total = list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0);
+  const summary = many ? `
+    <div style="font-size:19px;font-weight:700;color:#111827">${esc(entity)}</div>
+    <p style="margin:4px 0 0;color:#6B7280;font-size:13px">${list.length} statements this month, each itemized below.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;border-collapse:collapse;font-size:14px">
+      ${list.map((s) => { const o = owedCents(s.lines, s); return `<tr>
+        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;color:#1F2937">${esc(placeOf(s.title, s.payee, s.lines))}</td>
+        <td style="padding:7px 0;border-bottom:1px solid #E6E8EC;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:#1F2937">${o < 0 ? `<span style="color:#6B7280">No distribution</span>` : money(o)}</td></tr>`; }).join("")}
+      <tr><td style="padding:10px 0 0;font-weight:800;color:#111827">Total distribution</td>
+        <td style="padding:10px 0 0;text-align:right;font-weight:800;font-size:18px;color:#111827;font-variant-numeric:tabular-nums;white-space:nowrap">${usd(total)}</td></tr>
+    </table>` : "";
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#F3F4F6">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:24px 12px">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#FFFFFF;border-radius:12px;overflow:hidden;${F};font-size:15px">
+  <tr><td style="padding:22px 28px 18px;border-bottom:4px solid #1F3554">
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+      <td style="padding-right:12px;vertical-align:middle"><img src="${LOGO}" width="48" height="48" alt="Larabee Homes" style="display:block;border:0"></td>
+      <td style="vertical-align:middle">
+        <div style="font-size:20px;font-weight:800;letter-spacing:-.01em;color:#1F3554">Larabee Homes</div>
+        <div style="font-size:13px;color:#6B7280;margin-top:2px">Owner Distribution &middot; ${esc(monthLabel(month))}</div>
+      </td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:24px 28px 8px">
+    ${summary}
+    ${list.map((s) => section(s, many, entity)).join("")}
+  </td></tr>
+  <tr><td style="padding:20px 28px 26px;color:#6B7280;font-size:12px;line-height:1.6;border-top:1px solid #E6E8EC">
+    ${opts.excelUrl ? `<a href="${esc(opts.excelUrl)}" style="display:inline-block;margin:0 0 12px;padding:9px 16px;border-radius:8px;background:#1F3554;color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none">Download for Excel</a><br>` : ""}
+    Questions about this statement? Reply to this email.<br>Larabee Homes LLC
+  </td></tr>
+</table>
+</td></tr></table></body></html>`;
+}
+
+/** A single statement on its own. */
+export const statementHtml = (s: StatementInput) => ownerEmailHtml(s.month, s.payee, [s]);
+
+function sectionText(full: StatementInput, many: boolean): string[] {
+  const s = { ...full, lines: full.lines.filter((l) => !l.removed) };
+  const net = netCents(s.lines);
+  const owed = owedCents(s.lines, s);
+  const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
+  const pad = (l: string, a: string) => `${l}${" ".repeat(Math.max(2, 56 - l.length - a.length))}${a}`;
+  const block = (name: string, rows: Line[]) => rows.length
+    ? [name, ...rows.flatMap((l) => [pad(`${shortDate(l.date) ? `${shortDate(l.date)}  ` : ""}${l.label}`, money(l.cents)),
+        ...(markupCents(l) ? [pad(`    Markup ${l.markupPct}%`, money(markupCents(l)))] : [])]), pad("Subtotal", money(netCents(rows))), ""]
+    : [];
+  return [
+    ...(many ? ["=".repeat(56), placeOf(s.title, s.payee, s.lines), "=".repeat(56)] : [s.payee, placeOf(s.title, s.payee, s.lines)]),
+    ``,
+    ...block("REVENUE", s.lines.filter((l) => l.cents >= 0)),
+    ...block("EXPENSES", s.lines.filter((l) => l.cents < 0)),
+    pad("Monthly net cashflow", money(net)),
+    ...(carried ? [pad("Carried from last month", money(carried))] : []),
+    pad(owed < 0 ? "Balance" : "Distribution owed to you", money(owed)),
+    ...((s.payments ?? []).length ? ["", ...s.payments!.map((p) =>
+      `${usd(p.cents)} sent ${dayLabel(p.sendOn)}${p.arrivesOn ? `, expected by ${dayLabel(p.arrivesOn)}` : ""}`)] : []),
+    "", "HELD FOR YOU", pad("Security deposits", usd(s.depositsCents ?? 0)),
+    ...(() => { const r = reservesOf(s.lines, s); return [pad("Reserves", `${usd(r.heldCents)}${r.requiredCents ? ` of ${usd(r.requiredCents)} required` : ""}`),
+      ...(r.shortCents ? [`${usd(r.shortCents)} of this month's reserve was not covered by this month's income, and comes out of your next statement.`] : [])]; })(),
+    ...(s.note ? ["", s.note] : []),
+    ``,
+  ];
+}
+
+export function ownerEmailText(month: string, entity: string, list: StatementInput[], opts: { excelUrl?: string } = {}): string {
+  const many = list.length > 1;
+  const pad = (l: string, a: string) => `${l}${" ".repeat(Math.max(2, 56 - l.length - a.length))}${a}`;
+  return [
+    `Larabee Homes -- Owner Distribution, ${monthLabel(month)}`,
+    ...(many ? [entity, ``, ...list.map((s) => { const o = owedCents(s.lines, s); return pad(placeOf(s.title, s.payee, s.lines), o < 0 ? "No distribution" : money(o)); }),
+      pad("Total distribution", usd(list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0))), ``] : [``]),
+    ...list.flatMap((s) => sectionText(s, many)),
+    ...(opts.excelUrl ? [`Download for Excel: ${opts.excelUrl}`, ``] : []),
+    `Questions about this statement? Reply to this email.`, `Larabee Homes LLC`,
+  ].join("\n");
+}
+
+export const statementText = (s: StatementInput) => ownerEmailText(s.month, s.payee, [s]);
+
+/** Which statements share one email: the payee's entity, or the payee alone. */
+export const entityOf = (p: { entity?: string | null; payee: string }) => (p.entity || "").trim() || p.payee;
+
+/* --------------------------------------------- against last month's */
+
+export type Versus = {
+  lastCents: number | null;      // what was sent last month
+  lastOn: string | null;
+  diffCents: number | null;
+  loud: boolean;                 // a swing big enough to look at before paying
+  says: string[];                // why, one sentence each
+};
+
+const lotOf = (label: string) => lotsIn(label)[0] ?? null;
+const kindOf = (l: Line) => {
+  const s = `${l.category ?? ""} ${l.label}`.toLowerCase();
+  if (/monthly rent|^rent\b|\brent - lot/.test(s) && l.cents > 0) return "rent";
+  if (/mortgage|loan/.test(s)) return "loan";
+  if (/consult/.test(s)) return "consultant fee";
+  if (/lot rent|lots rent/.test(s)) return "lot rent";
+  return "other";
+};
+
+/**
+ * This month's payment beside last month's, because the breakdown is typed
+ * by a person and a typo in it is somebody paid wrong.
+ *
+ * A swing is loud when it is both more than $250 and more than 20% of last
+ * month's -- either alone fires on ordinary months (a $90 pest call on a
+ * $400 owner, a 5% move on a $10,000 one). When last month's lines are on
+ * file, it also says which lots stopped or started paying rent, which lots
+ * gained or lost their loan or lot-rent line, and any one-off costs.
+ */
+export function versusLast(
+  thisCents: number,
+  last: { sentCents: number | null; sentOn?: string | null; lines?: Line[] | null },
+  lines: Line[],
+): Versus {
+  const says: string[] = [];
+  const lastCents = last.sentCents;
+  const diff = lastCents === null ? null : thisCents - lastCents;
+  const loud = diff !== null && Math.abs(diff) > 25000 && Math.abs(diff) > Math.abs(lastCents ?? 0) * 0.2;
+  if (lastCents !== null && diff !== null && loud) {
+    says.push(`${diff > 0 ? "Up" : "Down"} ${usd(Math.abs(diff))} on last month's ${usd(lastCents)}.`);
+  }
+  if (last.lines?.length) {
+    const lotsBy = (ls: Line[], k: string) => new Set(ls.filter((l) => kindOf(l) === k).map((l) => lotOf(l.label)).filter((x): x is number => x !== null));
+    for (const k of ["rent", "loan", "lot rent", "consultant fee"]) {
+      const before = lotsBy(last.lines, k), now = lotsBy(lines, k);
+      const gone = [...before].filter((x) => !now.has(x)).sort((a, b) => a - b);
+      const added = [...now].filter((x) => !before.has(x)).sort((a, b) => a - b);
+      if (gone.length) says.push(`No ${k} line this month for lot${gone.length > 1 ? "s" : ""} ${gone.join(", ")}, which had one last month.`);
+      if (added.length) says.push(`A ${k} line for lot${added.length > 1 ? "s" : ""} ${added.join(", ")} that was not there last month.`);
+    }
+    const rentNow = lines.filter((l) => kindOf(l) === "rent");
+    for (const l of rentNow) {
+      const lot = lotOf(l.label);
+      const was = last.lines.find((x) => kindOf(x) === "rent" && lotOf(x.label) === lot);
+      if (was && was.cents !== l.cents) says.push(`Lot ${lot} rent is ${usd(l.cents)}; it was ${usd(was.cents)} last month.`);
+    }
+    const dup = new Map<string, number>();
+    for (const l of lines) { const k = `${l.label.trim().toLowerCase()}|${l.cents}`; dup.set(k, (dup.get(k) ?? 0) + 1); }
+    for (const [k, c] of dup) if (c > 1) says.push(`"${k.split("|")[0]}" appears ${c} times for the same amount.`);
+  }
+  return { lastCents, lastOn: last.sentOn ?? null, diffCents: diff, loud: loud || says.length > 0, says };
+}
+
+/* ------------------------------------------------ our own charges */
+
+/**
+ * Our time on an owner's property: hours at a rate, charged to the owner.
+ * Rounded to the cent once, on the total -- 1.5 h at $65 is $97.50, not two
+ * roundings of half an hour.
+ */
+export function laborLine(hours: number, rateCents: number, what: string, lot?: number | null): Line | null {
+  if (!(hours > 0) || !(rateCents > 0)) return null;
+  const h = Math.round(hours * 100) / 100;
+  const doing = what.trim();
+  return {
+    label: `Labor - ${h} hr${h === 1 ? "" : "s"} @ ${usd(rateCents)}/hr${doing ? ` - ${doing}` : ""}${lot ? ` - Lot ${lot}` : ""}`,
+    cents: -Math.round(h * rateCents),
+    category: "Adjustment",
+  };
+}
+
+/** A markup on a cost already on the statement, named after it so the owner
+ *  can see what it is a markup ON. Only a cost can be marked up. */
+export function markupLine(on: Line, percent: number): Line | null {
+  if (!(on.cents < 0) || !(percent > 0) || percent > 100) return null;
+  const pct = Math.round(percent * 100) / 100;
+  return {
+    label: `Markup ${pct}% on ${on.label}`,
+    cents: -Math.round((-on.cents * pct) / 100),
+    category: "Adjustment",
+  };
+}
+
+/* --------------------------------- what Rent Manager does not know yet */
+
+/** One difference between this screen and Rent Manager, for somebody to
+ *  enter there. `cents` is its effect on what the owner is paid: a charge
+ *  added is negative, a cost deleted is positive. A payment is the amount
+ *  sent, positive, and is an owner distribution to record, not an effect. */
+export type Change = {
+  key: string;
+  kind: "added" | "deleted" | "amount" | "markup" | "topup" | "paid";
+  label: string; date?: string; cents: number; detail: string;
+};
+
+const KIND_SAYS: Record<Change["kind"], string> = {
+  added: "Added here", deleted: "Deleted here", amount: "Amount changed",
+  markup: "Markup", topup: "Rent agreement top-up", paid: "Distribution paid",
+};
+export const changeKindSays = (k: Change["kind"]) => KIND_SAYS[k];
+
+/**
+ * Everything on one statement that Rent Manager does not have: the lines
+ * changed here and the payments sent. The key is the change itself, so the
+ * tick for "Labor $180" does not carry over to "Labor $240" -- changing a
+ * change after it was entered is a new thing to enter.
+ *
+ * A description changed with nothing else is not here: it moves no money.
+ */
+export function changesOf(
+  statementId: string, lines: Line[],
+  payments: { id: string; cents: number; paidAt: string | null; sendOn: string; confirmation?: string | null }[] = [],
+): Change[] {
+  const out: Change[] = [];
+  const key = (kind: string, l: Line, cents: number) => `${statementId}|${kind}|${l.sheetLabel ?? l.label}|${l.date ?? ""}|${cents}`;
+  for (const l of lines) {
+    const ours = OUR_CATEGORIES.includes(l.category ?? "");
+    if (l.removed) {
+      if (ours) continue;
+      const was = l.sheetCents ?? l.cents;
+      out.push({ key: key("deleted", l, was), kind: "deleted", label: l.sheetLabel ?? l.label, date: l.date, cents: -was,
+        detail: `${usd(Math.abs(was))} ${was < 0 ? "cost" : "income"} on Alex's sheet, taken off` });
+      continue;
+    }
+    if (l.category === "Guaranteed rent") {
+      out.push({ key: key("topup", l, l.cents), kind: "topup", label: l.label, date: l.date, cents: l.cents, detail: "Paid to the agreed rent" });
+      continue;
+    }
+    if (l.category === "Adjustment") {
+      const t = lineTotal(l);
+      out.push({ key: key("added", l, t), kind: "added", label: l.label, date: l.date, cents: t,
+        detail: `${t < 0 ? "Charge" : "Credit"}${markupCents(l) ? `, incl. ${usd(-markupCents(l))} markup` : ""}` });
+      continue;
+    }
+    if (l.sheetCents !== undefined && l.sheetCents !== l.cents) {
+      const d = l.cents - l.sheetCents;
+      out.push({ key: key("amount", l, l.cents), kind: "amount", label: l.label, date: l.date, cents: d,
+        detail: `Alex ${usd(Math.abs(l.sheetCents))}, now ${usd(Math.abs(l.cents))}` });
+    }
+    const m = markupCents(l);
+    if (m) out.push({ key: key(`markup${l.markupPct}`, l, m), kind: "markup", label: l.label, date: l.date, cents: m,
+      detail: `${l.markupPct}% on ${usd(Math.abs(l.cents))}` });
+  }
+  for (const p of payments) {
+    if (!p.paidAt) continue;
+    out.push({ key: `${statementId}|paid|${p.id}|${p.cents}`, kind: "paid", label: "Owner distribution", date: p.sendOn,
+      cents: p.cents, detail: p.confirmation ? `Bill Pay, confirmation ${p.confirmation}` : "Bill Pay, no confirmation number" });
+  }
+  return out;
+}
+
+/**
+ * Last month as this screen left it, against this month's sheet. Alex's
+ * "Previous Distribution Owed" is last month's owed as Rent Manager has it,
+ * and "Distributions Paid" is what Rent Manager says went out -- so if
+ * anything changed here and was never entered there, it shows up as a
+ * difference in one of the two. This is the net under the ticks: a change
+ * nobody remembered to record cannot last more than one month.
+ *
+ * Nothing is said when either side is unknown; an unknown is not a match
+ * and not a mismatch.
+ */
+export function reconcile(
+  last: { owedCents: number | null; paidCents: number | null; unrecorded: number; month: string },
+  now: Carry,
+): string[] {
+  const out: string[] = [];
+  const m = monthLabel(last.month);
+  if (last.owedCents !== null && now.previousOwedCents != null && last.owedCents !== now.previousOwedCents) {
+    const d = now.previousOwedCents - last.owedCents;
+    out.push(`${m} came to ${usd(last.owedCents)} owed here; this sheet carries forward ${usd(now.previousOwedCents)}, ${usd(Math.abs(d))} ${d > 0 ? "more" : "less"}. Something changed here in ${m} that Rent Manager does not have, or Rent Manager changed afterwards.`);
+  }
+  if (last.paidCents !== null && now.priorPaidCents != null && last.paidCents !== now.priorPaidCents) {
+    out.push(`${usd(last.paidCents)} was paid here in ${m}; this sheet says ${usd(now.priorPaidCents)} was paid.`);
+  }
+  if (last.unrecorded > 0) {
+    out.push(`${last.unrecorded} change${last.unrecorded === 1 ? "" : "s"} from ${m} not ticked as entered in Rent Manager.`);
+  }
+  return out;
+}
+
+/* ------------------------------------------------- for Excel */
+
+/** One cell of a spreadsheet row, as lib/xlsx.ts writes it. Money is dollars,
+ *  a real number, so it adds up in the owner's own spreadsheet. */
+export type XCell = string | number | null | { v: string | number | null; bold?: boolean; money?: boolean };
+const $ = (cents: number, bold = false): XCell => ({ v: Math.round(cents) / 100, money: true, bold });
+
+/** A statement as spreadsheet rows: the same lines, subtotals and totals as
+ *  the email, in the same order, and nothing the email does not show. */
+export function statementRows(full: StatementInput): XCell[][] {
+  const s = { ...full, lines: full.lines.filter((l) => !l.removed) };
+  const carried = (s.previousOwedCents ?? 0) - (s.priorPaidCents ?? 0);
+  const owed = owedCents(s.lines, s);
+  const block = (name: string, rows: Line[]): XCell[][] => rows.length ? [
+    [{ v: name, bold: true }],
+    ...rows.flatMap((l): XCell[][] => [
+      [shortDate(l.date) || null, l.merchant ?? null, l.label, $(l.cents)],
+      ...(markupCents(l) ? [[null, null, `Markup ${l.markupPct}% on ${l.label}`, $(markupCents(l))] as XCell[]] : []),
+    ]),
+    [null, null, { v: "Subtotal", bold: true }, $(netCents(rows), true)],
+    [],
+  ] : [];
+  return [
+    [{ v: `Larabee Homes · Owner Distribution · ${monthLabel(s.month)}`, bold: true }],
+    [s.payee], [placeOf(s.title, s.payee, s.lines)], [],
+    [{ v: "Date", bold: true }, { v: "Paid to / from", bold: true }, { v: "Description", bold: true }, { v: "Amount", bold: true }],
+    ...block("Revenue", s.lines.filter((l) => l.cents >= 0)),
+    ...block("Expenses", s.lines.filter((l) => l.cents < 0)),
+    [null, null, { v: "Monthly net cashflow", bold: true }, $(netCents(s.lines), true)],
+    ...(carried ? [[null, null, "Carried from last month", $(carried)] as XCell[]] : []),
+    [null, null, { v: owed < 0 ? "Balance" : "Distribution", bold: true }, $(owed, true)],
+    ...((s.payments ?? []).length ? [[] as XCell[], [{ v: "Payments", bold: true }] as XCell[],
+      ...s.payments!.map((p): XCell[] => [shortDate(p.sendOn) || p.sendOn, "Wells Fargo Bill Pay", "Sent", $(p.cents)])] : []),
+    [], [{ v: "Held for you", bold: true }],
+    [null, null, "Security deposits", $(s.depositsCents ?? 0)],
+    ...((): XCell[][] => { const r = reservesOf(s.lines, s); return [[null, null, `Reserves${r.requiredCents ? ` (${usd(r.requiredCents)} required)` : ""}`, $(r.heldCents)],
+      ...(r.shortCents ? [[null, null, "Not covered this month; comes out of the next statement", $(r.shortCents)] as XCell[]] : [])]; })(),
+    ...(s.note ? [[] as XCell[], [s.note] as XCell[]] : []),
+  ];
+}
+
+/** The summary sheet at the front of a workbook with more than one property. */
+export function summaryRows(month: string, entity: string, list: StatementInput[]): XCell[][] {
+  return [
+    [{ v: `Larabee Homes · Owner Distribution · ${monthLabel(month)}`, bold: true }], [entity], [],
+    [{ v: "Property", bold: true }, { v: "Distribution", bold: true }],
+    ...list.map((s): XCell[] => { const o = owedCents(s.lines, s); return [placeOf(s.title, s.payee, s.lines), o < 0 ? "No distribution" : $(o)]; }),
+    [{ v: "Total distribution", bold: true }, $(list.reduce((a, s) => a + Math.max(0, owedCents(s.lines, s)), 0), true)],
+  ];
+}
+
+/* ------------------------------------------- across several months */
+
+export type SummaryIn = {
+  month: string; // YYYY-MM
+  statements: { payeeId: string; payee: string; entity?: string; title: string; lines: Line[]; paidCents: number;
+    notStarted?: boolean; source?: { group?: string } | null }[];
+};
+export type LotTotals = { lot: number | null; revenueCents: number; expenseCents: number; netCents: number };
+export type SummaryRow = {
+  payeeId: string; payee: string; owner: string; place: string; months: string[];
+  revenueCents: number; expenseCents: number; netCents: number; paidCents: number; lots: LotTotals[];
+};
+
+/**
+ * Every statement in a range of months, added up per property and, inside
+ * it, per house. Money is what the statements say -- removed lines are not
+ * counted and markups are -- so a year's summary is the twelve statements
+ * the owner was sent, added together, not a fresh reading of anything.
+ *
+ * What was PAID is summed separately from the cashflow: carried balances
+ * mean one month's distribution is not that month's cashflow, and adding up
+ * twelve "owed" figures would count every carry twice.
+ *
+ * A line that names no lot goes under the property, not a guessed house.
+ * Test statements and months before an owner's distributions start are left
+ * out, the same as they are left out of every total on the screen.
+ */
+export function summarize(months: SummaryIn[]): SummaryRow[] {
+  const by = new Map<string, SummaryRow & { lotMap: Map<number | null, LotTotals> }>();
+  for (const m of months) {
+    for (const s of m.statements) {
+      if (s.source?.group === "Test" || s.notStarted) continue;
+      const lines = s.lines.filter((l) => !l.removed);
+      if (!lines.length && !s.paidCents) continue;
+      let r = by.get(s.payeeId);
+      if (!r) {
+        r = { payeeId: s.payeeId, payee: s.payee, owner: entityOf({ entity: s.entity, payee: s.payee }),
+          place: placeOf(s.title, s.payee, lines), months: [], revenueCents: 0, expenseCents: 0, netCents: 0, paidCents: 0, lots: [],
+          lotMap: new Map() };
+        by.set(s.payeeId, r);
+      }
+      r.months.push(m.month);
+      r.paidCents += s.paidCents;
+      for (const l of lines) {
+        const t = lineTotal(l);
+        if (t >= 0) r.revenueCents += t; else r.expenseCents += t;
+        r.netCents += t;
+        const lot = lotsIn(l.label)[0] ?? null;
+        const lt = r.lotMap.get(lot) ?? { lot, revenueCents: 0, expenseCents: 0, netCents: 0 };
+        if (t >= 0) lt.revenueCents += t; else lt.expenseCents += t;
+        lt.netCents += t;
+        r.lotMap.set(lot, lt);
+      }
+    }
+  }
+  return [...by.values()].map(({ lotMap, ...r }) => ({
+    ...r, months: [...new Set(r.months)].sort(),
+    lots: [...lotMap.values()].sort((a, b) => (a.lot ?? Infinity) - (b.lot ?? Infinity)),
+  })).sort((a, b) => a.owner.localeCompare(b.owner) || a.place.localeCompare(b.place));
+}
+
+/** "Year to date 2026", "2025", "Jan–Mar 2026", "Nov 2025 – Feb 2026". */
+export function rangeLabel(from: string, to: string, today: string): string {
+  const [fy, fm] = from.split("-").map(Number), [ty, tm] = to.split("-").map(Number);
+  const mon = (m: number) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1];
+  if (from === to) return monthLabel(`${from}-01`);
+  if (fy === ty && fm === 1 && tm === 12) return String(fy);
+  if (fy === ty && fm === 1 && to === today.slice(0, 7)) return `Year to date ${fy}`;
+  if (fy === ty) return `${mon(fm)}–${mon(tm)} ${fy}`;
+  return `${mon(fm)} ${fy} – ${mon(tm)} ${ty}`;
+}
+
+/** Every month from one to the other, both included. */
+export function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let [y, m] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  while ((y < ty || (y === ty && m <= tm)) && out.length < 120) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+/** The summary as spreadsheet rows: one row per property, its houses under it. */
+export function summaryRangeRows(label: string, rows: SummaryRow[]): XCell[][] {
+  const head: XCell[] = ["Owner", "Property", "House", "Months", "Revenue", "Expenses", "Net cashflow", "Paid out"].map((v) => ({ v, bold: true }));
+  const total = rows.reduce((a, r) => ({ rev: a.rev + r.revenueCents, exp: a.exp + r.expenseCents, net: a.net + r.netCents, paid: a.paid + r.paidCents }),
+    { rev: 0, exp: 0, net: 0, paid: 0 });
+  return [
+    [{ v: `Larabee Homes · Owner distributions · ${label}`, bold: true }], [], head,
+    ...rows.flatMap((r): XCell[][] => [
+      [{ v: r.owner, bold: true }, { v: r.place, bold: true }, null, r.months.length, $(r.revenueCents, true), $(r.expenseCents, true), $(r.netCents, true), $(r.paidCents, true)],
+      ...(r.lots.length > 1 || r.lots[0]?.lot != null ? r.lots.map((l): XCell[] =>
+        [null, null, l.lot === null ? "Property-wide" : `Lot ${l.lot}`, null, $(l.revenueCents), $(l.expenseCents), $(l.netCents), null]) : []),
+    ]),
+    [],
+    [{ v: "Total", bold: true }, null, null, null, $(total.rev, true), $(total.exp, true), $(total.net, true), $(total.paid, true)],
+  ];
+}

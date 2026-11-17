@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { readFix, whichSite, defaultRadius, type Fence, type Fix } from "@/lib/fence";
 import { worked, nudges, week, weekStart, type Shift, type Rules, RULES } from "@/lib/shift";
+import { check, type Place } from "@/lib/clockin";
+import { checkPhotos } from "@/lib/clock-photos";
+import { alertText } from "@/lib/integrity";
+import { alertOwners } from "@/lib/alert-owner";
+import { deviceOf, phoneFacts, DEVICE_COOKIE } from "@/lib/phones";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,9 +57,18 @@ async function fences(db: Db): Promise<Fence[]> {
  * dropped a pin on them. "Which job are you on" is about every property we
  * have, and the whole point of asking is that the phone could not tell.
  */
-async function places(db: Db) {
-  const { data } = await db.from("properties").select("id, name").order("name");
-  return (data ?? []).map((p) => ({ id: String(p.id), name: String(p.name) }));
+async function places(db: Db): Promise<Place[]> {
+  // Where each job is, as well as what it is called, so the phone can say
+  // which one you are standing at and ask "are you sure?" about the others.
+  const { data } = await db.from("properties")
+    .select("id, name, address, kind, lat, lng, fence_m").order("name");
+  return (data ?? []).map((p) => ({
+    id: String(p.id), name: String(p.name),
+    address: (p.address as string | null) ?? null,
+    lat: p.lat === null ? null : Number(p.lat),
+    lng: p.lng === null ? null : Number(p.lng),
+    radius: p.fence_m ? Number(p.fence_m) : defaultRadius(p.kind as string | null),
+  }));
 }
 
 async function rulesOf(db: Db): Promise<Rules> {
@@ -163,6 +177,18 @@ export async function GET(req: Request) {
     await state(db, me.id, Number.isFinite(offset) ? offset : 0));
 }
 
+/* Whose phone: see lib/phones.ts, which alone touches the register. */
+const clockTimeEastern = (d: Date) =>
+  d.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+
+/** Where the owner goes to look: the man's trail for today, on this host. */
+function trailLink(req: Request, staffId: string): string {
+  const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "app.larabeehomesllc.com")
+    .split(",")[0].trim();
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  return `https://${host}/trail?staff=${staffId}&day=${day}`;
+}
+
 export async function POST(req: Request) {
   const me = await requireStaff();
   if (!me) return NextResponse.json({ error: "sign in" }, { status: 401 });
@@ -179,19 +205,53 @@ export async function POST(req: Request) {
     const { on } = whichSite(fix, sites);
     const reading = on ? on.reading : null;
 
-    // The fix is recorded, never enforced. Off site goes in as off site --
-    // refusing it would leave somebody who worked a day with no record of it,
-    // which is the worse failure by a long way.
+    /* The job, if the man chose one on the way in -- which the screen now
+       asks for BEFORE the clock starts, with the nearest suggested. What he
+       chose is what is filed; how far he was from it is recorded beside it,
+       and a clock-in from far away goes in as OFF SITE so his lead's report
+       says so. The fix is recorded, never enforced: refusing a clock-in
+       leaves somebody who worked a day with no record of it, which is the
+       worse failure by a long way. */
+    /* NO POSITION, THEN PHOTOS. A clock-in the phone cannot place needs a
+       selfie (who) and a photo of the job (where), both taken in the app in
+       the last fifteen minutes on this man's own account -- see
+       lib/clock-photos.ts. Never a refusal of the hours: the camera always
+       works, so this is a step to take, not a door that can stay shut. */
+    let photos: string[] | null = null;
+    if (!fix) {
+      const ok = checkPhotos(body.photos, me.id, Date.now());
+      if (!ok.ok) return NextResponse.json({ error: ok.why, needPhotos: true }, { status: 400 });
+      photos = [ok.face, ok.site];
+    }
+
+    const chosenId = String(body.propertyId ?? "") || null;
+    const chosen = chosenId ? (await places(db)).find((p) => p.id === chosenId) ?? null : null;
+    if (chosenId && !chosen) {
+      return NextResponse.json({ error: "That job is not on file. Pick it again." }, { status: 400 });
+    }
+    const verdict = chosen ? check(fix, chosen) : null;
+    const startFence = verdict
+      ? (verdict.kind === "far" ? "outside"
+         : verdict.kind === "ok" && on?.fence.propertyId === chosen!.id ? reading!.verdict
+         : "unsure")
+      : reading?.verdict
+        ?? (fix && sites.length ? whichSite(fix, sites).maybe[0]?.reading.verdict : null)
+        ?? "unsure";
+
     const { data, error } = await db.from("shifts").insert({
       staff_id: me.id,
-      property_id: on?.fence.propertyId ?? null,
-      property_from: on ? "fence" : null,
+      property_id: chosen?.id ?? on?.fence.propertyId ?? null,
+      // "fence" only when the phone itself put him there; a choice that
+      // happens to agree with the fence is still the phone's evidence.
+      property_from: chosen
+        ? (on?.fence.propertyId === chosen.id ? "fence" : "chosen")
+        : on ? "fence" : null,
       start_lat: fix?.lat ?? null,
       start_lng: fix?.lng ?? null,
       start_acc: fix?.accuracy ?? null,
-      start_fence: reading?.verdict
-        ?? (fix && sites.length ? whichSite(fix, sites).maybe[0]?.reading.verdict : null)
-        ?? "unsure",
+      start_fence: startFence,
+      start_metres: verdict && "metres" in verdict ? Math.round(verdict.metres) : null,
+      start_photos: photos,
     }).select("id").single();
 
     if (error) {
@@ -205,7 +265,31 @@ export async function POST(req: Request) {
       }, { status: already ? 409 : 500 });
     }
 
-    return NextResponse.json({ ok: true, shiftId: data!.id, ...await state(db, me.id, offset) });
+    /* WHOSE PHONE, and tell the owner when something looks wrong. After the
+       insert, never before: the hours are on record whatever this finds. */
+    const device = deviceOf(req);
+    const facts = await phoneFacts(device.id, me.id, req.headers.get("user-agent") ?? "");
+    // As the signed-in man, like every other write to his shift here.
+    await db.from("shifts").update({ start_device: device.id }).eq("id", data!.id);
+    const chosenName = chosen?.name
+      ?? (on ? on.fence.name : null);
+    const say = alertText({
+      name: me.full_name ?? "Somebody", site: chosenName,
+      farMetres: verdict?.kind === "far" ? verdict.metres : null,
+      noFix: !fix, photos: photos?.length ?? 0,
+      phoneUsedBy: facts.usedBy, newPhone: facts.newPhone,
+    }, clockTimeEastern(new Date()), trailLink(req, me.id));
+    if (say) await alertOwners(`in:${data!.id}`, say, trailLink(req, me.id));
+
+    const res = NextResponse.json({ ok: true, shiftId: data!.id, ...await state(db, me.id, offset) });
+    if (device.fresh) {
+      // The phone's id. httpOnly: the page never reads it and nothing in the
+      // browser can change it; it only ever comes back to this server.
+      res.cookies.set(DEVICE_COOKIE, device.id, {
+        httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 400,
+      });
+    }
+    return res;
   }
 
   if (action === "out") {

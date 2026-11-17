@@ -1,0 +1,120 @@
+name: iPhone
+
+# Builds the crew clock's iPhone app (apps/mobile/ios) and sends it to
+# TestFlight, where the crew install it from a public link. Same app as the
+# Android one: a thin shell around https://app.larabeehomesllc.com/clock that
+# adds location every two minutes with the phone locked.
+#
+# UNTIL APPLE'S SECRETS ARE SET this still runs, and compiles the app without
+# signing it -- so the project is proven to build before Apple has approved
+# the account -- then says plainly at the top of the run that nothing was sent
+# to TestFlight. A run that skipped must not read like a run that shipped.
+#
+# The four secrets (Settings -> Secrets and variables -> Actions):
+#   APPLE_TEAM_ID   the 10-character Team ID from developer.apple.com/account
+#   ASC_KEY_ID      an App Store Connect API key's Key ID (Access: Admin)
+#   ASC_ISSUER_ID   the Issuer ID shown above that list of keys
+#   ASC_KEY_P8      the whole text of the downloaded AuthKey_XXXX.p8 file
+# With an Admin key Xcode makes the certificate and the profile itself
+# (cloud-managed signing), so there is nothing else to keep.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+  # A TestFlight build stops opening after 90 days. Once a month a fresh one
+  # goes up, so the app on a crew member's phone never expires under him.
+  schedule:
+    - cron: "17 9 1 * *"
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - run: npm ci
+
+      # Copies capacitor.config.json into the Xcode project and runs
+      # pod install (the generated files and Pods/ are gitignored).
+      - run: npx cap sync ios
+
+      - name: Are Apple's secrets set?
+        id: ready
+        run: |
+          if [ -n "$APPLE_TEAM_ID" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Not sent to TestFlight::Apple's secrets are not set yet, so the app was only compiled. See the top of .github/workflows/ios.yml."
+            {
+              echo "## Not sent to TestFlight"
+              echo "The iPhone app compiled, but Apple's secrets are not set, so nothing was uploaded."
+              echo "Steps: apps/mobile/README.md, under iPhone."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Compile (no signing)
+        if: steps.ready.outputs.ready != 'true'
+        working-directory: apps/mobile/ios/App
+        run: |
+          xcodebuild build -workspace App.xcworkspace -scheme App \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO | tail -40
+          exit "${PIPESTATUS[0]}"
+
+      - name: Archive and sign
+        if: steps.ready.outputs.ready == 'true'
+        working-directory: apps/mobile/ios/App
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY"
+          # The build number must rise every upload; the run number does.
+          xcodebuild archive -workspace App.xcworkspace -scheme App \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Larabee.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" | tail -60
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload to TestFlight
+        if: steps.ready.outputs.ready == 'true'
+        working-directory: apps/mobile/ios
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          sed "s/TEAM_ID/$APPLE_TEAM_ID/" ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Larabee.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "## Sent to TestFlight: build ${GITHUB_RUN_NUMBER}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Apple takes 5-15 minutes to process it before it shows in TestFlight." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8

@@ -31,6 +31,8 @@ export type SetupRow = {
   textsTo: string | null;
   /** Has the app's notifications on, on at least one device. */
   push: boolean;
+  /** Gets "Check: ..." texts as they happen (056). The owner. */
+  integrityAlerts: boolean;
 };
 
 export async function loadSetup(): Promise<SetupRow[]> {
@@ -67,6 +69,7 @@ export async function loadSetup(): Promise<SetupRow[]> {
       lang: c?.lang === "es" ? "es" : "en",
       textsTo: e164 && isValidPhone(e164) && canSmsFromLine(e164) ? e164 : null,
       push: pushers.has(String(s.id)),
+      integrityAlerts: !!c?.integrity_alerts,
     };
   });
 }

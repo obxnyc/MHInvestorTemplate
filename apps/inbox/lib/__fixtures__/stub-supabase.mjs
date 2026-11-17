@@ -99,15 +99,34 @@ const SHIFTS = [
     // The position columns 038 has. Without them every select that asks for
     // where somebody clocked in fails, and the office's live map reads empty.
     start_lat: 35.1, start_lng: -78.96, start_acc: 18,
+    end_lat: 35.1001, end_lng: -78.9601, end_acc: 20,
+    start_metres: 10, auto_clocked_out: false,
     shift_breaks: [{ started_at: iso(now - 5 * 3600e3),
                      ended_at: iso(now - 4.5 * 3600e3) }] },
   { id: "s2", staff_id: WHO, property_id: null, property_from: null,
     started_at: iso(now - 1.5 * 3600e3), ended_at: null, signed_off_at: null,
     start_fence: "unsure", end_fence: null, shift_breaks: [],
-    start_lat: 35.104, start_lng: -78.955, start_acc: 140 },
+    start_lat: 35.104, start_lng: -78.955, start_acc: 140,
+    end_lat: null, end_lng: null, end_acc: null, start_metres: null, auto_clocked_out: false },
 ];
 
-/* THE OFFICE LINE (053): one call on the line now, one missed after hours
+/* A morning for the trail map: on site, a drive north, twenty-five minutes
+   at a store, back. Without positions the trail page has nothing to draw,
+   and "a map with no line" is not something a picture check can judge. */
+const minsAfter = (t0, m) => iso(t0 + m * 60e3);
+const T0 = now - 7 * 3600e3;
+const SHIFT_PINGS = [
+  ...[2, 6, 10, 14, 18, 22, 26, 30].map((m) => ({ shift_id: "s1", at: minsAfter(T0, m),
+    lat: 35.1 + (m % 4) * 0.00002, lng: -78.96, accuracy: 15, fence: "inside", metres: 5 })),
+  { shift_id: "s1", at: minsAfter(T0, 34), lat: 35.108, lng: -78.955, accuracy: 15, fence: "outside", metres: 900 },
+  { shift_id: "s1", at: minsAfter(T0, 37), lat: 35.117, lng: -78.951, accuracy: 15, fence: "outside", metres: 1900 },
+  ...[40, 45, 50, 55, 60, 65].map((m) => ({ shift_id: "s1", at: minsAfter(T0, m),
+    lat: 35.125, lng: -78.948 + (m % 2) * 0.0001, accuracy: 12, fence: "outside", metres: 2800 })),
+  { shift_id: "s1", at: minsAfter(T0, 70), lat: 35.112, lng: -78.957, accuracy: 15, fence: "outside", metres: 1400 },
+  { shift_id: "s1", at: minsAfter(T0, 75), lat: 35.1002, lng: -78.96, accuracy: 15, fence: "inside", metres: 20 },
+];
+
+/* THE OFFICE LINE (069): one call on the line now, one missed after hours
    with a voicemail, one answered with a transcript -- so the Calls page is
    drawn with every state a card can be in, not with "No calls yet." The
    embeds are carried on the rows, which this stand-in keeps as given. */
@@ -159,6 +178,7 @@ const TABLES = {
   staff: STAFF,
   properties: PROPERTIES,
   shifts: SHIFTS,
+  shift_pings: SHIFT_PINGS,
   clock_rules: [{ id: true, daily_cap: 10, break_after: 6, break_minutes: 30,
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
@@ -436,6 +456,57 @@ const TABLES = {
       reasked_at: null },
   ],
   notes: [], teams: [], markets: [],
+  /* Owner distributions: one month, three groups, and one of each state the
+     screen has to show -- a statement that needs a look (title and lines
+     disagree), one with nothing to pay, one with no email, one paid, one
+     planned, one ordinary. Made-up names; the real ones are not fixtures. */
+  ...(() => {
+    const month = `${new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 7)}-01`;
+    const L = (lot, rent, loan = -47449) => [
+      { label: `Monthly Rent - Lot ${lot}`, cents: rent, date: "2026-11-01", merchant: "Zego", category: "Rent" },
+      { label: `Mortgage - Lot ${lot}`, cents: loan, date: "2026-11-14", merchant: "LH LLC", category: "Mortgage" },
+      { label: `Lot Rent - Lot ${lot}`, cents: -50000, date: "2026-11-14", merchant: "LH LLC", category: "Rent" },
+    ];
+    const payees = [
+      ["dp1", "Harbor Point Holdings", "harbor@example.com"],
+      ["dp2", "Wren Family Trust", "wren@example.com"],
+      ["dp3", "Oakmont Ventures LLC — Cross Creek", null],
+      ["dp4", "Juniper Lane Partners", "juniper@example.com"],
+      ["dp5", "Tidewater Homes LLC", "tide@example.com"],
+      ["dp6", "Bellamy & Sons — 12 Bay St", "bellamy@example.com"],
+    ].map(([id, name, emails]) => ({ id, name, emails, entity: ["dp4", "dp6"].includes(id) ? "Juniper Lane Partners" : null, guaranteed_rent_cents: id === "dp3" ? 125000 : id === "dp4" ? 160000 : null, reserve_held_cents: id === "dp1" ? 200000 : null, starts_on: id === "dp3" ? (() => { const d = new Date(month); d.setUTCMonth(d.getUTCMonth() + 1); return d.toISOString().slice(0, 10); })() : null, reserve_required_cents: id === "dp6" ? 200000 : null, settle_days: 2, owner_id: null, pay_note: null, sheet_id: null, active: true, created_at: month }));
+    const st = (id, payee, group, title, lines, prev, paid, extra = {}) => ({
+      id, run_id: "dr1", payee_id: payee, owner_id: null, lines, note: null, hold: false,
+      emailed_at: null, emailed_to: null, email_detail: null, updated_at: month, updated_by: null,
+      title, previous_owed_cents: prev, prior_paid_cents: paid, prior_paid_on: "2026-10-14",
+      deposits_cents: 310000, stated_net_cents: null, stated_owed_cents: null, owed_note: null,
+      source: { group, blank: [], extra: [] }, ...extra,
+    });
+    return {
+      distribution_runs: [{ id: "dr1", month, daily_cap_cents: 2500000, start_on: null, note: null, created_at: month, created_by: null }],
+      distribution_payees: payees,
+      distribution_statements: [
+        st("ds1", "dp1", "Corporate", "Harbor Point Holdings - 1140 Northside Rd, Lots #2, #4", [...L(2, 155000), ...L(4, 156500)], 211051, 211051),
+        st("ds2", "dp2", "Corporate", "Wren Family Trust - 1148 Northside Rd, Lots #10, #25", [...L(10, 155000), ...L(16, 155000),
+          { label: "Supplies - Lot 10", cents: -417660, date: "2026-11-04", merchant: "BDC", category: "Maintenance" }], 270945, 270945),
+        // Two homes with costs and no rent: the "pay as if rented" case.
+        st("ds3", "dp3", "Cross Creek", "Oakmont Ventures LLC - The Retreat at Cross Creek, Lots #3117, #3119",
+          [...L(3117, 125000, -34122), ...L(3119, 125000, -34122)].filter((l) => l.cents < 0), 0, 0),
+        st("ds4", "dp4", "Individuals", "Juniper Lane Partners - 1142 Northside Rd, Lots #15", L(15, 155000), 52551, 52551),
+        st("ds5", "dp5", "Individuals", "Tidewater Homes LLC - 1140 Northside Rd, Lots #20, #21, #28", [...L(20, 155000), ...L(21, 155000), ...L(28, 158000)], 281985, 242871),
+        st("ds6", "dp6", "Individuals", "12 Bay St (Dutch doors)", [{ label: "Rent", cents: 169500, date: "46033", merchant: "Zego" },
+          { label: "Supplies", cents: -2917, date: "September 28, 2026", merchant: "Lowes" },
+          { label: "Quarterly Pest Control", cents: -8500, date: "09-11-2026", merchant: "Allegiant Pest Control" },
+          { label: "Property Management Fees", cents: -16950, category: "Management" }], 152550, 152550),
+      ],
+      distribution_payments: [
+        { id: "pm1", statement_id: "ds4", send_on: "2026-11-16", amount_cents: 52551, paid_at: "2026-11-16T15:00:00Z", paid_by: null, confirmation: "WF55120", created_at: month },
+        { id: "pm2", statement_id: "ds1", send_on: "2026-11-17", amount_cents: 211051, paid_at: null, paid_by: null, confirmation: null, created_at: month },
+      ],
+      distribution_settings: [{ id: true, cc_all: "books@larabeehomesllc.com" }],
+      distribution_recorded: [],
+    };
+  })(),
 };
 
 /* The seed, kept, so a run can put the tables back.
@@ -550,7 +621,20 @@ createServer((req, res) => {
           message: `relation "public.${table}" does not exist`,
           hint: null, details: null });
       }
-      TABLES[table] = TABLES[table].concat(made);
+      /* An upsert replaces (or, with ignore-duplicates, skips) the row its
+         on_conflict columns name -- appending it made a second settings row,
+         and `maybeSingle` on two rows is an error the real database never gives. */
+      const onc = url.searchParams.get("on_conflict");
+      if (onc) {
+        const cols = onc.split(",");
+        const ignore = /ignore-duplicates/.test(req.headers.prefer ?? "");
+        const same = (x, y) => cols.every((c) => String(x[c]) === String(y[c]));
+        for (const row of made) {
+          const at = TABLES[table].findIndex((x) => same(x, row));
+          if (at < 0) TABLES[table].push(row);
+          else if (!ignore) TABLES[table][at] = { ...TABLES[table][at], ...row };
+        }
+      } else TABLES[table] = TABLES[table].concat(made);
       const accept = req.headers.accept ?? "";
       return send(201, accept.includes("vnd.pgrst.object") ? made[0] : made);
     });
@@ -562,6 +646,26 @@ createServer((req, res) => {
      and the row was untouched, and the check passed on both. A stand-in that
      accepts a write it does not perform tells you the thing you were trying
      to find out is fine. */
+  /* DELETE, honouring the same filters. Without it a re-plan's "throw away
+     the unpaid payments" did nothing here, and the old payment sat beside the
+     new ones -- the stand-in answering a different question from the real
+     database, and the check reading it as the app's. */
+  if (req.method === "DELETE" && url.pathname.startsWith("/rest/v1/")) {
+    const table = url.pathname.slice("/rest/v1/".length);
+    const keep = (r) => {
+      for (const [k, v] of url.searchParams) {
+        if (["select", "order", "limit", "offset"].includes(k)) continue;
+        const inList = /^in\.\((.*)\)$/.exec(v);
+        if (inList) { if (!inList[1].split(",").map((x) => x.replace(/^"|"$/g, "")).includes(String(r[k]))) return true; continue; }
+        const m = /^eq\.(.*)$/.exec(v);
+        if (m && String(r[k]) !== m[1]) return true;
+      }
+      return false;
+    };
+    TABLES[table] = (TABLES[table] ?? []).filter(keep);
+    return send(204, {});
+  }
+
   if (req.method === "PATCH" && url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.slice("/rest/v1/".length).split("?")[0];
     let raw = "";
@@ -621,6 +725,13 @@ createServer((req, res) => {
           const empty = got === null || got === undefined;
           return isNull ? empty : !empty;
         });
+        continue;
+      }
+      /* `in.(a,b)`, which `.in()` sends. Ignored, every row matched. */
+      const inList = /^in\.\((.*)\)$/.exec(v);
+      if (inList) {
+        const set = new Set(inList[1].split(",").map((x) => x.replace(/^"|"$/g, "")));
+        rows = rows.filter((r) => set.has(String(r[k])));
         continue;
       }
       const m = /^eq\.(.*)$/.exec(v);

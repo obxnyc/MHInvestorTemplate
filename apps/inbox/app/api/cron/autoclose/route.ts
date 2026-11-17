@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { cronKeyOk } from "@/lib/cron-key";
 import { pushToStaff } from "@/lib/push";
 import { settleEverything } from "@/lib/receipts";
 import { DESK } from "@/lib/roles";
@@ -8,13 +8,11 @@ import { DESK } from "@/lib/roles";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function authorized(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  const a = Buffer.from(given), b = Buffer.from(secret);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
+/** Vercel's own cron presents CRON_SECRET. The reports key in Vault opens it
+ *  too, so the job can be run on demand from the database without anybody
+ *  copying a secret anywhere -- and so that a build with CRON_SECRET missing
+ *  is a job that can still be triggered rather than one nothing can reach. */
+const authorized = (req: Request) => cronKeyOk(req, "report_key_ok");
 
 /**
  * Daily housekeeping.
@@ -25,7 +23,7 @@ function authorized(req: Request) {
  * stops being a way for work to disappear.
  */
 export async function GET(req: Request) {
-  if (!authorized(req)) {
+  if (!(await authorized(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

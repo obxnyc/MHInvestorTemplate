@@ -1,0 +1,13 @@
+{
+  "appId": "com.larabeehomes.clock",
+  "appName": "Larabee",
+  "webDir": "www",
+  "server": {
+    "url": "https://app.larabeehomesllc.com/clock",
+    "allowNavigation": ["app.larabeehomesllc.com"],
+    "cleartext": false
+  },
+  "android": {
+    "useLegacyBridge": true
+  }
+}

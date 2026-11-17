@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { prettyPhone } from "@/lib/format";
-import { FIELD } from "@/lib/roles";
+import { FIELD, isClockOnly } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +40,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   return NextResponse.json({
     ok: true, name: data.full_name, phone: prettyPhone(data.phone),
     field: FIELD.includes(data.role as never),
+    // Crew are never in the ring group, and the screen must not say they are.
+    crew: isClockOnly(data.role),
   });
 }
 
@@ -100,7 +102,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
 
   const { error: rowError } = await db.from("staff").insert({
-    id: created.user.id, full_name: name, role: invite.role, forward_to: invite.phone,
+    id: created.user.id, full_name: name, role: invite.role,
+    // Crew never ring for tenant calls; see `rings` in lib/voice.ts.
+    forward_to: isClockOnly(invite.role) ? null : invite.phone,
   });
   if (rowError) {
     await auth.auth.admin.deleteUser(created.user.id);

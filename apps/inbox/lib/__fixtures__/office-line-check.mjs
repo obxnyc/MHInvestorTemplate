@@ -16,7 +16,7 @@
  *   3. The rules that keep a call from going nowhere -- the voicemail that
  *      asks for a second voicemail, the text promised before it was sent,
  *      who answered written from a number that is always the office's.
- *   4. Migration 053, run against a real Postgres twice, and the tree it
+ *   4. Migration 069, run against a real Postgres twice, and the tree it
  *      builds walked key by key.
  */
 import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -188,6 +188,9 @@ t("a list that rings out is a missed call, before voicemail", () => {
   return block.indexOf("noAnswer(") > -1 && block.indexOf("noAnswer(") < block.indexOf("/voicemail");
 });
 
+t("a phone that belongs to a crew member's login is refused like any crew phone", () =>
+  /role: m\.person\.staff\?\.role/.test(code("lib/voice.ts")));
+
 const go = code("app/api/twilio/voice/go/route.ts");
 t("the portal text is sent BEFORE the caller is told it was", () => {
   const block = go.slice(go.indexOf('action === "portal"'));
@@ -230,12 +233,12 @@ t("the call card reads the server's answer before saying anything worked", () =>
 /* ------------------------------------------------------------ 4. the SQL */
 
 const SQL012 = join(app, "..", "..", "docs", "shared-line", "012-call-flow.sql");
-const SQL053 = join(app, "..", "..", "docs", "shared-line", "053-the-office-line.sql");
+const SQL069 = join(app, "..", "..", "docs", "shared-line", "069-the-office-line.sql");
 const BIN = ["/usr/lib/postgresql/16/bin", "/usr/lib/postgresql/15/bin", "/usr/local/pgsql/bin"]
   .find((d) => existsSync(join(d, "initdb")));
 
 if (!BIN) {
-  results.push(["migration 053 against a real Postgres", false,
+  results.push(["migration 069 against a real Postgres", false,
     "NOT RUN: no postgres here. That is not a pass -- run this where there is one."]);
 } else {
   const PORT = "55453";
@@ -263,11 +266,11 @@ if (!BIN) {
     file(SQL012);
 
     let applied = true, why = "";
-    try { file(SQL053); } catch (e) { applied = false; why = String(e.stderr ?? e).slice(0, 400); }
-    results.push(["053 applies on a database built by 012", applied, why]);
+    try { file(SQL069); } catch (e) { applied = false; why = String(e.stderr ?? e).slice(0, 400); }
+    results.push(["069 applies on a database built by 012", applied, why]);
     let replayed = true; why = "";
-    try { file(SQL053); } catch (e) { replayed = false; why = String(e.stderr ?? e).slice(0, 400); }
-    results.push(["053 applies a second time", replayed, why]);
+    try { file(SQL069); } catch (e) { replayed = false; why = String(e.stderr ?? e).slice(0, 400); }
+    results.push(["069 applies a second time", replayed, why]);
 
     /** Follow digits from the root menu to wherever they end. */
     const walk = (digits) => {
@@ -330,7 +333,7 @@ if (!BIN) {
       psql(`select string_agg(ring_seconds::text, ',' order by position) from ring_stages s
             join ring_groups g on g.id=s.group_id where g.name='Office'`).trim() === "12,12,12");
     t("no phone numbers are written into the migration", () =>
-      !/\+1\d{10}/.test(readFileSync(SQL053, "utf8")));
+      !/\+1\d{10}/.test(readFileSync(SQL069, "utf8")));
   } catch (e) {
     results.push(["the Postgres harness itself", false, String(e.stderr ?? e.message).slice(0, 400)]);
   } finally {

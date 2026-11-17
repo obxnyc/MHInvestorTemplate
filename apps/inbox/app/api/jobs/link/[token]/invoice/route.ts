@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { BUCKET, MAX_KEEP_BYTES, keepableExtension, safeName } from "@/lib/media";
-import { parseMoney, money, recipients } from "@/lib/invoices";
-import { sendEmail } from "@/lib/notify";
+import { parseMoney, money } from "@/lib/invoices";
+import { mailList } from "@/lib/mail-list";
+import { sendEmailChecked } from "@/lib/notify";
 
 export const runtime = "nodejs";
 
@@ -124,7 +125,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     ? [unit.properties?.name, unit.label].filter(Boolean).join(" · ")
     : "address not set";
 
-  const to = recipients(process.env.BOOKKEEPER_EMAIL);
+  /* A list that could not be read must not look like a list of nobody: the
+     invoice is already saved and the vendor is already told it was, so a
+     failure here is logged and the send is skipped rather than the row being
+     reported as emailed. */
+  let to: string[] = [];
+  let emailed = true;
+  try {
+    ({ to } = await mailList(db, "invoices", process.env.BOOKKEEPER_EMAIL));
+  } catch (e) {
+    console.error("invoice saved but the recipient list could not be read",
+      { id: row.id, detail: (e as Error).message });
+  }
   if (to.length) {
     const lines = [
       `${vendor.full_name ?? "A vendor"} submitted an invoice.`,
@@ -147,14 +159,35 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     // One call with every recipient on it, so they can see each other and
     // reply to each other rather than three people each assuming one of the
     // others has dealt with it.
-    await sendEmail(to.join(", "),
+    /* `sendEmail` swallows everything, so `emailed_at` was stamped whether
+       or not an email went -- and with POSTMARK_SERVER_TOKEN unset it went
+       for eleven days without one ever being sent. The row then says the
+       bookkeeper was told, which is the one claim that must be true.
+
+       `sendEmailChecked` says what happened. The stamp follows the answer,
+       and a refusal is logged with Postmark's own words rather than being
+       re-derived later from a guess. Same rule as the composer that cleared
+       itself before reading the reply: a send that failed must not look like
+       a send that worked. */
+    const sent = await sendEmailChecked(to,
       `${replaces ? "Corrected invoice" : "Invoice"} — ${money(amount)} — ${where}`,
       lines.join("\n"));
-    await db.from("vendor_invoices")
-      .update({ emailed_at: new Date().toISOString() }).eq("id", row.id);
+    if (sent.ok) {
+      await db.from("vendor_invoices")
+        .update({ emailed_at: new Date().toISOString() }).eq("id", row.id);
+    } else {
+      emailed = false;
+      console.error("invoice saved but not emailed",
+        { id: row.id, to, detail: sent.detail });
+    }
   } else {
-    console.warn("invoice submitted but BOOKKEEPER_EMAIL is not set", { id: row.id });
+    emailed = false;
+    console.warn("invoice submitted but nobody is on the invoices list",
+      { id: row.id });
   }
 
-  return NextResponse.json({ ok: true, id: row.id, amount: money(amount), emailed: to.length });
+  /* What the vendor is told is what actually happened. The invoice is saved
+     either way and that is what matters to them, but reporting a send that
+     did not happen is how a bookkeeper is believed to have been told. */
+  return NextResponse.json({ ok: true, id: row.id, amount: money(amount), emailed });
 }

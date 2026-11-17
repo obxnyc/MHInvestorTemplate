@@ -1,0 +1,101 @@
+name: Android
+
+# Builds the crew clock's Android app (apps/mobile) into an APK the owner can
+# download from this run's Artifacts and send to the crew. See
+# apps/mobile/README.md for what to do with it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+# Needed to publish the APK to the website (see the last step).
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the publish step at the end rebases onto main.
+          fetch-depth: 0
+
+      # Capacitor 7's Android project compiles with Java 21
+      # (android/app/capacitor.build.gradle sets VERSION_21), so Java 17
+      # would fail at compile time.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      # Copies capacitor.config.json and the plugin list into the Android
+      # project. Those generated files are gitignored, so this step is not
+      # optional.
+      - run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      # Signed with apps/mobile/android/app/pilot.keystore (see build.gradle),
+      # the same key every run, so an update installs over the old app. It
+      # installs with "install unknown apps".
+      #
+      # To switch to a release-signed build later:
+      #   1. Make a keystore once:  keytool -genkeypair -v -keystore larabee.jks
+      #        -alias larabee -keyalg RSA -keysize 2048 -validity 10000
+      #   2. Store it in GitHub (Settings -> Secrets and variables -> Actions):
+      #        ANDROID_KEYSTORE_BASE64  (base64 of larabee.jks)
+      #        ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+      #   3. Add a step that decodes the keystore to a file, e.g.
+      #        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/larabee.jks
+      #   4. In android/app/build.gradle add signingConfigs.release reading
+      #        those values from System.getenv(...) and set
+      #        buildTypes.release.signingConfig signingConfigs.release
+      #   5. Run ./gradlew assembleRelease and upload
+      #        android/app/build/outputs/apk/release/app-release.apk
+      # Keep the keystore safe: every future update must be signed with it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: larabee-android
+          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # PUBLISH IT where a crew member can tap it: the app's own site, at
+      #   https://app.larabeehomesllc.com/downloads/larabee.apk
+      # The artifact above needs a GitHub login, which the crew do not have.
+      # Committing into apps/inbox/public puts it on the site with the next
+      # Vercel build. It does not re-trigger this workflow: that only runs
+      # on changes under apps/mobile.
+      - name: Publish the APK to the website
+        working-directory: .
+        run: |
+          mkdir -p apps/inbox/public/downloads
+          cp apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk apps/inbox/public/downloads/larabee.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/inbox/public/downloads/larabee.apk
+          if git diff --cached --quiet; then echo "APK unchanged"; exit 0; fi
+          git commit -m "Android app: publish build ${GITHUB_RUN_NUMBER} for download"
+          git pull --rebase origin main
+          git push origin HEAD:main

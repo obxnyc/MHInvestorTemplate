@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { cronKeyOk } from "@/lib/cron-key";
 import { sendSms } from "@/lib/notify";
 import { pushToStaff } from "@/lib/push";
 import { autoOuts, autoOutText, dueKinds, localOf, plan, type DayShift } from "@/lib/clock-texts";
 import { worked } from "@/lib/shift";
 import { loadSetup, loadTextSettings, asPerson } from "@/lib/crew-data";
+import { alertOwners } from "@/lib/alert-owner";
+import { forgotText } from "@/lib/integrity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,17 +33,7 @@ export const maxDuration = 60;
  * sixty-second ceiling is not hypothetical.
  */
 
-async function authorized(req: Request): Promise<boolean> {
-  const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  if (!given) return false;
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const a = Buffer.from(given), b = Buffer.from(secret);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  const { data } = await supabaseAdmin().rpc("clock_cron_ok", { p_token: given });
-  return data === true;
-}
+const authorized = (req: Request) => cronKeyOk(req, "clock_cron_ok");
 
 /** The address in the link. The host the scheduler called is the live site;
  *  PUBLIC_BASE_URL is the fallback, not the first choice, because a stale
@@ -67,6 +59,21 @@ export async function GET(req: Request) {
   // the shift the clock has just closed rather than one still running.
   const closed = await closeForgotten(db, settings, now);
   if (closed.length && settings.enabled) await tellThem(db, closed, settings, req);
+  // And the owner, as it happens: a shift the clock had to close is a day
+  // somebody should look at, and the crew lead is not the one to rely on.
+  // Only shifts that ended in the last day -- a shift closed weeks late is a
+  // flag on Friday pay, not news.
+  if (closed.length) {
+    const names = new Map((await loadSetup()).map((p) => [p.id, p.name]));
+    for (const c of closed) {
+      if (Date.now() - Date.parse(c.endedAt) > 24 * 3_600_000) continue;
+      const link = `${base(req)}/trail?staff=${c.staffId}`
+        + `&day=${localOf(new Date(c.endedAt), settings.tz).day}`;
+      const when = new Date(c.endedAt).toLocaleTimeString("en-US",
+        { timeZone: settings.tz, hour: "numeric", minute: "2-digit" });
+      await alertOwners(`out:${c.shiftId}`, forgotText(names.get(c.staffId) ?? "Somebody", when, link), link);
+    }
+  }
 
   if (!settings.enabled) return NextResponse.json({ ok: true, off: true, closed: closed.length });
 
@@ -81,7 +88,7 @@ export async function GET(req: Request) {
     // A day and a half back covers "today" in any US zone; the plan keeps
     // only the shifts that started on the local day.
     db.from("shifts")
-      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, start_fence, auto_clocked_out, properties(name), shift_breaks(started_at, ended_at)")
+      .select("id, staff_id, property_id, started_at, ended_at, signed_off_at, start_fence, auto_clocked_out, start_metres, start_lat, start_photos, properties(name), shift_breaks(started_at, ended_at)")
       .gte("started_at", new Date(now.getTime() - 36 * 3_600_000).toISOString()),
     db.from("clock_texts_sent").select("key").like("key", `%:${day}`),
   ]);
@@ -95,6 +102,10 @@ export async function GET(req: Request) {
       siteName: (s.properties as unknown as { name: string } | null)?.name ?? null,
       startFence: (s.start_fence as string | null) ?? null,
       autoOut: !!s.auto_clocked_out,
+      startMetres: s.start_metres === null ? null : Number(s.start_metres),
+      // Known: a clock-in either carried a position or it did not.
+      startFix: s.start_lat !== null,
+      startPhotos: Array.isArray(s.start_photos) ? s.start_photos.length : 0,
       startedAt: String(s.started_at),
       endedAt: (s.ended_at as string | null) ?? null,
       signedOffAt: (s.signed_off_at as string | null) ?? null,

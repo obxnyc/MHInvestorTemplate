@@ -50,7 +50,7 @@ type State = {
   onBreak: boolean;
   openShiftId: string | null;
   nudges: Nudge[];
-  places: { id: string; name: string }[];
+  places: Place[];
   shifts: Shift[];
   week: Week;
   lastWeek: Week;
@@ -59,10 +59,18 @@ type State = {
 
 /** How long to wait for a position before going without one. */
 const FIX_MS = 6_000;
-/** How often to send one while on the clock. Generous on purpose: a ping a
- *  minute is a battery complaint and a tracking device, and neither is what
- *  was asked for. */
-const PING_MS = 10 * 60_000;
+/** At clock-in, the most it may wait. "Guys could have to wait 15 seconds to
+ *  get clocked in? That is way too long -- should be right away." So the
+ *  phone starts finding itself the moment the clock screen opens (see the
+ *  warm-up effect), and the tap uses that. This is only the fallback for a
+ *  screen opened and tapped in the same breath. */
+const CLOCK_IN_FIX_MS = 5_000;
+/** A warm-up fix older than this is not "where you are now". */
+const WARM_FRESH_MS = 2 * 60_000;
+/** How often to send one while on the clock. Two minutes, at the owner's
+ *  word: ten left a whole morning on a roof as five dots. Still only while
+ *  on the clock -- the tracking belongs to the shift, not to the login. */
+const PING_MS = 2 * 60_000;
 
 const KINDS: { key: string; said: string; needs: "times" | "break" | "none" }[] = [
   { key: "missed_clock_in", said: "I started before I clocked in", needs: "times" },
@@ -72,7 +80,7 @@ const KINDS: { key: string; said: string; needs: "times" | "break" | "none" }[] 
   { key: "other", said: "Something else", needs: "none" },
 ];
 
-function position(): Promise<GeolocationPosition | null> {
+function position(ms = FIX_MS): Promise<GeolocationPosition | null> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     return Promise.resolve(null);
   }
@@ -84,11 +92,11 @@ function position(): Promise<GeolocationPosition | null> {
     // Belt as well as braces: the browser's own timeout is not always
     // honoured when permission has never been answered, and a promise that
     // never settles is a button that never does anything.
-    const t = setTimeout(() => finish(null), FIX_MS);
+    const t = setTimeout(() => finish(null), ms);
     navigator.geolocation.getCurrentPosition(
       (p) => { clearTimeout(t); finish(p); },
       () => { clearTimeout(t); finish(null); },
-      { enableHighAccuracy: true, timeout: FIX_MS, maximumAge: 30_000 },
+      { enableHighAccuracy: true, timeout: ms, maximumAge: 30_000 },
     );
   });
 }
@@ -119,6 +127,81 @@ type Back = { threadId: string | null; unread: number;
 import { say, LANGS, LANG_NAME, type Key } from "@/lib/say";
 import { useLang } from "@/components/useLang";
 import PinChoose from "@/components/PinChoose";
+import { suggest, check, howFar, type Place } from "@/lib/clockin";
+import { isNativeApp, nativePlatform, startShiftTracking, postPing } from "@/lib/native-location";
+import type { Fix } from "@/lib/fence";
+
+type Taken = { path: string; preview: string };
+
+/**
+ * One photo, taken NOW with the phone's camera.
+ *
+ * `capture` opens the camera directly -- front for the selfie, back for the
+ * job -- with no library to pick from, so an old photo or a screenshot sent
+ * by somebody else is not on offer. The upload is stamped with the SERVER's
+ * time, and the clock-in only takes this man's own uploads from the last
+ * fifteen minutes. A browser can be talked out of `capture` by someone
+ * determined; the installed app is where camera-only can be enforced.
+ */
+function PhotoStep({ kind, label, how, taken, s, onTaken, onProblem }: {
+  kind: "face" | "site"; label: string; how: string; taken?: Taken;
+  s: (k: Key) => string;
+  onTaken: (t: Taken) => void; onProblem: (p: string | null) => void;
+}) {
+  const [sending, setSending] = useState(false);
+  const id = `photo-${kind}`;
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    setSending(true);
+    onProblem(null);
+    const body = new FormData();
+    body.append("photo", file);
+    body.append("kind", kind);
+    const res = await fetch("/api/clock/photo", { method: "POST", body }).catch(() => null);
+    const out = await res?.json().catch(() => ({})) ?? {};
+    setSending(false);
+    // Nothing shows as taken until the server has it.
+    if (!res?.ok || !out.path) { onProblem(out.error ?? s("didNotSend")); return; }
+    onTaken({ path: out.path, preview: URL.createObjectURL(file) });
+  };
+  return (
+    <div className="tsfield photostep">
+      <label htmlFor={id}>{label}</label>
+      <p className="tsnote">{how}</p>
+      {taken ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className="photothumb" src={taken.preview} alt={label} />
+      ) : null}
+      <label className={taken ? "tsminor photobtn" : "tsact go photobtn"} htmlFor={id}>
+        {sending ? s("uploading") : taken ? s("retake") : s("openCamera")}
+      </label>
+      <input id={id} type="file" accept="image/*" capture={kind === "face" ? "user" : "environment"}
+             className="visuallyhidden" disabled={sending}
+             onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }} />
+    </div>
+  );
+}
+
+/** Every job, for the one that is not near: a list of a hundred-odd does not
+ *  fit as buttons. Choosing one goes through the same "are you sure?". */
+function JobPicker({ places, busy, label, placeholder, onPick }: {
+  places: Place[]; busy: boolean; label: string; placeholder: string;
+  onPick: (p: Place) => void;
+}) {
+  return (
+    <div className="tsfield">
+      <label htmlFor="jobpick">{label}</label>
+      <select id="jobpick" disabled={busy} value=""
+              onChange={(e) => {
+                const p = places.find((x) => x.id === e.target.value);
+                if (p) onPick(p);
+              }}>
+        <option value="" disabled>{placeholder}</option>
+        {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+    </div>
+  );
+}
 
 export default function ClockScreen({ name }: { name: string }) {
   /* The crew's own words. The handset decides; the toggle is for when it is
@@ -132,7 +215,27 @@ export default function ClockScreen({ name }: { name: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const [finding, setFinding] = useState(false);
+  /* Clocking in is three steps now, not one: where are you, which job, and
+     only then the clock. `pick` is the middle of that -- the fix taken, and
+     a far-away job waiting on "are you sure?". Null when not clocking in. */
+  const [pick, setPick] = useState<{
+    fix: Fix | null;
+    confirm?: { place: Place; far: string };
+  } | null>(null);
   const [showLast, setShowLast] = useState(false);
+  /* The installed app was refused location, or it was switched off mid-
+     shift. Said on screen, because a trail that silently stops is the thing
+     the owner was trying to get away from. */
+  const [locationDenied, setLocationDenied] = useState(false);
+  /* The two photos for a clock-in with no position, once uploaded: the
+     server's path for each, and a preview of what was taken. */
+  const [photos, setPhotos] = useState<{ face?: Taken; site?: Taken }>({});
+  /* Inside the installed app? Decided after the page loads: the server
+     cannot know, and a first render that differs between the two is a
+     hydration mismatch React resolves by throwing the page away. */
+  const [native, setNative] = useState(false);
+  const [platform, setPlatform] = useState<"android" | "ios" | null>(null);
+  useEffect(() => { setNative(isNativeApp()); setPlatform(nativePlatform()); }, []);
   const [asking, setAsking] = useState(false);
   /* Reaching the office from the clock. Four separate pieces of state and
      not one "status" string, because a failed send and an unsent one are
@@ -155,6 +258,23 @@ export default function ClockScreen({ name }: { name: string }) {
   const onRef = useRef(on);
   onRef.current = on;
 
+  /* THE WARM-UP. While the screen is open and he is off the clock, the phone
+     keeps its own position fresh so that Clock In is instant. It stays in
+     this ref: nothing is sent anywhere until he chooses to clock in, so this
+     is not tracking somebody who is not working -- it is the GPS being awake
+     when the button is pressed instead of starting cold. Stops when he is on
+     the clock (the pings take over) and when the screen closes. */
+  const warm = useRef<{ fix: Fix; at: number } | null>(null);
+  useEffect(() => {
+    if (on || typeof navigator === "undefined" || !navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      (p) => { const f = fixOf(p); if (f) warm.current = { fix: f, at: Date.now() }; },
+      () => { /* no permission yet: the tap will ask, and say so */ },
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 30_000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [on]);
+
   // The handset's own offset. The person reading this is the person whose
   // Tuesday it is; a server in UTC files Monday evening under Tuesday.
   const offset = useRef(0);
@@ -173,10 +293,14 @@ export default function ClockScreen({ name }: { name: string }) {
     setBusy(true);
     setProblem(null);
     setSaid(null);
-    const wantsFix = action === "in" || action === "out";
+    // A clock-in carries the fix taken when the job was chosen. Asking the
+    // phone again here would be a second, different answer to the question
+    // the choice was checked against.
+    const given = "fix" in extra;
+    const wantsFix = !given && (action === "in" || action === "out");
     setFinding(wantsFix);
 
-    const fix = wantsFix ? fixOf(await position()) : null;
+    const fix = given ? (extra.fix as Fix | null) : wantsFix ? fixOf(await position()) : null;
 
     const res = await fetch("/api/clock", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -196,10 +320,55 @@ export default function ClockScreen({ name }: { name: string }) {
     return true;
   };
 
+  /* Step one: where are you. The clock does not start here.
+     Instant when the warm-up already has a fresh fix, which is the usual
+     case: the screen has been open for the second it takes to find the
+     button. Only a cold phone waits, and then for five seconds at most. */
+  const startClockIn = async () => {
+    const w = warm.current;
+    if (w && Date.now() - w.at < WARM_FRESH_MS) { setProblem(null); setPick({ fix: w.fix }); return; }
+    setBusy(true);
+    setProblem(null);
+    setFinding(true);
+    const fix = fixOf(await position(CLOCK_IN_FIX_MS)) ?? warm.current?.fix ?? null;
+    setFinding(false);
+    setBusy(false);
+    setPick({ fix });
+  };
+
+  /* Step two: this job. Asks first if it is far from where the phone is. */
+  const chooseJob = async (place: Place, sure = false) => {
+    if (!pick) return;
+    const c = check(pick.fix, place);
+    if (c.kind === "far" && !sure) {
+      setPick({ ...pick, confirm: { place, far: howFar(c.metres) } });
+      return;
+    }
+    // Step three: the clock. The pick panel goes only once the server has
+    // taken it -- a refused clock-in must leave the choice on screen.
+    const sent = pick.fix ? {} : { photos: [photos.face?.path, photos.site?.path].filter(Boolean) };
+    if (await act("in", { fix: pick.fix, propertyId: place.id, ...sent })) {
+      setPick(null);
+      setPhotos({});
+    }
+  };
+
   // The trail belongs to the shift. It starts when the shift does and stops
   // when it does, and the panel below says which it is doing.
   useEffect(() => {
     if (!on) return;
+    // INSIDE THE INSTALLED APP the phone's own location service does this,
+    // every two minutes, with the screen locked and another app in front --
+    // which is the whole reason the app exists. See lib/native-location.ts.
+    if (isNativeApp()) {
+      let alive = true;
+      let stop: (() => void) | null = null;
+      setLocationDenied(false);
+      startShiftTracking((f) => { void postPing(f); }, { onDenied: () => setLocationDenied(true) })
+        .then((s) => { if (alive) stop = s; else s(); })
+        .catch((e: Error) => { if (e.message === "location-denied") setLocationDenied(true); });
+      return () => { alive = false; stop?.(); };
+    }
     let alive = true;
     const send = async () => {
       const p = fixOf(await position());
@@ -301,12 +470,96 @@ export default function ClockScreen({ name }: { name: string }) {
           ? <p className="tsnote">{today.breakMinutes} minutes of breaks recorded</p>
           : null}
 
-        <button className={`tsact ${on ? "stop" : "go"}`} disabled={busy}
-                onClick={() => act(on ? "out" : "in")}>
-          {busy
-            ? s(finding ? "checkingLocation" : "pleaseWait")
-            : s(on ? "clockOut" : "clockIn")}
-        </button>
+        {!on && pick ? (() => {
+          /* Where are you, which job, then the clock. See lib/clockin.ts. */
+          const { here, nearby } = suggest(pick.fix, state.places);
+          if (pick.confirm) {
+            const { place, far } = pick.confirm;
+            return (
+              <div className="tsform" role="alertdialog" aria-label={s("areYouSure", { far, name: place.name })}>
+                <p className="tsnudge loud">{s("areYouSure", { far, name: place.name })}</p>
+                <p className="tsnote">{s("areYouSureWhy", { far })}</p>
+                <div className="tsrow">
+                  <button className="tsact go" disabled={busy}
+                          onClick={() => chooseJob(place, true)}>{s("yesClockIn")}</button>
+                  <button className="tsminor" disabled={busy}
+                          onClick={() => setPick({ fix: pick.fix })}>{s("pickAgain")}</button>
+                </div>
+              </div>
+            );
+          }
+          if (!pick.fix) {
+            /* No position: try again, or prove it with two photos taken
+               here and now -- a selfie (who) and the job (where). The job
+               list unlocks once both are up. See lib/clock-photos.ts. */
+            const both = !!(photos.face && photos.site);
+            return (
+              <div className="tsform">
+                <p className="tsnudge loud">{s("noLocation")}</p>
+                <p className="tsnote">{s("noLocationHow")}</p>
+                <button className="tsact go" disabled={busy} onClick={startClockIn}>
+                  {busy ? s("checkingLocation") : s("tryAgain")}
+                </button>
+                <p className="tsnote">{s("photosInstead")}</p>
+                <PhotoStep kind="face" label={s("takeSelfie")} how={s("takeSelfieHow")}
+                           taken={photos.face} s={s}
+                           onTaken={(p) => setPhotos((x) => ({ ...x, face: p }))}
+                           onProblem={setProblem} />
+                <PhotoStep kind="site" label={s("takeSitePhoto")} how={s("takeSitePhotoHow")}
+                           taken={photos.site} s={s}
+                           onTaken={(p) => setPhotos((x) => ({ ...x, site: p }))}
+                           onProblem={setProblem} />
+                {both ? (
+                  <>
+                    <p className="tsnote">{s("noLocationWhy")}</p>
+                    <JobPicker places={state.places} busy={busy} label={s("thenPickJob")}
+                               placeholder={s("selectProperty")}
+                               onPick={(p) => chooseJob(p)} />
+                  </>
+                ) : null}
+                <button className="tsminor" disabled={busy}
+                        onClick={() => { setPick(null); setPhotos({}); }}>{s("cancel")}</button>
+              </div>
+            );
+          }
+          return (
+            <div className="tsform">
+              {here ? (
+                <>
+                  <p className="tsnote">{s("looksLikeHere")}</p>
+                  <button className="tsact go" disabled={busy} onClick={() => chooseJob(here.place)}>
+                    {busy ? s("pleaseWait") : s("clockInAt", { name: here.place.name })}
+                  </button>
+                </>
+              ) : null}
+              {nearby.filter((n) => n.place.id !== here?.place.id).length ? (
+                <>
+                  <p className="tsnote">{s(here ? "somewhereElse" : "nearYou")}</p>
+                  <ul className="tsruns">
+                    {nearby.filter((n) => n.place.id !== here?.place.id).map((n) => (
+                      <li key={n.place.id}>
+                        <button className="tsminor" disabled={busy} onClick={() => chooseJob(n.place)}>
+                          {n.place.name} · {s("away", { far: howFar(n.metres) })}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              <JobPicker places={state.places} busy={busy} label={s("otherJob")}
+                         placeholder={s("selectProperty")}
+                         onPick={(p) => chooseJob(p)} />
+              <button className="tsminor" disabled={busy} onClick={() => setPick(null)}>{s("cancel")}</button>
+            </div>
+          );
+        })() : (
+          <button className={`tsact ${on ? "stop" : "go"}`} disabled={busy}
+                  onClick={() => (on ? act("out") : startClockIn())}>
+            {busy
+              ? s(finding ? "checkingLocation" : "pleaseWait")
+              : s(on ? "clockOut" : "clockIn")}
+          </button>
+        )}
 
         {on ? (
           <button className="tsminor" disabled={busy}
@@ -357,11 +610,16 @@ export default function ClockScreen({ name }: { name: string }) {
 
         {/* Said out loud. Somebody who cannot tell whether they are being
             followed assumes the worse answer, and they would be right to. */}
+        {on && locationDenied ? (
+          <p className="tsnudge loud" role="alert">
+            {s(platform === "ios" ? "appLocationOffIos" : "appLocationOffAndroid")}
+          </p>
+        ) : null}
         {on ? (
           <p className="tstrail">
-            Your location is recorded about every {Math.round(PING_MS / 60_000)} minutes
-            while this screen is open and you are on the clock. It stops when you
-            clock out, and while your phone is locked or on another app.
+            {native
+              ? `Your location is recorded every ${Math.round(PING_MS / 60_000)} minutes while you are on the clock, even with your phone locked. It stops when you clock out.`
+              : `Your location is recorded about every ${Math.round(PING_MS / 60_000)} minutes while you are on the clock and this screen is open. Your hours count either way: locking your phone or using another app does not stop the clock, only the location.`}
           </p>
         ) : null}
       </section>

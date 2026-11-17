@@ -16,7 +16,7 @@ export async function GET() {
 
   const supabase = await supabaseServer();
   const { data, error } = await supabase
-    .from("owners").select("id, name, legal_name, kind").eq("active", true).order("name");
+    .from("owners").select("id, name, legal_name, contact_name, kind").eq("active", true).order("name");
 
   /* `kind` arrives with migration 050. Before it has been run the column
      is not there and the select fails -- which must not empty a list
@@ -29,7 +29,7 @@ export async function GET() {
     : null;
   const kinds = !error;
   const rows = (error ? (fell?.data ?? []) : (data ?? [])) as
-    { id: string; name: string; legal_name: string | null; kind?: string }[];
+    { id: string; name: string; legal_name: string | null; contact_name?: string | null; kind?: string }[];
   const broken = error && fell?.error;
   const owners = broken ? [] : rows;
 

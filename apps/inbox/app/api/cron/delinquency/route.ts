@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { cronKeyOk } from "@/lib/cron-key";
 import { pullDelinquency } from "@/lib/delinquency-pull";
 import { pullVacancies } from "@/lib/vacancy-pull";
 import { activeRecipients, newYork, render, SEND_HOUR, type Recipient, type Report, type Vacancies } from "@/lib/delinquency";
 import { sendEmailChecked } from "@/lib/notify";
+import { readArrivals, intakeVerdict } from "@/lib/intake-health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,18 +17,7 @@ const REPORT = "delinquency";
 
 /** CRON_SECRET for a person with it, or the key pg_cron presents, which
  *  lives in Vault and is checked by the database (migration 051). */
-async function authorized(req: Request): Promise<boolean> {
-  const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  if (!given) return false;
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const a = Buffer.from(given), b = Buffer.from(secret);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  const { data, error } = await supabaseAdmin().rpc("report_key_ok", { k: given });
-  if (error) console.error("cron/delinquency key check", error.message);
-  return data === true;
-}
+const authorized = (req: Request) => cronKeyOk(req, "report_key_ok");
 
 /**
  * The morning report: who owes, and what is empty or being shown.
@@ -89,7 +79,17 @@ async function handle(req: Request) {
       note: `The vacancy list could not be produced: ${(e as Error).message}`,
     })),
   ]);
-  const mail = render(report, vac);
+  /* HOW THE WORK IS GETTING IN, which is the thing nobody checks.
+     Never allowed to stop the report: a balance that could not be read
+     is still worth sending, and so is one read while this failed. */
+  let intake = null;
+  try {
+    intake = intakeVerdict(await readArrivals(supabaseAdmin()));
+  } catch {
+    intake = null;
+  }
+
+  const mail = render(report, vac, intake);
 
   const { data: list } = await db.from("report_recipients")
     .select("email, name, starts_on, ends_on").eq("report", REPORT);
