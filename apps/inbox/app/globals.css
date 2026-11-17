@@ -3832,3 +3832,125 @@ button.edrow.dbo:hover{background:var(--sunk)}
   font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .dbogroup span{font-weight:400}
 .dpaygroup{margin-left:.45rem;font-size:.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+
+/* ------------------------------------------------------------ Park leads
+   Every NC park owner as a pipeline: a list, a map, one owner in a panel.
+   The stage colours are the same literal in both themes, and so is the
+   white written on them -- a ground that does not move between themes may
+   keep an ink that does not either. */
+.pk-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:.7rem;padding:1rem 1.1rem 0}
+.pk-head{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
+.pk-title{flex:1;min-width:14rem}
+.pk-title h1{margin:0;font-size:1.35rem;font-weight:700;letter-spacing:-.025em;color:var(--ink)}
+.pk-title p{margin:.15rem 0 0;color:var(--muted);font-size:.86rem}
+.pk-link{background:none;border:0;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
+.pk-seg{display:inline-flex;background:var(--sunk);border-radius:9px;padding:3px}
+.pk-seg button{border:0;background:none;color:var(--ink-2);font:inherit;font-size:.85rem;font-weight:600;
+  padding:.38rem .8rem;border-radius:7px;cursor:pointer}
+.pk-seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.pk-export{border:1px solid var(--hair);background:var(--card);color:var(--ink);font:inherit;font-size:.85rem;
+  font-weight:600;padding:.42rem .8rem;border-radius:8px;cursor:pointer}
+.pk-export:disabled{opacity:.5;cursor:default}
+.pk-filters{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
+.pk-search{flex:1 1 16rem;min-width:0;border:1px solid var(--hair);background:var(--card);color:var(--ink);
+  font:inherit;font-size:.9rem;padding:.48rem .7rem;border-radius:8px}
+.pk-select{border:1px solid var(--hair);background:var(--card);color:var(--ink);font:inherit;font-size:.85rem;
+  padding:.42rem .5rem;border-radius:8px;max-width:11rem}
+.pk-chip{border:1px solid var(--hair);background:var(--card);color:var(--ink-2);font:inherit;font-size:.82rem;
+  font-weight:600;padding:.38rem .7rem;border-radius:999px;cursor:pointer;white-space:nowrap}
+.pk-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+.pk-stages{display:flex;gap:.35rem;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.pk-stages::-webkit-scrollbar{display:none}
+.pk-stages button{display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--hair);background:var(--pane);
+  color:var(--ink-2);font:inherit;font-size:.8rem;padding:.3rem .6rem;border-radius:8px;cursor:pointer;white-space:nowrap}
+.pk-stages button i{width:.55rem;height:.55rem;border-radius:50%;display:inline-block}
+.pk-stages button b{color:var(--ink);font-variant-numeric:tabular-nums}
+.pk-stages button.on{border-color:var(--ink-2);background:var(--card);color:var(--ink)}
+.pk-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,26rem) minmax(0,1fr);gap:.8rem;padding-bottom:1rem}
+.pk-list{list-style:none;margin:0;padding:0;overflow-y:auto;min-height:0;border:1px solid var(--hair);border-radius:12px;background:var(--card)}
+.pk-list>li+li{border-top:1px solid var(--hair-2)}
+.pk-row{display:flex;gap:.65rem;align-items:flex-start;width:100%;text-align:left;border:0;background:none;
+  color:var(--ink);font:inherit;padding:.7rem .8rem;cursor:pointer}
+.pk-row:hover{background:var(--pane)}
+.pk-row.on{background:var(--accent-soft)}
+.pk-ghost{height:4.2rem;background:linear-gradient(90deg,var(--pane),var(--sunk),var(--pane));background-size:200% 100%;animation:pk-sh 1.2s infinite linear}
+@keyframes pk-sh{to{background-position:-200% 0}}
+.pk-dot{flex:none;width:.6rem;height:.6rem;border-radius:50%;margin-top:.38rem}
+.pk-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.pk-name{font-weight:650;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-name em{color:#D99A00;font-style:normal}
+.pk-sub{color:var(--ink-2);font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-meta{color:var(--muted);font-size:.76rem;display:flex;gap:.3rem;align-items:center;flex-wrap:wrap}
+.pk-tag{background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:.68rem;padding:0 .3rem;border-radius:4px}
+.pk-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:.15rem;text-align:right}
+.pk-stage{font-size:.74rem;font-weight:700}
+.pk-when{font-size:.72rem;color:var(--muted);white-space:nowrap}
+.pk-more{width:100%;border:0;background:none;color:var(--accent);font:inherit;font-weight:600;font-size:.85rem;padding:.8rem;cursor:pointer}
+.pk-none{padding:2rem 1rem;color:var(--muted);text-align:center}
+.pk-mapwrap{position:relative;min-height:0;border-radius:12px;overflow:hidden;border:1px solid var(--hair)}
+/* Two classes: MapLibre's own sheet sets .maplibregl-map{position:relative}
+   and loads after this one, which collapsed the map to no height at all. */
+.pk-mapwrap .pk-map{position:absolute;inset:0;width:100%;height:100%}
+.pk-legend{position:absolute;left:.6rem;bottom:.6rem;display:flex;flex-wrap:wrap;gap:.25rem .7rem;max-width:calc(100% - 1.2rem);
+  background:var(--card);color:var(--ink-2);border:1px solid var(--hair);border-radius:8px;padding:.35rem .6rem;font-size:.72rem;opacity:.95}
+.pk-legend span{display:inline-flex;align-items:center;gap:.3rem}
+.pk-legend i{width:.5rem;height:.5rem;border-radius:50%;display:inline-block}
+.pk-sanford{color:var(--accent)}
+.pk-panel{position:absolute;top:.6rem;right:.6rem;bottom:.6rem;width:min(25rem,calc(100% - 1.2rem));
+  display:flex;flex-direction:column;background:var(--card);color:var(--ink);border:1px solid var(--hair);
+  border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);overflow:hidden;z-index:2}
+.pk-panelhead{display:flex;gap:.4rem;align-items:flex-start;padding:.85rem .9rem .6rem;border-bottom:1px solid var(--hair-2)}
+.pk-panelhead>div{flex:1;min-width:0}
+.pk-panelhead h2{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.pk-o2{margin:.1rem 0 0;color:var(--muted);font-size:.8rem}
+.pk-star,.pk-x{flex:none;border:0;background:none;color:var(--faint);font-size:1.25rem;line-height:1;cursor:pointer;padding:.15rem .3rem;border-radius:6px}
+.pk-star.on{color:#D99A00}
+.pk-x:hover,.pk-star:hover{background:var(--sunk)}
+.pk-panelbody{flex:1;overflow-y:auto;padding:.7rem .9rem 1rem;display:flex;flex-direction:column;gap:.95rem}
+.pk-panelbody section h3{margin:0 0 .4rem;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pk-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem}
+.pk-stats div{background:var(--pane);border:1px solid var(--hair-2);border-radius:8px;padding:.45rem .5rem;display:flex;flex-direction:column}
+.pk-stats b{font-size:.95rem;font-variant-numeric:tabular-nums;color:var(--ink)}
+.pk-stats span{font-size:.68rem;color:var(--muted)}
+.pk-mail{display:flex;gap:.5rem;align-items:flex-start;font-size:.86rem;color:var(--ink-2)}
+.pk-mail span{flex:1}
+.pk-ghostbtn{flex:none;border:1px solid var(--hair);background:var(--card);color:var(--ink-2);font:inherit;font-size:.76rem;
+  font-weight:600;padding:.28rem .55rem;border-radius:7px;cursor:pointer;white-space:nowrap}
+.pk-ghostbtn:hover{background:var(--pane)}
+.pk-stagepick{display:flex;flex-wrap:wrap;gap:.3rem}
+.pk-stagepick button{border:1px solid var(--hair);background:var(--card);color:var(--ink-2);font:inherit;font-size:.78rem;
+  font-weight:600;padding:.3rem .6rem;border-radius:999px;cursor:pointer}
+.pk-stagepick button.on{color:#FFFFFF}
+.pk-touches{display:grid;grid-template-columns:repeat(auto-fit,minmax(6.2rem,1fr));gap:.35rem}
+.pk-touches button{display:flex;align-items:center;justify-content:center;gap:.35rem;border:1px solid var(--hair);background:var(--pane);
+  color:var(--ink);font:inherit;font-size:.8rem;font-weight:600;padding:.5rem .4rem;border-radius:8px;cursor:pointer}
+.pk-touches button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.pk-touches span{font-size:.95rem;opacity:.8}
+.pk-note{display:flex;flex-direction:column;gap:.35rem;margin-top:.45rem}
+.pk-note textarea,.pk-contact input,.pk-next input{border:1px solid var(--hair);background:var(--card);color:var(--ink);font:inherit;
+  font-size:.86rem;padding:.45rem .55rem;border-radius:8px;min-width:0;resize:vertical}
+.pk-primary{align-self:flex-end;border:0;background:var(--accent);color:var(--accent-on);font:inherit;font-size:.82rem;font-weight:700;
+  padding:.4rem .85rem;border-radius:8px;cursor:pointer}
+.pk-primary:disabled{opacity:.45;cursor:default}
+.pk-next{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
+.pk-contact{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:.35rem}
+.pk-call{display:inline-block;margin-top:.4rem;color:var(--accent);font-weight:600;font-size:.85rem}
+.pk-parcels,.pk-history{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.45rem}
+.pk-parcels li{border:1px solid var(--hair-2);border-radius:8px;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.15rem;font-size:.8rem;color:var(--ink-2)}
+.pk-ptop{display:flex;gap:.5rem;justify-content:space-between;align-items:baseline}
+.pk-ptop b{color:var(--ink);font-size:.84rem}
+.pk-ptop a{color:var(--accent);font-weight:600;white-space:nowrap;font-size:.78rem}
+.pk-history li{font-size:.82rem;color:var(--ink);border-left:2px solid var(--hair);padding-left:.6rem}
+.pk-history p{margin:.15rem 0 0;color:var(--ink-2);white-space:pre-wrap}
+.pk-faint{color:var(--muted);font-size:.78rem;margin:0}
+.pk-err{color:var(--crit);background:var(--warn-soft);border-radius:8px;padding:.5rem .7rem;font-size:.85rem;margin:0}
+@media (max-width:860px){
+  .pk-shell{padding:.8rem .8rem 0}
+  .pk-body{grid-template-columns:minmax(0,1fr);grid-template-rows:14rem minmax(0,1fr)}
+  .pk-mapwrap{order:-1}
+  /* On a phone the owner is the whole screen; the map behind it is not
+     something anybody can use at that size anyway. */
+  .pk-panel{position:fixed;inset:0;width:auto;border-radius:0;border:0;z-index:50}
+  .pk-select{max-width:none;flex:1 1 8rem}
+  .pk-legend{display:none}
+}

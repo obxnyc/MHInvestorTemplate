@@ -408,6 +408,54 @@ const TABLES = {
       reasked_at: null },
   ],
   notes: [], teams: [], markets: [],
+  /* Park leads (069/070). Made-up owners, spread either side of Sanford so
+     the region switch has something to take away, one out of state, one
+     that is only a lot in a park subdivision (not "strong"). */
+  ...(() => {
+    const k = (i) => String(i).padStart(2, "0").repeat(16);
+    const O = [
+      ["PINE HOLLOW MHP LLC", "PO BOX 112", "GOLDSBORO", "NC", "27530", 38.2, 1840000, 3, "WAYNE", "1200 PINE HOLLOW RD, GOLDSBORO", 35.38, -77.99, true, false],
+      ["CAROLINA COURT HOLDINGS LLC", "4410 PEACHTREE RD", "ATLANTA", "GA", "30319", 24.6, 1210000, 1, "JOHNSTON", "88 CAROLINA CT, SMITHFIELD", 35.51, -78.34, true, true],
+      ["WHITFIELD JAMES R", "2210 OLD STAGE RD", "CLAYTON", "NC", "27520", 17.9, 640000, 2, "JOHNSTON", "2214 OLD STAGE RD, CLAYTON", 35.62, -78.44, true, false],
+      ["SHADY OAKS MOBILE HOME PARK INC", "45 SHADY OAKS LN", "SANFORD", "NC", "27330", 15.1, 590000, 1, "LEE", "45 SHADY OAKS LN, SANFORD", 35.45, -79.15, true, false],
+      ["RIVERBEND COMMUNITIES LP", "900 W 5TH ST", "CHARLOTTE", "NC", "28202", 41.0, 2900000, 4, "PITT, WAYNE", "3001 RIVERBEND DR, GREENVILLE", 35.58, -77.37, true, false],
+      ["TAYLOR BROTHERS PROPERTIES", "17 MAIN ST", "BENSON", "NC", "27504", 9.4, 310000, 1, "HARNETT", "610 NC 210, ANGIER", 35.50, -78.74, true, false],
+      ["COASTAL MHC FUND II LLC", "1 OCEAN BLVD", "MYRTLE BEACH", "SC", "29577", 29.3, 1720000, 2, "ONSLOW", "500 PIRATES COVE RD, JACKSONVILLE", 34.77, -77.41, true, true],
+      ["HENDERSON MARY ALICE", "301 BAKER ST", "ROCKY MOUNT", "NC", "27801", 6.2, 205000, 1, "NASH", "77 MAPLE TRAILER PARK RD, ROCKY MOUNT", 35.96, -77.80, true, false],
+      ["LOT OWNER IN A PARK SUBDIVISION", "12 ELM", "KINSTON", "NC", "28501", 0.4, 38000, 1, "LENOIR", "12 ELM CT, KINSTON", 35.26, -77.58, false, false],
+      ["FOOTHILLS MHP LLC", "200 KING ST", "HICKORY", "NC", "28601", 22.0, 980000, 1, "CATAWBA", "40 FOOTHILLS DR, HICKORY", 35.73, -81.34, true, false],
+      ["PIEDMONT PARKS LLC", "800 GREEN VALLEY RD", "GREENSBORO", "NC", "27408", 18.5, 870000, 2, "GUILFORD", "1500 PARK LN, BURLINGTON", 36.07, -79.44, true, false],
+    ];
+    const owners = O.map((o, i) => ({
+      key: k(i + 1), owner: o[0], owner2: null, mail_address: o[1], mail_city: o[2], mail_state: o[3], mail_zip: o[4],
+      acres: o[5], assessed_value: o[6], parcels: o[7], counties: o[8], sites: o[9], lat: o[10], lon: o[11],
+      strong: o[12], by_use: o[12], by_owner: /MHP|MOBILE HOME PARK|MHC/.test(o[0]), by_legal: false, by_subdiv: !o[12],
+      out_of_state: o[13], earliest_sale: "2004-06-01",
+    }));
+    const parcels = owners.flatMap((o) => Array.from({ length: o.parcels }, (_, j) => ({
+      key: `37:${o.key.slice(0, 6)}${j}`, cnty: o.counties.split(", ")[0], parno: `0${j}84-27-${o.key.slice(0, 4)}`,
+      ownname: o.owner, mailadd: o.mail_address, mzip: o.mail_zip,
+      siteadd: j ? null : o.sites.split(", ")[0], scity: j ? null : o.sites.split(", ")[1],
+      acres: Math.round(o.acres / o.parcels * 10) / 10, parval: Math.round(o.assessed_value / o.parcels),
+      landval: null, improvval: null, usedesc: o.strong ? "MOBILE HOME PARK" : "MH SUBDIV",
+      subdivision: null, saledate: "06/01/2004", structyear: "1978", lat: o.lat, lon: o.lon, matched_on: ["use"],
+    })));
+    return {
+      mhp_owners: owners,
+      mhp_parcels: parcels,
+      mhp_leads: [
+        { owner_key: k(1), stage: "talking", starred: true, next_touch: "2026-11-10", phone: "(919) 555-0142", email: null, notes: null, updated_at: "2026-11-01T00:00:00Z" },
+        { owner_key: k(2), stage: "contacted", starred: false, next_touch: "2026-12-15", phone: null, email: null, notes: null, updated_at: "2026-11-01T00:00:00Z" },
+        { owner_key: k(5), stage: "offer", starred: true, next_touch: null, phone: null, email: null, notes: null, updated_at: "2026-11-01T00:00:00Z" },
+      ],
+      mhp_touches: [
+        { id: 1, owner_key: k(1), kind: "call", body: "Owner is 71, open to selling in the spring. Septic on the back 20 lots.", at: "2026-11-12T15:00:00Z", by: DESK },
+        { id: 2, owner_key: k(1), kind: "letter", body: null, at: "2026-10-20T15:00:00Z", by: DESK },
+        { id: 3, owner_key: k(2), kind: "letter", body: null, at: "2026-11-03T15:00:00Z", by: DESK },
+        { id: 4, owner_key: k(5), kind: "visit", body: null, at: "2026-11-14T15:00:00Z", by: DESK },
+      ],
+    };
+  })(),
   /* Owner distributions: one month, three groups, and one of each state the
      screen has to show -- a statement that needs a look (title and lines
      disagree), one with nothing to pay, one with no email, one paid, one

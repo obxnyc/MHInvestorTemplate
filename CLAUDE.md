@@ -1973,3 +1973,28 @@ checked, and only when he asks. A draft is not a send: the statement is
 recorded sent when he presses "I sent it from Gmail". Alex Prieto's
 sheets contain mistakes; the screen's against-last-month line and checks are
 there so a person catches them before money moves.
+
+### Park leads: every NC park owner, from the database
+
+https://app.larabeehomesllc.com/parks -- office and admin. 069 and 070.
+
+NC OneMap's statewide parcel layer (all 100 counties, one schema) answers
+**the database** through pg_net, though not this container -- so the list is
+fetched and loaded entirely inside Postgres: `select mhp_fetch('use', 0)`
+returns a request id, and `select mhp_ingest(<id>, 'use')` upserts the reply a
+few seconds later. Four searches (`mhp_searches`): land-use code, owner name,
+legal description, subdivision. Pages of 2,000; the layer's limit is 5,000.
+Loaded 17 November 2026: 6,267 parcels, 3,575 owners, 2,108 "confirmed"
+(found by land use or owner name), 785 of those at Sanford's longitude
+(-79.18) or east of it.
+
+**Land use and owner name are strong evidence; legal description and
+subdivision are often a single lot inside a park subdivision.** The screen's
+Confirmed parks chip is that distinction, on by default.
+
+A county lists one parcel number more than once (the land, and each home on
+it as personal property), so ingest keeps one row per parcel, the most
+valuable. An owner is name + mailing address + zip (`mhp_owners.key`, an md5
+of the three), and a lead's stage and touches hang off that key, so
+re-fetching the parcels never orphans them. Nothing deletes a lead or a
+touch; the first letter or call moves a New lead to Contacted.
