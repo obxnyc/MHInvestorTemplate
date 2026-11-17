@@ -179,9 +179,16 @@ function labelStyle(m: MlMap): { layout: Record<string, unknown>; paint: Record<
  */
 export default function ParkMap(
   { plan, real, facts, selected, onSelect, onHarvest, fitting, drawing, onMove,
-    arranging, onNudge, onDropped, taps, onTap }:
+    arranging, onNudge, onDropped, taps, onTap, neighbours, county }:
   {
     plan: Plan;
+    /** Other properties' lines nearby, so where two parcels meet -- or
+     *  leave a gap -- is on screen rather than assumed. */
+    neighbours?: { id: string; name: string; ring: number[][] }[];
+    /** The county's line for this property, drawn faintly under a line
+     *  somebody has drawn by hand so the two can be compared. Null when
+     *  the line on screen already is the county's. */
+    county?: number[][] | null;
     real?: RealPark | null;
     facts: LotFacts;
     selected: string | null;
@@ -487,6 +494,20 @@ export default function ParkMap(
       geometry: { type: "Polygon", coordinates: [ring] },
     });
     set("homes", { type: "FeatureCollection", features: homes });
+    set("nbr", {
+      type: "FeatureCollection",
+      features: (neighbours ?? []).map((n) => ({
+        type: "Feature", properties: { name: n.name },
+        geometry: { type: "Polygon", coordinates: [n.ring] },
+      })),
+    });
+    set("county", {
+      type: "FeatureCollection",
+      features: county?.length ? [{
+        type: "Feature", properties: {},
+        geometry: { type: "LineString", coordinates: county },
+      }] : [],
+    });
     set("streets", {
       type: "FeatureCollection",
       features: (real?.streets ?? streetLines(plan)).map((st) => ({
@@ -528,6 +549,19 @@ export default function ParkMap(
         paint: { "fill-color": "#BCD6F2", "fill-opacity": 0.14 } });
       m.addLayer({ id: "park-line", type: "line", source: "park",
         paint: { "line-color": "#1F5BA6", "line-width": 2.5 } });
+      // The neighbours: their own lines, dashed, named. Two parcels that
+      // share a boundary draw one line on top of the other; a gap between
+      // them is a strip of veil with a line either side.
+      m.addLayer({ id: "nbr-fill", type: "fill", source: "nbr",
+        paint: { "fill-color": "#8E6BB8", "fill-opacity": 0.08 } });
+      m.addLayer({ id: "nbr-line", type: "line", source: "nbr",
+        paint: { "line-color": "#7A4FA0", "line-width": 2, "line-dasharray": [3, 2] } });
+      m.addLayer({ id: "nbr-name", type: "symbol", source: "nbr", minzoom: 14,
+        layout: { "text-field": ["get", "name"], "text-font": font, "text-size": 12 },
+        paint: { "text-color": "#5B3A80", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } });
+      // The county's line under a hand-drawn one.
+      m.addLayer({ id: "county-line", type: "line", source: "county",
+        paint: { "line-color": "#C2410C", "line-width": 1.5, "line-dasharray": [2, 2] } });
 
       // The piece of road the map is missing, drawn in the map's own
       // hand. Rather than inventing a white line -- which looked hand
@@ -647,7 +681,7 @@ export default function ParkMap(
     }
 
     m.setFilter("home-on", ["==", ["get", "id"], selected ?? ""]);
-  }, [plan, real, facts, ready, selected, taps]);
+  }, [plan, real, facts, ready, selected, taps, neighbours, county]);
 
   // Framed on what is drawn, once per set of geometry. Re-framing on every
   // nudge would yank the map out from under somebody placing the block.

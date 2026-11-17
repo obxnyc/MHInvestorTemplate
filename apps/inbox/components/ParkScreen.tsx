@@ -162,6 +162,10 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    *  Kept as an offset rather than a position so that a better layout --
    *  or a corrected street -- still carries the corrections with it. */
   const [moved, setMoved] = useState<Record<string, [number, number]>>({});
+  /** Other properties' lines near this one, and the county's line for this
+   *  one. The county's is the default; a line drawn here overrides it. */
+  const [neighbours, setNeighbours] = useState<{ id: string; name: string; ring: number[][] }[]>([]);
+  const [county, setCounty] = useState<number[][] | null>(null);
   const [osm, setOsm] = useState<{
     error?: string;
     fit?: Plan;
@@ -458,6 +462,8 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     setName(out.property?.name ?? "");
     setLots(out.lots ?? []);
     setCanKeep(out.plans !== false);
+    setNeighbours(Array.isArray(out.neighbours) ? out.neighbours : []);
+    setCounty(out.county?.ring ?? null);
     let mine = out.property?.plan as Plan | null | undefined;
 
     // A park with no plan of its own may still be one this code already
@@ -1393,6 +1399,19 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
                 ? "Adjust the boundary" : "Draw the boundary"}
             </button>
           )}
+          {/* The county's line is the default; a line drawn here overrides
+              it. This puts the default back. */}
+          {!fencing && county && plan.fence?.length && plan.fenceFrom !== "county" && (
+            <button type="button" className="btn" disabled={busy}
+                    onClick={() => {
+                      if (!confirm("Replace the line drawn here with the county's"
+                        + " property line? The homes do not move, and the drawn"
+                        + " line is kept in the layout's history.")) return;
+                      remember({ ...plan, fence: county, fenceFrom: "county" });
+                    }}>
+              Use the county line
+            </button>
+          )}
           {/* One press to bring the whole park back inside its own deed
               line. It used to happen only on the way back from the
               county lookup, which is a path a park takes once -- so a
@@ -1836,6 +1855,8 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
       <div className={`parkmain${card || pad ? " withcard" : ""}`}>
         <ParkMap
           plan={drawn} real={blank ? null : shown} facts={facts}
+          neighbours={neighbours}
+          county={plan.fenceFrom !== "county" && plan.fence?.length ? county : null}
           onHarvest={blank ? undefined : onHarvest}
           arranging={arranging} onNudge={nudge} onDropped={keep}
           selected={selected} onSelect={setSelected}
