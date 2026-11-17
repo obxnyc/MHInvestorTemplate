@@ -29,7 +29,7 @@ export default function AppHeader(
   // started work has no business reading them -- a nav that offers it is an
   // invitation, whatever the row policies say underneath.
   const nav: [string, string][] = isClockOnly(role)
-    ? [["/clock", "On the clock"]]
+    ? [["/clock", "On the clock"], ["/scout", "Spot"]]
     : [
         ["/home", "Home"],
         ["/", "Messages"],

@@ -461,6 +461,10 @@ const TABLES = {
       acquisition_settings: [{ id: true, pitch: null, pitch_residential: null, signature: "Cade Larabee\nLarabee Homes LLC", mailing_address: null }],
       broker_blasts: [{ id: "c0000000-0000-4000-8000-000000000001", subject: "Anything on your radar? Still buying mobile home parks", via: "gmail", recipients: 3, sent: 3, failed: 0, created_at: "2026-10-15T15:00:00Z", audience: {} }],
       broker_blast_recipients: [],
+      scout_spots: [
+        { id: "e0000000-0000-4000-8000-000000000001", by: DESK, lat: 35.3851, lon: -77.9921, accuracy_m: 9, kind: "mhp", tags: ["overgrown", "abandoned_homes", "mom_pop"], note: "About 30 pads, maybe 8 empty. Office trailer boarded.", photos: [], lookup: "found", owner_name: "PINE HOLLOW MHP LLC", mail_address: "PO BOX 112 GOLDSBORO, NC 27530", site_address: "1200 PINE HOLLOW RD, GOLDSBORO", county: "Wayne", parcel_no: "2599-27-1180", acres: 12.4, assessed: 610000, stage: "new", office_note: null, created_at: "2026-11-16T19:20:00Z", updated_at: "2026-11-16T19:20:00Z" },
+        { id: "e0000000-0000-4000-8000-000000000002", by: DESK, lat: 35.5101, lon: -78.3399, accuracy_m: 24, kind: "multifamily", tags: ["boarded", "roof"], note: null, photos: [], lookup: "failed", owner_name: null, mail_address: null, site_address: null, county: null, parcel_no: null, acres: null, assessed: null, stage: "researching", office_note: null, created_at: "2026-11-15T14:05:00Z", updated_at: "2026-11-15T14:05:00Z" },
+      ],
       buy_boxes: [
         { id: "d0000000-0000-4000-8000-000000000001", asset_class: "mhp", area: "Sanford and east", min_units: 20, max_units: 150, min_price: null, max_price: 4000000, max_price_per_unit: 40000, min_occupancy: null, financing: "cash or seller finance", wants: "Park-owned homes, vacant lots, deferred maintenance, private utilities", avoids: null, notes: null, active: true, sort: 1 },
         { id: "d0000000-0000-4000-8000-000000000002", asset_class: "multifamily", area: "Fayetteville", min_units: 10, max_units: 60, min_price: null, max_price: 3000000, max_price_per_unit: null, min_occupancy: 70, financing: null, wants: null, avoids: null, notes: null, active: true, sort: 2 },
@@ -776,6 +780,7 @@ createServer((req, res) => {
     const EMBEDS = {
       dm_members: { thread: ["thread_id", "dm_threads"] },
       shifts: { properties: ["property_id", "properties"] },
+      scout_spots: { staff: ["by", "staff"] },
       properties: { owners: ["owner_id", "owners"] },
     };
 

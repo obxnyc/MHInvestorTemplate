@@ -2049,3 +2049,27 @@ these same rows -- one set of criteria, not two.
 
 The owner's address is cade@larabeehomesllc.com; blasts and outreach go
 from it and come back to it.
+
+### Driving for dollars
+
+https://app.larabeehomesllc.com/scout -- anybody signed in, crew included
+("Spot" in the crew's menu). https://app.larabeehomesllc.com/parks?tab=spotted
+is the office's list. 075.
+
+The GPS is awake while the screen is open; photos are shrunk to ~1800px and
+uploaded as they are taken (`/api/scout/photo`, `scout/<id>/<server ms>-…`),
+and a sighting accepts only the scout's own photos from the last hour
+(`photoPathOk`). The owner is looked up ON THE SERVER BEFORE the row is
+written (`lib/parcel-lookup.ts`, NC OneMap point-in-parcel), so a scout
+never needs leave to edit a row; the office can ask the county again.
+
+Four answers, not two: found / none / outside / failed. **A rectangle cannot
+say "North Carolina"** -- Atlanta and Greenville SC are inside its bounding
+box -- so `inNC` is a rough outline plus five miles of slack, and NC's
+empty answer for a point beyond the outline reads as `outside`, not as a
+road. `scout-check.mjs` holds both, and each was confirmed to fail with its
+rule taken out (run with `node --experimental-strip-types`).
+
+Not verified from here: the real NC OneMap reply to a point query (this
+machine cannot reach it; the deployment can), and uploads to the real
+storage bucket. The first real sighting settles both.
