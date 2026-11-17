@@ -1998,3 +1998,23 @@ valuable. An owner is name + mailing address + zip (`mhp_owners.key`, an md5
 of the three), and a lead's stage and touches hang off that key, so
 re-fetching the parcels never orphans them. Nothing deletes a lead or a
 touch; the first letter or call moves a New lead to Contacted.
+
+### Brokers & agents
+
+https://app.larabeehomesllc.com/parks?tab=brokers -- 071 (tables), 072 (the
+first 37, researched from public listings 17 November 2026; the source
+spreadsheets are `docs/brokers/*.csv`). Commercial brokers and realtors in
+one list, told apart by `kind`, because realtors get a different email.
+
+**Nothing is sent from the app.** Outreach opens Gmail's own compose window
+filled in (`gmailComposeUrl`); a person reads it and presses Send, then
+"Sent, next" logs it. Same rule as the distributions: no email goes out on
+the owner's behalf from code.
+
+Only 4 of the 37 had a published email, and the researchers were told not
+to guess one. The NC Real Estate Commission sells its licensee file
+($250/year, https://ncrec.gov/OrderForm); whether it carries emails is
+unconfirmed. Import takes any CSV with a name column.
+
+Corey Croegaert (Grant-Murray) listed 1800-1802 Pamalee Dr -- Larabee's own
+park. His row says to check before emailing.

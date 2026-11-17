@@ -3838,7 +3838,7 @@ button.edrow.dbo:hover{background:var(--sunk)}
    The stage colours are the same literal in both themes, and so is the
    white written on them -- a ground that does not move between themes may
    keep an ink that does not either. */
-.pk-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:.7rem;padding:1rem 1.1rem 0}
+.pk-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:.7rem;padding:.9rem 1.1rem 0}
 .pk-head{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
 .pk-title{flex:1;min-width:14rem}
 .pk-title h1{margin:0;font-size:1.35rem;font-weight:700;letter-spacing:-.025em;color:var(--ink)}
@@ -3953,4 +3953,50 @@ button.edrow.dbo:hover{background:var(--sunk)}
   .pk-panel{position:fixed;inset:0;width:auto;border-radius:0;border:0;z-index:50}
   .pk-select{max-width:none;flex:1 1 8rem}
   .pk-legend{display:none}
+}
+
+/* Acquisitions: the two tabs, and the broker board on the park-leads frame. */
+.pk-page{flex:1;min-height:0;display:flex;flex-direction:column}
+.pk-tabs{display:flex;gap:.2rem;padding:.8rem 1.1rem 0;border-bottom:1px solid var(--hair)}
+.pk-tabs a{padding:.5rem .8rem;color:var(--muted);font-weight:600;font-size:.9rem;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
+.pk-tabs a.on{color:var(--ink);border-bottom-color:var(--accent)}
+.pk-big{align-self:center;padding:.5rem 1rem;font-size:.88rem}
+.bk-body{grid-template-columns:minmax(0,1fr) minmax(0,25rem)}
+.bk-side{position:relative;min-height:0;border:1px solid var(--hair);border-radius:12px;background:var(--pane);overflow:hidden}
+.bk-panel{position:absolute;inset:0;width:auto;border:0;border-radius:0;box-shadow:none}
+.bk-empty{padding:1.2rem 1.3rem;color:var(--ink-2);font-size:.9rem;overflow-y:auto;max-height:100%}
+.bk-empty h2{margin:0 0 .8rem;font-size:1.05rem;color:var(--ink)}
+.bk-empty ol{margin:0 0 1rem;padding-left:1.1rem;display:flex;flex-direction:column;gap:.6rem}
+.bk-kind{font-size:.66rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:0 .35rem;border-radius:4px}
+.bk-kind.commercial{background:var(--pr-soft);color:var(--pr-ink)}
+.bk-kind.residential{background:var(--tn-soft);color:var(--tn-ink)}
+.bk-ev{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:22rem}
+.bk-kindseg{align-self:flex-start}
+.bk-evp{margin:0;font-size:.86rem;color:var(--ink-2)}
+.bk-evp a,.bk-touchlink{color:var(--accent);font-weight:600}
+.bk-touchlink{display:flex;align-items:center;justify-content:center;border:1px solid var(--accent);background:var(--accent-soft);border-radius:8px;font-size:.8rem;padding:.5rem .4rem;text-decoration:none;color:var(--accent-ink)}
+.bk-addl{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) auto;gap:.3rem;margin-top:.45rem}
+.bk-addl input,.bk-form input,.bk-form select{border:1px solid var(--hair);background:var(--card);color:var(--ink);font:inherit;font-size:.84rem;padding:.42rem .5rem;border-radius:8px;min-width:0}
+.bk-scrim{position:fixed;inset:0;z-index:60;background:rgba(10,14,22,.45);display:flex;align-items:center;justify-content:center;padding:1rem}
+.bk-modal{width:min(30rem,100%);max-height:calc(100dvh - 2rem);display:flex;flex-direction:column;background:var(--card);color:var(--ink);border:1px solid var(--hair);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);overflow:hidden}
+.bk-modal.wide{width:min(44rem,100%)}
+.bk-text{width:100%;box-sizing:border-box;border:1px solid var(--hair);background:var(--card);color:var(--ink);font:inherit;font-size:.86rem;line-height:1.5;padding:.6rem .7rem;border-radius:8px;resize:vertical}
+.bk-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:.55rem}
+.bk-form label{display:flex;flex-direction:column;gap:.2rem;font-size:.75rem;font-weight:600;color:var(--muted)}
+.bk-form .full{grid-column:1/-1}
+.bk-ok{color:var(--tn-ink);background:var(--tn-soft);border-radius:8px;padding:.5rem .7rem;margin:0}
+.bk-who{display:flex;flex-direction:column;gap:.1rem;background:var(--pane);border:1px solid var(--hair-2);border-radius:10px;padding:.6rem .75rem}
+.bk-who b{font-size:1rem}
+.bk-who span{font-size:.84rem;color:var(--ink-2)}
+.bk-subject{margin:0;font-weight:600}
+.bk-walkbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.bk-walkbar a.pk-primary{text-decoration:none;align-self:auto}
+@media (max-width:860px){
+  .pk-tabs{padding:.6rem .8rem 0}
+  .bk-body{grid-template-columns:minmax(0,1fr)}
+  .bk-side:not(:has(.bk-panel)){display:none}
+  .bk-side{position:static;border:0}
+  .bk-panel{position:fixed;inset:0;z-index:50}
+  .bk-form{grid-template-columns:minmax(0,1fr)}
+  .bk-addl{grid-template-columns:minmax(0,1fr)}
 }

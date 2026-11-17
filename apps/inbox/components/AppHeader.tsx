@@ -36,7 +36,7 @@ export default function AppHeader(
         ["/properties", "Properties"],
         ["/leasing", "Leasing"],
         ["/owners", "Investors"],
-        ...(isDesk(role) ? [["/parks", "Park leads"] as [string, string]] : []),
+        ...(isDesk(role) ? [["/parks", "Acquisitions"] as [string, string]] : []),
         ["/clock", "On the clock"],
         ["/timesheets", "Timesheets"],
         // Everybody's wage: only the two roles the page itself lets in.

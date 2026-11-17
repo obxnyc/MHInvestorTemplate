@@ -448,6 +448,16 @@ const TABLES = {
         { owner_key: k(2), stage: "contacted", starred: false, next_touch: "2026-12-15", phone: null, email: null, notes: null, updated_at: "2026-11-01T00:00:00Z" },
         { owner_key: k(5), stage: "offer", starred: true, next_touch: null, phone: null, email: null, notes: null, updated_at: "2026-11-01T00:00:00Z" },
       ],
+      /* Brokers (071). Made-up people. */
+      brokers: [
+        { id: "b0000000-0000-4000-8000-000000000001", name: "Jordan Pike", firm: "Coastal Plain Commercial", kind: "commercial", parks_listed: 6, phone: "(910) 555-0110", email: "jordan@example.com", city: "Wilmington", state: "NC", covers: "NC, SC", evidence: "Cypress Run MHP, 64 lots, Burgaw (2025)", source_url: "https://example.com/listing", stage: "on_list", starred: true, next_touch: "2027-01-10", notes: null, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" },
+        { id: "b0000000-0000-4000-8000-000000000002", name: "Avery Lund", firm: "Triangle MH Advisors", kind: "commercial", parks_listed: 3, phone: null, email: "avery@example.com", city: "Raleigh", state: "NC", covers: "NC", evidence: "Oak Bend Community, 38 lots, Smithfield (2024)", source_url: null, stage: "new", starred: false, next_touch: null, notes: null, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" },
+        { id: "b0000000-0000-4000-8000-000000000003", name: "Riley Okafor", firm: "Okafor Realty", kind: "residential", parks_listed: 1, phone: "(919) 555-0177", email: "riley@example.com", city: "Sanford", state: "NC", covers: "Lee, Harnett", evidence: "residential: Wildwood MHP, 22 pads, Sanford (2023)", source_url: null, stage: "new", starred: false, next_touch: null, notes: null, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" },
+        { id: "b0000000-0000-4000-8000-000000000004", name: "Morgan Ellis", firm: "Ellis & Co", kind: "residential", parks_listed: null, phone: "(252) 555-0133", email: null, city: "Greenville", state: "NC", covers: "Pitt", evidence: null, source_url: null, stage: "emailed", starred: false, next_touch: null, notes: null, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" },
+      ],
+      broker_listings: [{ id: 1, broker_id: "b0000000-0000-4000-8000-000000000001", title: "Cypress Run MHP", location: "Burgaw, NC", price: 2400000, lots: 64, url: null, source: "typed", seen_at: "2026-10-01T00:00:00Z" }],
+      broker_touches: [{ id: 1, broker_id: "b0000000-0000-4000-8000-000000000001", kind: "email", body: "Asked to be on the buyer list.", at: "2026-11-05T15:00:00Z", by: DESK }],
+      acquisition_settings: [{ id: true, pitch: null, pitch_residential: null, signature: null }],
       mhp_touches: [
         { id: 1, owner_key: k(1), kind: "call", body: "Owner is 71, open to selling in the spring. Septic on the back 20 lots.", at: "2026-11-12T15:00:00Z", by: DESK },
         { id: 2, owner_key: k(1), kind: "letter", body: null, at: "2026-10-20T15:00:00Z", by: DESK },
