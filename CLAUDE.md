@@ -2018,3 +2018,20 @@ unconfirmed. Import takes any CSV with a name column.
 
 Corey Croegaert (Grant-Murray) listed 1800-1802 Pamalee Dr -- Larabee's own
 park. His row says to check before emailing.
+
+**Blasts** (073, the Blast button on Brokers & agents): one message to every
+broker a filter picks, personalised with `{first}`. The audience is worked out
+on the server from the database (`pickAudience`), never taken from the
+browser, so a broker who opted out (`brokers.opted_out_at`, a date) stays out
+whatever the screen thought. Every blast and every recipient is recorded
+(`broker_blasts`, `broker_blast_recipients`, queued before sending), and each
+recipient gets an email touch.
+
+Two ways out, both pressed by a person: **from the app** (Postmark batch, one
+email each, stream `POSTMARK_BROADCAST_STREAM` or `broadcast`) -- which only
+delivers inside larabeehomesllc.com until Postmark approves the account, and
+reports anything else as failed; or **through Gmail** today, batches of 50 in
+BCC, each recipient row carrying its batch number so "batch 2 went" marks the
+same fifty people. A postal address (`acquisition_settings.mailing_address`)
+and a "reply remove" line go on every blast; the server refuses a blast
+without the address. Never schedule one.

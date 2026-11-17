@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import BrokerBlast from "./BrokerBlast";
 import {
   BROKER_STAGES, STARTER_PITCH, composeEmail, gmailComposeUrl, parseCsv,
   type Broker, type Pitch,
@@ -54,7 +55,7 @@ export default function BrokerBoard() {
   const [state, setState] = useState("");
   const [withEmail, setWithEmail] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
-  const [mode, setMode] = useState<null | "pitch" | "add" | "import" | "walk">(null);
+  const [mode, setMode] = useState<null | "pitch" | "add" | "import" | "walk" | "blast">(null);
 
   async function load() {
     const { ok, j } = await call("/api/brokers", "GET");
@@ -77,7 +78,7 @@ export default function BrokerBoard() {
   const list = useMemo(() => (stage ? base.filter((b) => b.stage === stage) : base)
     .slice().sort((a, b) => Number(b.starred) - Number(a.starred) || (b.parks_listed ?? 0) - (a.parks_listed ?? 0) || a.name.localeCompare(b.name)), [base, stage]);
   const states = useMemo(() => [...new Set((brokers ?? []).map((b) => b.state).filter(Boolean) as string[])].sort(), [brokers]);
-  const queue = useMemo(() => base.filter((b) => b.stage === "new" && b.email), [base]);
+  const queue = useMemo(() => base.filter((b) => b.stage === "new" && b.email && !b.opted_out_at), [base]);
   const onList = (brokers ?? []).filter((b) => b.stage === "on_list" || b.stage === "sending_deals").length;
   const current = sel ? brokers?.find((b) => b.id === sel) ?? null : null;
 
@@ -90,9 +91,10 @@ export default function BrokerBoard() {
           <h1>Brokers &amp; agents</h1>
           <p>{brokers ? <>{list.length} shown · on {onList} buyer {onList === 1 ? "list" : "lists"} · {queue.length} with an email not yet contacted</> : "Loading…"}</p>
         </div>
-        <button className="pk-primary pk-big" disabled={!queue.length} onClick={() => setMode("walk")}>
+        <button className="pk-export pk-big" disabled={!queue.length} onClick={() => setMode("walk")}>
           Start outreach{queue.length ? ` (${queue.length})` : ""}
         </button>
+        <button className="pk-primary pk-big" disabled={!brokers?.length} onClick={() => setMode("blast")}>Blast</button>
         <button className="pk-export" onClick={() => setMode("pitch")}>Your pitch</button>
         <button className="pk-export" onClick={() => setMode("import")}>Import</button>
         <button className="pk-export" onClick={() => setMode("add")}>Add</button>
@@ -140,6 +142,7 @@ export default function BrokerBoard() {
                     <span className={`bk-kind ${b.kind}`}>{b.kind === "commercial" ? "Broker" : "Realtor"}</span>
                     {b.evidence ? <span className="bk-ev">{b.evidence.replace(/^residential[:;,\s-]*/i, "")}</span> : null}
                     {!b.email ? <span className="pk-tag">no email</span> : null}
+                    {b.opted_out_at ? <span className="pk-tag">opted out</span> : null}
                   </span>
                 </span>
                 <span className="pk-right">
@@ -169,6 +172,7 @@ export default function BrokerBoard() {
         </div>
       </div>
 
+      {mode === "blast" && brokers ? <BrokerBlast brokers={brokers} onClose={() => setMode(null)} onSent={() => load()} /> : null}
       {mode === "pitch" ? <PitchEditor pitch={pitch} onClose={() => setMode(null)} onSaved={(p) => { setPitch(p); setMode(null); }} /> : null}
       {mode === "add" ? <AddBroker onClose={() => setMode(null)} onAdded={() => { setMode(null); load(); }} /> : null}
       {mode === "import" ? <ImportBrokers onClose={() => setMode(null)} onDone={() => load()} /> : null}
@@ -430,6 +434,11 @@ function BrokerPanel({ b, pitch, onClose, onBroker, onTouch }: {
           </div>
           {b.next_touch && b.next_touch <= today() ? <p className="pk-err">Due now.</p> : null}
         </section>
+
+        <label className="bl-optout">
+          <input id="bp-optout" type="checkbox" checked={Boolean(b.opted_out_at)} onChange={(e) => patch({ opted_out: e.target.checked }, "optout")} />
+          <span>Asked not to get blasts{b.opted_out_at ? ` (since ${new Date(b.opted_out_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})` : ""}</span>
+        </label>
 
         {err ? <p className="pk-err" role="alert">{err}</p> : null}
 

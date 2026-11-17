@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  *  skipped, not overwritten: what somebody typed about a broker outranks an
  *  import. */
 
-const COLS = "id, name, firm, kind, parks_listed, phone, email, city, state, covers, evidence, source_url, stage, starred, next_touch, notes, created_at, updated_at";
+const COLS = "id, name, firm, kind, parks_listed, phone, email, city, state, covers, evidence, source_url, stage, starred, next_touch, notes, created_at, updated_at, opted_out_at";
 
 async function gate() {
   const me = await requireStaff();

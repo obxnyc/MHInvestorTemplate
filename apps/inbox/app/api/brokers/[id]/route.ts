@@ -17,7 +17,7 @@ async function gate() {
   return { me };
 }
 const okId = (s: string) => /^[0-9a-f-]{36}$/.test(s);
-const COLS = "id, name, firm, kind, parks_listed, phone, email, city, state, covers, evidence, source_url, stage, starred, next_touch, notes, created_at, updated_at";
+const COLS = "id, name, firm, kind, parks_listed, phone, email, city, state, covers, evidence, source_url, stage, starred, next_touch, notes, created_at, updated_at, opted_out_at";
 
 export async function GET(_r: Request, ctx: { params: Promise<{ id: string }> }) {
   const g = await gate(); if (g.err) return g.err;
@@ -47,6 +47,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     patch.kind = b.kind;
   }
   if ("starred" in b) patch.starred = Boolean(b.starred);
+  // Asked not to be written to. A date, because WHEN they asked is what
+  // matters if anybody ever asks; blasts leave them out from then on.
+  if ("opted_out" in b) patch.opted_out_at = b.opted_out ? new Date().toISOString() : null;
   if ("next_touch" in b) {
     if (b.next_touch !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.next_touch)))
       return NextResponse.json({ error: "next contact must be a date" }, { status: 400 });
