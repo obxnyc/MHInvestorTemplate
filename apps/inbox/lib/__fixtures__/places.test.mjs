@@ -62,8 +62,36 @@ const ALL = places(PROPS, UNITS);
 const find = (q, n = 8) => findPlace(q, ALL, n);
 const ids = (q, n = 8) => find(q, n).map((p) => p.id);
 
-t("every property is a place, lots or no lots", () =>
-  PROPS.every((p) => ALL.some((x) => x.id === `p:${p.id}`)));
+/* REACHABLE, not "has an entry of a particular kind".
+   A single house is now offered once, as its own lot, so asking for
+   `p:<id>` asked about the SHAPE and would fail on a house that is
+   perfectly findable. The rule is that nothing on the books is
+   unreachable. */
+t("every property can be reached, lots or no lots", () =>
+  PROPS.every((p) => ALL.some((x) => x.propertyId === p.id)));
+
+/* THE ONE THE OWNER PHOTOGRAPHED. He typed "128 sun" and was offered
+   "128 Sunflower Ln" and "128 Sunflower Ln · 128 Sunflower Ln" -- the
+   property and its only unit, which are the same house. "There are two
+   addresses coming up when we only have one address." */
+t("a single house is offered ONCE", () =>
+  ALL.filter((x) => x.propertyId === "p3").length === 1);
+
+t("and it is the entry that carries the unit", () =>
+  ALL.find((x) => x.propertyId === "p3")?.unitId === "c1",
+);
+
+t("and it is labelled once, not twice", () =>
+  ALL.find((x) => x.propertyId === "p3")?.label === "1012 Chason St");
+
+/* A PARK IS NOT A HOUSE. Somebody mows the common ground, so the park is a
+   place of its own as well as its lots -- collapsing those would lose the
+   answer to "which lot" entirely. */
+t("a park is still offered separately from its lots", () =>
+  ALL.some((x) => x.id === "p:p1") && ALL.some((x) => x.propertyId === "p1" && x.unitId));
+
+t("a duplex with two units keeps all three entries", () =>
+  ALL.filter((x) => x.propertyId === "p4").length === 3);
 t("a lot whose park is gone is not a place", () =>
   !ALL.some((x) => x.unitId === "orphan"));
 
@@ -95,7 +123,7 @@ t("a typo in the street still finds it", () =>
   find("nortside 20")[0]?.id === "u:n20");
 
 t("a single house is findable by its street", () =>
-  find("chason")[0]?.id === "p:p3");
+  find("chason")[0]?.propertyId === "p3");
 
 t("a property with no address on file does not break the search", () =>
   find("hall street")[0]?.id === "p:p4");
@@ -132,8 +160,14 @@ t("picking a PARK that is a mobile home park asks which lot", () =>
 /* The pair that makes the first one mean something. Without the kind check
    every property would ask, including a single house where the question has
    no answer -- and a check that only looks at the park would pass on that. */
-t("a single house does not ask which lot", () =>
-  ALL.find((p) => p.id === "p:p3")?.needsLot === false);
+/* ASKED OF THE DUPLEX, not of the single house.
+   The single house is now a LOT, and a lot's needsLot is hard-coded false,
+   so it can no longer exercise the property branch's `kind === "mhp"`
+   condition at all -- the check would pass with that condition deleted. The
+   duplex is the case where both halves matter: it HAS units, and it is not a
+   park. A guard standing behind a second guard is a guard nobody tested. */
+t("a house with units does not ask which lot", () =>
+  ALL.find((p) => p.id === "p:p4")?.needsLot === false);
 
 t("a park with no lots on file does not ask a question nothing can answer", () =>
   ALL.find((p) => p.id === "p:p5")?.needsLot === false);

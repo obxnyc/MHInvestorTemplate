@@ -149,23 +149,63 @@ export async function POST(req: Request) {
 
   /* Remembered first, because that is the part that stops this happening
      again. Upserted: two people answering the same request in the same
-     minute must not be an error, and the answer is the same either way. */
-  const { error: aliasError } = await db.from("place_aliases").upsert({
-    key: placeKey(hint), saw: hint.slice(0, 200),
-    property_id: propertyId, unit_id: unitId, by_staff: me.id,
-  }, { onConflict: "key" });
-  if (aliasError) {
-    return NextResponse.json({
-      error: aliasError.message.includes("place_aliases")
-        ? "Run migration 045 so this can be remembered."
-        : aliasError.message,
-    }, { status: 500 });
+     minute must not be an error, and the answer is the same either way.
+     *
+     * BUT NOT UNDER AN EMPTY KEY, and one of those is already on this
+     * database -- written 2 November, keyed on "", pointing at a house.
+     *
+     * `placeKey("")` is `""`. A thread with no place_hint is the COMMON
+     * case, not the edge: every request the Rent Manager pull files
+     * carries no place at all, and so does an outbound text to a plumber.
+     * Filing one of those used to write the alias "a request that said
+     * nothing about where it is means THIS house", and the next answer
+     * overwrote it with a different house.
+     *
+     * Nothing reads it today, because every lookup happens to be guarded
+     * by a truthy hint. That is luck, not a rule -- one unguarded call and
+     * three hundred unplaced requests file themselves against whichever
+     * house was answered last. A hint is what makes the NEXT one file
+     * itself; with no words there is nothing to remember, and filing this
+     * one still works. */
+  const key = placeKey(hint);
+  if (key) {
+    const { error: aliasError } = await db.from("place_aliases").upsert({
+      key, saw: hint.slice(0, 200),
+      property_id: propertyId, unit_id: unitId, by_staff: me.id,
+    }, { onConflict: "key" });
+    if (aliasError) {
+      return NextResponse.json({
+        error: aliasError.message.includes("place_aliases")
+          ? "Run migration 045 so this can be remembered."
+          : aliasError.message,
+      }, { status: 500 });
+    }
   }
 
-  // The thread, the contact and any job already opened for it.
+  // The thread, and any job already opened for it.
   await db.from("conversations").update({ unit_id: unitId }).eq("id", conversationId);
+
+  /* THE PERSON IS NOT THE PLACE.
+   *
+   * This used to write the chosen unit onto whoever the thread names, with
+   * no test of who that is. The owner texted his PLUMBER about a leak at
+   * 128 Sunflower Ln and answering "which property" would have recorded
+   * the plumber as living there -- and he works at every house on the
+   * books, so the next thing to read his record reads it wrong.
+   *
+   * `intake.ts` already refuses this in so many words: "a tenant reports a
+   * leak at their neighbour's as readily as their own, and writing an
+   * address onto a person from one request is how somebody's record
+   * quietly becomes wrong." The rule was written down and this route did
+   * it anyway.
+   *
+   * So: only a tenant, and only one who has no home on file yet. Fill a
+   * blank, never an answer. */
   if (convo.contact_id && unitId) {
-    await db.from("contacts").update({ unit_id: unitId }).eq("id", convo.contact_id);
+    await db.from("contacts").update({ unit_id: unitId })
+      .eq("id", convo.contact_id)
+      .eq("party", "current_tenant")
+      .is("unit_id", null);
   }
 
   /* AND WHO LIVES THERE, WHICH IS THE WHOLE POINT OF ANSWERING THIS.
