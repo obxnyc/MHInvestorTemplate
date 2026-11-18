@@ -13,14 +13,36 @@ export async function GET(req: Request) {
   if (!me) return new Response("not signed in", { status: 401 });
 
   const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key) return new Response("not configured", { status: 404 });
-
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
-  const zoom = Math.min(21, Math.max(15, Number(url.searchParams.get("z") ?? 19)));
+  const zoom = Math.min(21, Math.max(15, Number(url.searchParams.get("z") ?? (key ? 19 : 17))));
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return new Response("bad point", { status: 400 });
+  }
+
+  /* NO GOOGLE KEY: ESRI'S WORLD IMAGERY, the same photograph the park map
+     draws on. A picture of the ground at the point, so "is this the right
+     spot?" can still be answered -- an empty box asks it of nothing. */
+  if (!key) {
+    const across = (640 * 156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+    const dLng = across / (111320 * Math.cos((lat * Math.PI) / 180)) / 2;
+    const dLat = (across * 360 / 640) / 110540 / 2;
+    const esri = new URL("https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export");
+    esri.searchParams.set("bbox", `${lng - dLng},${lat - dLat},${lng + dLng},${lat + dLat}`);
+    esri.searchParams.set("bboxSR", "4326");
+    esri.searchParams.set("imageSR", "3857");
+    esri.searchParams.set("size", "640,360");
+    esri.searchParams.set("format", "jpg");
+    esri.searchParams.set("f", "image");
+    const res = await fetch(esri);
+    if (!res.ok) return new Response("aerial unavailable", { status: 502 });
+    return new Response(res.body, {
+      headers: {
+        "Content-Type": res.headers.get("content-type") ?? "image/jpeg",
+        "Cache-Control": "private, max-age=86400",
+      },
+    });
   }
 
   const src = new URL("https://maps.googleapis.com/maps/api/staticmap");

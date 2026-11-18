@@ -16,7 +16,7 @@ export default async function People(
 
   const supabase = await supabaseServer();
   const [{ data: staff }, { data: vendors }, { count: requests }] = await Promise.all([
-    supabase.from("staff").select("id, full_name, role, forward_to, active, created_at")
+    supabase.from("staff").select("id, full_name, role, forward_to, active, created_at, hidden_areas")
       .order("full_name"),
     supabase.from("contacts").select("id, full_name, phone")
       .eq("party", "vendor").order("full_name"),

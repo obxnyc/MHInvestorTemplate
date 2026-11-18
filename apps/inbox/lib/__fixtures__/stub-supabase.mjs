@@ -32,15 +32,24 @@ const GUEST = "33333333-3333-3333-3333-333333333333";
 const STAFF = [
   { id: WHO, full_name: "Cade Barrow", role: "crew",
     forward_to: null, client_identity: null, active: true,
-    created_at: "2026-01-01T00:00:00Z" },
+    created_at: "2026-01-01T00:00:00Z", hidden_areas: [], reads_all_dms: false },
   { id: DESK, full_name: "Dana Reese", role: "admin",
     forward_to: null, client_identity: null, active: true,
-    created_at: "2026-01-01T00:00:00Z" },
+    created_at: "2026-01-01T00:00:00Z", hidden_areas: [], reads_all_dms: true },
   // Somebody looking round and saying what they think. Reads everything,
   // changes nothing.
+  // Two office people, as in the live data on 18 November 2026: one with
+  // areas hidden (072), one without -- so "private to Natashia" and "hidden
+  // from Hannah" are two different people, not the same one.
+  { id: "44444444-4444-4444-4444-444444444444", full_name: "Natashia Heinrich", role: "office",
+    forward_to: null, client_identity: null, active: true, created_at: "2026-01-01T00:00:00Z",
+    hidden_areas: ["distributions", "pay", "trail", "investors"], reads_all_dms: false },
+  { id: "55555555-5555-5555-5555-555555555555", full_name: "Hannah Pappas", role: "office",
+    forward_to: null, client_identity: null, active: true, created_at: "2026-01-01T00:00:00Z",
+    hidden_areas: [], reads_all_dms: false },
   { id: GUEST, full_name: "Robin Vale", role: "viewer",
     forward_to: null, client_identity: null, active: true,
-    created_at: "2026-01-01T00:00:00Z" },
+    created_at: "2026-01-01T00:00:00Z", hidden_areas: [], reads_all_dms: false },
 ];
 
 /* THE COLUMNS THE PROPERTIES SCREEN ASKS FOR, all of them. That screen
@@ -435,7 +444,7 @@ const TABLES = {
       assigned_to: null, closure_prompts: 0, category_confidence: 0.4,
       last_message_at: iso(now - 30e3),
       last_message_preview: "Hello my pipes are overflowing with water",
-      subject: null, units: null, staff: null, team_id: null, unit_id: null,
+      subject: null, units: null, staff: null, team_id: null, unit_id: null, private_to: null,
       /* `place_hint` is DELIBERATELY ABSENT: it arrives with migration 045
          and this fixture is a database where 045 has not been run, which
          is the state the live site is in. A route that names it without a
@@ -447,7 +456,7 @@ const TABLES = {
       assigned_to: null, closure_prompts: 0, category_confidence: 0.95,
       last_message_at: iso(now - 20 * 24 * 3600e3),
       last_message_preview: "Hey Michelle, received your maintenance request.",
-      subject: null, units: null, staff: null, team_id: null, unit_id: null,
+      subject: null, units: null, staff: null, team_id: null, unit_id: null, private_to: null,
       /* `place_hint` is DELIBERATELY ABSENT: it arrives with migration 045
          and this fixture is a database where 045 has not been run, which
          is the state the live site is in. A route that names it without a
@@ -461,7 +470,7 @@ const TABLES = {
       last_message_at: iso(now - 3 * 3600e3),
       last_message_preview: "Fridge is going out",
       subject: "Fridge is going out", units: null, staff: null, team_id: null,
-      unit_id: null,
+      unit_id: null, private_to: null,
       contacts: { id: "ct3", phone: "email:rm:issue:251",
         full_name: "Marie Dossantos", party: "current_tenant", language: null,
         unit_id: null, units: null, email: null } },
@@ -469,11 +478,13 @@ const TABLES = {
   messages: [
     // cv1's newest is INBOUND: it is unread.
     { id: "m1", conversation_id: "cv1", direction: "inbound",
-      body: "Hello my pipes are overflowing with water", created_at: iso(now - 30e3) },
+      body: "Hello my pipes are overflowing with water", created_at: iso(now - 30e3),
+      body_en: null, lang: null, status: "received", channel: "sms", media_paths: [], sent_by: null, },
     // cv2's newest is OUTBOUND -- we answered. Not unread, however long ago
     // anyone last opened it.
     { id: "m2", conversation_id: "cv2", direction: "inbound",
-      body: "My sink is leaking", created_at: iso(now - 21 * 24 * 3600e3) },
+      body: "My sink is leaking", created_at: iso(now - 21 * 24 * 3600e3),
+      body_en: null, lang: null, status: "received", channel: "sms", media_paths: [], sent_by: null, },
   ],
   /* Michelle's thread, as the timings that tell the two rules apart:
        - her message came in      21 days ago

@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { areaOf } from "@/lib/areas";
 
 /** Pages an applicant reaches before they are anyone to us. An allowlist
  *  rather than a list of protected paths, because the failure directions are
@@ -100,6 +101,29 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
     return response;
+  }
+
+  /* AN AREA THIS PERSON IS NOT SHOWN IS NOT THERE FOR THEM.
+   *
+   * Asked only on a path that belongs to an area, so every other request
+   * costs nothing. A page goes home rather than to an error, because the
+   * person has done nothing wrong by following an old link; an API says no
+   * in words. The rows are refused in the database as well (072). */
+  const area = areaOf(path);
+  if (area) {
+    const { data: me } = await supabase
+      .from("staff").select("hidden_areas").eq("id", user.id).maybeSingle();
+    const hidden = (me as { hidden_areas?: string[] } | null)?.hidden_areas ?? [];
+    if (hidden.includes(area)) {
+      if (api) {
+        return NextResponse.json({ error: "This part of the app is not available to you." },
+          { status: 403 });
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = "/home";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   /* READ ONLY MEANS READ ONLY, AND IT IS DECIDED HERE.

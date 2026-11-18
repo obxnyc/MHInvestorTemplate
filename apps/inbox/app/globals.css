@@ -898,6 +898,18 @@ code{background:var(--sunk);padding:.06em .32em;border-radius:4px;font-size:.9em
   align-items:center;padding:.7rem .85rem;border:1px solid var(--hair);
   border-radius:var(--radius);background:var(--card)}
 .people-list li.off{opacity:.6}
+/* Permissions: one row a person, a tick a part of the app. Scrolls sideways
+   inside its own box on a phone rather than pushing the page wide. */
+.perms{margin-top:1rem;display:grid;gap:.6rem}
+.perms-scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:var(--radius);
+  background:var(--card)}
+.perms-table{min-width:36rem}
+.perms-table th,.perms-table td{padding:.55rem .7rem;border-bottom:1px solid var(--hair);
+  text-align:center;vertical-align:middle}
+.perms-table thead th{font-size:.75rem;color:var(--muted);font-weight:600}
+.perms-table th[scope=row]{text-align:left;font-weight:600;white-space:nowrap}
+.perms-table tr:last-child th,.perms-table tr:last-child td{border-bottom:0}
+input.perm-tick{width:1.15rem;height:1.15rem;margin:0;accent-color:var(--accent)}
 .p-name{font-weight:700;display:flex;align-items:center;gap:.45rem}
 .p-sub{grid-column:1;color:var(--muted);font-size:.8rem}
 .p-acts{grid-row:1/3;grid-column:2;display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
@@ -3984,6 +3996,47 @@ button.edrow.dbo:hover{background:var(--sunk)}
   .olhead{flex-wrap:wrap}
   .olpage{padding:1.1rem .75rem 2.5rem;min-width:0}
 }
+
+/* Who can see a conversation. A border and a word, not a filled block, so it
+   reads the same by day and by night without an ink partner to keep in step. */
+.privwrap{position:relative;display:inline-flex}
+.btn.priv.on{border-color:var(--ink);font-weight:700}
+.privpanel{position:absolute;right:0;top:calc(100% + .35rem);z-index:30;width:min(18rem,86vw);
+  background:var(--card);color:var(--ink);border:1px solid var(--hair);border-radius:var(--radius);
+  box-shadow:0 8px 24px rgba(0,0,0,.18);padding:.75rem;display:grid;gap:.5rem}
+.privpanel ul{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
+.privpanel label{display:flex;align-items:center;gap:.4rem;font-size:.9rem}
+.privhead{margin:0;font-weight:700;font-size:.9rem}
+.privpanel .acts{display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap}
+
+/* The record. A caught word is marked dark-on-yellow in both themes: the
+   ground does not move between themes, so the ink must not either. */
+.record{display:grid;gap:.8rem}
+.watchbox{border:1px solid var(--hair);border-radius:var(--radius);background:var(--card);
+  padding:.8rem .9rem;display:grid;gap:.5rem}
+.watchbox h2{margin:0;font-size:1rem}
+.watchadd,.recsearch{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
+.watchadd input,.recsearch input{flex:1 1 14rem;min-width:0}
+.watchlist{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.4rem}
+.watchlist li{display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--hair);
+  border-radius:999px;padding:.2rem .3rem .2rem .7rem;font-size:.85rem}
+.reclist{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.reclist li{border:1px solid var(--hair);border-radius:var(--radius);background:var(--card);
+  padding:.55rem .75rem;display:grid;gap:.25rem;min-width:0}
+.reclist li.hit{border-left:4px solid #D97706}
+.reclist li.new{box-shadow:0 0 0 2px #D97706 inset}
+.recmeta{display:flex;flex-wrap:wrap;gap:.35rem .7rem;font-size:.75rem;color:var(--muted)}
+.recbody{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.recbody mark{background:#FDE68A;color:#1F2937;border-radius:3px;padding:0 .1em}
+.tag.watch{background:#FDE68A;color:#1F2937}
+.tag.warn{background:#FEE2E2;color:#7F1D1D}
+.parkhint.nearby{display:grid;gap:.45rem}
+.parkhint.nearby p{margin:0}
+.parkhint.nearby ul{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
+.parkhint.nearby li{display:flex;gap:.6rem;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;border:1px solid var(--hair);border-radius:var(--radius);padding:.4rem .6rem;
+  background:var(--card)}
+
 /* ---------------------------------------------------------------- listings
  *
  * The public "what have you got" page. `/apply` answers "which of these do

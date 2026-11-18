@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { isArea } from "@/lib/areas";
 
 export const runtime = "nodejs";
 
@@ -16,8 +17,23 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const { id } = await ctx.params;
-  const { pin, active } = await req.json();
+  const { pin, active, hidden_areas } = await req.json();
   const db = supabaseAdmin();
+
+  // Parts of the app this person is not shown. Only names the app knows are
+  // kept: an unknown one would hide nothing and read as if it did.
+  if (hidden_areas !== undefined) {
+    if (!Array.isArray(hidden_areas) || !hidden_areas.every(isArea)) {
+      return NextResponse.json({ error: "Unknown part of the app." }, { status: 400 });
+    }
+    const { data: who } = await db.from("staff").select("role").eq("id", id).maybeSingle();
+    if (who?.role === "admin") {
+      return NextResponse.json({ error: "An admin sees everything." }, { status: 400 });
+    }
+    const { error } = await db.from("staff")
+      .update({ hidden_areas: [...new Set(hidden_areas)] }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   if (typeof active === "boolean") {
     const { error } = await db.from("staff").update({ active }).eq("id", id);

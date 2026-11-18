@@ -22,7 +22,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           nothing you press will change anything.
         </p>
       ) : null}
-      <AppHeader name={staff.full_name} role={staff.role} />
+      <AppHeader name={staff.full_name} role={staff.role}
+                 hidden={(staff as { hidden_areas?: string[] }).hidden_areas ?? []}
+                 readsAll={Boolean((staff as { reads_all_dms?: boolean }).reads_all_dms)} />
       {/* No UI. It tells the server this tab is open and whether anybody is
           at it, on whatever screen they happen to be on. */}
       <Heartbeat />

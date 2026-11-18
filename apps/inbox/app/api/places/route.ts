@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireStaff } from "@/lib/supabase-server";
+import { suggest, suggestionById } from "@/lib/parcel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,11 +24,35 @@ export async function GET(req: Request) {
   if (!me) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key) return NextResponse.json({ suggestions: [], configured: false });
-
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   const q = (url.searchParams.get("q") ?? "").trim();
+
+  /* NO GOOGLE KEY: THE STATE'S PARCEL RECORDS INSTEAD.
+     Every suggestion is a real parcel in North Carolina -- its site address
+     and its point -- so picking one places the property on its own land,
+     and its property line follows when the map opens. Free, no key, and
+     the same records the property line comes from, so the two agree. An id
+     from this source starts "nc:" whichever way the server is set up. */
+  if (!key || (id && id.startsWith("nc:"))) {
+    if (id) {
+      const s = await suggestionById(id);
+      if (!s) {
+        return NextResponse.json({ error: "Couldn't find that parcel again.", configured: true }, { status: 404 });
+      }
+      return NextResponse.json({ configured: true, address: s.address, lat: s.lat, lng: s.lng });
+    }
+    if (q.length < 3) return NextResponse.json({ suggestions: [], configured: true, source: "nc" });
+    const found = await suggest(q);
+    return NextResponse.json({
+      configured: true, source: "nc",
+      suggestions: found.map((s) => ({ id: s.id, label: s.label })),
+      // Said when nothing matched, so an empty list is not mistaken for the
+      // box being broken.
+      ...(found.length ? {} : { hint: "No parcel in NC's records starts like that yet -- "
+        + "keep typing (house number and street), or type the whole address and save." }),
+    });
+  }
 
   try {
     if (id) {

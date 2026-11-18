@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { layRow, clamp, angleOf } from "@/lib/park";
-import { lookup, ringOf, middle, metres, refOf, type ParcelFeature } from "@/lib/parcel";
+import { lookup, ringOf, middle, metres, refOf, nearbyOnStreet, type ParcelFeature } from "@/lib/parcel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,6 +168,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // The county's own line, so a drawn override can be compared with it
     // and put back to it.
     county: countyRing.length ? { ring: countyRing, ref: county!.ref } : null,
+    // The address matched no parcel: the ones on the same street in the same
+    // town, nearest number first, to ask "is it one of these?" -- a park on
+    // newly bought land is often still filed under the land's old address.
+    nearby: !countyRing.length && !plan && county?.address
+      ? await nearbyOnStreet(county.address) : [],
     // Every other property whose line is within reach, drawn faintly round
     // this one, so where two parcels meet -- or fail to -- can be seen.
     neighbours: await neighboursOf(id, countyRing.length ? middle(countyRing)

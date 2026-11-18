@@ -173,3 +173,173 @@ export async function lookup(
     clearTimeout(t);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Suggestions: the state's parcel records as an address book.
+//
+// There is no Google key on this server, so the address box suggested
+// nothing. NC OneMap publishes a POINT for every parcel with its site
+// address, and every suggestion made from it is a real parcel -- so picking
+// one gives the property its address, its pin and, when the map opens, its
+// property line, all from the same record.
+// ---------------------------------------------------------------------------
+
+const POINTS =
+  "https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/MapServer/0/query";
+
+export type Suggestion = {
+  /** `nc:<county>:<parcel number>` -- enough to fetch it again. */
+  id: string;
+  label: string;
+  address: string;
+  lat: number;
+  lng: number;
+  county: string;
+  owner: string;
+  acres: number | null;
+};
+
+const title = (s: string) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
+
+/** "00218 BUENA VISTA RD", "MURFREESBORO" → "218 Buena Vista Rd, Murfreesboro, NC". */
+export function prettyAddress(siteadd: string, city: string): string {
+  const street = title(siteadd.trim().replace(/^0+(?=\d)/, "").replace(/\s+/g, " "))
+    // NC, not Nc; a lone direction letter stays a capital.
+    .replace(/\b(Nc|Ne|Nw|Se|Sw)\b/g, (m) => m.toUpperCase());
+  const town = city.trim() ? `, ${title(city.trim())}` : "";
+  return `${street}${town}, NC`;
+}
+
+/** The SQL-ish where clause for what somebody has typed so far, or null
+ *  when there is not enough to ask about. Quotes are doubled, never passed. */
+export function suggestWhere(q: string): string | null {
+  const clean = q.toUpperCase().replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const m = clean.match(/^(\d+)\s+([A-Z][A-Z ]*)/);
+  if (m) {
+    const words = m[2].split(" ").filter(Boolean).slice(0, 2).join(" ");
+    if (words.length < 2) return null;
+    return `upper(siteadd) LIKE '%${m[1]} ${words}%'`;
+  }
+  return null;
+}
+
+type Pt = { attributes: Record<string, unknown>; geometry?: { x?: number; y?: number } };
+
+function asSuggestion(f: Pt): Suggestion | null {
+  const a = f.attributes;
+  const x = f.geometry?.x, y = f.geometry?.y;
+  if (typeof x !== "number" || typeof y !== "number") return null;
+  const site = String(a.siteadd ?? "").trim();
+  if (!site) return null;
+  const county = String(a.cntyname ?? "").trim();
+  const address = prettyAddress(site, String(a.scity ?? ""));
+  const acres = typeof a.gisacres === "number" ? a.gisacres : null;
+  const owner = String(a.ownname ?? "").trim();
+  return {
+    id: `nc:${county}:${String(a.parno ?? "").trim()}`,
+    label: `${address} · ${county} Co.${acres ? ` · ${acres.toFixed(acres < 10 ? 2 : 1)} ac` : ""}`,
+    address, lat: y, lng: x, county, owner, acres,
+  };
+}
+
+async function points(where: string, n: number, ms: number): Promise<Suggestion[]> {
+  const q = new URLSearchParams({
+    where, outFields: "parno,siteadd,scity,cntyname,ownname,gisacres",
+    returnGeometry: "true", outSR: "4326", geometryPrecision: "6",
+    resultRecordCount: String(n), f: "json",
+  });
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(`${POINTS}?${q.toString()}`, { signal: ctl.signal, cache: "no-store" });
+    if (!res.ok) return [];
+    const out = await res.json() as { features?: Pt[] };
+    return (out.features ?? []).map(asSuggestion).filter((s): s is Suggestion => Boolean(s));
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Parcels whose address starts the way the person is typing. */
+export async function suggest(q: string, n = 8): Promise<Suggestion[]> {
+  const where = suggestWhere(q);
+  return where ? points(where, n, 6000) : [];
+}
+
+/** One parcel's point, by the id a suggestion carried. */
+export async function suggestionById(id: string): Promise<Suggestion | null> {
+  const m = id.match(/^nc:([A-Za-z .'-]+):([A-Za-z0-9 .-]+)$/);
+  if (!m) return null;
+  const esc = (s: string) => s.replace(/'/g, "''");
+  const got = await points(`cntyname='${esc(m[1])}' AND parno='${esc(m[2])}'`, 1, 8000);
+  return got[0] ?? null;
+}
+
+/** The street part of an address, as the county writes it: "Buena Vista". */
+export function streetOf(address: string): { number: number | null; street: string; city: string } {
+  const [first, city = ""] = address.split(",").map((s) => s.trim());
+  const m = first.match(/^(\d+)?[-\d]*\s*(.*)$/);
+  const words = (m?.[2] ?? "").toUpperCase().replace(/[^A-Z ]/g, " ")
+    .split(/\s+/).filter(Boolean);
+  // The road type ("Rd", "Street") is spelt every way there is; the name is
+  // what identifies the street, so it is the name that is matched.
+  const TYPES = /^(RD|ROAD|ST|STREET|DR|DRIVE|LN|LANE|AVE|AVENUE|CT|COURT|CIR|CIRCLE|HWY|WAY|TRL|TRAIL|PL|EXT|BLVD)$/;
+  // Typed without commas -- "101 Buena vista rd Murfreesboro NC 27855", as
+  // Serenity was -- the town is whatever follows the road type.
+  const at = words.findIndex((w) => TYPES.test(w));
+  const streetWords = !city && at > 0 ? words.slice(0, at) : words;
+  const town = city || (at > 0 ? words.slice(at + 1).filter((w) => w !== "NC").join(" ") : "");
+  const name = streetWords.filter((w) => !TYPES.test(w)).slice(0, 2).join(" ");
+  return {
+    number: m?.[1] ? Number(m[1]) : null,
+    street: name,
+    city: town.toUpperCase().replace(/\s+NC\b.*$/, "").replace(/\s+\d{5}.*$/, "").trim(),
+  };
+}
+
+/**
+ * "Is it one of these?" -- parcels on the same street in the same town, the
+ * nearest house number first.
+ *
+ * A park newly built on old land is often still filed under the land's old
+ * address and owner (Serenity, "101 Buena Vista Rd", is the county's "218
+ * Buena Vista Rd", owned on paper by the people it was bought from). The
+ * address will not match; the street and the town will.
+ */
+export async function nearbyOnStreet(address: string, n = 6): Promise<Suggestion[]> {
+  const s = streetOf(address);
+  if (s.street.length < 3) return [];
+  const esc = (v: string) => v.replace(/'/g, "''");
+  const where = `upper(siteadd) LIKE '% ${esc(s.street)}%'`
+    + (s.city ? ` AND upper(scity) = '${esc(s.city)}'` : "");
+  const found = await points(where, 40, 8000);
+  const num = (x: Suggestion) => Number(x.address.match(/^(\d+)/)?.[1] ?? NaN);
+  return found
+    .sort((a, b) => (s.number === null ? 0
+      : Math.abs(num(a) - s.number) - Math.abs(num(b) - s.number)))
+    .slice(0, n);
+}
+
+/** A parcel's outline by county and parcel number. */
+export async function byParcelNumber(county: string, parno: string, ms = 10000): Promise<ParcelFeature | null> {
+  const esc = (s: string) => s.replace(/'/g, "''");
+  const q = new URLSearchParams({
+    where: `cntyname='${esc(county)}' AND parno='${esc(parno)}'`,
+    outFields: "parno,mapref,siteadd,scity,ownname,gisacres,cntyname",
+    returnGeometry: "true", outSR: "4326", geometryPrecision: "7", f: "json",
+  });
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(`${SERVICE}?${q.toString()}`, { signal: ctl.signal, cache: "no-store" });
+    if (!res.ok) return null;
+    const f = (await res.json() as { features?: Esri[] }).features?.[0];
+    return f?.geometry?.rings?.[0]?.length ? asFeature(f) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}

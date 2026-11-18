@@ -7,10 +7,13 @@ import { ROLES, ROLE_LABEL, ROLE_BLURB, labelOf, isField, isViewer } from "@/lib
 import { prettyPhone } from "@/lib/format";
 import { canSmsFromLine } from "@/lib/phone";
 import BackLink from "@/components/BackLink";
+import { AREAS, AREA_KEYS } from "@/lib/areas";
 
 type Staff = {
   id: string; full_name: string; role: string;
   forward_to: string | null; active: boolean;
+  /** Parts of the app this person is not shown (072). */
+  hidden_areas?: string[];
 };
 type Vendor = { id: string; full_name: string; phone: string };
 
@@ -130,11 +133,20 @@ export default function PeopleAdmin(
     refresh();
   }
 
+  /** Show or hide one part of the app for one person. */
+  async function toggleArea(person: Staff, area: string) {
+    const had = person.hidden_areas ?? [];
+    const next = had.includes(area) ? had.filter((a) => a !== area) : [...had, area];
+    if (!await post(`/api/people/${person.id}`, { hidden_areas: next }, "PATCH")) return;
+    refresh();
+  }
+
   const tabs: [string, string, number][] = [
     ["office", "Office", office.length],
     ["field", "Field staff", field.length],
     ["vendors", "Directory", vendors.length],
     ...(isAdmin ? [["requests", "Requests", requests] as [string, string, number]] : []),
+    ...(isAdmin ? [["permissions", "Permissions", 0] as [string, string, number]] : []),
   ];
 
   return (
@@ -149,7 +161,7 @@ export default function PeopleAdmin(
         <div className="tabs">
           {tabs.map(([k, label, n]) => (
             <a key={k} href={`/people?tab=${k}`} className={tab === k ? "on" : ""}>
-              {label} <span className="n">{n}</span>
+              {label} {k !== "permissions" && <span className="n">{n}</span>}
             </a>
           ))}
         </div>
@@ -174,7 +186,51 @@ export default function PeopleAdmin(
         </div>
       )}
 
-      {tab === "requests" ? (
+      {tab === "permissions" && isAdmin ? (
+        <section className="perms">
+          <p className="muted">
+            Ticked means they can see it. Untick to hide that part of the app
+            from them -- the page, its menu item, and the data underneath.
+            Admins see everything, and you can always read every message on
+            the Record page whatever is ticked here.
+          </p>
+          <div className="perms-scroll">
+            <table className="perms-table">
+              <thead>
+                <tr>
+                  <th scope="col">Person</th>
+                  {AREA_KEYS.map((a) => <th key={a} scope="col">{AREAS[a].label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {[...office, ...field].filter((p) => p.active).map((p) => (
+                  <tr key={p.id}>
+                    <th scope="row">
+                      {p.full_name}
+                      <span className="dim"> · {labelOf(p.role)}</span>
+                    </th>
+                    {AREA_KEYS.map((a) => {
+                      const shown = !(p.hidden_areas ?? []).includes(a);
+                      return (
+                        <td key={a}>
+                          {p.role === "admin" ? (
+                            <span className="dim" title="An admin sees everything.">always</span>
+                          ) : (
+                            <input type="checkbox" className="perm-tick" checked={shown}
+                                   disabled={busy}
+                                   aria-label={`${p.full_name} can see ${AREAS[a].label}`}
+                                   onChange={() => toggleArea(p, a)} />
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : tab === "requests" ? (
         <AccessRequests />
       ) : tab !== "vendors" ? (
         <>

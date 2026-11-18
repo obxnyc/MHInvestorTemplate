@@ -47,6 +47,16 @@ export async function pushToStaff(staffIds: string[], payload: Push): Promise<nu
   configure();
 
   const db = supabaseAdmin();
+
+  /* A PRIVATE CONVERSATION'S NEWS GOES ONLY TO ITS PEOPLE.
+     The notification carries the first words of the message, so sending it
+     to somebody the conversation is hidden from would tell them exactly
+     what the privacy is for. Filtered here, in the one function every push
+     goes through, rather than in each of the eight places that send one. */
+  if (payload.conversationId) {
+    staffIds = await mayHear(db, payload.conversationId, staffIds);
+    if (!staffIds.length) return 0;
+  }
   const { data: subs } = await db
     .from("push_subscriptions")
     .select("id, endpoint, p256dh, auth")
@@ -71,6 +81,22 @@ export async function pushToStaff(staffIds: string[], payload: Push): Promise<nu
 
   if (dead.length) await db.from("push_subscriptions").delete().in("id", dead);
   return took;
+}
+
+/** Of these people, the ones a conversation is not hidden from: everyone
+ *  when it is not private, otherwise its own people and whoever reads
+ *  everything (072). */
+export async function mayHear(
+  db: ReturnType<typeof supabaseAdmin>, conversationId: string, ids: string[],
+): Promise<string[]> {
+  const { data: convo } = await db.from("conversations")
+    .select("private_to").eq("id", conversationId).maybeSingle();
+  const only = (convo as { private_to?: string[] | null } | null)?.private_to ?? null;
+  if (!only?.length) return ids;
+  const { data: readers } = await db.from("staff")
+    .select("id").eq("active", true).eq("reads_all_dms", true);
+  const allowed = new Set([...only, ...(readers ?? []).map((r) => r.id as string)]);
+  return ids.filter((id) => allowed.has(id));
 }
 
 /** Everyone on the team that owns this conversation, minus the person who

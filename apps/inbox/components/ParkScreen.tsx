@@ -166,6 +166,12 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
    *  one. The county's is the default; a line drawn here overrides it. */
   const [neighbours, setNeighbours] = useState<{ id: string; name: string; ring: number[][] }[]>([]);
   const [county, setCounty] = useState<number[][] | null>(null);
+  /** The address matched no county parcel: ones on the same street in the
+   *  same town, to ask "is it one of these?". */
+  const [onStreet, setOnStreet] = useState<{
+    id: string; label: string; address: string; owner: string; acres: number | null;
+  }[]>([]);
+  const [choosing, setChoosing] = useState<string | null>(null);
   const [osm, setOsm] = useState<{
     error?: string;
     fit?: Plan;
@@ -463,6 +469,7 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
     setLots(out.lots ?? []);
     setCanKeep(out.plans !== false);
     setNeighbours(Array.isArray(out.neighbours) ? out.neighbours : []);
+    setOnStreet(Array.isArray(out.nearby) ? out.nearby : []);
     setCounty(out.county?.ring ?? null);
     let mine = out.property?.plan as Plan | null | undefined;
 
@@ -1844,6 +1851,40 @@ export default function ParkScreen({ propertyId }: { propertyId: string }) {
           Pasquotank came up over Fayetteville for the fourth time. An
           empty screen that says why is not a worse answer than a map of
           the wrong county; it is the only honest one. */}
+      {!somewhere(plan) && onStreet.length > 0 && (
+        <div className="parkhint nearby">
+          <p>
+            <strong>The county has no parcel at this address.</strong> A park on
+            newly bought land is often still filed under the land&rsquo;s old
+            address and owner. Is it one of these?
+          </p>
+          <ul>
+            {onStreet.map((n) => (
+              <li key={n.id}>
+                <span>
+                  <strong>{n.address}</strong>
+                  {n.acres ? ` · ${n.acres.toFixed(n.acres < 10 ? 2 : 1)} acres` : ""}
+                  {n.owner ? <span className="dim"> · on record: {n.owner}</span> : null}
+                </span>
+                <button type="button" className="btn pri mini" disabled={choosing !== null}
+                        onClick={async () => {
+                          setChoosing(n.id); setError(null);
+                          const res = await fetch(`/api/properties/${propertyId}/parcel-choice`, {
+                            method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: n.id }),
+                          }).catch(() => null);
+                          const out = await res?.json().catch(() => ({})) ?? {};
+                          setChoosing(null);
+                          if (!res?.ok) { setError(out.error ?? "That didn't save."); return; }
+                          await load();
+                        }}>
+                  {choosing === n.id ? "Using it…" : "Yes, this one"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {!somewhere(plan) ? (
         <p className="parkhint">
           <strong>Nobody has said where this park is yet.</strong> Put its
