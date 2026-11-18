@@ -275,7 +275,24 @@ export default function ThreadPane(
           which carries no place at all, which is exactly the case that
           needs a human -- showed nothing and could not be filed. The
           narrower question again, answered confidently. */}
-      {!prop ? (
+      {/* NOT ON A THREAD WE STARTED.
+          This showed on ANY thread with no property, which is right for a
+          request that arrived and wrong for a conversation the office
+          opened. Texting a plumber about a leak put a red box across the
+          screen reading "This request did not say which property it is for
+          -- Rent Manager does not pass one on", over a list of every lot in
+          every park, with no way to dismiss it: `Cancel` closes the
+          add-a-property form inside the card and `Never mind` closes the
+          contact form, and neither closes the card.
+
+          A thread with nothing inbound on it is not an unlocated request --
+          it is us, reaching out, and we already know where the work is. On
+          the live data this hides it on exactly one thread and on no
+          maintenance request at all.
+
+          A job is still raised from the header, which is where the office
+          asked for it. */}
+      {!prop && lastInbound ? (
         <PlaceNeeded conversationId={convo.id}
                      hint={convo.place_hint ?? null}
                      contact={contact ? {
@@ -283,6 +300,7 @@ export default function ThreadPane(
                        name: contact.full_name ?? null,
                        phone: contact.phone ?? null,
                        email: contact.email ?? null,
+                       party: contact.party ?? null,
                      } : null}
                      onChanged={() => void load(String(convo.id))} />
       ) : null}
