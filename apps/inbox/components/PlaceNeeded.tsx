@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { threadChanged } from "@/lib/refresh";
 
 type Suggestion = {
   id: string; kind: string; label: string; where: string;
@@ -257,6 +258,7 @@ function PersonHere(
   },
 ) {
   const real = (contact.phone ?? "").startsWith("+");
+  const router = useRouter();
   const [open, setOpen] = useState(!real && !contact.email);
   const [name, setName] = useState(contact.name ?? "");
   /* WHO THEY ARE, which this never asked.
@@ -292,6 +294,21 @@ function PersonHere(
     if (!res.ok || !out.ok) { setProblem(out.error ?? "That did not save."); return; }
     setOpen(false);
     onSaved?.();
+    /* AND THE LIST, which is a different thing from the thread.
+     *
+     * "I saved the number but it's not updating in the pane of message
+     * conversations." The header said Instinct AI and the row beside it
+     * still said (919) 762-2296.
+     *
+     * `onSaved` reloads the open THREAD. The list is a server component
+     * and only re-renders on `router.refresh()`, which `ContactEditor`
+     * has always called and this never did -- so the same edit made from
+     * two places updated two different halves of the screen.
+     *
+     * `threadChanged()` as well, because anything else listening for a
+     * thread to have moved should hear it from here too. */
+    threadChanged();
+    router.refresh();
   }
 
   if (!open) {

@@ -98,6 +98,30 @@ t("the contact editor offers every type too", () => {
 t("and nothing it offers would be refused", () =>
   inEditor.every((p) => accepted.includes(p)) && inEditor.length > 0);
 
+/* ------------------------- a name saved is a name the LIST shows as well */
+
+t("saving from the card refreshes the list, not only the thread", () => {
+  const src = running(card);
+  const at = src.indexOf("onSaved?.()");
+  if (at < 0) return false;
+  /* Cut to the save, so some other refresh elsewhere in the file cannot
+     answer for this one. */
+  const after = src.slice(at, at + 400);
+  return /router\.refresh\(\)/.test(after);
+}, "\"I saved the number but it's not updating in the pane of message "
+ + "conversations.\" The header said Instinct AI and the row beside it "
+ + "still said (919) 762-2296: `onSaved` reloads the open THREAD, and the "
+ + "list is a server component that only re-renders on router.refresh(). "
+ + "The same edit from two places updated two different halves of the "
+ + "screen");
+
+t("and both places that rename somebody do it", () => {
+  const a = /router\.refresh\(\)/.test(running(card));
+  const b = /router\.refresh\(\)/.test(running(editor));
+  return a && b;
+}, "ContactEditor has always done this; the card never did. Asked of both, "
+ + "because the one that was wrong was the one nobody compared");
+
 /* ----------------------------------------- raising a ticket is not hidden */
 
 t("Create ticket is its own button", () =>
