@@ -30,7 +30,7 @@ export default function PlaceNeeded(
      *  exists for most. */
     hint: string | null;
     contact: { id: string; name: string | null; phone: string | null;
-               email: string | null } | null;
+               email: string | null; party?: string | null } | null;
     onChanged?: () => void;
   },
 ) {
@@ -197,13 +197,21 @@ export default function PlaceNeeded(
 function PersonHere(
   { contact, onSaved }: {
     contact: { id: string; name: string | null; phone: string | null;
-               email: string | null };
+               email: string | null; party?: string | null };
     onSaved?: () => void;
   },
 ) {
   const real = (contact.phone ?? "").startsWith("+");
   const [open, setOpen] = useState(!real && !contact.email);
   const [name, setName] = useState(contact.name ?? "");
+  /* WHO THEY ARE, which this never asked.
+     "When trying to save this number it doesn't allow me to save him as
+     anything other than a tenant." The card is written for a tenant
+     throughout -- "The tenant's name" -- and the save sent no `party` at
+     all, so a plumber stayed whatever he happened to be created as. The
+     route has accepted all six since it was written; nothing offered
+     them. */
+  const [party, setParty] = useState(contact.party ?? "current_tenant");
   const [phone, setPhone] = useState(real ? contact.phone ?? "" : "");
   const [email, setEmail] = useState(contact.email ?? "");
   const [busy, setBusy] = useState(false);
@@ -215,6 +223,7 @@ function PersonHere(
     if (name.trim() !== (contact.name ?? "")) body.fullName = name.trim();
     if (phone.trim()) body.phone = phone.trim();
     if (email.trim() !== (contact.email ?? "")) body.email = email.trim();
+    if (party !== (contact.party ?? "current_tenant")) body.party = party;
     const res = await fetch(`/api/contacts/${contact.id}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -255,12 +264,22 @@ function PersonHere(
       </p>
       <label>Name
         <input value={name} onChange={(e) => setName(e.target.value)}
-               placeholder="The tenant's name" />
+               placeholder="Their name" />
       </label>
       <label>Mobile
         <input value={phone} inputMode="tel" autoFocus={!real}
                onChange={(e) => setPhone(e.target.value)}
                placeholder="(910) 555-0114" />
+      </label>
+      <label>What they are
+        <select value={party} onChange={(e) => setParty(e.target.value)}>
+          <option value="current_tenant">Tenant</option>
+          <option value="prospect">Looking to rent</option>
+          <option value="vendor">Trade or vendor</option>
+          <option value="tech">Our crew</option>
+          <option value="owner">Owner</option>
+          <option value="other">Someone else</option>
+        </select>
       </label>
       <label>Email
         <input value={email} inputMode="email" type="email"
