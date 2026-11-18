@@ -3,6 +3,7 @@ import { supabaseServer, requireStaff } from "@/lib/supabase-server";
 import { threadLabel, prettyPhone, timeAgo, initials } from "@/lib/format";
 import Avatar from "@/components/Avatar";
 import { CATEGORIES, CAT_TAB, catLabel, propertyOf, type Category } from "@/lib/category";
+import { jobStatus, jobTone, urgencyLabel } from "@/lib/jobs";
 import Search from "@/components/Search";
 import QueueSelects from "@/components/QueueSelects";
 
@@ -61,7 +62,11 @@ export default async function ConversationList(
     .select("last_read_at, thread:thread_id(id, title, last_at, dm_members(staff:staff_id(id, full_name)), dm_messages(body, created_at, author_id))")
     .eq("staff_id", staff!.id);
 
-  const [{ data: rows }, { data: counts }, { count: unclaimed }, { count: closing }, { data: dms }] =
+  /* AT THE END, always. A query inserted into the middle of this hands
+     every one after it the wrong rows, and it compiles, because the shapes
+     are compatible often enough. Already cost a round on the dashboard. */
+  const [{ data: rows }, { data: counts }, { count: unclaimed }, { count: closing }, { data: dms },
+         { data: tickets }] =
     await Promise.all([
       query,
       supabase.from("open_category_counts").select("category, total, unclaimed"),
@@ -70,7 +75,29 @@ export default async function ConversationList(
       supabase.from("conversations").select("id", { count: "exact", head: true })
         .eq("status", "open").gt("closure_prompts", 0),
       staffThreads,
+      /* WHICH THREADS ARE A JOB, not merely which are ABOUT maintenance.
+         "The user interface discerning between communication and
+         maintenance tickets is not easy to tell the difference between."
+         Both were a small uppercase pill in a soft colour; the only thing
+         separating a broken boiler from a wrong number was the shade.
+         A ticket is a different KIND of row and now says so. */
+      supabase.from("work_orders")
+        .select("conversation_id, urgency, status")
+        .not("conversation_id", "is", null)
+        .not("status", "in", "(done,cancelled)"),
     ]);
+
+  /** The worst open job on each thread. Worst, not newest: a thread with an
+   *  emergency and a nicety on it is an emergency. */
+  const ticketOn = new Map<string, { urgency: number | null; status: string }>();
+  for (const t of (tickets ?? []) as { conversation_id: string | null;
+                                       urgency: number | null; status: string }[]) {
+    if (!t.conversation_id) continue;
+    const had = ticketOn.get(t.conversation_id);
+    if (!had || (t.urgency ?? 3) < (had.urgency ?? 3)) {
+      ticketOn.set(t.conversation_id, { urgency: t.urgency, status: t.status });
+    }
+  }
 
   const staffRows = (dms ?? []).map((row) => {
     const t = row.thread as unknown as {
@@ -266,6 +293,7 @@ export default async function ConversationList(
               const name = threadLabel(contact?.full_name, contact?.phone,
                 c.last_message_preview ?? c.subject);
               const unsure = c.category_confidence !== null && c.category_confidence < 0.75;
+              const ticket = ticketOn.get(String(c.id)) ?? null;
               const prop = propertyOf(c.units as never, contact?.units as never);
               return (
                 <li key={c.id}>
@@ -302,7 +330,29 @@ export default async function ConversationList(
                     <span className="rbody">
                       <span className="rtop">
                         <span className="rname">{name}</span>
-                        <span className={`badge cat-${c.category}`}>{catLabel(c.category)}</span>
+                        {/* ONE BADGE, IN THE SLOT THE CATEGORY BADGE HELD.
+                            The first attempt put three things here -- a
+                            TICKET badge, an urgency pill and a status pill
+                            -- into a row that was already full. `.rtop`
+                            wraps, and on the wrapped line the pills
+                            stretched into red blocks half the height of
+                            the row. It looked nothing like the markup
+                            reads, which is why it was rendered and looked
+                            at rather than reasoned about.
+
+                            So: one badge, in the same place, saying the
+                            one thing somebody scans for. Urgency is
+                            carried by the word and by the colour, and the
+                            job's status lives on the Jobs board where
+                            there is room for it. */}
+                        {ticket ? (
+                          <span className={`badge ticket${ticket.urgency === 1 ? " hot"
+                            : ticket.urgency === 2 ? " warm" : ""}`}>
+                            {urgencyLabel(ticket.urgency) ?? "Ticket"}
+                          </span>
+                        ) : (
+                          <span className={`badge cat-${c.category}`}>{catLabel(c.category)}</span>
+                        )}
                       {isUnread(c.id) && <span className="pill warn">new</span>}
                         {c.closure_prompts > 0 && (
                           <span className="pill warn">{c.closure_prompts}&times;</span>

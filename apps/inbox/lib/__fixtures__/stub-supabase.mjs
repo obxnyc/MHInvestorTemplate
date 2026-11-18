@@ -182,7 +182,22 @@ const TABLES = {
   clock_rules: [{ id: true, daily_cap: 10, break_after: 6, break_minutes: 30,
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
-  work_orders: [], inquiries: [],
+  /* THREE TICKETS AND A CONVERSATION THAT IS NOT ONE, which is the whole
+     question the list has to answer at a glance. With a job on every
+     thread, "a ticket says so" and "every row says so" look identical.
+
+     Three different states too -- an emergency, something under way, and
+     one nobody has picked up -- because a single state cannot show whether
+     the row reports the job's state or just the fact of it. */
+  work_orders: [
+    { id: "w1", conversation_id: "cv1", unit_id: "u1", summary: "Pipes overflowing",
+      urgency: 1, status: "new" },
+    { id: "w2", conversation_id: "cv2", unit_id: "u2", summary: "Sink leaking",
+      urgency: 3, status: "in_progress" },
+    { id: "w3", conversation_id: "cv3", unit_id: "u1", summary: "Fridge is going out",
+      urgency: 2, status: "needs_parts" },
+  ],
+  inquiries: [],
 
   /* Nobody has signed: the papers panel has to be right before anyone
      has, which is every account the first time. */
