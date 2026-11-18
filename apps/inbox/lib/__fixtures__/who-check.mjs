@@ -31,6 +31,8 @@ const app = join(lib, "..", "app");
 const comp = join(lib, "..", "components");
 
 const card = readFileSync(join(comp, "PlaceNeeded.tsx"), "utf8");
+const editor = readFileSync(join(comp, "ContactEditor.tsx"), "utf8");
+const sendTo = readFileSync(join(comp, "SendTo.tsx"), "utf8");
 const pane = readFileSync(join(comp, "ThreadPane.tsx"), "utf8");
 const route = readFileSync(join(app, "api/contacts/[id]/route.ts"), "utf8");
 const running = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
@@ -74,6 +76,46 @@ t("and nothing is offered that the server would refuse", () => {
 }, "an option that saves and then fails is worse than one that is absent -- "
  + "the same shape as the radius table listing kinds the codebase does not "
  + "have. Both lists are READ, neither is trusted");
+
+/* THE MAIN PATH IS THE HEADER, not the card. "After I text my plumber
+   Doug, I should be able to save his contact and then also add him as a
+   vendor." That is ContactEditor, reached from the name in the thread
+   header -- which is the one place that is there on EVERY thread,
+   including one the office started. It has its own list and it has to
+   agree with the server too. */
+const inEditor = (() => {
+  const m = /const PARTIES: \[string, string\]\[\] = \[([\s\S]*?)\];/.exec(editor);
+  return m ? [...m[1].matchAll(/\["([a-z_]+)"/g)].map((x) => x[1]) : [];
+})();
+
+t("the contact editor offers every type too", () => {
+  const missing = accepted.filter((p) => !inEditor.includes(p));
+  if (missing.length) console.log(`        not offered: ${missing.join(", ")}`);
+  return inEditor.length >= 5 && missing.length === 0;
+}, "this is the path somebody actually takes to make Doug a vendor, and it "
+ + "is reachable from every thread rather than only from an unplaced one");
+
+t("and nothing it offers would be refused", () =>
+  inEditor.every((p) => accepted.includes(p)) && inEditor.length > 0);
+
+/* ----------------------------------------- raising a ticket is not hidden */
+
+t("Create ticket is its own button", () =>
+  /Create ticket/.test(running(sendTo)),
+  "THE SECOND TIME THIS FEATURE HAS BEEN UNREACHABLE. First behind a "
+  + "three-dot menu on a message bubble; then behind a dropdown labelled "
+  + "\"Send to…\", which is not what somebody looking to raise a ticket "
+  + "reads");
+
+t("and it is not behind a menu", () =>
+  !/ovmenu|aria-expanded/.test(running(sendTo)),
+  "a button that has to be found twice is a button nobody finds");
+
+t("forwarding is still reachable", () =>
+  /setSheet\("forward"\)/.test(running(sendTo)));
+
+t("both still act on the same message", () =>
+  /messageId=\{messageId\}/.test(running(sendTo)));
 
 /* ------------------------------------------------------- and it is sent */
 

@@ -311,6 +311,20 @@ const TABLES = {
       monthly_rent: 1150, available_on: "2026-12-01",
       properties: { id: "p1", name: "The Retreat",
                     address: "3100 Lady Viola Dr, Fayetteville NC" } },
+    /* THE RETREAT HAS MORE THAN ONE LOT, which is the only way a park
+       picking OPENS rather than files. With one lot each, "a park opens to
+       its lots" and "a park files against its only unit" are the same
+       answer and the picker cannot be told apart from the broken one. */
+    { id: "u1b", label: "3126", property_id: "p1",
+      listing: null, is_vacant: false, bedrooms: 3, bathrooms: 2,
+      monthly_rent: 1100, available_on: null,
+      properties: { id: "p1", name: "The Retreat",
+                    address: "3100 Lady Viola Dr, Fayetteville NC" } },
+    { id: "u1c", label: "3128", property_id: "p1",
+      listing: null, is_vacant: false, bedrooms: 2, bathrooms: 1,
+      monthly_rent: 950, available_on: null,
+      properties: { id: "p1", name: "The Retreat",
+                    address: "3100 Lady Viola Dr, Fayetteville NC" } },
     { id: "u2", label: "17", property_id: "p2",
       listing: "for_rent", is_vacant: false, bedrooms: 2, bathrooms: 1,
       monthly_rent: 875, available_on: null,
