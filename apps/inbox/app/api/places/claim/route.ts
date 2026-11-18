@@ -3,6 +3,7 @@ import { requireStaff, supabaseServer } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { places, findPlace } from "@/lib/places";
 import { placeKey, readHint } from "@/lib/alias";
+import { kindOf } from "@/lib/property";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,21 +41,102 @@ export async function GET(req: Request) {
     db.from("units").select("id, property_id, label"),
   ]);
 
+  const pick = (list: ReturnType<typeof places>) => list.map((p) => ({
+    id: p.id, kind: p.kind, label: p.label, where: p.where,
+    propertyId: p.propertyId, unitId: p.unitId,
+  }));
+
   const said = readHint(hint);
   const all = places((props ?? []) as never, (units ?? []) as never);
 
-  /* NOTHING TO MATCH ON means every property, in order, so the house can
-     be picked rather than invented. Narrowed as soon as anybody types. */
+  /* NOTHING TO MATCH ON.
+   *
+   * This used to answer with `all.slice(0, 40)` -- forty fat cards, and
+   * because lots sort before properties they were forty lots of ONE park.
+   * "Why is it showing me all these properties up, that is a terrible user
+   * interface." It was: overwhelming and unrepresentative at once.
+   *
+   * TYPING IS THE PATH. "Most people probably won't be pointing and
+   * clicking, they will type in info." So nothing is listed until
+   * something is typed, and what is offered instead is a way IN: the kinds
+   * of place there are, with their counts, so somebody who does want to
+   * point and click goes park -> lot instead of scrolling four hundred
+   * rows.
+   *
+   * Three states, and the narrowest one that applies wins:
+   *   typed       search everything, a few results
+   *   property=   the lots inside that park
+   *   group=      the properties of that kind
+   *   (nothing)   the kinds, counted
+   */
   if (!hint) {
-    const shown = typed ? findPlace(typed, all, 12) : all.slice(0, 40);
+    if (typed) {
+      return NextResponse.json({
+        said: null, browsing: true, total: all.length,
+        suggestions: pick(findPlace(typed, all, 10)),
+      });
+    }
+
+    const within = String(url.searchParams.get("property") ?? "").trim();
+    if (within) {
+      return NextResponse.json({
+        said: null, browsing: true, within,
+        suggestions: pick(all.filter((p) => p.propertyId === within && p.unitId)),
+      });
+    }
+
+    /* How many lots each property has, so a single home can be filed with
+       one press rather than opened to reveal itself. */
+    const lots = new Map<string, number>();
+    for (const u of units ?? []) {
+      lots.set(u.property_id, (lots.get(u.property_id) ?? 0) + 1);
+    }
+
+    const group = String(url.searchParams.get("group") ?? "").trim();
+    if (group) {
+      const mine = (props ?? []).filter((p) => (p.kind ?? "sfh") === group);
+      return NextResponse.json({
+        said: null, browsing: true, group,
+        suggestions: mine
+          .map((p) => {
+            const n = lots.get(p.id) ?? 0;
+            const only = n === 1
+              ? (units ?? []).find((u) => u.property_id === p.id) : null;
+            return {
+              id: `p:${p.id}`,
+              kind: "property",
+              label: p.name,
+              where: p.address ?? "",
+              propertyId: p.id,
+              /* One unit means the property IS the place, so picking it
+                 files against the unit and the work order has an address.
+                 More than one and it opens instead. */
+              unitId: only?.id ?? null,
+              opens: n > 1 ? n : 0,
+            };
+          })
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      });
+    }
+
+    /* THE KINDS THAT ARE ACTUALLY ON THE BOOKS, read off the properties
+       and labelled from `property.ts`. Not a list written here: this
+       codebase has already shipped a table naming two kinds that did not
+       exist and missing three that did. */
+    const counted = new Map<string, number>();
+    for (const p of props ?? []) {
+      const k = p.kind ?? "sfh";
+      counted.set(k, (counted.get(k) ?? 0) + 1);
+    }
+
     return NextResponse.json({
       said: null,
       browsing: true,
       total: all.length,
-      suggestions: shown.map((p) => ({
-        id: p.id, kind: p.kind, label: p.label, where: p.where,
-        propertyId: p.propertyId, unitId: p.unitId,
-      })),
+      kinds: [...counted.entries()]
+        .map(([kind, n]) => ({ kind, label: kindOf(kind).label, properties: n }))
+        .sort((a, b) => b.properties - a.properties),
+      suggestions: [],
     });
   }
 

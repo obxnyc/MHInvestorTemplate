@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 type Suggestion = {
   id: string; kind: string; label: string; where: string;
   propertyId: string; unitId: string | null;
+  /** How many lots are inside, when picking it opens rather than files. */
+  opens?: number;
 };
+/** The kinds of place actually on the books, counted. The way in for
+ *  somebody who would rather point than type. */
+type KindCount = { kind: string; label: string; properties: number };
 type Said = { property: string | null; lot: string | null; address: string | null };
 
 /**
@@ -47,6 +52,11 @@ export default function PlaceNeeded(
   /** Typed into the box when there was no hint to match on. */
   const [look, setLook] = useState("");
   const [browsing, setBrowsing] = useState(false);
+  const [kinds, setKinds] = useState<KindCount[]>([]);
+  /** Which kind is being looked through, and which park is open inside it.
+   *  Empty means the top, where nothing is listed at all. */
+  const [group, setGroup] = useState("");
+  const [within, setWithin] = useState({ id: "", name: "" });
 
   useEffect(() => {
     let alive = true;
@@ -54,11 +64,14 @@ export default function PlaceNeeded(
        goes straight to the list of properties rather than pretending to
        have matched something. */
     fetch(`/api/places/claim?hint=${encodeURIComponent(hint ?? "")}`
-          + `&q=${encodeURIComponent(look)}`)
+          + `&q=${encodeURIComponent(look)}`
+          + `&group=${encodeURIComponent(look ? "" : group)}`
+          + `&property=${encodeURIComponent(look ? "" : within.id)}`)
       .then((r) => r.json())
       .then((d) => {
         if (!alive) return;
         setSuggestions(d.suggestions ?? []);
+        setKinds(d.kinds ?? []);
         setSaid(d.said ?? null);
         setBrowsing(Boolean(d.browsing));
         /* The boxes start filled in from what the request itself said. The
@@ -71,7 +84,7 @@ export default function PlaceNeeded(
       })
       .catch(() => { if (alive) setSuggestions([]); });
     return () => { alive = false; };
-  }, [hint, look]);
+  }, [hint, look, group, within.id]);
 
   async function claim(payload: Record<string, unknown>) {
     setBusy(true); setProblem(null);
@@ -115,9 +128,40 @@ export default function PlaceNeeded(
           already on the books is how a second copy of it gets made. */}
       {browsing && (
         <label className="unplaced-find">Which property is it?
-          <input value={look} onChange={(e) => setLook(e.target.value)}
+          {/* Focused, because typing is what most people will do and the
+              list below is the fallback, not the other way round. */}
+          <input value={look} onChange={(e) => setLook(e.target.value)} autoFocus
                  placeholder="Street, park name, or lot number" />
         </label>
+      )}
+
+      {/* WHERE YOU ARE, when you have gone into a kind or a park. Browsing
+          four hundred places only works if you can get back out. */}
+      {browsing && !look && (group || within.id) && (
+        <p className="unplaced-why">
+          <button type="button" className="btn" disabled={busy}
+                  onClick={() => (within.id
+                    ? setWithin({ id: "", name: "" })
+                    : setGroup(""))}>
+            ← Back
+          </button>
+          {within.name ? <> · {within.name}</> : null}
+        </p>
+      )}
+
+      {/* THE WAY IN FOR SOMEBODY WHO WOULD RATHER POINT THAN TYPE.
+          Only at the top, and only until something is typed -- typing is
+          the path most people take and it searches everything at once. */}
+      {browsing && !look && !group && !within.id && kinds.length > 0 && (
+        <div className="unplaced-picks">
+          {kinds.map((k) => (
+            <button key={k.kind} type="button" className="unplaced-pick"
+                    disabled={busy} onClick={() => setGroup(k.kind)}>
+              <b>{k.label}</b>
+              <span>{k.properties} {k.properties === 1 ? "place" : "places"}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       {suggestions === null ? (
@@ -126,21 +170,32 @@ export default function PlaceNeeded(
         <>
           <p className="unplaced-why">
             {browsing
-              ? (look ? "Matching these:" : "Pick it from here:")
+              ? (look ? "Matching these:" : within.id ? "Which lot?" : "Which one?")
               : "Is it one of these?"}
           </p>
           <div className="unplaced-picks">
             {suggestions.map((s) => (
               <button key={s.id} className="unplaced-pick" disabled={busy}
-                      onClick={() => claim(
-                        s.unitId ? { unitId: s.unitId } : { propertyId: s.propertyId })}>
+                      onClick={() => {
+                        /* A park opens; everything else files. A property
+                           with lots inside has no single answer, and filing
+                           against the park would put a work order on the
+                           common ground rather than on somebody's home. */
+                        if (s.opens) {
+                          setWithin({ id: s.propertyId, name: s.label });
+                          return;
+                        }
+                        claim(s.unitId ? { unitId: s.unitId } : { propertyId: s.propertyId });
+                      }}>
                 <b>{s.label}</b>
-                {s.where ? <span>{s.where}</span> : null}
+                {s.opens
+                  ? <span>{s.opens} lots →</span>
+                  : s.where ? <span>{s.where}</span> : null}
               </button>
             ))}
           </div>
         </>
-      ) : (
+      ) : browsing && !look && !group && !within.id ? null : (
         <p className="unplaced-why">
           Nothing here looks like it. It needs to be added.
         </p>
