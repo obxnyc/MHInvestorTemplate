@@ -294,6 +294,22 @@ const LOOK = () => {
       small: [...new Set(small)], over: [...new Set(over)],
       faint: [...new Set(faint)],
       sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
+      /* DID THE STYLESHEET ARRIVE AT ALL?
+       *
+       * A page with no CSS is all browser defaults: every link is a 17px-tall
+       * line of text, every button is unpadded, nothing has a ground. So every
+       * rule above fires on nearly every element, and the run reports three
+       * hundred tap-target findings about a page it should have refused to
+       * measure. That is what it did -- a stale `next start` was serving a
+       * build whose CSS chunk had been overwritten by a later one, and the
+       * output read as the entire application being broken on phones.
+       *
+       * `--page` is defined on :root by globals.css and by nothing else, so
+       * its presence is the question "is this the app's stylesheet, applied".
+       * Asked of the cascade rather than of the <link>, because a stylesheet
+       * that 404s is still linked. */
+      styled: Boolean(getComputedStyle(document.documentElement)
+        .getPropertyValue("--page").trim()),
       // A page that needs pinching is a page somebody gives up on.
       zoomable: !/user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1/.test(
         document.querySelector('meta[name="viewport"]')?.content ?? ""),
@@ -396,6 +412,19 @@ for (const path of PAGES) {
 
     const said = await p.evaluate(LOOK);
 
+    /* A PAGE WITH NO STYLESHEET IS NOT A PAGE TO MEASURE. Say that once and
+       move on, rather than deriving a hundred findings from browser defaults.
+       The cause is nearly always a `next start` left running from an earlier
+       build whose chunks have since been replaced. */
+    if (!said.styled) {
+      wrong.push(`${scheme} ${path} at ${width}x${height}: loaded WITHOUT the`
+        + ` stylesheet -- nothing below was measured. A server left running`
+        + ` serves the build it started with: kill it by pid, rebuild, start`
+        + ` it again.`);
+      await p.close();
+      continue;
+    }
+
     const tag = `${path.replace(/\//g, "_") || "_root"}-${scheme}-${width}x${height}`;
     await p.screenshot({ path: `/tmp/phone/${tag}.png`, fullPage: true });
     await probeOpen(p, `${scheme} ${path} at ${width}x${height}`, wrong);
@@ -439,6 +468,18 @@ for (const [who, path] of stubUp ? SIGNED_IN : []) {
     }
     await p.waitForTimeout(250);
     const said = await p.evaluate(LOOK);
+
+    /* A PAGE WITH NO STYLESHEET IS NOT A PAGE TO MEASURE. Say that once and
+       move on, rather than deriving a hundred findings from browser defaults.
+       The cause is nearly always a `next start` left running from an earlier
+       build whose chunks have since been replaced. */
+    if (!said.styled) {
+      wrong.push(`${at}: loaded WITHOUT the stylesheet -- nothing below was`
+        + ` measured. A server left running serves the build it started with:`
+        + ` kill it by pid, rebuild, start it again.`);
+      await ctx.close();
+      continue;
+    }
     await p.screenshot({ path: `/tmp/phone/${path.replace(/\//g, "_") || "_root"}`
       + `-${who}-${scheme}-${width}x${height}.png`, fullPage: true });
     await probeOpen(p, at, wrong);

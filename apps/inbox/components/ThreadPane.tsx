@@ -21,7 +21,7 @@ import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 import { continues } from "@/lib/runs";
 import PlaceNeeded from "@/components/PlaceNeeded";
-import NotesPanel, { type Note } from "@/components/NotesPanel";
+import NotesRail, { type Note } from "@/components/NotesRail";
 import Attachment from "@/components/Attachment";
 import IntakeCard from "@/components/IntakeCard";
 import NewJob from "@/components/NewJob";
@@ -202,10 +202,16 @@ export default function ThreadPane(
   const jobFrom = jobAnchor(data.messages as unknown as ThreadLine[]);
   const jobText = (jobFrom?.body as string | undefined) ?? "";
 
-  const timeline = [
-    ...data.messages.map((m) => ({ kind: "message" as const, at: m.created_at as string, m })),
-    ...data.notes.map((n) => ({ kind: "note" as const, at: n.created_at as string, n })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+  /* MESSAGES ONLY.
+     Notes used to be interleaved here as well as gathered, and the comment
+     defending that said context is most of what a note means -- which is true
+     and was not what was asked. "Not having notes as a running list in the
+     messages portion but something easily referenceable." A note's time and
+     its author are on it in the rail, so the chronology is not lost; what goes
+     is a second kind of thing in the scroll you are trying to read. */
+  const timeline = data.messages
+    .map((m) => ({ kind: "message" as const, at: m.created_at as string, m }))
+    .sort((a, b) => a.at.localeCompare(b.at));
 
   const readersOf = (at: string) =>
     data.reads.filter((r) => r.staffId !== data.me && r.at >= at);
@@ -236,11 +242,9 @@ export default function ThreadPane(
             <span className="dim">via {convo.source}</span>
           </span>
         </span>
-        {/* Gathered as well as inline. A note lives in the thread where it
-            was written -- context is most of what it means -- but a thread is
-            a scroll, and the line that matters is four hundred messages up by
-            the time it does. */}
-        <NotesPanel notes={(data.notes ?? []) as unknown as Note[]} media={data.media} />
+        {/* The notes are no longer here. They are a column beside the
+            messages, because a dropdown off this header cannot be open at the
+            same time as the box you type in, which is the entire ask. */}
         {/* SENDING IT TO SOMEBODY WHO CAN FIX IT.
             This existed and was unreachable: it lived behind a three-dot
             menu on an individual message bubble, which is not where
@@ -341,15 +345,21 @@ export default function ThreadPane(
         </div>
       )}
 
+      {/* THE MESSAGES AND THE NOTES, SIDE BY SIDE, WITH THE COMPOSER UNDER
+          BOTH. The composer is outside this row deliberately: that is what
+          puts a note and a half-written reply on screen at the same time.
+          On a phone the row becomes a stack, so the notes band lands between
+          the messages and the box -- which is the same answer in the only
+          shape a phone has room for. */}
+      <div className="threadbody">
       <div className="msgs">
         {timeline.map((item, i) => {
           const day = dayLabel(item.at);
           const sep = day !== lastDay ? ((lastDay = day), day) : null;
 
-          /** Who is speaking, for run detection. A note breaks a run: it is
-           *  a different kind of thing said by a different kind of voice. */
+          /** Who is speaking, for run detection. */
           const voice = (t: typeof item | undefined) => {
-            if (!t || t.kind !== "message") return null;
+            if (!t) return null;
             const msg = t.m as { direction: string; staff: { full_name: string } | null };
             return {
               who: msg.direction === "inbound"
@@ -361,25 +371,6 @@ export default function ThreadPane(
           const run = Boolean(here && continues(voice(timeline[i - 1]), here, Boolean(sep)));
           const nextOne = voice(timeline[i + 1]);
           const last = !here || !nextOne || !continues(here, nextOne, false);
-
-          if (item.kind === "note") {
-            const n = item.n as {
-              id: string; body: string; media_paths?: string[] | null;
-              staff: { full_name: string } | null;
-            };
-            return (
-              <div key={`n${n.id}`} className="mrow">
-                {sep && <div className="daysep">{sep}</div>}
-                <div className="note">
-                  <span className="lab">{n.staff?.full_name} · only your team sees this</span>
-                  {n.body && <p>{n.body}</p>}
-                  {(n.media_paths ?? []).map((path) => (
-                    <Attachment key={path} path={path} src={data.media[path]} />
-                  ))}
-                </div>
-              </div>
-            );
-          }
 
           const m = item.m as {
             id: string; direction: string; body: string; body_en: string | null;
@@ -430,6 +421,9 @@ export default function ThreadPane(
             </div>
           );
         })}
+      </div>
+
+        <NotesRail notes={(data.notes ?? []) as unknown as Note[]} media={data.media} />
       </div>
 
       {naming && contact && (

@@ -2059,3 +2059,73 @@ Leads cannot read `crew_setup`, so "is this my man" is `leads_crew()`, and
 the screen's list is `my_crew()`; both security definer, both narrow.
 `started_by`/`ended_by` are deliberately not foreign keys: a third link from
 shifts to staff would make every unnamed staff embed on shifts ambiguous.
+
+### A thing you have to hold open is not a thing you can refer to
+
+"Didn't we talk about not having notes as a running list in the messages
+portion but something easily referenceable? It should be in the right hand
+pane ... you should be able to reference the notes easily while typing back
+to the tenant or vendor." He asked twice.
+
+Everything about the notes was already right: all there, newest first, the
+right author on each. The fault was geometry. They lived in a dropdown off
+the thread header, which covered the thread, shut when anything else was
+clicked, and **could not be open at the same time as the box you type in** --
+which is the whole of what he asked for. Same family as the single-wide you
+cannot grab: present, correct, and unusable.
+
+So `NotesRail` is a column beside the messages with the composer under BOTH,
+and that last part is the entire mechanism. On a phone there is no beside --
+390px cannot carry two columns, and a separate screen is worse than the
+dropdown because it takes away the message you are answering -- so the same
+markup, in DOM order after the messages and before the composer, collapses to
+one band. Two layouts, one component, no second implementation to rot.
+
+Notes came OUT of the timeline. The comment defending them being inline said
+context is most of what a note means, which is true and was not the question.
+
+`notes-pane-check.mjs` asks it in a browser, because two rectangles is not a
+thing a type checker or a data test can see. Every check was broken in turn.
+**Three of the first faults tried were no-ops**, and they are worth more than
+the checks:
+
+- Removing the band's `max-height`, and removing the row's height
+  constraint, do NOT push the composer off a phone. `.threadbody` is a flex
+  column whose `.msgs` is `flex:1 1 0`, so the messages give way and the
+  composer cannot leave the column. Anyone testing that check against those
+  faults concludes it is asleep when it is not.
+- What that check is really for is the rail **leaving the flow** --
+  `position:absolute`, which is the old `.notesheet` coming back. That is
+  also the realistic regression: the thing this change removes is exactly
+  what somebody would re-add.
+- `flex:0 0 17rem` does not push a 390px page sideways, because in a column
+  that basis is a height. It takes `min-width:30rem`.
+
+And the fixture was wrong before it was right. `.split` with one child puts
+the thread in the column sized for the LIST -- 432px, messages crushed to one
+word a line. Twelve checks passed on a shape nobody will ever see. **A rail is
+exactly the kind of thing that is fine in a pane of one width and ruinous in
+another**, so the fixture now carries the list column it needs to be real.
+
+### Three hundred findings about a page that had no stylesheet
+
+`phone-check.mjs` reported every control on every screen as too small to tap,
+in both themes, at all three sizes. It read as the entire application being
+broken on phones. Nothing was broken: a `next start` from an earlier build was
+still holding port 3100 and handing out a CSS chunk a later build had
+replaced. **An unstyled page is all browser defaults** -- every link a 17px
+line of text, nothing padded -- so every rule fired on nearly every element.
+
+This is the already-written-down rule with a new consequence: a server left
+running serves the build it started with, and `pkill -f "next start"` matches
+the shell running it, so kill by pid. What is new is that the harness had no
+way to say so. It now asks whether `--page` resolves on `:root` -- defined by
+`globals.css` and by nothing else, asked of the cascade rather than of the
+`<link>`, because a stylesheet that 404s is still linked -- and on a page
+without it says that, once, and measures nothing. Confirmed by pointing the
+harness at a server serving valid HTML with no stylesheet: 144 says-so lines
+and zero derived findings, where before there were hundreds of wrong ones.
+
+**Worse than no harness, because the real finding is in that list too** --
+there were four, on `/rentmanager` and `/setup` at 320px, invisible under the
+noise.
