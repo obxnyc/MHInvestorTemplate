@@ -6,6 +6,7 @@ import Composer from "./Composer";
 import AskThese from "./AskThese";
 import ClaimPill from "./ClaimPill";
 import CloseButton from "./CloseButton";
+import PrivateButton from "./PrivateButton";
 import SendTo from "./SendTo";
 import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
@@ -241,6 +242,7 @@ export default function ThreadPane(
         <ClaimPill conversationId={convo.id}
                    holderName={convo.staff?.full_name ?? null}
                    isMine={convo.assigned_to === data.me} />
+        <PrivateButton conversationId={convo.id} category={convo.category} />
         <CloseButton conversationId={convo.id} isClosed={convo.status === "closed"} />
       </div>
 

@@ -30,7 +30,7 @@ export default async function ConversationList(
     // One string literal, not a concatenation: supabase-js infers the row type
     // from the literal, and anything it cannot read collapses the result to an
     // error type.
-    .select("id, category, source, status, assigned_to, closure_prompts, category_confidence, last_message_at, last_message_preview, subject, units(label, properties(name, color)), contacts(id, phone, full_name, party, language, unit_id, units(label, properties(name, color))), staff:assigned_to(full_name)")
+    .select("id, category, source, status, assigned_to, closure_prompts, category_confidence, last_message_at, last_message_preview, subject, private_to, units(label, properties(name, color)), contacts(id, phone, full_name, party, language, unit_id, units(label, properties(name, color))), staff:assigned_to(full_name)")
     .order("last_message_at", { ascending: false })
     .limit(200);
 
@@ -304,6 +304,11 @@ export default async function ConversationList(
                         <span className="rname">{name}</span>
                         <span className={`badge cat-${c.category}`}>{catLabel(c.category)}</span>
                       {isUnread(c.id) && <span className="pill warn">new</span>}
+                      {/* Only the people it is private to ever see this row,
+                          so the word is for them: a reminder that the others
+                          in the office cannot. */}
+                      {Boolean((c as { private_to?: string[] | null }).private_to?.length)
+                        && <span className="pill gray">private</span>}
                         {c.closure_prompts > 0 && (
                           <span className="pill warn">{c.closure_prompts}&times;</span>
                         )}

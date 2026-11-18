@@ -2026,3 +2026,53 @@ lookup will try each again when it is opened.
 
 1140, 1142 and 1148 Northside are three county parcels that share their
 edges vertex for vertex: no gap, no overlap.
+
+### Private conversations, the record, watched words, and who sees what
+
+The owner, 18 November 2026. All of it in the database first (072, 073),
+because a dozen routes write messages and a rule kept in routes is the rule
+the next route forgets; `record-check.mjs` runs both migrations against a
+real Postgres as three people, and `privacy-check.mjs` holds the app's half.
+
+**Private** (`conversations.private_to`): a restrictive row policy, so it
+narrows every existing way of seeing a conversation -- its messages, notes,
+calls and voicemails go with it. Anyone may make one private to themselves
+and named people; whoever has `staff.reads_all_dms` (Cade) always sees it.
+It is for SIDE conversations -- Natashia and Hannah, or Natashia and her
+husband on the company line -- so they do not clutter Sam's inbox. **A
+maintenance conversation is never private** (073): refused if tried, and a
+private one re-filed as maintenance becomes shared again. Notifications go
+through `mayHear` in `pushToStaff`, because a push carries the first words
+of the message and is sent with the server's key, which skips row policies.
+
+**The record** (`message_record`): every text, note and team-chat message
+as written, every edit, every deletion -- by trigger, 391 rows backfilled.
+It cannot be updated, deleted or truncated by anybody, superuser included.
+Cade reads it at https://app.larabeehomesllc.com/record
+
+**Watched words** (`watch_words`, `watch_hits`): whole words, case ignored,
+every regex character escaped. A hit makes the database call
+`/api/watch/alert` with the reports key from Vault, and the route sends Cade
+an app notification, claimed first so it goes once. He chose app
+notification over text.
+
+**Who sees what** (`staff.hidden_areas`): on the person, not the role --
+Alex and Natashia are both Office and only Natashia has distributions, pay,
+trail and investors hidden. Refused in the proxy (pages and APIs), left out
+of the header, and refused in the rows by restrictive policies. Set on the
+Permissions tab of https://app.larabeehomesllc.com/people?tab=permissions --
+never in a migration, so a re-run cannot put back something since shown.
+
+**Addresses**: there is no Google key, so the address box and the aerial
+preview answer from NC OneMap's parcel points and Esri imagery. A property
+whose address matches no parcel is offered same-street parcels in the same
+town on its map ("Is it one of these?") -- Serenity's 101 Buena Vista Rd is
+the county's 218 Buena Vista Rd, still in the seller's name. Choosing one
+posts to `/api/properties/[id]/parcel-choice`; `/parcel` is the older
+parcel-number lookup and was very nearly written over by this one. **Check a
+file does not exist before writing a new one** -- this is the third time.
+
+**A server left running serves the build it started with**, again: every
+`next start` after the first one failed to bind and said nothing, so two
+rounds of screenshots and a "baseline" phone check were all the first
+build. Find it with `ps aux | grep next-server` and kill it by pid.

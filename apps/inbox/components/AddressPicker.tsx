@@ -51,7 +51,7 @@ export default function AddressPicker(
         // common case and used to come back as an empty dropdown and no
         // explanation -- indistinguishable from an address Google has never
         // heard of. It says so now, once, and typing it by hand still works.
-        setNote(data.error
+        setNote(data.error ?? data.hint
           ?? (data.configured === false
             ? "Address suggestions are switched off — no Google Maps key on"
               + " this server yet. Type the address in full and it saves fine."
@@ -101,7 +101,7 @@ export default function AddressPicker(
                             placeId: null, confirmed: false });
                }}
                onFocus={() => setOpen(list.length > 0)}
-               placeholder="Start typing — 118 Rosebud Ave, Elizabeth City" />
+               placeholder="Start typing — house number and street, e.g. 218 Buena Vista" />
         {looking && <span className="addrspin" aria-hidden="true">…</span>}
         {open && list.length > 0 && (
           <ul className="addrlist">

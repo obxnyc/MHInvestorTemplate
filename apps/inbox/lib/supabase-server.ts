@@ -33,7 +33,7 @@ export async function requireStaff() {
   // here is refused outright rather than quietly dropping them.
   const { data: staff } = await supabase
     .from("staff")
-    .select("id, full_name, role, forward_to, client_identity, active, created_at")
+    .select("id, full_name, role, forward_to, client_identity, active, created_at, hidden_areas, reads_all_dms")
     .eq("id", user.id).single();
   return staff ?? null;
 }

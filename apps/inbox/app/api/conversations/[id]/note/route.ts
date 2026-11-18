@@ -74,6 +74,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       body: text.slice(0, 140) || "sent an attachment",
       url: `/c/${id}`,
       tag: `note:${id}`,
+      // So a mention in a private conversation reaches only its people.
+      conversationId: id,
     });
   }
   return NextResponse.json({

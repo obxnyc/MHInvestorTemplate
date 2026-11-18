@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import AccountMenu from "./AccountMenu";
 import { isClockOnly, isDesk, type Role } from "@/lib/roles";
 import OmniSearch from "@/components/OmniSearch";
+import { hiddenHref } from "@/lib/areas";
 
 
 /**
@@ -20,7 +21,13 @@ import OmniSearch from "@/components/OmniSearch";
  * the same bar is where Boats, Slips or Properties go when there are any.
  */
 export default function AppHeader(
-  { name, role }: { name: string; role: Role },
+  { name, role, hidden = [], readsAll = false }: {
+    name: string; role: Role;
+    /** Areas this person is not shown (staff.hidden_areas). */
+    hidden?: string[];
+    /** The one person who reads everything -- the owner -- gets the record. */
+    readsAll?: boolean;
+  },
 ) {
   const path = usePathname();
   const nav_ = useRef<HTMLElement>(null);
@@ -32,7 +39,7 @@ export default function AppHeader(
      sit under it: Distributions under Investors, and the crew's three screens
      -- the clock, the timesheets and Friday pay -- under Crew. The heading
      itself still goes somewhere, to the first page under it. */
-  const nav: Item[] = isClockOnly(role)
+  const all: Item[] = isClockOnly(role)
     ? [{ href: "/clock", label: "On the clock" }]
     : [
         { href: "/home", label: "Home" },
@@ -50,8 +57,19 @@ export default function AppHeader(
           ...(isDesk(role) ? [{ href: "/pay", label: "Friday pay" }] : []),
           ...(isDesk(role) ? [{ href: "/crew", label: "Crews & texts" }] : []),
         ] },
+        // The record: every message as it was written, and the watch-list.
+        // Only for whoever reads everything; the page and its API refuse
+        // anybody else whatever this says.
+        ...(readsAll ? [{ href: "/record", label: "Record" }] : []),
         { href: "/settings", label: "Settings" },
       ];
+  // What this person is not shown is not offered either. A heading whose
+  // whole menu is hidden goes with it.
+  const nav: Item[] = all
+    .map((i) => ({ ...i, under: i.under?.filter((u) => !hiddenHref(u.href, hidden)) }))
+    .filter((i) => !hiddenHref(i.href, hidden) || (i.under?.length ?? 0) > 0)
+    .map((i) => (hiddenHref(i.href, hidden) && i.under?.length ? { ...i, href: i.under[0].href } : i))
+    .map((i) => (i.under && !i.under.length ? { href: i.href, label: i.label } : i));
 
   // If the nav is scrolled sideways, the page you are on can be off the end
   // of it -- and a nav that does not show where you are is worse than one you
