@@ -7,6 +7,7 @@ import AskThese from "./AskThese";
 import ClaimPill from "./ClaimPill";
 import CloseButton from "./CloseButton";
 import SendTo from "./SendTo";
+import { jobAnchor, type ThreadLine } from "@/lib/jobs";
 import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
 import CategoryPicker from "./CategoryPicker";
@@ -184,6 +185,23 @@ export default function ThreadPane(
     .find((m) => m.direction === "inbound");
   const lastFromThem = (lastInbound?.body as string | undefined) ?? "";
 
+  /* WHAT A JOB IS RAISED FROM, WHEN NOTHING CAME IN.
+   *
+   * Preferring their last message is right and the reasoning above stands.
+   * Requiring one is not. The office fields a leak BY TELEPHONE, opens a
+   * thread with the plumber, and types the first message itself -- and on
+   * that thread there is no inbound anything, so "Send to…" never appeared
+   * and a job could not be raised from the screen the whole day is spent
+   * on. "I like having something on the messages tab because that's where
+   * I will be fielding calls and texts."
+   *
+   * Falling back to the last message in the thread is not a worse summary
+   * in that case, it is the only description that exists -- and it is
+   * somebody describing the fault in their own words, which is exactly
+   * what a vendor needs to read. */
+  const jobFrom = jobAnchor(data.messages as unknown as ThreadLine[]);
+  const jobText = (jobFrom?.body as string | undefined) ?? "";
+
   const timeline = [
     ...data.messages.map((m) => ({ kind: "message" as const, at: m.created_at as string, m })),
     ...data.notes.map((n) => ({ kind: "note" as const, at: n.created_at as string, n })),
@@ -234,9 +252,9 @@ export default function ThreadPane(
             work order is about. The last thing in a thread is as often
             our own reply, and a job summarised from "I'll get someone
             out Tuesday" tells the vendor nothing. */}
-        {lastInbound && (
-          <SendTo messageId={String(lastInbound.id)}
-                  preview={lastFromThem.slice(0, 180)} />
+        {jobFrom && (
+          <SendTo messageId={String(jobFrom.id)}
+                  preview={jobText.slice(0, 180)} />
         )}
         <ClaimPill conversationId={convo.id}
                    holderName={convo.staff?.full_name ?? null}

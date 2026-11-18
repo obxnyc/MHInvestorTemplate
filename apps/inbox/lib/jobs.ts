@@ -177,3 +177,36 @@ export function propertyHint(hint: string | null | undefined): string | null {
   const cut = head.replace(/\s*(?:#|\blot\b|\bunit\b|\bapt\b).*$/i, "").trim();
   return cut || null;
 }
+
+/* --------------------------------------------- what a job is raised from */
+
+/** Just enough of a message to choose between them. */
+export type ThreadLine = { id: string; direction: string; body?: string | null };
+
+/**
+ * Which message in a thread a work order should be summarised from.
+ *
+ * THEIR LAST ONE, WHERE THERE IS ONE. The last thing in a thread is as
+ * often our own reply, and a job summarised from "I'll get someone out
+ * Tuesday" tells the vendor nothing.
+ *
+ * BUT NOT ONLY WHEN THERE IS ONE, which is what this used to require. The
+ * office fields a leak BY TELEPHONE, opens a thread with the plumber and
+ * types the first message itself -- so there is no inbound anything, and
+ * "Send to…" never appeared on the one screen the whole day is spent on.
+ * "I like having something on the messages tab because that's where I will
+ * be fielding calls and texts."
+ *
+ * On that thread our own message is not a worse summary; it is the only
+ * description there is, and it is somebody writing down the fault in their
+ * own words, which is what a vendor needs to read.
+ *
+ * Null only for a thread with nothing in it at all, which is a thread
+ * nobody has started.
+ */
+export function jobAnchor(messages: ThreadLine[]): ThreadLine | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]!.direction === "inbound") return messages[i]!;
+  }
+  return messages.length ? messages[messages.length - 1]! : null;
+}
