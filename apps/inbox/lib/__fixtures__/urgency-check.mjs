@@ -30,7 +30,7 @@ const out = join(here, "jobs-urgency.gen.mjs");
 writeFileSync(out, ts.transpileModule(
   readFileSync(join(lib, "jobs.ts"), "utf8"),
   { compilerOptions: { target: 99, module: 99 } }).outputText);
-const { urgencyFromText } = await import(out);
+const { urgencyFromText, jobAnchor } = await import(out);
 
 const checks = [];
 const t = (name, fn, why) => checks.push([name, fn, why]);
@@ -111,6 +111,56 @@ t("most things are normal", () => {
   ];
   return sample.every((s) => urgencyFromText(s) === NORMAL);
 }, "ten real requests that are nobody's emergency");
+
+/* ------------------------------------- what a job is raised from
+ *
+ * "Send to…" used to appear only when the thread had a message FROM THEM.
+ * The office fields a leak by telephone, opens a thread with the plumber
+ * and types the first message itself -- no inbound anything, so a job
+ * could not be raised from the one screen the day is spent on.
+ */
+
+const line = (id, direction, body) => ({ id, direction, body });
+
+t("their message is what a job is summarised from", () =>
+  jobAnchor([line("a", "inbound", "water pouring out under the house")])?.id === "a");
+
+t("OUR REPLY DOES NOT BECOME THE SUMMARY", () =>
+  jobAnchor([
+    line("a", "inbound", "water pouring out under the house"),
+    line("b", "outbound", "I'll get someone out Tuesday"),
+  ])?.id === "a",
+  "THE CASE THAT TELLS THE TWO RULES APART. A fixture whose last message "
+  + "is always theirs cannot distinguish 'their last one' from 'the last "
+  + "one', and a job that reads \"I'll get someone out Tuesday\" tells a "
+  + "vendor nothing");
+
+t("their LATEST, not their first", () =>
+  jobAnchor([
+    line("a", "inbound", "there is a damp patch in the hall"),
+    line("b", "outbound", "can you send a photo"),
+    line("c", "inbound", "it is pouring through the ceiling now"),
+  ])?.id === "c",
+  "with one inbound message in every case, 'their last' and 'their first' "
+  + "are the same answer everywhere and the check proves nothing. A fault "
+  + "that walked the thread forwards instead of backwards passed, and this "
+  + "is the case where the two differ -- and differ by exactly the thing "
+  + "the vendor needs to know");
+
+t("a thread we started can still raise a job", () =>
+  jobAnchor([line("a", "outbound", "leak under the house at 128 Sunflower")])?.id === "a",
+  "THE ONE THE OWNER ASKED FOR. This used to be null, so no button "
+  + "appeared at all");
+
+t("and it takes the newest of ours, not the first", () =>
+  jobAnchor([
+    line("a", "outbound", "are you free this week"),
+    line("b", "outbound", "leak under the house at 128 Sunflower"),
+  ])?.id === "b");
+
+t("a thread with nothing in it raises nothing", () =>
+  jobAnchor([]) === null,
+  "a thread nobody has started has no fault written down anywhere");
 
 /* ---------------------------------------------------------------- report */
 
