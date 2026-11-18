@@ -64,6 +64,29 @@ export function places(props: RawProperty[], units: RawUnit[]): Place[] {
   const lots: Place[] = [];
   const parks: Place[] = [];
 
+  /* A HOUSE IS ONE PLACE, NOT TWO.
+   *
+   * The owner typed "128 sun" and was offered "128 Sunflower Ln" and
+   * "128 Sunflower Ln · 128 Sunflower Ln" -- the property and its only
+   * unit, which for a single-family home are the same house. "There are
+   * two addresses coming up when we only have one address."
+   *
+   * Nothing is duplicated in the database. A park genuinely is a place
+   * separate from its lots: somebody mows the common ground. A house is
+   * not: there is no part of 128 Sunflower Ln that is not the house.
+   *
+   * So a property that is not a park and has exactly one unit yields ONE
+   * entry -- and it is the LOT, because the lot carries the unit id and
+   * that is what files a work order against an address. Keeping the
+   * property instead would leave the chosen request saying "Address not
+   * set", which is the fault this whole card exists to end. */
+  const unitCount = new Map<string, number>();
+  for (const u of units) {
+    unitCount.set(u.property_id, (unitCount.get(u.property_id) ?? 0) + 1);
+  }
+  const wholeHouse = (p: RawProperty) =>
+    (p.kind ?? "") !== "mhp" && unitCount.get(p.id) === 1;
+
   for (const u of units) {
     const p = byId.get(u.property_id);
     if (!p) continue;                  // a lot whose park is gone is not a place
@@ -74,7 +97,10 @@ export function places(props: RawProperty[], units: RawUnit[]): Place[] {
       kind: "lot",
       propertyId: p.id,
       unitId: u.id,
-      label: `${p.name} · ${lot}`,
+      /* "128 Sunflower Ln", not "128 Sunflower Ln · 128 Sunflower Ln".
+         The unit of a single home is usually labelled with the address
+         again, and repeating it reads as two different places. */
+      label: wholeHouse(p) ? p.name : `${p.name} · ${lot}`,
       where: addr,
       terms: [
         lot, u.label,
@@ -89,6 +115,12 @@ export function places(props: RawProperty[], units: RawUnit[]): Place[] {
   }
 
   for (const p of props) {
+    /* The house is already on the list as its own lot. A second entry for
+       it is the duplicate the owner photographed. A park still gets one,
+       and so does a property with no units at all -- otherwise it would
+       have no entry anywhere and could not be chosen. */
+    if (wholeHouse(p)) continue;
+
     const addr = (p.address ?? "").trim();
     parks.push({
       id: `p:${p.id}`,

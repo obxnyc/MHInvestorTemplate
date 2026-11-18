@@ -1,146 +1,193 @@
-/** Turning "who submitted this" into a person.
+/**
+ * Saying who somebody is, and not being asked who a plumber's tenant is.
  *
- *  A maintenance request arrived naming nobody. `/ServiceManagerIssues` hands
- *  an issue over with no tenant, no phone and no lot -- the Property, Unit
- *  and Tenant embeds all 404 on this account, measured. What IS on the record
- *  is `CreateWebUserID`, the Tenant Web Access account that filled the form
- *  in, and the reader was throwing it away.
+ *     node lib/__fixtures__/who-check.mjs
  *
- *  WHICH ENDPOINT TURNS THAT KEY IS A HYPOTHESIS -- Express, no docs
- *  reachable, no credentials here. So this does not check that the guesses
- *  are right. It checks the thing that decides whether a wrong guess can be
- *  corrected in one round: that every attempt is reported, that a useless
- *  200 is not mistaken for success, and that an account which answers none of
- *  them is asked once rather than seven times per request.
+ * "When trying to save this number it doesn't allow me to save him as
+ * anything other than a tenant."
+ *
+ * He was texting his PLUMBER. The card is written for a tenant from top to
+ * bottom -- the name box says "The tenant's name" -- and the save sent no
+ * `party` at all, so the plumber stayed whatever he happened to be created
+ * as. `/api/contacts/[id]` has accepted all six types since it was written.
+ * Nothing ever offered them.
+ *
+ * AND THE CARD SHOULD NOT HAVE BEEN THERE. It rendered on ANY thread with
+ * no property, which is right for a request that arrived and wrong for a
+ * conversation the office opened: a red box across the screen reading
+ * "This request did not say which property it is for -- Rent Manager does
+ * not pass one on", over a list of every lot in every park, with no way to
+ * shut it. `Cancel` closes the add-a-property form inside the card.
+ * `Never mind` closes the contact form. Neither closes the card -- which I
+ * told him to press, wrongly, before reading what it did.
  */
-import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
-let js = ts.transpileModule(readFileSync(join(here, "..", "rm-issues.ts"), "utf8"), {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-// The module pulls in Supabase and the Rent Manager sign-in; the lookup is
-// pure HTTP against a session it is handed.
-js = js.replace(/^import[\s\S]*?;$/gm, "");
-// Both are already exported by the module; adding them again is a duplicate
-// export and the whole thing refuses to load.
-const mod = await import("data:text/javascript," + encodeURIComponent(js));
+const lib = join(here, "..");
+const app = join(lib, "..", "app");
+const comp = join(lib, "..", "components");
 
-const said = [];
-const t = (name, fn) => {
-  try { said.push([name, Boolean(fn())]); }
-  catch (e) { said.push([name, false, String(e.message ?? e).slice(0, 130)]); }
-};
-const ta = async (name, fn) => {
-  try { said.push([name, Boolean(await fn())]); }
-  catch (e) { said.push([name, false, String(e.message ?? e).slice(0, 130)]); }
-};
+const card = readFileSync(join(comp, "PlaceNeeded.tsx"), "utf8");
+const editor = readFileSync(join(comp, "ContactEditor.tsx"), "utf8");
+const sendTo = readFileSync(join(comp, "SendTo.tsx"), "utf8");
+const pane = readFileSync(join(comp, "ThreadPane.tsx"), "utf8");
+const route = readFileSync(join(app, "api/contacts/[id]/route.ts"), "utf8");
+const running = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
 
-/** A stand-in Rent Manager that answers only the paths it is told to. */
-const asked = [];
-let answers = {};
-const srv = createServer((req, res) => {
-  asked.push(req.url);
-  const hit = Object.entries(answers)
-    .find(([frag]) => req.url.includes(frag));
-  if (!hit) { res.writeHead(404); res.end("not found"); return; }
-  const [, body] = hit;
-  res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify(body));
+const checks = [];
+const t = (name, fn, why) => checks.push([name, fn, why]);
+
+/* ------------------------------------------- the two lists must agree */
+
+/** Every party the SERVER will accept, read out of its own declaration. */
+const accepted = (() => {
+  const m = /const PARTIES = new Set\(\[([\s\S]*?)\]\)/.exec(route);
+  return m ? [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : [];
+})();
+
+/** Every party the FORM offers, read out of its options. */
+const offered = (() => {
+  const m = /<select value=\{party\}[\s\S]*?<\/select>/.exec(card);
+  return m ? [...m[0].matchAll(/value="([a-z_]+)"/g)].map((x) => x[1]) : [];
+})();
+
+t("the server accepts more than one kind of person", () =>
+  accepted.length >= 5,
+  "read from the route's own declaration -- if this comes back empty the "
+  + "checks below are comparing nothing to nothing and would pass");
+
+t("the form offers something", () => offered.length >= 5,
+  "likewise: an empty list matches an empty list");
+
+t("EVERY type the server accepts is offered", () => {
+  const missing = accepted.filter((p) => !offered.includes(p));
+  if (missing.length) console.log(`        not offered: ${missing.join(", ")}`);
+  return missing.length === 0;
+}, "the whole complaint. Six were accepted, none were offered, and a "
+ + "plumber could only be saved as whatever he already was");
+
+t("and nothing is offered that the server would refuse", () => {
+  const bogus = offered.filter((p) => !accepted.includes(p));
+  if (bogus.length) console.log(`        would be refused: ${bogus.join(", ")}`);
+  return bogus.length === 0;
+}, "an option that saves and then fails is worse than one that is absent -- "
+ + "the same shape as the radius table listing kinds the codebase does not "
+ + "have. Both lists are READ, neither is trusted");
+
+/* THE MAIN PATH IS THE HEADER, not the card. "After I text my plumber
+   Doug, I should be able to save his contact and then also add him as a
+   vendor." That is ContactEditor, reached from the name in the thread
+   header -- which is the one place that is there on EVERY thread,
+   including one the office started. It has its own list and it has to
+   agree with the server too. */
+const inEditor = (() => {
+  const m = /const PARTIES: \[string, string\]\[\] = \[([\s\S]*?)\];/.exec(editor);
+  return m ? [...m[1].matchAll(/\["([a-z_]+)"/g)].map((x) => x[1]) : [];
+})();
+
+t("the contact editor offers every type too", () => {
+  const missing = accepted.filter((p) => !inEditor.includes(p));
+  if (missing.length) console.log(`        not offered: ${missing.join(", ")}`);
+  return inEditor.length >= 5 && missing.length === 0;
+}, "this is the path somebody actually takes to make Doug a vendor, and it "
+ + "is reachable from every thread rather than only from an unplaced one");
+
+t("and nothing it offers would be refused", () =>
+  inEditor.every((p) => accepted.includes(p)) && inEditor.length > 0);
+
+/* ------------------------- a name saved is a name the LIST shows as well */
+
+t("saving from the card refreshes the list, not only the thread", () => {
+  const src = running(card);
+  const at = src.indexOf("onSaved?.()");
+  if (at < 0) return false;
+  /* Cut to the save, so some other refresh elsewhere in the file cannot
+     answer for this one. */
+  const after = src.slice(at, at + 400);
+  return /router\.refresh\(\)/.test(after);
+}, "\"I saved the number but it's not updating in the pane of message "
+ + "conversations.\" The header said Instinct AI and the row beside it "
+ + "still said (919) 762-2296: `onSaved` reloads the open THREAD, and the "
+ + "list is a server component that only re-renders on router.refresh(). "
+ + "The same edit from two places updated two different halves of the "
+ + "screen");
+
+t("and both places that rename somebody do it", () => {
+  const a = /router\.refresh\(\)/.test(running(card));
+  const b = /router\.refresh\(\)/.test(running(editor));
+  return a && b;
+}, "ContactEditor has always done this; the card never did. Asked of both, "
+ + "because the one that was wrong was the one nobody compared");
+
+/* ----------------------------------------- raising a ticket is not hidden */
+
+t("Create ticket is its own button", () =>
+  /Create ticket/.test(running(sendTo)),
+  "THE SECOND TIME THIS FEATURE HAS BEEN UNREACHABLE. First behind a "
+  + "three-dot menu on a message bubble; then behind a dropdown labelled "
+  + "\"Send to…\", which is not what somebody looking to raise a ticket "
+  + "reads");
+
+t("and it is not behind a menu", () =>
+  !/ovmenu|aria-expanded/.test(running(sendTo)),
+  "a button that has to be found twice is a button nobody finds");
+
+t("forwarding is still reachable", () =>
+  /setSheet\("forward"\)/.test(running(sendTo)));
+
+t("both still act on the same message", () =>
+  /messageId=\{messageId\}/.test(running(sendTo)));
+
+/* ------------------------------------------------------- and it is sent */
+
+t("the choice is actually sent", () =>
+  /body\.party = party/.test(running(card)),
+  "a select nothing reads is a select that does nothing, which is where "
+  + "this started");
+
+t("what they already are is what it opens on", () =>
+  /useState\(contact\.party \?\? "current_tenant"\)/.test(running(card)),
+  "opening on Tenant for somebody already recorded as a vendor invites "
+  + "saving him back to a tenant by pressing Save");
+
+t("the name box stops assuming", () =>
+  !/The tenant's name/.test(running(card)),
+  "COMMENTS STRIPPED FIRST, which this check got wrong on its own first "
+  + "run: the paragraph explaining the fault quotes the placeholder, and a "
+  + "file explaining a rule reads the same to a search as a file breaking "
+  + "it. That lesson is written down twice already and I walked past it");
+
+/* ------------------------------------- and the card knows where it belongs */
+
+t("the card needs a message FROM THEM", () => {
+  const m = /\{!prop && (\w+) \?/.exec(running(pane));
+  if (!m) return false;
+  /* Derived from the code: whatever that variable is called, it has to be
+     the one that finds an inbound message. A guard that writes the name in
+     is a guard the next rename walks past. */
+  const decl = new RegExp(`const ${m[1]}\\s*=[\\s\\S]{0,200}?direction === "inbound"`);
+  return decl.test(running(pane));
+}, "a thread with nothing inbound is not an unlocated request -- it is us "
+ + "reaching out, and we already know where the work is");
+
+t("a request that DID arrive still gets it", () => {
+  /* The gate may not have quietly become "never". */
+  const m = /\{!prop && (\w+) \?/.exec(running(pane));
+  return m !== null && m[1] !== "false" && /<PlaceNeeded/.test(pane);
 });
-await new Promise((r) => srv.listen(0, "127.0.0.1", r));
-const session = {
-  base: `http://127.0.0.1:${srv.address().port}`,
-  header: "X-RM12Api-ApiToken", token: "stub",
-};
 
-const TENANT = {
-  Tenant: {
-    Name: "Abel Moreno",
-    Email: "abel@example.com",
-    PhoneNumbers: [{ PhoneNumber: "(910) 555-0133" }],
-    Unit: { Name: "51", Property: { Name: "1140 Northside" } },
-  },
-};
+/* ---------------------------------------------------------------- report */
 
-await ta("a web user id becomes a name, a number and a lot", async () => {
-  mod.forgetWho(); asked.length = 0;
-  answers = { "/TenantWebUsers/": TENANT };
-  const who = await mod.whoSubmitted("4471", session);
-  return who.tenant === "Abel Moreno" && who.phone === "(910) 555-0133"
-    && who.email === "abel@example.com" && who.unit === "51"
-    && who.property === "1140 Northside";
-});
-
-await ta("every path tried is reported, so a wrong guess names itself", async () => {
-  mod.forgetWho();
-  answers = { "/WebUsers/": TENANT };     // the second-choice shape
-  const who = await mod.whoSubmitted("4471", session);
-  return who.tenant === "Abel Moreno" && who.tried.length >= 2
-    && who.tried.some((a) => a.status === 404)
-    && who.tried.every((a) => typeof a.path === "string" && a.path.includes("4471"));
-});
-
-/* THE ONE THAT MATTERS MOST. An endpoint that exists and knows nothing about
-   tenants returns 200 with something on it. Treating that as success would
-   pin every later lookup to a path that never helps, and the failure would be
-   permanent and silent. */
-await ta("a 200 that names nobody is not mistaken for an answer", async () => {
-  mod.forgetWho(); asked.length = 0;
-  answers = {
-    "/TenantWebUsers/": { WebUserID: 4471, LastLogin: "2026-10-26", IsActive: true },
-    "/WebUsers/": TENANT,
-  };
-  const who = await mod.whoSubmitted("4471", session);
-  return who.tenant === "Abel Moreno"
-    && who.tried.some((a) => a.ok && /names a tenant/.test(a.detail ?? ""));
-});
-
-await ta("and the field names it DID see are reported, for the next guess",
-  async () => {
-    mod.forgetWho();
-    answers = { "/TenantWebUsers/": TENANT };
-    const who = await mod.whoSubmitted("4471", session);
-    return Array.isArray(who.shape) && who.shape.includes("Tenant");
-  });
-
-/* Asking seven times per request, on an account that has never seen API
-   traffic, is not a good way to behave. */
-await ta("the one that worked is tried first next time", async () => {
-  mod.forgetWho();
-  answers = { "/WebUsers/": TENANT };
-  await mod.whoSubmitted("4471", session);
-  asked.length = 0;
-  await mod.whoSubmitted("9999", session);
-  return asked.length === 1 && asked[0].includes("/WebUsers/9999");
-});
-
-await ta("an account that answers none of them is asked once, not forever",
-  async () => {
-    mod.forgetWho();
-    answers = {};
-    const first = await mod.whoSubmitted("4471", session);
-    const n = asked.length;
-    asked.length = 0;
-    const second = await mod.whoSubmitted("5555", session);
-    return first.tried.length > 1 && n > 1
-      && asked.length === 0 && second.tenant === null;
-  });
-
-await ta("nothing to look up is not a lookup", async () => {
-  mod.forgetWho(); asked.length = 0;
-  const who = await mod.whoSubmitted("", session);
-  return asked.length === 0 && who.tenant === null;
-});
-
-srv.close();
-for (const [name, ok, why] of said) {
-  if (ok) console.log(` ok ${name}`);
-  else console.error(` ✗ ${name}${why ? ` -- ${why}` : ""}`);
+let failed = 0;
+for (const [name, fn, why] of checks) {
+  let ok = false, blew = null;
+  try { ok = fn() === true; } catch (e) { blew = e.message; }
+  console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);
+  if (!ok) { console.log(`        ${blew ? `threw: ${blew}` : why ?? ""}`); failed += 1; }
 }
-if (said.some(([, ok]) => !ok)) process.exit(1);
-console.log("a request says who sent it, or says what was tried");
+console.log(failed ? `\n${failed} of ${checks.length} wrong`
+                   : `\nnothing obviously wrong (${checks.length} checks)`);
+process.exit(failed ? 1 : 0);

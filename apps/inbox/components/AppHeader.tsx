@@ -44,6 +44,15 @@ export default function AppHeader(
     : [
         { href: "/home", label: "Home" },
         { href: "/", label: "Messages" },
+        /* JOBS WAS NOT HERE AT ALL.
+           The board every work order lands on, that "Create ticket" files
+           into and that dispatches a trade their link, was reachable only
+           by typing the URL. "Where is this Jobs window that you've been
+           referencing" -- nowhere, and I had sent him to it three times
+           without once checking it was on the page.
+
+           Next to Messages, because that is where tickets come from. */
+        { href: "/jobs", label: "Jobs" },
         { href: "/properties", label: "Properties" },
         { href: "/leasing", label: "Leasing" },
         { href: "/owners", label: "Investors", under: [

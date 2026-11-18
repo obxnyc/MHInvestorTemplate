@@ -27,33 +27,26 @@ import HandOff from "./HandOff";
 export default function SendTo(
   { messageId, preview }: { messageId: string; preview: string },
 ) {
-  const [open, setOpen] = useState(false);
   const [sheet, setSheet] = useState<"forward" | "job" | null>(null);
 
   return (
     <>
-      <div className="msgmenu">
-        <button type="button" className="btn" aria-expanded={open}
-                onClick={() => setOpen((v) => !v)}>
-          Send to…
-        </button>
-        {open && (
-          <>
-            <button type="button" className="scrim" aria-hidden="true" tabIndex={-1}
-                    onClick={() => setOpen(false)} />
-            <div className="ovmenu">
-              <button className="ovitem"
-                      onClick={() => { setOpen(false); setSheet("forward"); }}>
-                Send to a vendor or someone here…
-              </button>
-              <button className="ovitem"
-                      onClick={() => { setOpen(false); setSheet("job"); }}>
-                Open a work order…
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      {/* TWO BUTTONS, NOT A MENU.
+          "There needs to be a create a ticket button on the messages."
+          There was one, behind a dropdown labelled "Send to…" -- which is
+          not what somebody looking to raise a ticket reads, so it was
+          found by nobody for the second time. The feature has now been
+          unreachable twice in two different ways, once behind a three-dot
+          menu on a message bubble and once behind a word that described
+          the other entry.
+
+          Raising a ticket is the commoner of the two and says so. */}
+      <button type="button" className="btn pri" onClick={() => setSheet("job")}>
+        Create ticket
+      </button>
+      <button type="button" className="btn" onClick={() => setSheet("forward")}>
+        Send to…
+      </button>
 
       {sheet && (
         <HandOff messageId={messageId} preview={preview}

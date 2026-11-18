@@ -172,7 +172,7 @@ async function closeForgotten(db: Admin, settings: Awaited<ReturnType<typeof loa
   for (const a of plan) {
     const { data: hit, error: e } = await db.from("shifts").update({
       ended_at: a.endedAt, end_fence: "unsure",
-      auto_clocked_out: true, settled_at: now.toISOString(),
+      auto_clocked_out: true, settled_at: now.toISOString(), end_how: "clock",
     }).eq("id", a.shiftId).is("ended_at", null).select("id, started_at");
     if (e || !hit?.length) continue; // he clocked out himself, or 052 is not run
 

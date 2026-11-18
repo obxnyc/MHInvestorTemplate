@@ -452,8 +452,10 @@ select{border:1px solid var(--hair);border-radius:var(--radius);
 .empty .ic svg{width:1.35rem;height:1.35rem;stroke:var(--muted);fill:none;stroke-width:1.8}
 .empty h3{margin:0 0 .35rem;font-size:1.02rem;font-weight:700;letter-spacing:-.015em}
 .empty p{margin:0;color:var(--muted);font-size:.87rem;max-width:17rem;line-height:1.5}
-/* position:relative so the notes sheet hangs off the header rather than
-   off the whole pane. */
+/* position:relative is the containing block for anything the header hangs
+   below itself. The notes sheet it was added for is gone -- the notes are a
+   column beside the thread now -- but the header still anchors its own
+   popovers. */
 .chead{position:relative;display:flex;align-items:center;gap:.6rem;padding:.75rem 1rem;
   border-bottom:1px solid var(--hair);background:var(--card)}
 .chevron{color:var(--accent);font-size:1.35rem;line-height:1;
@@ -1924,22 +1926,57 @@ a.metric:hover{border-color:var(--accent)}
 @media (max-width:520px){ .rmpath{min-width:0;flex-basis:100%} }
 
 
-/* --------------------------------------------------------- notes, gathered
-   The thread keeps notes where they were written. This is the same notes in
-   one place, because a scroll is not somewhere you find things. */
-.noteslink{display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .6rem;
-  border:1px solid var(--hair);border-radius:999px;background:var(--card);
-  font-size:.76rem;font-weight:700;color:var(--muted)}
-.noteslink:hover{border-color:var(--warn);color:var(--ink)}
-.noteslink.has{border-color:var(--warn);color:var(--ink);background:var(--warn-soft)}
+/* ------------------------------------------------- notes, beside the thread
+   Not a dropdown off the header. A dropdown covers the thread, shuts when
+   anything else is clicked, and cannot be open at the same time as the box you
+   type in -- which was the whole of what was asked for, twice.
+
+   The row holding the messages and this rail; the composer sits under the row,
+   so a note and a half-written reply are on screen together. */
+.threadbody{flex:1 1 0;min-height:0;min-width:0;display:flex;flex-direction:column}
+.threadbody > .msgs{flex:1 1 0;min-width:0}
+
+/* THE PHONE IS THE DEFAULT, because 390px is where this is hardest. The rail
+   is a band between the messages and the box: tap it and the notes sit
+   directly above what you are typing, which is the only place on a phone that
+   answers "while typing". */
+.noterail{flex:0 0 auto;min-width:0;display:flex;flex-direction:column;
+  background:var(--sunk);border-top:1px solid var(--hair);
+  max-height:45vh;overflow-y:auto;overscroll-behavior:contain}
+.noterail.bare{display:none}
+.notetitle{display:none}
+.noteband{display:flex;align-items:center;gap:.5rem;width:100%;
+  padding:.5rem .9rem;border:none;background:none;font:inherit;text-align:left;
+  color:var(--ink);cursor:pointer}
+.nbt{display:inline-flex;align-items:center;gap:.35rem;flex:0 0 auto;
+  font-size:.76rem;font-weight:700;color:var(--ink-2)}
+/* The one line of a collapsed band. It must not push the chevron off the
+   edge, so it is the thing that shrinks. */
+.notepeek{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-size:.76rem;color:var(--muted)}
+.nbc{flex:0 0 auto;margin-left:auto;color:var(--faint);font-size:.8rem}
 .notecount{font-variant-numeric:tabular-nums;background:var(--warn);color:var(--warn-on);
   border-radius:999px;min-width:1.05rem;padding:0 .25rem;font-size:.66rem;
   line-height:1.05rem;text-align:center}
+.noterail:not(.open) .notesbody{display:none}
+.notesbody{display:block;padding:0 .9rem .8rem}
+.notenone{margin:0;font-size:.78rem;line-height:1.5;color:var(--muted)}
 
-.notesheet{position:absolute;top:100%;right:0;z-index:30;width:min(24rem,88vw);
-  margin-top:.4rem;background:var(--card);border:1px solid var(--hair);
-  border-radius:12px;box-shadow:0 12px 32px rgba(10,14,18,.14);
-  padding:.7rem .8rem .8rem;max-height:60vh;overflow-y:auto}
+/* WIDE: the right-hand column he asked for. The band becomes a heading --
+   there is nothing to toggle, so there is no control that does nothing.
+   The :not(.open) rule is restated at the same specificity rather than with
+   !important, so the collapsed state simply does not apply here. */
+@media (min-width:1100px){
+  .threadbody{flex-direction:row}
+  .noterail{flex:0 0 17rem;max-height:none;
+    border-top:none;border-left:1px solid var(--hair);padding-top:.8rem}
+  .noterail.bare{display:flex}
+  .notetitle{display:flex;align-items:center;gap:.35rem;padding:0 .9rem .5rem;
+    font-size:.76rem;font-weight:700;color:var(--ink-2)}
+  .noteband{display:none}
+  .noterail:not(.open) .notesbody{display:block}
+}
+
 .noteslist{list-style:none;margin:0 0 .5rem;padding:0;display:grid;gap:.55rem}
 .noteslist li{background:var(--warn-soft);border-left:3px solid var(--warn);
   border-radius:8px;padding:.45rem .6rem}
@@ -3999,3 +4036,73 @@ button.edrow.dbo:hover{background:var(--sunk)}
 .parkhint.nearby li{display:flex;gap:.6rem;align-items:center;justify-content:space-between;
   flex-wrap:wrap;border:1px solid var(--hair);border-radius:var(--radius);padding:.4rem .6rem;
   background:var(--card)}
+
+/* ---------------------------------------------------------------- listings
+ *
+ * The public "what have you got" page. `/apply` answers "which of these do
+ * you want", which is the second question -- somebody deciding whether to
+ * ring needs the first one answered first.
+ *
+ * Every colour here is a token. The stylesheet redefines all of them under
+ * prefers-color-scheme: dark, so a literal is an ink that does not move and
+ * comes out invisible at night -- which this file has learned six times. */
+.listings{max-width:62rem;margin-inline:auto;padding:2.5rem 1.25rem 4rem;line-height:1.6}
+.listings h1{font-size:1.7rem;letter-spacing:-.02em;margin:0 0 .6rem}
+.listings .lede{color:var(--muted);margin:0 0 1.8rem}
+
+/* auto-fit, not a fixed count: three cards do not fit a phone and a bare
+   1fr column never shrinks below the width of what is inside it. */
+.homegrid{list-style:none;margin:0;padding:0;display:grid;gap:1rem;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr))}
+
+.homecard{position:relative;background:var(--card);border:1px solid var(--hair);
+  border-radius:.7rem;padding:1.1rem 1.1rem 1.2rem;display:flex;flex-direction:column;
+  gap:.15rem}
+.homecard h2{font-size:1.05rem;letter-spacing:-.01em;margin:0;color:var(--ink)}
+/* The pill is positioned, so it is out of flow and a long name runs under
+   it. "1140 Northside Road Mobile Home Community" wraps to two full-width
+   lines on a phone -- room has to be kept, and only on the cards that have
+   one, or every other card wraps early for nothing. */
+.homecard.issoon h2{padding-right:6rem}
+.homecard .unit{margin:0;color:var(--ink-2);font-size:.92rem}
+.homecard .addr{margin:.1rem 0 0;color:var(--muted);font-size:.86rem}
+.homecard .facts{margin:.55rem 0 0;color:var(--ink-2);font-size:.9rem}
+.homecard .rent{margin:.35rem 0 0;font-size:1.25rem;letter-spacing:-.02em;color:var(--ink)}
+.homecard .rent .per{font-size:.85rem;color:var(--muted);letter-spacing:0}
+.homecard .when{margin:.1rem 0 .9rem;color:var(--muted);font-size:.86rem}
+.homecard .btn{margin-top:auto;width:100%}
+
+/* The ground is a token and so is the ink on it, so the pair inverts
+   together at night instead of going grey-on-grey. */
+.homecard .soon{position:absolute;top:.85rem;right:.9rem;
+  background:var(--sunk);color:var(--ink-2);border:1px solid var(--hair);
+  border-radius:999px;padding:.1rem .5rem;font-size:.72rem;letter-spacing:.01em}
+
+/* A lead's crew on his clock screen (072): name, on or off, the job, the
+   button. The select and button wrap under the name on a narrow phone. */
+/* min-width:0 because a grid item's floor is its min-content, and a long
+   name beside a job list would otherwise push the row off a 320px phone. */
+.tsruns li.tscrewrow{align-items:center;padding:.5rem 0;border-top:1px solid var(--hair);min-width:0}
+.tscrewrow .tsspan{white-space:normal}
+.tsruns li.tscrewrow:first-child{border-top:0}
+.tscrewrow .tsplace{flex:1 1 8rem;font-weight:600}
+.tscrewrow select{flex:1 1 10rem;min-width:0;min-height:2.75rem;font:inherit;
+  color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:.5rem;padding:0 .5rem}
+.tscrewrow .tsminor{flex:1 1 8rem;width:auto}
+/* ------------------------------------------------- a ticket, not a category
+ *
+ * "The user interface discerning between communication and maintenance
+ * tickets is not easy to tell the difference between." Both were a small
+ * uppercase pill in a soft colour, so a broken boiler and a wrong number
+ * were separated only by a shade -- and a shade is not something anybody
+ * scans a list by.
+ *
+ * A ticket is a different KIND of row, so it reads as one: a filled badge
+ * rather than a tinted one, with the job's own state beside it.
+ *
+ * The ground is a token and so is the ink, which inverts with it at night.
+ * A literal here is an ink that does not move, and this stylesheet has
+ * learned that six times. */
+.badge.ticket{background:var(--dark);color:var(--dark-ink);letter-spacing:.06em}
+.badge.ticket.warm{background:var(--warn);color:var(--warn-on)}
+.badge.ticket.hot{background:var(--crit);color:var(--crit-on)}

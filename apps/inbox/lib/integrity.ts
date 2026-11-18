@@ -66,3 +66,30 @@ export function alertText(f: ClockInFacts, at: string, link: string): string | n
 export function forgotText(name: string, endedAt: string, link: string): string {
   return `Check: ${name} did not clock out; the clock closed his shift at ${endedAt}. ${link}`;
 }
+
+/** The text to the owner when somebody's hours went on the record without
+ *  him pressing anything: his phone did it, his lead did it, or the office
+ *  entered it. Each is fine and each is worth knowing -- the lead's above all,
+ *  since "Jose would benefit from his guys getting more hours". */
+export type OnBehalf =
+  | { how: "auto"; name: string; site: string; at: string }
+  | { how: "lead"; name: string; by: string; site: string | null; at: string;
+      /** How far the presser's phone was from the job; null when unknown. */
+      byMetres: number | null; byNoFix: boolean; out?: boolean }
+  | { how: "office"; name: string; by: string; day: string; from: string; to: string };
+
+export function onBehalfText(e: OnBehalf, link: string): string {
+  switch (e.how) {
+    case "auto":
+      return `Auto: ${e.name} arrived at ${e.site} and his phone clocked him in, ${e.at}. ${link}`;
+    case "lead": {
+      const where = e.byNoFix ? `${e.by}'s phone had no location`
+        : e.byMetres === null ? `${e.by}'s phone could not be checked against the job`
+        : e.byMetres > 300 ? `${e.by} was ${mi(e.byMetres)} from the job`
+        : `${e.by} was at the job`;
+      return `${e.by} clocked ${e.name} ${e.out ? "out" : "in"}${e.site ? ` at ${e.site}` : ""}, ${e.at} (${where}). ${link}`;
+    }
+    case "office":
+      return `${e.by} entered hours for ${e.name}: ${e.day}, ${e.from} to ${e.to}. ${link}`;
+  }
+}

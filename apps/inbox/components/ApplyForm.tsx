@@ -4,6 +4,10 @@ import { useState } from "react";
 export type Home = {
   id: string; label: string; address: string | null;
   bedrooms: number | null; rent: number | null; availableOn: string | null;
+  /** Being advertised ahead of the current tenancy ending. Said out loud,
+   *  because "available" with no date reads as available today and that is
+   *  the sort of thing somebody gives notice over. */
+  upcoming?: boolean;
 };
 
 type Result =
@@ -81,13 +85,16 @@ export default function ApplyForm({ homes }: { homes: Home[] }) {
               <option key={h.id} value={h.id}>
                 {h.label}{h.bedrooms ? ` · ${h.bedrooms} bed` : ""}
                 {h.rent ? ` · $${h.rent.toLocaleString()}/mo` : ""}
+                {h.upcoming ? " · coming soon" : ""}
               </option>
             ))}
           </select>
           {home?.rent && (
             <p className="hint">
               Rent is ${home.rent.toLocaleString()} a month
-              {home.availableOn ? `, available ${new Date(home.availableOn).toLocaleDateString()}` : ""}.
+              {home.availableOn
+                ? `, available ${new Date(home.availableOn).toLocaleDateString()}`
+                : home.upcoming ? ", coming up — no date set yet" : ""}.
             </p>
           )}
         </fieldset>

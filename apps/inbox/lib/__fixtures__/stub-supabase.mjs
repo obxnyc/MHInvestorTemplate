@@ -191,7 +191,22 @@ const TABLES = {
   clock_rules: [{ id: true, daily_cap: 10, break_after: 6, break_minutes: 30,
                   abandoned_after: 14, ping_minutes: 10 }],
   shift_edits: [],
-  work_orders: [], inquiries: [],
+  /* THREE TICKETS AND A CONVERSATION THAT IS NOT ONE, which is the whole
+     question the list has to answer at a glance. With a job on every
+     thread, "a ticket says so" and "every row says so" look identical.
+
+     Three different states too -- an emergency, something under way, and
+     one nobody has picked up -- because a single state cannot show whether
+     the row reports the job's state or just the fact of it. */
+  work_orders: [
+    { id: "w1", conversation_id: "cv1", unit_id: "u1", summary: "Pipes overflowing",
+      urgency: 1, status: "new" },
+    { id: "w2", conversation_id: "cv2", unit_id: "u2", summary: "Sink leaking",
+      urgency: 3, status: "in_progress" },
+    { id: "w3", conversation_id: "cv3", unit_id: "u1", summary: "Fridge is going out",
+      urgency: 2, status: "needs_parts" },
+  ],
+  inquiries: [],
 
   /* Nobody has signed: the papers panel has to be right before anyone
      has, which is every account the first time. */
@@ -305,13 +320,61 @@ const TABLES = {
     { id: "ow4", name: "Hudson Yards LLC", legal_name: "Hudson Yards LLC",
       active: true, notes: null, kind: "ours" },
   ],
+  /* Four units, and the four states the public listings page has to tell
+     apart: advertised with a date, advertised with none, coming up, and
+     not advertised at all. The last one is the point -- with every unit
+     advertised, "shows what the office is renting" and "shows everything"
+     are the same page and the fixture cannot tell them apart.
+
+     `is_vacant` deliberately DISAGREES with `listing`, because that is the
+     real state: on 17 November Rent Manager called one unit vacant while
+     the office advertised six, and the vacant one was not among them. */
   units: [
     { id: "u1", label: "3124", property_id: "p1",
+      listing: "for_rent", is_vacant: false, bedrooms: 3, bathrooms: 2,
+      monthly_rent: 1150, available_on: "2026-12-01",
+      properties: { id: "p1", name: "The Retreat",
+                    address: "3100 Lady Viola Dr, Fayetteville NC" } },
+    /* THE RETREAT HAS MORE THAN ONE LOT, which is the only way a park
+       picking OPENS rather than files. With one lot each, "a park opens to
+       its lots" and "a park files against its only unit" are the same
+       answer and the picker cannot be told apart from the broken one. */
+    { id: "u1b", label: "3126", property_id: "p1",
+      listing: null, is_vacant: false, bedrooms: 3, bathrooms: 2,
+      monthly_rent: 1100, available_on: null,
+      properties: { id: "p1", name: "The Retreat",
+                    address: "3100 Lady Viola Dr, Fayetteville NC" } },
+    { id: "u1c", label: "3128", property_id: "p1",
+      listing: null, is_vacant: false, bedrooms: 2, bathrooms: 1,
+      monthly_rent: 950, available_on: null,
       properties: { id: "p1", name: "The Retreat",
                     address: "3100 Lady Viola Dr, Fayetteville NC" } },
     { id: "u2", label: "17", property_id: "p2",
+      listing: "for_rent", is_vacant: false, bedrooms: 2, bathrooms: 1,
+      monthly_rent: 875, available_on: null,
       properties: { id: "p2", name: "1140 Northside Road Mobile Home Community",
                     address: "1140 Northside Rd, Elizabeth City NC" } },
+    { id: "u4", label: "211 Roscoe Dr", property_id: "p3",
+      listing: "upcoming", is_vacant: false, bedrooms: 4, bathrooms: 2,
+      monthly_rent: 1495, available_on: null,
+      properties: { id: "p3", name: "211 Roscoe Dr",
+                    address: "211 Roscoe Dr, Elizabeth City NC" } },
+    /* A LONG NAME ON AN UPCOMING HOME, and that is the whole reason it is
+       here. "211 Roscoe Dr" is short enough to clear the "Coming up" pill
+       whether or not room is reserved for it, so with only that card the
+       overlap check passes with the fix deleted. The two answers have to
+       differ somewhere or the check is not asking the question. */
+    { id: "u6", label: "Lot 14", property_id: "p5",
+      listing: "upcoming", is_vacant: false, bedrooms: 3, bathrooms: 2,
+      monthly_rent: 1025, available_on: null,
+      properties: { id: "p5",
+                    name: "1140 Northside Road Mobile Home Community",
+                    address: "1140 Northside Rd, Elizabeth City NC" } },
+    { id: "u5", label: "9 Nowhere Ln", property_id: "p4",
+      listing: null, is_vacant: true, bedrooms: 2, bathrooms: 1,
+      monthly_rent: 700, available_on: null,
+      properties: { id: "p4", name: "9 Nowhere Ln",
+                    address: "9 Nowhere Ln, Elizabeth City NC" } },
   ],
   /* Two homes, in two parks, to ow1 -- so "across N parks" has a number
      to get wrong, and ow2 has nothing.
@@ -602,6 +665,21 @@ createServer((req, res) => {
         row.ok = args.p_ok; row.filed = args.p_filed; row.error = args.p_error;
         return send(200, null);
       }
+      /* 072: a lead's crew, so the clock screen's crew panel is drawn and
+         measured -- one man on the clock and one off, with a long name,
+         because the off one carries the job picker and that is the row
+         that can overflow. */
+      if (fn === "my_crew") {
+        return send(200, [
+          { staff_id: "cm1", full_name: "Guadalupe Hernández-Villanueva", open_shift: null, open_since: null },
+          { staff_id: "cm2", full_name: "Pedro Gil", open_shift: "sh-cm2",
+            open_since: new Date(Date.now() - 3 * 3600e3).toISOString() },
+        ]);
+      }
+      if (fn === "my_auto_clock") return send(200, false);
+      if (fn === "clock_window") {
+        return send(200, { tz: "America/New_York", days: [1, 2, 3, 4, 5, 6], optional_days: [6], auto_out: "18:00" });
+      }
       return send(200, null);
     });
     return;
@@ -738,11 +816,18 @@ createServer((req, res) => {
         });
         continue;
       }
-      /* `in.(a,b)`, which `.in()` sends. Ignored, every row matched. */
+      /* `in.(a,b)` as well, because an unknown filter here is SKIPPED -- and
+         a skipped filter is not a neutral one. The public listings page asks
+         `listing in (for_rent, upcoming)`, and without this the stand-in
+         handed back every unit in the fixture, so the page rendered homes
+         nobody is advertising and read as working. A stand-in that ignores
+         the question answers the wrong one confidently, which is the note
+         already written above about `eq` and about `is.null`. */
       const inList = /^in\.\((.*)\)$/.exec(v);
       if (inList) {
-        const set = new Set(inList[1].split(",").map((x) => x.replace(/^"|"$/g, "")));
-        rows = rows.filter((r) => set.has(String(r[k])));
+        const want = new Set(inList[1].split(",")
+          .map((s) => s.trim().replace(/^"|"$/g, "")));
+        rows = rows.filter((r) => want.has(String(r[k])));
         continue;
       }
       const m = /^eq\.(.*)$/.exec(v);

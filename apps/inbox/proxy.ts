@@ -8,6 +8,11 @@ import { areaOf } from "@/lib/areas";
  *  someone notices within the hour, while forgetting to protect one exposes
  *  tenant conversations and nobody notices at all.
  *
+ *  - /homes     the homes being advertised. The one page a stranger asking
+ *               "what have you got" is sent to, so behind a login it is a
+ *               leasing funnel with nobody in it -- which is the failure
+ *               this list's own comment warns about, and which it has now
+ *               caught twice.
  *  - /apply     the prequalification form, linked from larabeehomesllc.com
  *  - /criteria  the published, dated screening rules the form links to; a
  *               fair-housing defence is worth nothing behind a login
@@ -27,7 +32,8 @@ import { areaOf } from "@/lib/areas";
 // page no tenant can reach, which is the failure this list's own comment
 // warns about -- added an hour after the page shipped, by somebody who had
 // read that comment and walked past it anyway.
-const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/, /^\/book\//,
+const PUBLIC = [/^\/login/, /^\/signin/, /^\/auth/, /^\/apply/, /^\/criteria/,
+                /^\/homes/, /^\/book\//,
                 /^\/jobs\//, /^\/trades\/apply/, /^\/join/, /^\/welcome\//, /^\/report/,
                 /* A buyer signing a purchase agreement has no account and is
                    not going to make one to read what they are buying. The

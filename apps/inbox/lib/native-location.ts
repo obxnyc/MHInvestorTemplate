@@ -133,7 +133,15 @@ export type TrackOptions = {
   now?: () => number;
   settleMs?: number;
   everyMs?: number;
+  /** The words on the notification while it runs. The shift's own are the
+   *  default; watching for an arrival says something different, because it
+   *  is not recording anything. */
+  title?: string;
+  message?: string;
 };
+
+export const ARRIVAL_TITLE = "Larabee";
+export const ARRIVAL_MESSAGE = "Clocks you in when you get to a job. Nothing is recorded until you're on the clock.";
 
 /**
  * Starts the plugin's watcher for the length of a shift. Resolves with a stop
@@ -193,8 +201,8 @@ export function startShiftTracking(
     let added: string | Promise<string>;
     try {
       added = geo.addWatcher({
-        backgroundMessage: BACKGROUND_MESSAGE,
-        backgroundTitle: BACKGROUND_TITLE,
+        backgroundMessage: opts.message ?? BACKGROUND_MESSAGE,
+        backgroundTitle: opts.title ?? BACKGROUND_TITLE,
         requestPermissions: true,
         stale: false,
         distanceFilter: 0,

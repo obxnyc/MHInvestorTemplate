@@ -89,9 +89,28 @@ const EMERGENCY = [
   "gas leak", "smell gas", "smell of gas", "carbon monoxide", "co detector",
   "sewage", "sewer back", "flooding", "flooded", "water pouring",
   "no heat", "without heat", "heat is out", "furnace is out",
-  "electrical fire", "sparking", "smoke", "exposed wire", "no power",
+  "electrical fire", "sparking", "exposed wire", "no power",
   "break in", "broken window", "door won't lock", "door wont lock",
+  /* A FIRE, NOT A FIREPLACE, AND NOT A DETECTOR.
+   *
+   * This list used to contain the bare word "smoke", and the dashboard
+   * showed ten emergencies of which six were smoke detectors: "Smoke
+   * dectectors", "Smoke dectors", "Same smoke dector beeping bedroom".
+   * A detector beeping at 3am is a nine-volt battery, and an emergency
+   * queue with batteries at the top is one nobody reads down.
+   *
+   * "fire" alone is no better -- "ceiling by fireplace looks like it has
+   * water damage" is a real request on this account. So the phrases are
+   * the ones that only ever mean a fire. */
+  "on fire", "smell smoke", "smells like smoke", "smoke coming",
+  "smoke filling", "house is smoking",
 ];
+
+/** A detector is a safety item and it is not tonight's emergency.
+ *
+ *  Matched as a pattern rather than a word because every one of these is
+ *  real, typed by a tenant on a phone: "dectector", "dector", "detecter". */
+const DETECTOR = /\bsmoke\s*(?:detect|dectect|dector|detecter|alarm)/i;
 
 const URGENT = [
   "no hot water", "no water", "water heater", "burst", "leak", "leaking",
@@ -102,6 +121,15 @@ const URGENT = [
 
 export function urgencyFromText(text: string): number {
   const t = text.toLowerCase();
+
+  /* First, and it wins: a detector that mentions nothing else is a battery.
+     Asked BEFORE the emergency scan rather than after, because "smoke
+     detectors and outlets" hits "no power"-adjacent wording often enough
+     that ordering by accident is not ordering. A report that names a
+     detector AND an actual fire still reads as the fire, because those
+     phrases are checked on the way past. */
+  if (DETECTOR.test(t) && !EMERGENCY.some((k) => t.includes(k))) return 2;
+
   if (EMERGENCY.some((k) => t.includes(k))) return 1;
   if (URGENT.some((k) => t.includes(k))) return 2;
   return 3;
@@ -148,4 +176,37 @@ export function propertyHint(hint: string | null | undefined): string | null {
   const head = hint.split(",")[0].trim();
   const cut = head.replace(/\s*(?:#|\blot\b|\bunit\b|\bapt\b).*$/i, "").trim();
   return cut || null;
+}
+
+/* --------------------------------------------- what a job is raised from */
+
+/** Just enough of a message to choose between them. */
+export type ThreadLine = { id: string; direction: string; body?: string | null };
+
+/**
+ * Which message in a thread a work order should be summarised from.
+ *
+ * THEIR LAST ONE, WHERE THERE IS ONE. The last thing in a thread is as
+ * often our own reply, and a job summarised from "I'll get someone out
+ * Tuesday" tells the vendor nothing.
+ *
+ * BUT NOT ONLY WHEN THERE IS ONE, which is what this used to require. The
+ * office fields a leak BY TELEPHONE, opens a thread with the plumber and
+ * types the first message itself -- so there is no inbound anything, and
+ * "Send to…" never appeared on the one screen the whole day is spent on.
+ * "I like having something on the messages tab because that's where I will
+ * be fielding calls and texts."
+ *
+ * On that thread our own message is not a worse summary; it is the only
+ * description there is, and it is somebody writing down the fault in their
+ * own words, which is what a vendor needs to read.
+ *
+ * Null only for a thread with nothing in it at all, which is a thread
+ * nobody has started.
+ */
+export function jobAnchor(messages: ThreadLine[]): ThreadLine | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]!.direction === "inbound") return messages[i]!;
+  }
+  return messages.length ? messages[messages.length - 1]! : null;
 }

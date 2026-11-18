@@ -8,6 +8,7 @@ import ClaimPill from "./ClaimPill";
 import CloseButton from "./CloseButton";
 import PrivateButton from "./PrivateButton";
 import SendTo from "./SendTo";
+import { jobAnchor, type ThreadLine } from "@/lib/jobs";
 import MessageMenu from "./MessageMenu";
 import Seen, { type Read } from "./Seen";
 import CategoryPicker from "./CategoryPicker";
@@ -21,7 +22,7 @@ import { supabaseBrowser } from "@/lib/supabase-client";
 import { joinTyping, TYPING_TTL } from "@/lib/typing";
 import { continues } from "@/lib/runs";
 import PlaceNeeded from "@/components/PlaceNeeded";
-import NotesPanel, { type Note } from "@/components/NotesPanel";
+import NotesRail, { type Note } from "@/components/NotesRail";
 import Attachment from "@/components/Attachment";
 import IntakeCard from "@/components/IntakeCard";
 import NewJob from "@/components/NewJob";
@@ -185,10 +186,33 @@ export default function ThreadPane(
     .find((m) => m.direction === "inbound");
   const lastFromThem = (lastInbound?.body as string | undefined) ?? "";
 
-  const timeline = [
-    ...data.messages.map((m) => ({ kind: "message" as const, at: m.created_at as string, m })),
-    ...data.notes.map((n) => ({ kind: "note" as const, at: n.created_at as string, n })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+  /* WHAT A JOB IS RAISED FROM, WHEN NOTHING CAME IN.
+   *
+   * Preferring their last message is right and the reasoning above stands.
+   * Requiring one is not. The office fields a leak BY TELEPHONE, opens a
+   * thread with the plumber, and types the first message itself -- and on
+   * that thread there is no inbound anything, so "Send to…" never appeared
+   * and a job could not be raised from the screen the whole day is spent
+   * on. "I like having something on the messages tab because that's where
+   * I will be fielding calls and texts."
+   *
+   * Falling back to the last message in the thread is not a worse summary
+   * in that case, it is the only description that exists -- and it is
+   * somebody describing the fault in their own words, which is exactly
+   * what a vendor needs to read. */
+  const jobFrom = jobAnchor(data.messages as unknown as ThreadLine[]);
+  const jobText = (jobFrom?.body as string | undefined) ?? "";
+
+  /* MESSAGES ONLY.
+     Notes used to be interleaved here as well as gathered, and the comment
+     defending that said context is most of what a note means -- which is true
+     and was not what was asked. "Not having notes as a running list in the
+     messages portion but something easily referenceable." A note's time and
+     its author are on it in the rail, so the chronology is not lost; what goes
+     is a second kind of thing in the scroll you are trying to read. */
+  const timeline = data.messages
+    .map((m) => ({ kind: "message" as const, at: m.created_at as string, m }))
+    .sort((a, b) => a.at.localeCompare(b.at));
 
   const readersOf = (at: string) =>
     data.reads.filter((r) => r.staffId !== data.me && r.at >= at);
@@ -219,11 +243,9 @@ export default function ThreadPane(
             <span className="dim">via {convo.source}</span>
           </span>
         </span>
-        {/* Gathered as well as inline. A note lives in the thread where it
-            was written -- context is most of what it means -- but a thread is
-            a scroll, and the line that matters is four hundred messages up by
-            the time it does. */}
-        <NotesPanel notes={(data.notes ?? []) as unknown as Note[]} media={data.media} />
+        {/* The notes are no longer here. They are a column beside the
+            messages, because a dropdown off this header cannot be open at the
+            same time as the box you type in, which is the entire ask. */}
         {/* SENDING IT TO SOMEBODY WHO CAN FIX IT.
             This existed and was unreachable: it lived behind a three-dot
             menu on an individual message bubble, which is not where
@@ -235,9 +257,9 @@ export default function ThreadPane(
             work order is about. The last thing in a thread is as often
             our own reply, and a job summarised from "I'll get someone
             out Tuesday" tells the vendor nothing. */}
-        {lastInbound && (
-          <SendTo messageId={String(lastInbound.id)}
-                  preview={lastFromThem.slice(0, 180)} />
+        {jobFrom && (
+          <SendTo messageId={String(jobFrom.id)}
+                  preview={jobText.slice(0, 180)} />
         )}
         <ClaimPill conversationId={convo.id}
                    holderName={convo.staff?.full_name ?? null}
@@ -259,7 +281,24 @@ export default function ThreadPane(
           which carries no place at all, which is exactly the case that
           needs a human -- showed nothing and could not be filed. The
           narrower question again, answered confidently. */}
-      {!prop ? (
+      {/* NOT ON A THREAD WE STARTED.
+          This showed on ANY thread with no property, which is right for a
+          request that arrived and wrong for a conversation the office
+          opened. Texting a plumber about a leak put a red box across the
+          screen reading "This request did not say which property it is for
+          -- Rent Manager does not pass one on", over a list of every lot in
+          every park, with no way to dismiss it: `Cancel` closes the
+          add-a-property form inside the card and `Never mind` closes the
+          contact form, and neither closes the card.
+
+          A thread with nothing inbound on it is not an unlocated request --
+          it is us, reaching out, and we already know where the work is. On
+          the live data this hides it on exactly one thread and on no
+          maintenance request at all.
+
+          A job is still raised from the header, which is where the office
+          asked for it. */}
+      {!prop && lastInbound ? (
         <PlaceNeeded conversationId={convo.id}
                      hint={convo.place_hint ?? null}
                      contact={contact ? {
@@ -267,6 +306,7 @@ export default function ThreadPane(
                        name: contact.full_name ?? null,
                        phone: contact.phone ?? null,
                        email: contact.email ?? null,
+                       party: contact.party ?? null,
                      } : null}
                      onChanged={() => void load(String(convo.id))} />
       ) : null}
@@ -307,15 +347,21 @@ export default function ThreadPane(
         </div>
       )}
 
+      {/* THE MESSAGES AND THE NOTES, SIDE BY SIDE, WITH THE COMPOSER UNDER
+          BOTH. The composer is outside this row deliberately: that is what
+          puts a note and a half-written reply on screen at the same time.
+          On a phone the row becomes a stack, so the notes band lands between
+          the messages and the box -- which is the same answer in the only
+          shape a phone has room for. */}
+      <div className="threadbody">
       <div className="msgs">
         {timeline.map((item, i) => {
           const day = dayLabel(item.at);
           const sep = day !== lastDay ? ((lastDay = day), day) : null;
 
-          /** Who is speaking, for run detection. A note breaks a run: it is
-           *  a different kind of thing said by a different kind of voice. */
+          /** Who is speaking, for run detection. */
           const voice = (t: typeof item | undefined) => {
-            if (!t || t.kind !== "message") return null;
+            if (!t) return null;
             const msg = t.m as { direction: string; staff: { full_name: string } | null };
             return {
               who: msg.direction === "inbound"
@@ -327,25 +373,6 @@ export default function ThreadPane(
           const run = Boolean(here && continues(voice(timeline[i - 1]), here, Boolean(sep)));
           const nextOne = voice(timeline[i + 1]);
           const last = !here || !nextOne || !continues(here, nextOne, false);
-
-          if (item.kind === "note") {
-            const n = item.n as {
-              id: string; body: string; media_paths?: string[] | null;
-              staff: { full_name: string } | null;
-            };
-            return (
-              <div key={`n${n.id}`} className="mrow">
-                {sep && <div className="daysep">{sep}</div>}
-                <div className="note">
-                  <span className="lab">{n.staff?.full_name} · only your team sees this</span>
-                  {n.body && <p>{n.body}</p>}
-                  {(n.media_paths ?? []).map((path) => (
-                    <Attachment key={path} path={path} src={data.media[path]} />
-                  ))}
-                </div>
-              </div>
-            );
-          }
 
           const m = item.m as {
             id: string; direction: string; body: string; body_en: string | null;
@@ -396,6 +423,9 @@ export default function ThreadPane(
             </div>
           );
         })}
+      </div>
+
+        <NotesRail notes={(data.notes ?? []) as unknown as Note[]} media={data.media} />
       </div>
 
       {naming && contact && (
