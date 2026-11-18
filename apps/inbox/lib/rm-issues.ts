@@ -28,6 +28,7 @@
  */
 import { rmAuthorize, type RmSession } from "./rentmanager";
 import { ingest } from "./intake";
+import { supabaseAdmin } from "./supabase-admin";
 
 const PAGE = 100;
 
@@ -88,6 +89,14 @@ export type PullResult = {
   filed: number;
   alreadyHad: number;
   failed: number;
+  /** Threads closed here because Rent Manager has closed the issue. The
+   *  pull reconciles status as well as inserting, so this is normally
+   *  large once and nearly zero afterwards. */
+  closed: number;
+  /** Why a close could not be written, where one failed. Reported rather
+   *  than thrown: an issue that could not be closed is not a reason to
+   *  abandon the rest of the pull. */
+  closeError?: string;
   /** The field names on the first record. The map, when something is
    *  missing and nobody knows what this account calls it. */
   shape: string[] | null;
@@ -262,6 +271,31 @@ export function readIssue(
     createdAt: text(createdAt),
     webUserId: text(webUserId),
     openedById: text(openedById),
+  };
+}
+
+/**
+ * How a thread is closed when Rent Manager says the work is done.
+ *
+ * Its own function because the interesting parts are decisions, not
+ * plumbing: WHICH date to record, and what to say when Rent Manager
+ * recorded no resolution. Inline in the loop they could only be checked by
+ * reading them.
+ *
+ * The date is RENT MANAGER'S close date, not now. Importing eight months of
+ * history and stamping every closure with the moment of the import would
+ * make a job finished in March look finished today, which is the same fault
+ * as the backfill arriving at the top of the inbox reading "just now".
+ */
+export function closePatch(issue: Pick<Issue, "closedOn" | "resolution">) {
+  return {
+    status: "closed",
+    closed_at: issue.closedOn || new Date().toISOString(),
+    /* Named so nobody has to wonder where the decision came from. A thread
+       that just says "closed" is one somebody reopens to find out. */
+    closed_reason: issue.resolution
+      ? `Closed in Rent Manager: ${issue.resolution}`.slice(0, 500)
+      : "Closed in Rent Manager",
   };
 }
 
@@ -481,6 +515,7 @@ export async function pullServiceIssues(
   whoFound: 0,
     ok: false, signedIn: false, dryRun, found: 0, more: false, filed: 0,
     alreadyHad: 0, failed: 0, shape: null, readAs: {}, samples: [], error: null,
+    closed: 0,
   };
 
   const auth = await rmAuthorize();
@@ -593,6 +628,50 @@ export async function pullServiceIssues(
       if (res.duplicate) out.alreadyHad += 1;
       else if (res.ok) out.filed += 1;
       else out.failed += 1;
+
+      /* AND WHETHER IT IS STILL A JOB.
+       *
+       * `IsClosed` has been read off every record since the deep probe and
+       * then thrown away. So the October backfill filed eight months of
+       * Rent Manager history and opened EVERY ONE of it: 307 of the 315
+       * open requests arrived in that single batch, against about four a
+       * week of real work. The owner's queue showed 319 and his actual
+       * list was seven.
+       *
+       * Closing them by hand would be guessing which are dead. Rent
+       * Manager is the system of record for an issue's status and it has
+       * known all along -- nothing asked. So the hourly pull reconciles
+       * rather than only inserting: anything closed there is closed here,
+       * with the reason naming where the answer came from.
+       *
+       * Outside the `duplicate` branch on purpose. An issue we already
+       * have is exactly the one whose status may have moved since, and
+       * `ingest` returns early on a seen external_id -- so doing this only
+       * for new rows would reconcile nothing that needed it.
+       *
+       * One direction only. A request closed HERE is not reopened because
+       * Rent Manager still has it open: somebody in this office decided
+       * that, and `closeIssue` is what pushes it the other way. */
+      if (issue.closed) {
+        /* THE ID IS ON THE MESSAGE, NOT ON THE THREAD. `conversations` has
+           no external key -- `messages.external_id` is what tells the two
+           intake paths apart -- so the thread is reached through the row
+           that carries it. */
+        const db = supabaseAdmin();
+        const { data: msg } = await db.from("messages")
+          .select("conversation_id")
+          .eq("external_id", `rm:issue:${issue.id}`)
+          .limit(1).maybeSingle();
+        if (msg?.conversation_id) {
+          const { data: shut, error } = await db.from("conversations")
+            .update(closePatch(issue))
+            .eq("id", msg.conversation_id)
+            .eq("status", "open")
+            .select("id");
+          if (error) out.closeError ??= error.message;
+          else out.closed += (shut?.length ?? 0);
+        }
+      }
     } catch {
       out.failed += 1;
     }
