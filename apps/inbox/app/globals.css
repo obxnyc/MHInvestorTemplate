@@ -3987,3 +3987,20 @@ button.edrow.dbo:hover{background:var(--sunk)}
 .homecard .soon{position:absolute;top:.85rem;right:.9rem;
   background:var(--sunk);color:var(--ink-2);border:1px solid var(--hair);
   border-radius:999px;padding:.1rem .5rem;font-size:.72rem;letter-spacing:.01em}
+/* ------------------------------------------------- a ticket, not a category
+ *
+ * "The user interface discerning between communication and maintenance
+ * tickets is not easy to tell the difference between." Both were a small
+ * uppercase pill in a soft colour, so a broken boiler and a wrong number
+ * were separated only by a shade -- and a shade is not something anybody
+ * scans a list by.
+ *
+ * A ticket is a different KIND of row, so it reads as one: a filled badge
+ * rather than a tinted one, with the job's own state beside it.
+ *
+ * The ground is a token and so is the ink, which inverts with it at night.
+ * A literal here is an ink that does not move, and this stylesheet has
+ * learned that six times. */
+.badge.ticket{background:var(--dark);color:var(--dark-ink);letter-spacing:.06em}
+.badge.ticket.warm{background:var(--warn);color:var(--warn-on)}
+.badge.ticket.hot{background:var(--crit);color:var(--crit-on)}
