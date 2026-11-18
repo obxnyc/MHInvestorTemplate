@@ -491,9 +491,19 @@ export async function unitFromHint(
 ): Promise<string | null> {
   /* A REMEMBERED ANSWER BEATS ANY PARSING.
      Somebody looked at this exact place name once and said which property it
-     is. That is not a guess and must not be second-guessed by one. */
+     is. That is not a guess and must not be second-guessed by one.
+
+     EXCEPT AN EMPTY ONE, which is not an answer about anywhere. `placeKey("")`
+     is `""`, and a row under that key means "a request that said nothing
+     about where it is is THIS house" -- which is every Rent Manager pull.
+     One exists on the live database, written 2 November. Every caller
+     happens to guard on a truthy hint today, so it has never fired; this is
+     the rule rather than the luck. */
+  const asked = placeKey(hint);
+  if (!asked) return null;
+
   const { data: alias } = await db.from("place_aliases")
-    .select("unit_id").eq("key", placeKey(hint)).maybeSingle();
+    .select("unit_id").eq("key", asked).maybeSingle();
   if (alias?.unit_id) return alias.unit_id as string;
 
   const lot = lotDigits(hint);
