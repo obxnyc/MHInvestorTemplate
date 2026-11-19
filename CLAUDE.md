@@ -2179,3 +2179,49 @@ and zero derived findings, where before there were hundreds of wrong ones.
 **Worse than no harness, because the real finding is in that list too** --
 there were four, on `/rentmanager` and `/setup` at 320px, invisible under the
 noise.
+
+### Pro from 19 November 2026, and what it does not change
+
+The free tier sent "you have used 90% of Fluid Active CPU" with eleven days
+of the month left, under the sentence "your projects will be automatically
+paused". On this account that is the shared line not answering tenants, the
+crew unable to clock in, and the distributions screen dark -- so the answer
+was not to shave CPU, it was to stop having a cliff. Upgraded.
+
+**What was burning it was one job.** `clock-texts` is woken by pg_cron every
+five minutes, 8,640 times a month; everything else scheduled comes to 274.
+So 97% of the scheduled load is the waker, and the hours it covers are
+07:50 to 21:00 Eastern Monday to Saturday -- every overnight and every
+Sunday wake does nothing at all. On Pro that is a bill rather than a cliff,
+and the trim is still worth doing. It is NOT done yet, because the hours it
+could skip depend on the times set on the Crews & texts screen, and a window
+hardcoded in cron drifts silently out of step with a table somebody edits --
+which is this file's oldest fault in a new place.
+
+**What Pro unblocked:** `/api/cron/maintenance` is hourly (`25 * * * *`).
+It had been daily only because daily was Hobby's limit, which is why
+clearing the Rent Manager backlog took three sweeps by hand. Hourly, it
+keeps itself straight.
+
+**What Pro does NOT change, so nobody simplifies it away:** the database is
+still the right scheduler for anything that happens at a time of DAY.
+`vercel.json` crons are UTC and cannot follow daylight saving, so "8:45
+Eastern" and "10am Eastern" are still pg_cron's job, exactly as before. The
+plan lifted a frequency limit; it did not give `vercel.json` a time zone.
+
+And the method, which is the point. `PLAN` in `plan-check.mjs` is a claim
+about somebody else's billing page, and the file enforcing the Hobby rule is
+the last place that would notice it being wrong: set it to "pro" while the
+account is still Hobby and the harness goes quiet exactly when it is needed,
+the hourly cron ships, and **every deployment is refused until somebody
+reverts it**. So it was not taken on the owner's word, or on a label, or on
+`ssoProtection` being enabled.
+
+**The hourly expression went to the feature branch first and Vercel's
+PREVIEW build was read.** A preview that fails costs nothing and blocks
+nothing; a preview that succeeds is the account answering the only question
+that matters -- not what plan it says it is on, but whether it will accept
+the schedule. It came back READY, and only then did it go to `main`.
+
+Do that again before changing that word. The same trick works for anything
+the plan gates: ask the preview, not the invoice.
