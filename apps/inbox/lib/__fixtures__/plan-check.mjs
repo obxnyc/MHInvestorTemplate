@@ -21,8 +21,28 @@ import { dirname, join } from "path";
 const here = dirname(fileURLToPath(import.meta.url));
 const vercel = JSON.parse(readFileSync(join(here, "..", "..", "vercel.json"), "utf8"));
 
-/** The plan this project is on. One word, and it decides the rest. */
-const PLAN = "hobby";
+/** The plan this project is on. One word, and it decides the rest.
+ *
+ *  Pro from 19 November 2026. The free tier sent "you have used 90% of Fluid
+ *  Active CPU" with eleven days of the month left, and the sentence under it
+ *  was "your projects will be automatically paused" -- which on this account
+ *  means the shared line stops answering tenants, the crew cannot clock in,
+ *  and nothing sends.
+ *
+ *  CHANGING THIS WORD IS NOT WHAT MAKES IT TRUE. It is a claim about somebody
+ *  else's billing page, and the file that enforces the Hobby rule is the last
+ *  place that would notice it being wrong: flip it to "pro" while the account
+ *  is still Hobby and this harness goes quiet exactly when it is needed, the
+ *  cron goes out hourly, and every deployment is refused until someone
+ *  reverts it. That is the day this file was written about.
+ *
+ *  So it was not taken on trust. The hourly expression went to the feature
+ *  branch first and Vercel's PREVIEW build was read: a preview that fails
+ *  costs nothing and blocks nothing, and a preview that succeeds is the plan
+ *  answering the only question that matters -- not a label on a page, but
+ *  whether this account will accept the schedule. Do that again before
+ *  changing this word. */
+const PLAN = "pro";
 
 const checks = [];
 const t = (name, ok) => {
