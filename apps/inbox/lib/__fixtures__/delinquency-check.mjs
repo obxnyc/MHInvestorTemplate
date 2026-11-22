@@ -91,16 +91,33 @@ const debtors = [
   { rmTenantId: 3, name: "Former", status: "Past", place: null, balance: 300, oldest: null, daysLate: 200 },
 ];
 const m = D.render({ ...base, debtors });
-t("the subject says how many and how much",
-  () => m.subject.includes("3 owe") && m.subject.includes("$1,250.00"));
+/* Current $950 (Small + Large), past $300 (Former). A combined total,
+   $1,250, is the wrong answer every one of these can tell apart. */
+t("the subject leads with what CURRENT tenants owe, and how many",
+  () => m.subject.includes("current tenants owe $950.00 (2)"));
+t("past tenants are in the subject separately, after the current ones",
+  () => m.subject.includes("past tenants $300.00")
+     && m.subject.indexOf("current tenants") < m.subject.indexOf("past tenants"));
+t("no combined total anywhere: $1,250 is two different jobs added together",
+  () => !m.subject.includes("1,250") && !m.text.includes("1,250") && !m.html.includes("1,250"));
 t("with no vacancy section asked for, the subject does not invent a count",
   () => !m.subject.includes("vacant"));
 t("largest balance first",
   () => m.text.indexOf("Large") < m.text.indexOf("Small"));
-t("moved-out tenants are their own group, not mixed in with current ones",
-  () => m.text.indexOf("Moved out") < m.text.indexOf("Former")
-     && m.text.indexOf("Small") < m.text.indexOf("Moved out"));
-t("aging buckets are shown", () => m.text.includes("Over 90 days: 2, $1,200.00"));
+t("past tenants are a section of their own, after every current tenant",
+  () => m.text.indexOf("PAST TENANTS") > m.text.indexOf("Small")
+     && m.text.indexOf("Former") > m.text.indexOf("PAST TENANTS")
+     && m.html.indexOf("Past tenants · moved out") > m.html.indexOf("Small")
+     && m.html.indexOf("Former") > m.html.indexOf("Past tenants · moved out"));
+t("a past tenant is never listed among the current ones",
+  () => m.text.indexOf("Former") > m.text.indexOf("PAST TENANTS")
+     && m.text.indexOf("Former") === m.text.lastIndexOf("Former"));
+t("the aging is the current tenants' alone (a mixed aging says 2, $1,200)",
+  () => m.text.includes("Over 90 days: 1, $900.00") && !m.text.includes("$1,200.00"));
+t("a current tenant with a number has a Call link; a past one does not",
+  () => { const c = D.render({ ...base, debtors: [{ ...debtors[0], phone: "+12525550100" },
+                                                    { ...debtors[2], phone: "+12525550199" }] });
+          return c.html.includes("tel:+12525550100") && !c.html.includes("tel:+12525550199"); });
 t("a tenant not matched to a unit still appears, saying so",
   () => m.html.includes("Large") && m.html.includes("not matched to a unit"));
 t("names are escaped in the html",
@@ -112,7 +129,7 @@ t("and in the body", () => /NOT complete/.test(partial.text));
 
 const none = D.render({ ...base, debtors: [] });
 t("nobody owing says how many records were read, so it is not mistaken for nothing read",
-  () => none.subject.includes("nobody owes") && none.text.includes("400 tenant records"));
+  () => none.subject.includes("no current tenant owes") && none.text.includes("400 tenant records"));
 
 const failed = D.render({ ...base, ok: false, error: "Rent Manager would not accept the sign-in." });
 t("a failed report is still an email, and says it failed",
@@ -171,6 +188,34 @@ t("names are escaped in the vacancy html",
 t("one day late is a day, not days",
   () => D.render({ ...base, debtors: [{ ...debtors[0], daysLate: 1 }] }).text.includes("-- 1 day\n")
      || D.render({ ...base, debtors: [{ ...debtors[0], daysLate: 1 }] }).text.match(/-- 1 day$/m));
+
+/* ---- new applications and inquiries */
+const L = (kind, name, at, extra = {}) => ({ kind, name, at, phone: null, what: "x", source: "app", ...extra });
+/* The inquiry is NEWER than the application on purpose: sorted by time
+   alone it would come first, and applications must lead. */
+const leads = { notes: [], list: [
+  L("inquiry", "Ina Query", "2026-11-22T14:00:00Z"),
+  L("application", "Al Applied", "2026-11-22T09:00:00Z", { phone: "+12525550111" }),
+  L("prospect", "Pat Prospect", "2026-11-22T12:00:00Z", { source: "rent manager" }),
+] };
+const withLeads = D.render({ ...base, debtors }, null, null, leads);
+const lt = withLeads.text;
+t("applications come first, even when an inquiry is newer",
+  () => lt.indexOf("Al Applied") < lt.indexOf("Ina Query") && lt.indexOf("Ina Query") < lt.indexOf("Pat Prospect"));
+t("the subject counts applications and inquiries separately",
+  () => withLeads.subject.includes("1 new application") && withLeads.subject.includes("2 new inquiries"));
+t("a quiet day puts nothing about leads in the subject",
+  () => !D.render({ ...base, debtors }, null, null, { notes: [], list: [] }).subject.includes("new"));
+t("a quiet day still has the section, saying none",
+  () => D.render({ ...base, debtors }, null, null, { notes: [], list: [] }).text.includes("None in the last 24 hours"));
+t("a source that could not be read is said, not shown as zero",
+  () => D.render({ ...base, debtors }, null, null, { notes: ["Rent Manager's prospect list could not be read"], list: [] })
+          .html.includes("could not be read"));
+t("an applicant with a number has a Call link", () => withLeads.html.includes("tel:+12525550111"));
+t("leads sit after the current tenants and before the past ones",
+  () => lt.indexOf("NEW APPLICATIONS") > lt.indexOf("Small") && lt.indexOf("NEW APPLICATIONS") < lt.indexOf("PAST TENANTS"));
+t("lead names are escaped",
+  () => !D.render({ ...base, debtors }, null, null, { notes: [], list: [L("inquiry", "<i>x</i>", "2026-11-22T14:00:00Z")] }).html.includes("<i>x</i>"));
 
 let bad = 0;
 for (const [name, ok, why] of checks) {
