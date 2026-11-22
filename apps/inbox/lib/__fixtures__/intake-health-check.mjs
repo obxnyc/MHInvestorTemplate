@@ -159,7 +159,7 @@ t("the route reads the arrivals and works out the verdict",
   + "this went unnoticed for months in the first place");
 
 t("and hands it to the report",
-  () => /render\(\s*report\s*,\s*vac\s*,\s*intake\s*\)/.test(route),
+  () => /render\(\s*report\s*,\s*vac\s*,\s*intake\s*[,)]/.test(route),
   "computed and then dropped is the same as never computed");
 
 t("the report puts it in front of somebody",
