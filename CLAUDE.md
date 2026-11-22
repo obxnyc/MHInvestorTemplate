@@ -2225,3 +2225,8 @@ the schedule. It came back READY, and only then did it go to `main`.
 
 Do that again before changing that word. The same trick works for anything
 the plan gates: ask the preview, not the invoice.
+
+**Samantha Graber's $10 is a test, not a debt** (owner, 22 November 2026).
+She is a test tenant in Rent Manager kept owing a small balance so the
+delinquency emails can be seen to go out. She appears in the morning
+report's current tenants; do not flag her as a row that looks wrong.
