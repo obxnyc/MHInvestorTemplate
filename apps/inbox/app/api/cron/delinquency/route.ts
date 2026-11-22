@@ -3,7 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { cronKeyOk } from "@/lib/cron-key";
 import { pullDelinquency } from "@/lib/delinquency-pull";
 import { pullVacancies } from "@/lib/vacancy-pull";
-import { activeRecipients, newYork, render, SEND_HOUR, type Recipient, type Report, type Vacancies } from "@/lib/delinquency";
+import { pullLeads, type LeadsProbe } from "@/lib/leads-pull";
+import { activeRecipients, newYork, render, SEND_HOUR, type Recipient, type Report, type Vacancies, type Leads } from "@/lib/delinquency";
 import { sendEmailChecked } from "@/lib/notify";
 import { readArrivals, intakeVerdict } from "@/lib/intake-health";
 
@@ -89,7 +90,19 @@ async function handle(req: Request) {
     intake = null;
   }
 
-  const mail = render(report, vac, intake);
+  /* AFTER the balances, not beside them. Both sign in to Rent Manager, and
+     two fresh sign-ins at the same moment can leave one holding a token
+     the other has just replaced. The balances take a few seconds. */
+  let leads: Leads = null;
+  let leadsProbe: LeadsProbe | null = null;
+  try {
+    const got = await pullLeads();
+    leads = got.leads; leadsProbe = got.probe;
+  } catch (e) {
+    leads = { list: [], notes: [`New applications could not be read: ${(e as Error).message}`] };
+  }
+
+  const mail = render(report, vac, intake, leads);
 
   const { data: list } = await db.from("report_recipients")
     .select("email, name, starts_on, ends_on").eq("report", REPORT);
@@ -102,6 +115,7 @@ async function handle(req: Request) {
       tenantsRead: report.tenantsRead, partial: report.partial,
       using: report.using, readAs: report.readAs,
       listed: vac?.list.length ?? null, vacancyNote: vac?.note ?? null,
+      leads: leads?.list.length ?? null, leadNotes: leads?.notes ?? null, leadsProbe,
     });
   }
 

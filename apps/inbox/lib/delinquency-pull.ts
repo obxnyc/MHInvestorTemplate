@@ -147,15 +147,21 @@ export async function pullDelinquency(day: string, seconds = 42): Promise<Report
      placed still appears, saying so, rather than vanishing from a list
      about money. */
   const place = new Map<number, string>();
+  const phone = new Map<number, string>();
   if (owing.length) {
     const db = supabaseAdmin();
     const { data } = await db.from("contacts")
-      .select("rm_tenant_id, units(label, properties(name))")
+      .select("rm_tenant_id, phone, units(label, properties(name))")
       .in("rm_tenant_id", owing.map((o) => o.id));
     for (const c of (data ?? []) as unknown as {
       rm_tenant_id: number;
+      phone: string | null;
       units: { label: string | null; properties: { name: string | null } | null } | null;
     }[]) {
+      /* A tenant with no number on file is stored under a placeholder
+         (`rm:tenant:<id>`, because the column is unique and not null).
+         That is not a number to ring. */
+      if (c.phone && /^\+\d{8,15}$/.test(c.phone)) phone.set(Number(c.rm_tenant_id), c.phone);
       const u = c.units;
       if (!u) continue;
       // A house is a property whose one unit carries its own address, so
@@ -169,6 +175,7 @@ export async function pullDelinquency(day: string, seconds = 42): Promise<Report
   const debtors: Debtor[] = owing.map((o) => ({
     rmTenantId: o.id, name: o.name, status: o.status,
     place: place.get(o.id) ?? null,
+    phone: phone.get(o.id) ?? null,
     balance: o.balance, oldest: o.oldest,
     daysLate: o.oldest ? daysBetween(o.oldest, day) : null,
   }));
