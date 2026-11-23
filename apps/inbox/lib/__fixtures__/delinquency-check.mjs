@@ -217,6 +217,13 @@ t("leads sit after the current tenants and before the past ones",
 t("lead names are escaped",
   () => !D.render({ ...base, debtors }, null, null, { notes: [], list: [L("inquiry", "<i>x</i>", "2026-11-22T14:00:00Z")] }).html.includes("<i>x</i>"));
 
+/* ---- the test tenant */
+const withTest = D.render({ ...base, debtors: [...debtors,
+  { rmTenantId: 99, name: "Samantha  Graber", status: "Current", place: null, balance: 10, oldest: null, daysLate: 206 }] });
+t("the test tenant is not in the list", () => !withTest.text.includes("Graber") && !withTest.html.includes("Graber"));
+t("and not in any total: current is still $950 for 2 tenants",
+  () => withTest.subject.includes("current tenants owe $950.00 (2)"));
+
 let bad = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "ok  " : "FAIL"}  ${name}${why ? `  (${why})` : ""}`);

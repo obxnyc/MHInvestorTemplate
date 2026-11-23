@@ -206,6 +206,18 @@ export const BUCKETS = [
   { label: "Over 90 days", lo: 91, hi: Infinity },
 ] as const;
 
+/**
+ * Test tenants kept in Rent Manager on purpose, never in the report.
+ *
+ * Samantha Graber is kept owing a small balance so the office can see the
+ * delinquency emails go out (owner, 22 November 2026). She is not money
+ * anybody is owed, and on 23 November she was still in the list and the
+ * totals after he had said so. Matched on the whole name, case ignored.
+ */
+export const TEST_TENANTS = ["Samantha Graber"];
+export const isTestTenant = (name: string) =>
+  TEST_TENANTS.some((t) => t.toLowerCase() === name.trim().replace(/\s+/g, " ").toLowerCase());
+
 export function isCurrent(status: string | null): boolean {
   return status === null || /current|active|notice/i.test(status);
 }
@@ -355,7 +367,8 @@ export function render(
   const short = new Date(`${r.day}T12:00:00Z`).toLocaleDateString("en-US",
     { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 
-  const owing = [...(r.debtors ?? [])].sort((a, b) => b.balance - a.balance);
+  const owing = (r.debtors ?? []).filter((d) => !isTestTenant(d.name))
+    .sort((a, b) => b.balance - a.balance);
   const sum = (l: Debtor[]) => l.reduce((s, d) => s + d.balance, 0);
   /* TWO DIFFERENT JOBS, NEVER ONE TOTAL. A tenant living in one of our
      homes is rent we can still collect this month; somebody who has moved

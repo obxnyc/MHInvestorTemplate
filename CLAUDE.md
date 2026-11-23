@@ -2228,5 +2228,9 @@ the plan gates: ask the preview, not the invoice.
 
 **Samantha Graber's $10 is a test, not a debt** (owner, 22 November 2026).
 She is a test tenant in Rent Manager kept owing a small balance so the
-delinquency emails can be seen to go out. She appears in the morning
-report's current tenants; do not flag her as a row that looks wrong.
+delinquency emails can be seen to go out. She is left out of the morning
+report entirely, list and totals (`TEST_TENANTS` in `lib/delinquency.ts`).
+He asked once and she was still in the next morning's email because the
+reply offered him a choice instead of doing it -- when the owner says what
+a thing is for, act on what that means rather than asking him to say it
+twice.
