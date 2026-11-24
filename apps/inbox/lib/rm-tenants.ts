@@ -182,7 +182,20 @@ export type TenantResult = {
   tenantShape: string[] | null;
   leaseShape: string[] | null;
   samples: TenantRow[];
+  /** For the tenants asked about by id: why they did or did not land on a
+   *  unit here. Every lease Rent Manager has for them, and whether this
+   *  app holds the unit each one names. */
+  explained?: Explained[];
   error: string | null;
+};
+
+export type Explained = {
+  rmTenantId: number;
+  name: string | null;
+  status: string | null;
+  tenantPropertyId: number | null;
+  leases: { unitId: number | null; propertyId: number | null; movedIn: string; unitHere: string | null }[];
+  why: string;
 };
 
 /* The spellings to try, most informative first. An embed this account
@@ -228,7 +241,7 @@ function reachOf(
  * inbox should be readable before it is believed.
  */
 export async function pullTenants(
-  opts: { dryRun?: boolean; seconds?: number; pages?: number } = {},
+  opts: { dryRun?: boolean; seconds?: number; pages?: number; explain?: number[] } = {},
 ): Promise<TenantResult> {
   const dryRun = opts.dryRun !== false;
   const blank: TenantResult = {
@@ -305,6 +318,38 @@ export async function pullTenants(
   }
   out.placed = people.filter((p) => p.rmUnitId !== null).length;
   out.samples = people.slice(0, 8);
+
+  /* WHY SOMEBODY HAS NO HOME HERE. Three different faults look identical
+     on the report ("not matched to a unit"): Rent Manager has no lease for
+     them, the lease names a unit this app never imported, or the lease
+     carries no unit at all. Asked about by id, each is said by name. */
+  if (opts.explain?.length) {
+    const db = supabaseAdmin();
+    const { data: us } = await db.from("units")
+      .select("label, rm_unit_id, properties(name)").not("rm_unit_id", "is", null);
+    const here = new Map<number, string>();
+    for (const u of (us ?? []) as unknown as { label: string; rm_unit_id: number; properties: { name: string } | null }[]) {
+      here.set(Number(u.rm_unit_id), [u.properties?.name, u.label].filter(Boolean).join(" · "));
+    }
+    out.explained = opts.explain.map((id) => {
+      const p = people.find((x) => x.rmTenantId === id);
+      const ls = read.filter((l) => l.tenantId === id)
+        .sort((a, b) => b.movedIn.localeCompare(a.movedIn))
+        .map((l) => ({ ...l, unitHere: l.unitId !== null ? here.get(l.unitId) ?? null : null }));
+      const newest = ls[0];
+      const why = !p ? "Rent Manager did not return this tenant at all."
+        : !ls.length ? "Rent Manager has no lease for this tenant, so there is no unit to follow."
+        : newest.unitId === null ? "The newest lease names no unit."
+        : !newest.unitHere ? `The newest lease is on Rent Manager unit ${newest.unitId}, which this app has never imported.`
+        : `The newest lease is on ${newest.unitHere}; the next import will place them.`;
+      return {
+        rmTenantId: id, name: p?.name ?? null, status: p?.status ?? null,
+        tenantPropertyId: p?.rmPropertyId ?? null,
+        leases: ls.map(({ unitId, propertyId, movedIn, unitHere }) => ({ unitId, propertyId, movedIn, unitHere })),
+        why,
+      };
+    });
+  }
   if (dryRun) return out;
 
   /* ----------------------------------------------------------- writing */
