@@ -560,7 +560,16 @@ export default function DistributionsBoard() {
                           <div className="dboentry">
                             <div className="tsfield"><label htmlFor={`ea-${st.id}`}>Amount paid ($)</label>
                               <input id={`ea-${st.id}`} inputMode="decimal" autoFocus value={entry.amount} placeholder={left > 0 ? (Math.min(left, perCents) / 100).toFixed(2) : ""}
-                                onChange={(e) => setEntry({ ...entry, amount: e.target.value })} /></div>
+                                onChange={(e) => setEntry({ ...entry, amount: e.target.value })}
+                                /* The grey amount is the suggestion: right arrow or space takes it,
+                                   the way a search box accepts what it has filled in. Only while the
+                                   box is empty, so neither key is taken from somebody typing. */
+                                onKeyDown={(e) => {
+                                  const hint = e.currentTarget.placeholder;
+                                  if (!entry.amount && hint && (e.key === "ArrowRight" || e.key === " ")) {
+                                    e.preventDefault(); setEntry({ ...entry, amount: hint });
+                                  }
+                                }} /></div>
                             <div className="tsfield"><label htmlFor={`ed-${st.id}`}>Date it is paid</label>
                               <input id={`ed-${st.id}`} type="date" value={entry.on} onChange={(e) => setEntry({ ...entry, on: e.target.value })} /></div>
                             <div className="tsfield"><label htmlFor={`ec-${st.id}`}>Confirmation #</label>
