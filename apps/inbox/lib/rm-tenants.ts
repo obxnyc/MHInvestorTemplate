@@ -362,9 +362,38 @@ export async function pullTenants(
     unitByRm.set(Number(u.rm_unit_id), String(u.id));
   }
 
+  /* A HOUSE WHOSE ONE UNIT WAS NEVER LINKED. 107 Marian Ave and 1587 Salem
+     Church Rd were imported as properties with one unit each, but the unit
+     carried no Rent Manager id -- so when Austin Williams and Liam Finney
+     signed leases on Rent Manager units 344 and 343, nothing here matched
+     and both sat on the 23 November report as "not matched to a unit" for
+     weeks. When a lease names a unit we do not hold, and its property has
+     exactly ONE unit here with no Rent Manager id, that unit is the one:
+     link it, once, and place the tenant. Two or more unlinked units is a
+     park, and a guess there puts somebody in the wrong home -- left alone. */
+  const { data: loose } = await db.from("units")
+    .select("id, rm_property_id").is("rm_unit_id", null).not("rm_property_id", "is", null);
+  const looseByProp = new Map<number, string[]>();
+  for (const u of loose ?? []) {
+    const k = Number(u.rm_property_id);
+    looseByProp.set(k, [...(looseByProp.get(k) ?? []), String(u.id)]);
+  }
+  const linkLoose = async (rmUnitId: number, rmPropertyId: number | null): Promise<string | null> => {
+    if (rmPropertyId === null || rmUnitId <= 0) return null;
+    const only = looseByProp.get(rmPropertyId);
+    if (!only || only.length !== 1) return null;
+    const { error } = await db.from("units").update({ rm_unit_id: rmUnitId })
+      .eq("id", only[0]).is("rm_unit_id", null);
+    if (error) return null;
+    looseByProp.delete(rmPropertyId);
+    unitByRm.set(rmUnitId, only[0]);
+    return only[0];
+  };
+
   for (const p of people) {
     if (Date.now() > until) { out.more = true; break; }
-    const unitId = p.rmUnitId !== null ? unitByRm.get(p.rmUnitId) ?? null : null;
+    const unitId = p.rmUnitId === null ? null
+      : unitByRm.get(p.rmUnitId) ?? await linkLoose(p.rmUnitId, p.rmPropertyId);
     const e164 = p.phone ? toE164(p.phone) : null;
     /* A number that is not a number is worse than none: `toE164` never
        returns null, so "n/a" comes back as "+", which every tenant

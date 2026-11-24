@@ -230,6 +230,19 @@ t("two tenants at one address is refused, not picked between",
   "picking either sends a reply to the wrong person about their own "
   + "home; asking for two is how you can tell there was more than one");
 
+/* ---- a house whose one unit was never linked (23 November 2026) */
+const loose = raw.slice(raw.indexOf("const linkLoose"), raw.indexOf("for (const p of people) {", raw.indexOf("const linkLoose")));
+t("a lease on a unit we do not hold links the property's ONLY unlinked unit",
+  () => /only\.length !== 1\) return null/.test(loose),
+  "two unlinked units is a park, and picking one puts a tenant in the wrong home");
+t("it only ever fills an empty link, never overwrites one",
+  () => /\.is\("rm_unit_id", null\)/.test(loose));
+t("a unit id of 0 is no unit, and links nothing",
+  () => /rmUnitId <= 0\) return null/.test(loose),
+  "the test tenant's lease carries unit 0");
+t("placing a tenant tries the link when the unit is not held",
+  () => /unitByRm\.get\(p\.rmUnitId\) \?\? await linkLoose\(/.test(raw));
+
 let failed = 0;
 for (const [name, ok, why] of checks) {
   console.log(`${ok ? "  ok" : "FAIL"}  ${name}`);
